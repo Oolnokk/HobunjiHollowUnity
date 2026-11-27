@@ -481,7 +481,7 @@
     }
     const assembly = playerKurrayaNote.heldAssembly;
     if (!assembly?.parent || assembly.visible === false || assembly.parent.visible === false) return null;
-    return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Neutral remains gripped when merely carrying the instrument; active notes still own independent plucking.
+    return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee', root: assembly, groundPoseIdle: playerKurrayaNote.notePose===null }; // Neutral remains gripped when merely carrying the instrument; active notes still own independent plucking.
   }
   function clearPlayerKurrayaNote() {
     playerKurrayaNote.startedAt = null;

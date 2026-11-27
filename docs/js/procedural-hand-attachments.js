@@ -588,6 +588,7 @@
     if (!speciesId || !profiles.modelKeyForSpecies?.(speciesId)) return null;
     const gender = normalizeGender(options.gender);
     const modelHeight = Number(options.modelHeight) || 0.9;
+    const limbModelHeight = Number(options.avatarRoot?.userData?.limbModelHeight) || modelHeight; // Geometry is calibrated independently of child height and arm reach.
     const handAttachX = Number.isFinite(Number(options.handAttachX)) ? Number(options.handAttachX) : -modelHeight * 0.28;
     const handAttachY = Number.isFinite(Number(options.handAttachY)) ? Number(options.handAttachY) : modelHeight * 0.45;
 
@@ -615,8 +616,8 @@
       calibration.name = `${side}_hand_calibration`;
       socket.add(calibration);
       root.add(socket);
-      const profileKey = `${speciesId}::${gender}`; // Stable lookup follows live editor anatomy replacement without altering the grip origin.
-      global.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, socket, parent, () => global.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[profileKey]?.anatomy?.handScaleAxes, true); // Apply the body X/Y mean through hand and wrist rotations for all species.
+      const partScale = global.HobunjiCharacterRigScale; // The visual follows live axis edits around the original grip.
+      partScale?.installPartScaleAxes?.(THREE, socket, parent, () => partScale.partScaleAxesFor?.(speciesId, gender, 'hand'), true);
       sockets[side] = { socket, calibration, guide, visual: null, toolCalibrationEnabled: false };
     }
 
@@ -689,6 +690,10 @@
         visual.name = `${side}_hand_visual`; // Fallback and GLB visuals share the same stable name for outline rescans.
         rec.calibration.add(visual); // The visual is downstream of model calibration; socket orientation remains owned by grip/shoulder systems.
         markOutline(visual); // Reassert layer 1 after every visual replacement, including the left hand.
+        if (typeof options.onHandVisualReplaced === 'function') {
+          try { options.onHandVisualReplaced(side, visual); } // Handles async fallback-to-GLB swaps without a permanent preview polling loop.
+          catch (error) { console.warn('[ProceduralHandAttachments] visual replacement callback failed:', error); }
+        }
       }
       rec.guide.visible = showGripGuides;
     }
@@ -742,7 +747,7 @@
         paperReferenceSocket.add(paperGuide);
       }
       const calibrationMode = global.HobunjiAttackEditorHandCalibrationMode?.active === true;
-      const targetHeight = modelHeight
+      const targetHeight = limbModelHeight
         * (Number(profiles.data?.handHeightFraction) || 0.12)
         * (calibrationMode ? (Number(values.speciesScale) || 1) : (Number(values.effectiveScale) || 1)); // Calibration reference excludes GLB model scale so model scale can actually be judged against it.
       const sourceIsLeft = values.model?.mirrorX !== false;
@@ -763,7 +768,7 @@
     }
 
     function installFallback(values) {
-      const baseTargetHeight = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
+      const baseTargetHeight = limbModelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
       const sourceIsLeft = values.model?.mirrorX !== false;
       const color = bodyColorHex(speciesId, options.bodyColors);
       for (const side of ['left', 'right']) {
@@ -784,7 +789,7 @@
       syncPaperHandGuide(values); // Profile/model-scale changes keep the locked scaffold aligned without animating its folded segments.
       if (!values.model?.glb) return;
 
-      const baseTargetHeight = modelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
+      const baseTargetHeight = limbModelHeight * (Number(profiles.data?.handHeightFraction) || 0.12);
       try {
         const built = await Promise.all(['left', 'right'].map(async side => [
           side,
@@ -807,6 +812,7 @@
       }
     }
 
+    const rightWristBasis = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(RIGHT_SHOULDER_AXIS_TWIST_DEG)); // Fixed visual twist used by the wrist constraint.
     const tempParentQuaternion = new THREE.Quaternion();
     function placePaperHandGuideWorld(worldPosition, worldQuaternion) {
       if (!showPaperHandGuide || !worldPosition || !worldQuaternion) {
@@ -933,6 +939,15 @@
       setSideVisible,
       useIdlePose,
       applyToolCalibration,
+      copyGripWristBasis(side, out, calibrationSide = side) {
+        // The rendered hand includes model alignment and the right-hand half-turn.
+        // Expose its rotational basis read-only; grip/model calibration remain separately owned.
+        const rec = sockets[calibrationSide]; // Both hands use the same selected model calibration; the source side can already be placed.
+        if (!rec || !out) return null;
+        out.copy(rec.calibration.quaternion);
+        if (side === 'right') out.multiply(rightWristBasis);
+        return out;
+      },
       refreshModelProfile,
       setPaperHandGuideVisible, // Public only so the standalone editor can lazily toggle its locked x-ray reference.
       placePaperHandGuideWorld, // Frame driver supplies the UNCALIBRATED primary-grip frame so calibration sliders move the GLB against this fixed scaffold.

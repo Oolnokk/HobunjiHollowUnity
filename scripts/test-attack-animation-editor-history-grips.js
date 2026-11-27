@@ -61,8 +61,9 @@ assert.doesNotMatch(grips, /function inverseTransform|function composePrimaryInv
 assert.match(grips, /const point = gripPointOnAxis\(ensureTool\(value\)\?\.customGripAxis, itemZ\)/, 'secondary hand span must follow the authored item-local haft axis');
 assert.match(grips, /position: itemPointToHolder\(value, point, context, identity\)/, 'secondary hand span must resolve through the shared item-space placement mapping');
 assert.match(grips, /function heightMultiplierForTool/, 'held-item metadata must expose a per-weapon height multiplier');
-assert.match(grips, /1 \+ \(heightRatio - 1\) \* heightMultiplier/, 'effective weapon scale must blend calculated character-height ratio by the authored multiplier');
-assert.match(grips, /editorFieldPair\(scaleFields, 'handToolHeightMultiplier', 'Height multiplier'/, 'Attack Editor grip UI must expose the weapon height multiplier');
+assert.match(grips, /1\+\(characterHeightRatio\(speciesId,gender,rigScaleY\)-1\)\*multiplier/, 'explicitly enabled weapon scaling must blend the calculated height ratio by its multiplier');
+assert.match(grips, /if\(multiplier===0\)return 1/, 'default inactive scaling must not consult character height');
+assert.match(grips, /editorFieldPair\(scaleFields, 'handToolHeightMultiplier', 'Species scale multiplier'/, 'Attack Editor grip UI must expose the weapon height multiplier');
 assert.doesNotMatch(editor, /id="poseOrbitScale"|orbitScalesDownloadBtn|orbitScalesSaveOverrideBtn|orbitScalesClearOverrideBtn/, 'retired per-species weapon scale authoring controls must not remain in the Attack Editor');
 
 assert.match(direct, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'grip UI must expose independent melee and ranged grip sets.');
@@ -128,7 +129,7 @@ assert.match(shoulderAim, /localWristProximalAxis = new THREE\.Vector3\(0, 1, 0\
 assert.match(shoulderAim, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'shoulder follow must expose the grip-axis local X hinge');
 assert.match(shoulderAim, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, -1\)/, 'shoulder follow must expose the corrected local -Z palm-normal hinge');
 assert.match(shoulderAim, /palmNormal:\s*Math\.atan2\(x, y\)/, 'the -Z hinge must pair with the matching angle sign');
-assert.match(shoulder, /wrist-facing side aims toward the pose-authored elbow/i, 'editor must explain that the hand targets the authored elbow rather than the shoulder');
+assert.match(shoulder, /wrist-facing side follows the pose-authored elbow or shoulder only beyond its anatomical leeway/i, 'editor explains elbow targeting, shoulder fallback, and anatomical leeway');
 assert.match(attachments, /lockedReference = true/, 'paper hand must identify itself as a locked reference, not an animatable rig');
 assert.match(attachments, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper hand must remain locked to the raw weapon target before downstream hand layers');
 assert.match(driver, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'paper reference must be placed before Grip Mode moves the socket');

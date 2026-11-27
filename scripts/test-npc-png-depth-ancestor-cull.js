@@ -56,3 +56,74 @@ npcRoot.parent=null;
 api.prune();
 assert.equal(api.snapshot().registered,0,'an actual despawn still prunes detached NPC planes');
 console.log('NPC PNG depth: ancestor visibility, reversible occlusion and real despawn pruning passed.');
+
+ // Real Three-style native ancestor recursion: the depth pass must produce the
+ // same child matrices without updating the scene and common parent per child.
+const matrixUpdates = new Map();
+class NativeObject {
+  constructor(parent=null,local=0){this.parent=parent;this.local=local;this.visible=true;this.world=0;}
+  updateMatrix() {} // Native local-matrix step, overridable independently of the world method.
+  updateWorldMatrix(parents,children){
+    if(parents && this.parent)this.parent.updateWorldMatrix(true,false);
+    this.updateMatrix();
+    this.world=(this.parent?.world||0)+this.local;
+    matrixUpdates.set(this,(matrixUpdates.get(this)||0)+1);
+  }
+}
+const nativeWindow={};
+new Function('window','THREE',source)(nativeWindow,{Object3D:NativeObject,LessEqualDepth:3});
+const nativeApi=nativeWindow.PngPlaneOutlineOccluder;
+const nativeScene=new NativeObject(null,1);nativeScene.isScene=true;nativeScene.autoUpdate=true;
+const common=new NativeObject(nativeScene,2);
+function nativePlane(parent,local){
+  const node=new NativeObject(parent,local);node.isMesh=true;
+  node.layers={mask:1,enable(n){this.mask|=1<<n;}};
+  node.material={colorWrite:true,depthWrite:false,depthTest:true,depthFunc:3,alphaTest:.35};
+  nativeApi.registerDepthMesh(node);return node;
+}
+const p1=nativePlane(common,3),p2=nativePlane(common,4);
+nativeApi.init({camera,renderer:{render(){}}});
+nativeApi.renderDepth(nativeScene);
+assert.equal(p1.world,6);assert.equal(p2.world,7);
+assert.equal(matrixUpdates.get(common),1,'native parent is refreshed once per pass');
+assert.equal(matrixUpdates.get(nativeScene),1,'native scene root is refreshed once per pass');
+assert.equal(nativeApi.snapshot().sharedAncestorRefreshesAvoided,1);
+common.local=8;matrixUpdates.clear();nativeApi.renderDepth(nativeScene);
+assert.equal(p1.world,12);assert.equal(p2.world,13);
+assert.equal(matrixUpdates.get(common),1,'next frame obtains fresh parent transforms');
+const custom=new NativeObject(nativeScene,10);
+let customCalls=0;
+custom.updateWorldMatrix=function(parents,children){customCalls++;assert.equal(parents,true);NativeObject.prototype.updateWorldMatrix.call(this,parents,children);};
+const p3=nativePlane(custom,4),p4=nativePlane(custom,5);
+nativeApi.renderDepth(nativeScene);
+assert.equal(p3.world,15);assert.equal(p4.world,16);
+assert.equal(customCalls,2,'custom update callbacks keep the original recursive behavior');
+const localHookParent=new NativeObject(nativeScene,20);
+let localHookCalls=0;
+localHookParent.updateMatrix=function(){localHookCalls++;this.local++;};
+const p5=nativePlane(localHookParent,1),p6=nativePlane(localHookParent,2);
+nativeApi.renderDepth(nativeScene);
+assert.equal(localHookCalls,2,'custom local update must not be deduplicated even with native world recursion');
+assert.equal(p5.world,23);assert.equal(p6.world,25);
+console.log('PNG depth shared native ancestors and custom world/local hook fallbacks passed');
+
+// A player's stance owner deliberately restores the mutable local pose after
+// baking matrixWorld. Recomputing a descendant with updateWorldMatrix would
+// bypass that owner, yielding a detached silhouette in the later depth pass.
+const weaponHolder=new NativeObject(nativeScene,100);
+weaponHolder.__weaponToolStanceMatrixHook=true;
+const weaponRoot=new NativeObject(weaponHolder,1);
+const weaponPlane=nativePlane(weaponRoot,2);
+const dualRoot=new NativeObject(weaponPlane,3);
+const dualPlane=nativePlane(dualRoot,4);
+weaponHolder.world=10;weaponRoot.world=11;weaponPlane.world=13;dualRoot.world=16;dualPlane.world=20;
+matrixUpdates.clear();
+nativeApi.init({camera,renderer:{render(){
+  assert.equal(weaponPlane.world,13,'depth sees the baked visible weapon, not its restored local pose');
+  assert.equal(dualPlane.world,20,'depth preserves the independently posed copy subtree');
+}}});
+nativeApi.renderDepth(nativeScene);
+assert.equal(nativeApi.snapshot().bakedWeaponMatricesReused,2);
+for(const node of [weaponHolder,weaponRoot,weaponPlane,dualRoot,dualPlane])assert.equal(matrixUpdates.has(node),false,'never rewalk a baked weapon ancestor');
+assert.equal(matrixUpdates.get(common),1,'ordinary avatar ancestor optimization still runs');
+console.log('Weapon depth reuses the baked stance subtree, including paired weapons.');

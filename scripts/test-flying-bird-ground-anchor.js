@@ -27,7 +27,7 @@ function makeRig() {
       visible: true,
     },
     dispose() {},
-    update(_camera, pose) { this.pose = pose; },
+    update(_camera, pose, _seconds, _carrying, _blinkShut, footY) { this.pose = pose; this.footY = footY; },
     restoreTint() { return false; },
   }; // The native group owns all transforms; the wing rig can only change its local pose.
   mountedRigs.push(rig);
@@ -72,6 +72,10 @@ async function check() {
   window.TzatzulLiveVisuals.tick(0.05, 'perch-test');
   assert.equal(pingdortRig.root.position.y, -0.15, 'perched posture retains the authored ground correction');
   assert.equal(hatchlingRig.root.position.y, -0.23, 'stationary hatchling rests at its native height');
+  hatchling.avatarRef.groundAnchorBottomRatio = .8;
+  window.TzatzulLiveVisuals.tick(0.05, 'perch-test');
+  assert(Math.abs(hatchlingRig.footY + .3) < 1e-9, 'a late opacity scan supplies the same foot hinge used by the native sprite');
+  assert.equal(pingdortRig.footY, undefined, 'the wild perch keeps its authored deformation and camera pose');
   assert.equal(pingdortRig.pose, 'perched', 'ground anchoring does not replace the folded-wing pose');
   pingdort.avatarRef.frontPlane.position.y = -0.35;
   window.TzatzulLiveVisuals.tick(0.05, 'perch-test');
@@ -85,6 +89,16 @@ async function check() {
   assert(hatchlingRig.root.position.y > -0.23, 'moving hatchlings hop above, not instead of, their foot correction');
   window.TzatzulLiveVisuals.tick(0.05, 'perch-test');
   assert.equal(hatchlingRig.root.position.y, -0.23, 'hatchlings return to the authored foot anchor after landing');
+  const group=pingdort.avatarRef.group,original=pingdort.avatarRef.frontPlane;
+  const replacement={...original,visible:true,name:'replacement_front_plane'};
+  group.add(replacement);pingdort.avatarRef.frontPlane=replacement;
+  window.TzatzulLiveVisuals.tick(.05,'perch-test');
+  assert.equal(replacement.visible,false,'new native portrait is hidden immediately');
+  const before=window.TzatzulLiveVisuals.snapshot().refreshedPlanes;
+  window.TzatzulLiveVisuals.tick(.05,'perch-test');
+  assert.equal(window.TzatzulLiveVisuals.snapshot().refreshedPlanes,before,'duplicate reference and child are tracked only once');
+  window.TzatzulLiveVisuals.release(pingdort);
+  assert.equal(replacement.visible,true,'replacement visibility is restored on release');
   console.log('flying bird ground-anchor checks passed');
 }
 check().catch(error => { console.error(error); process.exitCode = 1; });

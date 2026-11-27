@@ -16,6 +16,7 @@ assert(!stock.shops?.carpenterHouseDeeds?.pieces?.incubator, 'incubator must nev
 class FakeButton {
   constructor() { this.listeners = {}; }
   addEventListener(type, fn) { this.listeners[type] = fn; }
+  before(node) { this.controls = node; }
   click() { this.listeners.click?.(); }
 }
 
@@ -35,6 +36,8 @@ class FakeNode {
   }
   get innerHTML() { return this._innerHTML; }
   appendChild(child) { this.children.push(child); return child; }
+  setAttribute() {}
+  addEventListener(type, fn) { this[type] = fn; }
   querySelector(selector) {
     if (/^\[data-(?:tier|deed|bp|barn-addition)\]$/.test(selector)) return this._button;
     return null;
@@ -63,6 +66,7 @@ const window = {
 };
 window.window = window;
 
+vm.runInNewContext(fs.readFileSync('docs/js/shop-quantity.js', 'utf8'), { window, document, console });
 vm.runInNewContext(carpenterSource, { window, document, console }, { filename: 'carpenter-shop.js' });
 window.CarpenterShop.init({
   inventory,
@@ -100,4 +104,16 @@ assert.equal(inventory.gold, 1000, 'buying the incubator subtracts its configure
 assert.equal(inventory.barnIncubatorPlan, 1, 'buying the addition grants its configured plan item');
 assert(toasts.some(entry => entry.ok && /Barn Incubator Addition/.test(entry.message)), 'purchase reports success');
 
+// The canonical shop must be the only incubator purchase route; the runtime module merely registers definitions.
+const incubatorSource = fs.readFileSync('docs/js/barn-incubator.js', 'utf8');
+assert(!incubatorSource.includes('function buyIncubatorPlan('), 'no independent purchase handler can bypass Town Value or capacity');
+assert(!incubatorSource.includes('function decorateCarpenterShop('), 'no duplicate incubator listing');
+assert.equal(list.children.filter(node => node.innerHTML.includes('Barn Incubator Addition')).length, 1);
+inventory.gold = 20000;
+window.CarpenterShop.render();
+const bulkRow = list.children.find(node => node.innerHTML.includes('Barn Incubator Addition'));
+bulkRow._button.controls.children[2].click();
+bulkRow._button.click();
+assert.equal(inventory.barnIncubatorPlan, 3);
+assert.equal(inventory.gold, 10000);
 console.log('carpenter barn addition tests passed');

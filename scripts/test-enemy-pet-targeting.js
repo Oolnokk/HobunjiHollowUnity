@@ -7,7 +7,8 @@ const vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8'); // Reads the shipped module and its integration points.
 
 const win = { __farmLog() {} }; // In-game log stub for target acquisition.
-const context = vm.createContext({ window: win }); // Executes the actual pure targeting owner, not a duplicate of it.
+let clock = 0; // A deterministic decision clock for the cached live selector.
+const context = vm.createContext({ window: win, performance: { now: () => clock } }); // Executes the actual pure targeting owner, not a duplicate of it.
 vm.runInContext(read('docs/js/combat/enemy-pet-targeting.js'), context);
 const targeting = win.EnemyPetTargeting; // Public owner used by the game loop.
 assert(targeting);
@@ -87,6 +88,20 @@ assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], rost
   'Beastmaster pets release a despawned companion even when its Health is still positive');
 roster.add(pet);
 
+// Runtime decision lease: no scan during the 140 ms window, immediate release on removal.
+const trackedRoster = new Set([pet]); // Counts live enumeration without relying on real elapsed time.
+let iterations = 0;
+trackedRoster[Symbol.iterator] = function* () { iterations++; yield* Set.prototype[Symbol.iterator].call(this); };
+assert.equal(targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120), pet);
+for (let frame = 1; frame < 8; frame++) { clock = frame * 16; assert.equal(targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120), pet); }
+assert.equal(iterations, 1, 'eight updates require only one full target scan');
+trackedRoster.delete(pet);
+assert.equal(targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120), player, 'removed target bypasses the decision lease');
+assert.equal(iterations, 2);
+clock += 141;
+targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120);
+assert.equal(iterations, 3, 'expired lease resumes target scoring');
+
 const ranged = read('docs/js/combat/ranged-weapons.js'); // Canonical projectile sweep, not a second projectile implementation.
 const match = ranged.match(/  function nearestPlayerCompanionHit\([\s\S]*?\n  \}/);
 assert(match, 'enemy shots must use their own companion-aware hitbox sweep');
@@ -116,7 +131,7 @@ assert.match(ranged, /friendlyFire = nearest\.kind === 'hostile'/,
 const game = read('docs/game.js'); // Integration assertion guards the otherwise private runtime AI wiring.
 assert.match(game, /EnemyPetTargeting\?\.chooseAggroTarget/);
 assert.match(game, /EnemyPetTargeting\?\.chooseBeastmasterTarget/);
-assert.match(game, /damageCreature\(targetPlayer, def\.attackDamage, c\.x, c\.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions\)/);
+assert.match(game, /DamageAuthority\.hit\(targetPlayer, def\.attackDamage, c\.x, c\.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions\)/); // Bite routes by victim: players via damagePlayer, pets via damageCreature.
 assert.match(game, /shouldRetaliateToPetHit/, 'enemy damage handling forwards the real pet attacker into retaliation checks');
 assert.match(game, /!companionObjects\.has\(c\.targetPlayer\)/,
   'ordinary enemy chases release a removed companion rather than chasing its stale entity');

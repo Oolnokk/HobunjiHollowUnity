@@ -132,15 +132,17 @@
   }
 
   function makeDuplicateMesh(plane, side) {
+    const sourceGeometry=global.HeldGroundPose?.originalGeometryFor?.(plane.geometry)||plane.geometry; // Never share the temporary compressed buffer with invisible or later-visible copies.
     let duplicate = null;
     try {
       const material = Array.isArray(plane.material)
         ? plane.material.map(cloneOwnedMaterial)
         : cloneOwnedMaterial(plane.material);
-      duplicate = new plane.constructor(plane.geometry, material);
+      duplicate = new plane.constructor(sourceGeometry, material);
     } catch (_) {
       duplicate = plane.clone?.(false) || null;
       if (duplicate) {
+        duplicate.geometry=sourceGeometry;
         duplicate.material = Array.isArray(plane.material)
           ? plane.material.map(cloneOwnedMaterial)
           : cloneOwnedMaterial(plane.material);
@@ -194,6 +196,7 @@
     if (!old) return;
     global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(old.visual, old.mainMesh, old.offMesh, false); // Release both independent suspension rigs before their parent meshes are disposed.
     restoreOriginalMaterial(old);
+    global.HeldGroundPose?.releaseDualCopy?.(old.mainMesh);global.HeldGroundPose?.releaseDualCopy?.(old.offMesh);
     old.mainRoot?.parent?.remove?.(old.mainRoot);
     old.offRoot?.parent?.remove?.(old.offRoot);
     disposeOwnedMaterial(old.mainMesh?.material);
@@ -251,6 +254,8 @@
       targetHolderQuaternion: q(), targetHolderWorld: m(), inverseHolderWorld: m(), planeRelative: m(), inversePlaneWorld: m(),
       idleResult: { position: v(), quaternion: q() },
       offTargetPosition: v(), offTargetQuaternion: q(),
+      mirrorWristLocal: q(), mirrorWristInverse: q(), mirrorWristRightBasis: q(), mirrorWristLeftBasis: q(), // Reused calibrated frame reflection scratch.
+      reflection: m(), mirrorLocal: m(), mirrorX: m().makeScale(-1,1,1), // Reused by the reflected weapon and socket.
       currentPose: { position: v(), quaternion: q() },
     };
     return current.frameScratch;
@@ -363,7 +368,8 @@
     // holder is scene-level, so deriving the anchor from the baked holder pose is
     // more reliable than assuming a particular parent hierarchy.
     const bakedHolderWorld = !inAttackEditor() && current.source === 'runtime' ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null; // Only the player's holder goes through the stance owner's baked matrix; an actor's holder matrix is its own.
-    const holderWorld = s.holderWorld.copy(bakedHolderWorld || current.holder.matrixWorld);
+    const authored = global.HeldGroundPose?.authoredFrameFor?.(current.holder); // Reconstruct the opposite stance before floor rotation or grip lift.
+    const holderWorld = s.holderWorld.copy(authored?.holderWorld || bakedHolderWorld || current.holder.matrixWorld);
     const holderPosition = s.holderPosition;
     const holderQuaternion = s.holderQuaternion;
     holderWorld.decompose(holderPosition, holderQuaternion, s.ignoredScale);
@@ -405,11 +411,44 @@
     const holderDelta = targetHolderWorld.multiply(s.inverseHolderWorld.copy(holderWorld).invert());
     const planeRelative = s.planeRelative.copy(current.plane.matrixWorld).invert()
       .multiply(holderDelta)
-      .multiply(current.plane.matrixWorld);
+      .multiply(authored?.planeWorld || current.plane.matrixWorld);
     const result = s.idleResult; // Scratch: syncNow consumes it immediately.
     planeRelative.decompose(result.position, result.quaternion, s.ignoredScale);
     result.quaternion.normalize();
     return result;
+  }
+
+  // Swing-twist decomposition about world Y: discard the horizontal-axis
+  // walking lean without introducing Euler yaw drift from combined pitch/roll.
+  function uprightMirrorYaw(quaternion) {
+    return Math.abs(quaternion.w)+Math.abs(quaternion.y)>1e-8
+      ? 2*Math.atan2(quaternion.y,quaternion.w) : 0;
+  }
+
+  function mirrorSolvedWeapon(current) {
+    const s=frameScratch(current); // Reflect in the portrait's body frame, including its current facing.
+    current.bodyRoot.updateWorldMatrix?.(true,false); // Read the current body, not last frame's lean.
+    const body=current.bodyRoot.matrixWorld;
+    body.decompose(s.bodyPosition,s.bodyQuaternion,s.ignoredScale);
+    const upright=current.source==='runtime'&&current.idleBlend>=1-ACTIVE_EPSILON; // Neutral player hafts exclude movement lean, so their mirror must too.
+    current.uprightMirror=upright;
+    if(upright){
+      const posterior=global.PlayerBodyTransformComposer?.getPosteriorY?.()||0; // Walking lean pivots around this point, not the feet/root origin.
+      const e=body.elements;
+      s.bodyPosition.addScaledVector(s.bodyRight.set(e[4],e[5],e[6]),posterior);
+      s.bodyQuaternion.setFromAxisAngle(s.axisY,uprightMirrorYaw(s.bodyQuaternion));
+    }
+    s.targetHolderWorld.compose(s.bodyPosition,s.bodyQuaternion,s.unitScale);
+    s.reflection.copy(s.targetHolderWorld).multiply(s.mirrorX).multiply(s.inverseHolderWorld.copy(s.targetHolderWorld).invert());
+    const root=current.offRoot;
+    current.offMesh.updateMatrix();
+    root.matrix.copy(s.inversePlaneWorld.copy(current.plane.matrixWorld).invert())
+      .multiply(s.reflection).multiply(current.mainMesh.matrixWorld)
+      .multiply(s.mirrorLocal.copy(current.offMesh.matrix).invert());
+    root.matrix.decompose(root.position,root.quaternion,root.scale);
+    root.matrixAutoUpdate=false; // Preserve the exact reflection even under a scaled parent.
+    root.matrixWorldNeedsUpdate=true;
+    root.updateMatrixWorld(true);
   }
 
   function setRootToward(root, targetPosition, targetQuaternion, influence) {
@@ -574,7 +613,9 @@
     // Authoring the offhand stance: the gizmo/Neutral sliders move the offhand weapon directly (it stays
     // on the holder), and the main-hand copy is placed from its saved stance instead.
     const authoringOffhand = editorOffhandAuthoring && inAttackEditor() && current.idleBlend > ACTIVE_EPSILON;
-    const idleTransform = current.idleBlend > ACTIVE_EPSILON && !authoringOffhand ? idleOffhandLocalTransform(current) : null;
+    current.mirrorOffhand=active&&!authoringOffhand&&!!current.bodyRoot; // All visible pairs share the same rigid reflection.
+    current.offRoot.matrixAutoUpdate=true;
+    const idleTransform = !current.mirrorOffhand && current.idleBlend > ACTIVE_EPSILON && !authoringOffhand ? idleOffhandLocalTransform(current) : null;
     const idleAmount = clamp01(current.idleBlend);
     const targetPosition = idleTransform ? scratch.offTargetPosition.copy(idleTransform.position).multiplyScalar(idleAmount) : scratch.offTargetPosition.set(0, 0, 0);
     const targetQuaternion = idleTransform
@@ -599,15 +640,40 @@
     } else if (active && !invisible) applyMainLag(current);
     current.offRoot.updateMatrixWorld?.(true);
     current.mainRoot.updateMatrixWorld?.(true);
+    if(key===PLAYER_KEY){
+      const clearance=global.HeldGroundPose;
+      if(!active){clearance?.releaseDualCopy?.(current.mainMesh);clearance?.releaseDualCopy?.(current.offMesh);}
+      if(active||invisible)clearance?.constrainDualCopies?.(current);
+    }
+    if(current.mirrorOffhand)mirrorSolvedWeapon(current);
     current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
     return current;
+  }
+
+  // Reflect the finished *authored* main-hand anatomical frame, not the
+  // reflected weapon's decomposed quaternion. The latter includes an arbitrary
+  // negative-scale axis and a legacy half-turn that can reverse proximal +Y.
+  // The model's left/right geometry is already mirrored across local X.
+  function mirrorPairedWristOrientation(record, solve, mainQuaternion, out) {
+    const current = solve?.dualWieldState;
+    if (!current?.mirrorOffhand || current.invisible || solve.dualWieldRecord !== record) return false;
+    const s = current.frameScratch; // Body basis was captured by mirrorSolvedWeapon for these exact weapon matrices.
+    const rig = record.rig;
+    if (!s || !rig?.copyGripWristBasis) return false;
+    if (!rig.copyGripWristBasis('right', s.mirrorWristRightBasis)
+      || !rig.copyGripWristBasis('left', s.mirrorWristLeftBasis, 'right')) return false;
+    s.mirrorWristLocal.copy(s.bodyQuaternion).invert().multiply(mainQuaternion).multiply(s.mirrorWristRightBasis);
+    mirrorQuaternionAcrossLocalX(s.mirrorWristLocal, s.mirrorWristLocal);
+    out.copy(s.bodyQuaternion).multiply(s.mirrorWristLocal)
+      .multiply(s.mirrorWristInverse.copy(s.mirrorWristLeftBasis).invert()).normalize();
+    return true;
   }
 
   function transformSocketForHand(record, side, socketFrame, solve = null) {
     // solve: optional object shared by both hands of one synchronous rig solve (procedural-hand-frame-driver.js);
     // with lean sync the second hand reuses the first hand's sync instead of repeating it.
     let current;
-    if (leanSync && solve && solve.dualWieldSynced === true && solve.dualWieldRecord === record) {
+    if ((leanSync || solve?.clearancePrepared) && solve && solve.dualWieldSynced === true && solve.dualWieldRecord === record) {
       current = solve.dualWieldState;
       stats.solveReuses++;
     } else {
@@ -627,6 +693,8 @@
     const inversePlaneWorld = current.plane.matrixWorld.clone().invert();
     const planeLocalPosition = socketFrame.position.clone().applyMatrix4(inversePlaneWorld);
     const position = planeLocalPosition.clone().applyMatrix4(weapon.matrixWorld);
+    if(side==='right'&&solve&&current.mirrorOffhand)solve.mirrorSourceGrip=planeLocalPosition;
+    if(side==='left'&&current.mirrorOffhand&&solve?.mirrorSourceGrip)position.copy(solve.mirrorSourceGrip).applyMatrix4(weapon.matrixWorld);
 
     const Quaternion = weapon.quaternion.constructor;
     const planeWorldQ = bakedWorldQuaternion(current.plane, new Quaternion(), current);
@@ -636,6 +704,10 @@
     const childLocalQ = mirroredChild
       ? mirrorQuaternionAcrossLocalX(planeLocalQ, new Quaternion())
       : planeLocalQ;
+    if (mirroredChild && !current.invisible) {
+      // Correct the half-turn on the visible offhand's local grip X axis. The grip point and weapon pose already match.
+      childLocalQ.multiply(planeLocalQ.set(1, 0, 0, 0));
+    }
     const quaternion = weaponWorldQ.multiply(childLocalQ).normalize();
 
     return {
@@ -723,6 +795,7 @@
       mainChildLocalPosition: state?.mainMesh?.position?.toArray?.() || null,
       offChildLocalPosition: state?.offMesh?.position?.toArray?.() || null,
       offChildMirroredX: Number(state?.offMesh?.scale?.x) < 0,
+      uprightMirror: !!state?.mirrorOffhand&&!!state?.uprightMirror, // Mobile check: both neutral hafts use a world-upright reflection.
       flailCopiesReady: !!state?.flailCopiesReady, // Readable on mobile without console/devtools; false while the replica art is loading.
       mainRootParentIsHiddenOriginalPlane: !!state && state.mainRoot?.parent === state.plane,
       offRootParentIsHiddenOriginalPlane: !!state && state.offRoot?.parent === state.plane,
@@ -746,12 +819,21 @@
     teardown,
     resetPoseHistory,
     transformSocketForHand,
+    mirrorPairedWristOrientation,
     setCarriedPose,
     setCarriedSample,
     invisibleOffhandSocket,
     defaultOffhandPose: () => { const pose = global.SharedAttackPose?.IDLE_OFFHAND_POSE || idleStancePoses()?.offhand || null; return pose ? { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll } : null; }, // The invisible idle offhand's default pose (the shared IDLE_OFFHAND_POSE).
     setEditorIdlePreview,
     setEditorOffhandAuthoring,
+    isOwnedChild(plane,child){const state=states.get(PLAYER_KEY);return state?.plane===plane&&(child===state.mainRoot||child===state.offRoot);},
+    isNonDrawingChild(plane,child) {
+      const state=states.get(PLAYER_KEY); // Clearance is currently restricted to the player and the editor.
+      if(state?.plane!==plane||!(child===state.mainRoot||child===state.offRoot))return false;
+      // This is an owned hand-positioning helper, not an arbitrary hidden mesh.
+      // A real dual weapon can become visible again; never allow that case.
+      return child.visible===false||child.children.every(node=>node.visible===false);
+    },
     editorMainCopy: () => { const state = states.get(PLAYER_KEY); return state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null; }, // The visible main-hand weapon when Dual Wield is showing both copies.
     editorOffhandCopy: () => { const state = states.get(PLAYER_KEY); return state && editorOffhandAuthoring && state.influence > ACTIVE_EPSILON ? state.offMesh : null; }, // The visible offhand weapon the Attack Editor gizmo should pivot on.
     debugSnapshot,

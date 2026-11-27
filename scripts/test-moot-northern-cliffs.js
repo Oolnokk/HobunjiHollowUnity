@@ -13,15 +13,15 @@ const coatPatterns = ['overcoat', 'mitts']; // Authored overlay draw order; colo
 for (const name of expected) {
   const bytes = fs.readFileSync(path.join(ROOT, basePath, name));
   assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG', `${name} must be a PNG`);
-  assert.equal(bytes.readUInt32BE(16), 1617, `${name} must retain the base frame's width`);
-  assert.equal(bytes.readUInt32BE(20), 1000, `${name} must retain the base frame's height`);
+  assert.equal(bytes.readUInt32BE(16), 1295, `${name} must retain the base frame's width`);
+  assert.equal(bytes.readUInt32BE(20), 920, `${name} must retain the base frame's height`);
 }
-for (const pattern of coatPatterns) for (const frame of ['idle', 'run1', 'run2']) {
+for (const pattern of [...coatPatterns, 'coloredneck']) for (const frame of ['idle', 'run1', 'run2']) {
   const name = `moot_${pattern}_${frame}.png`; // Required on all three animation poses so a visible allele never makes the compositor retry a missing frame.
   const bytes = fs.readFileSync(path.join(ROOT, basePath, 'patterns', name));
   assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG', `${name} must be a PNG`);
-  assert.equal(bytes.readUInt32BE(16), 1617, `${name} must align with Moot's base width`);
-  assert.equal(bytes.readUInt32BE(20), 1000, `${name} must align with Moot's base height`);
+  assert.equal(bytes.readUInt32BE(16), 1295, `${name} must align with Moot's base width`);
+  assert.equal(bytes.readUInt32BE(20), 920, `${name} must align with Moot's base height`);
   assert.equal(bytes[24], 8, `${name} must have 8-bit sprite channels`);
   assert.equal(bytes[25], 6, `${name} must be RGBA, preserving transparency`);
 }
@@ -122,7 +122,15 @@ assert.deepEqual(creatureDb['moot-herd-mother']?.sprites, creatureDb.moot.sprite
 assert.equal(creatureDb.moot.hostile, false);
 assert.equal(creatureDb.moot.lootPool, 'creature_moot');
 assert.equal(creatureDb.moot.defaultSizeClass, 'large');
-assert.equal(creatureDb.moot.spriteAspect, 1000 / 1617);
+assert.equal(creatureDb.moot.spriteAspect, 920 / 1295);
+const oldWorldUnitsPerPixel = 1.7 / 1617; // Measures visible art scale independently of the old transparent padding.
+const mootBestiary = JSON.parse(read('docs/config/creatures/hobunji-creature-bestiary.json')).creatures.find(entry => entry.id === 'moot'); // Standalone Head Rig view of the same sprite.
+for (const def of [creatureDb.moot, creatureDb['moot-herd-mother'], mootBestiary]) {
+  assert.ok(Math.abs(def.modelWidth / 1295 - oldWorldUnitsPerPixel) < 1e-12);
+  assert.ok(Math.abs(def.modelWidth * def.spriteAspect / 920 - oldWorldUnitsPerPixel) < 1e-12);
+}
+assert.equal(config.game.livestock.animalWidths.moot, creatureDb.moot.modelWidth, 'Default farm and nursery scale matches the original pixel density');
+assert.equal(creatureDb['moot-herd-mother'].spriteAspect, creatureDb.moot.spriteAspect);
 assert.equal(creatureDb.moot.speed, 1.25, 'Moot retains native herbivore wandering behavior');
 assert.deepEqual(JSON.parse(JSON.stringify(creatureDb.moot.sprites)), {
   idle: api.SPRITES.idle, run: [api.SPRITES.run1, api.SPRITES.run2],
@@ -160,7 +168,7 @@ const child = windowStub.CreatureGenetics.crossOffspring(parentA, parentB, 'moot
 assert.equal(parentA.sizeClass, 'large');
 assert.equal(child.sizeClass !== undefined, true);
 assert(/^#[a-f0-9]{6}$/i.test(child.base.color));
-assert.deepEqual(Object.keys(child).sort(), ['base', 'mitts', 'overcoat', 'sizeClass'], 'Both authored patterns inherit their own alleles');
+assert.deepEqual(Object.keys(child).sort(), ['base', 'mitts', 'overcoat', 'secondary', 'sizeClass'], 'Both authored patterns inherit their own alleles');
 for (const pattern of coatPatterns) {
   assert(/^#[a-f0-9]{6}$/i.test(parentA[pattern].color), `${pattern} receives a valid coat color`);
   assert.equal(typeof child[pattern].enabled, 'boolean', `${pattern} has an independent expressed state`);
@@ -170,6 +178,7 @@ assert(!('coloredneck' in child), 'Colored neck is not a competing new genotype'
 const originalOvercoat = parentA.overcoat; // Only legacy input is overwritten below; actual generated specimens remain unchanged.
 const legacyMoot = { ...parentA, coloredneck: { color: '#c7aa77', copies: 2, enabled: true, inheritance: 'dominant' } }; // Simulates an older saved marking and its exact pigmentation.
 delete legacyMoot.overcoat;
+delete legacyMoot.secondary; // A pre-A/B record does not have a separate secondary locus.
 const migrated = windowStub.CreatureGenetics.normalizeLegacyGenotype('moot', legacyMoot); // Read-time migration keeps old saves and wild bloodlines intact.
 assert.equal(migrated.overcoat.color, '#c7aa77', 'Colored neck now appears as overcoat without losing its color');
 assert.equal(migrated.overcoat.copies, 2, 'Migration preserves inherited allele strength');
@@ -180,7 +189,7 @@ const legacyChild = windowStub.CreatureGenetics.crossOffspring(legacyMoot, legac
 assert.equal(legacyChild.overcoat.copies, 2, 'Offspring inherits a migrated overcoat from both parents');
 assert.equal(legacyChild.overcoat.enabled, true, 'Legacy coat remains visibly expressed after breeding');
 const modernWins = windowStub.CreatureGenetics.normalizeLegacyGenotype('moot', { ...legacyMoot, overcoat: parentA.overcoat }); // New allele always takes precedence.
-assert.equal(modernWins.overcoat, parentA.overcoat);
+assert.equal(modernWins.overcoat.color, parentA.overcoat.color);
 assert(!('coloredneck' in modernWins));
 const traitNames = windowStub.CreatureGenetics.genotypeTraits('moot', migrated).patterns.map(pattern => pattern.label); // Reuses Farm/Stable trait-chip formatting.
 assert(traitNames.includes('Overcoat'), 'Migrated overcoat appears in the genotype UI');

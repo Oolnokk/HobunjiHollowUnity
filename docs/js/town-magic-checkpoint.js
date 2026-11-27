@@ -55,14 +55,14 @@
   }
   function magicKey(key) {
     const def = deps?.ITEM_DEFS?.[key];
-    return window.HarlyaoRelics?.isBoundKey?.(key) === true ||
+    return window.HarlyaoRelics?.isBoundKey?.(key) === true || !!window.BanditCaptainArmaments?.decodeBoundKey?.(key) ||
       def?.harlyaoBoundRelic === true || def?.magicalStatus === 'bound' || def?.magicalStatus === 'cursed' ||
       def?.bound === true || def?.cursed === true ||
       (Array.isArray(def?.tags) && def.tags.some(tag => /^(bound|cursed)$/i.test(tag))); // Accept future magical items with explicit catalog metadata.
   }
   function uniqueKey(key) {
     const def = deps?.ITEM_DEFS?.[key]; // Future systems can opt in when their key encodes a stable item-instance identity.
-    return window.HarlyaoRelics?.isBoundKey?.(key) === true || def?.uniqueInventoryKey === true;
+    return window.HarlyaoRelics?.isBoundKey?.(key) === true || !!window.BanditCaptainArmaments?.decodeBoundKey?.(key) || def?.uniqueInventoryKey === true;
   }
   function pending() {
     if (!deps?.inventory || !Array.isArray(pack())) return [];
@@ -256,9 +256,10 @@
       const withheld = disposition(entry);
       const licensed = guild()?.isMember?.() === true;
       const label = entry.label + (entry.count > 1 ? ' ×' + entry.count : '');
-      const button = ui.button(withheld ? 'Requires priest' : licensed ? 'Register & reclaim' : 'Guild license required', () => registerAndReturn(entry.id), !!withheld || !licensed);
+      const captain = entry.kind === 'inventory' && !!window.BanditCaptainArmaments?.decodeBoundKey?.(entry.key); // Reclaim permits legal transport, not yet magical use.
+      const button = ui.button(withheld ? 'Requires priest' : licensed ? (captain ? 'Reclaim bound weapon' : 'Register & reclaim') : 'Guild license required', () => registerAndReturn(entry.id), !!withheld || !licensed);
       list.appendChild(ui.row(entry.kind === 'inventory' ? '🗡️' : '👑', ui.esc ? ui.esc(label) : escapeHtml(label),
-        ui.esc ? ui.esc(withheld || 'Awaiting legal registration') : escapeHtml(withheld || 'Awaiting legal registration'), [button]));
+        ui.esc ? ui.esc(withheld || (captain ? 'Reclaim, then re-register below to wield and learn its magic.' : 'Awaiting legal registration')) : escapeHtml(withheld || (captain ? 'Reclaim, then re-register below to wield and learn its magic.' : 'Awaiting legal registration')), [button]));
     }
     const details = document.createElement('details'); // Provides mobile copyable state without depending on devtools.
     const summary = document.createElement('summary');

@@ -169,6 +169,13 @@ docs/architecture/ruin-tiers-and-jump-shaft.md.
 
 To jump to another area: `await window.__hobunjiFurnitureDebug.enterZoneDebug('map_western_slope')`
 (any id from `WildernessMapGenerator.zoneMapIds()`, or `'map_hobunji_town'`).
+**Gotcha:** in a fresh world `enterZoneDebug` does nothing (no error; `currentArea()` stays `town` and no zone scene is built)
+because `OpeningStoryCutscene.canEnterWilderness()` is false until the world owner's farm tour is recorded as complete. Mark it
+the way the game does, before entering: `OpeningStoryCutscene.updateStory(window.__hobunjiPlayerProfile, { farmTourComplete: true })`.
+Setting the legacy `localStorage` key `OpeningStoryCutscene.tourKey(profile)` is **not** enough: the portable story record wins
+whenever it explicitly says "not complete". A first zone build then takes ~4-5 s in software GL. To keep several built zones for
+cache tests set `SCRATCHBONES_CONFIG.game.zoneCache.maxInactiveZones` high while visiting (the default trims to 1), then check
+`window.__zoneCacheDebug.built()` / `.order()` / `.trim()` / `.history()`.
 The live renderer is `window.__hobunjiGameRenderer`.
 
 **Profiling:** attach a CDP session (`context.newCDPSession(page)`,

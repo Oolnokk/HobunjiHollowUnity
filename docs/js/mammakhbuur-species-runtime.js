@@ -3,7 +3,7 @@
   'use strict';
   const ID = 'mammakhbuur'; // Shared species identity for player/NPC appearance, scale and attachment registries.
   const DONOR = 'mashtzarr'; // Authored cosmetic, palette, hand/foot and anatomy authority.
-  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 1.992106, female: 1.819542 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 1.992045, female: 1.819486 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
   const clone = value => JSON.parse(JSON.stringify(value)); // Copies donor data so edits never mutate Mashtzarr definitions.
   const withoutFrontHair = genderData => { // Mammakhbuur do not expose or retain any front-hair cosmetic, while every other Mashtzarr cosmetic remains inherited.
     const data = clone(genderData || {});

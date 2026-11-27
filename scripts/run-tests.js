@@ -46,9 +46,15 @@ const BROWSER = new Set([
   'test-surface-foliage-styles-browser.js', // Real THREE and shared editor growth-style browser smoke.
   'test-omgurku-gameplay-browser.js', // Full game NPC spawn/transfer/despawn coverage.
   'test-omgurku-calibration-browser.js', // Runs in the existing browser workflow step.
+  'test-animation-author-age-lineup-browser.js', // Requires Playwright and a served Animation Author; dedicated smoke workflow runs it.
   'test-bipedal-monster-preview-browser.js', // Chromium/GLTFLoader model-swap smoke; run by the Animation Author browser workflow.
   'test-omgurku-tribe-browser.js', // Full game Omgurku-vs-Porakaneki hostile fight and camp placement.
   'test-spouse-kiss-live-player-rig.js', // Needs three@0.128.0; runs in smoke-animation-author-scene-url.yml after installing it.
+  'test-hachutu-root-tear-browser.js', // Needs three + Chromium; runs in smoke-dev-random-ruin-full.yml.
+  'test-hachutu-root-ruin-browser.js', // Needs a served game + Chromium; runs in smoke-dev-random-ruin-full.yml.
+  'test-ice-stalagmite-coverage-browser.js', // Needs three@0.128.0 + Chromium; runs in smoke-surface-foliage-semantic.yml.
+  'test-pants-portrait-depth-browser.js', // Needs three + Chromium; runs in regression-suite.yml's browser steps.
+  'test-clothing-fit-runtime-browser.js', // Needs a served game + Chromium; runs in regression-suite.yml's browser steps.
 ]);
 
 // Tests that fail on main and are skipped until fixed. Keep this empty: a

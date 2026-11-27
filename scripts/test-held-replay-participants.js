@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// The hand/foot ground x-ray replays used to include every visible NPC's
-// hands and feet; in town that made most draw calls per frame. By default
-// only the player's own parts (and parts with no resolvable owner) take part.
-// This runs the module's real ownership + split code against a fake scene.
+// Exercise the production ownership and partition policy against a fake
+// scene. Feet and pants are excluded from ground replay under every policy,
+// but nearby submerged lower-body parts still receive ordinary-depth tint.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -16,6 +15,7 @@ const slice = (startMarker, endMarker) => {
   return source.slice(a, b);
 };
 const code = [
+  slice('  const XRAY_TILE_RADIUS =', '\n'),
   slice('  function isDescendantOf(', '  function worldYOf('),
   slice('  function actorRootForXrayMesh(', '  function actorXrayScope('),
 ].join('\n');
@@ -38,13 +38,72 @@ const orphanHand = hand(node('loose_group', scene)); // No resolvable owner: kee
 
 const window = { PlayerBodyTransformComposer: { getPlayerMesh: () => player, getVisualRoots: () => [playerFootRig], getPlayerLegHandle: () => null } };
 const api = new Function('window', 'performance', code + `
+  let lastSceneScan = new WeakMap(); // Standalone ownership harness supplies the scene-discovery cache.
   const syncShoulderPetLayering = () => {}; // This test exercises the replay partition only.
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { setCamera: (x,y,z) => { replayCameraPosition = {x,y,z}; }, ringDefault: localReplayRingEnabled, setRing: v => { localReplayRingEnabled = v; }, ringSkips: () => localReplayRingSkips, actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
+
+// Geometric grounding keeps every foot and pants mesh in the ordinary pass, including ownerless and legacy-all paths.
+const defaultPants = node('pants', player, {hobunjiPantsGarment:true});
+const defaultParts = [playerFootNear, tallFoot, shortFootNear, defaultPants, node('orphan_foot', scene)];
+for (const policy of ['rule', 'all']) {
+  api.setPolicy(policy);
+  const ordinary = [];
+  assert.deepEqual(api.split(defaultParts, scene, ordinary, true), []);
+  assert.deepEqual(ordinary, defaultParts);
+}
+api.setPolicy('rule');
+assert.deepEqual(api.split([playerHand, playerBlade], scene, [], false, true), [playerHand, playerBlade], 'hands and weapons are unchanged');
+// Water-only selection uses the real selector with explicit scope/volume fixtures.
+const wetFoot = node('wet_foot', player, {hobunjiProceduralFoot:true});
+const dryFoot = node('dry_foot', player, {hobunjiProceduralFoot:true});
+const wetPants = node('wet_pants', player, {hobunjiPantsGarment:true});
+const distantFoot = node('distant_foot', tall, {hobunjiProceduralFoot:true});
+const cover = {userData:{hobunjiWaterTileFootprint:{bounds:[0,0,1,1]}}};
+const selectWaterOnly = new Function('createLocalReplayFilter','hasDisabledActorXray','actorXrayEnabled','actorXrayGroup','isReplayParticipant','actorXrayScope','tintCoverNearActor','actorStandsInWater','meshOverlapsWaterVolume',
+  slice('  function selectWaterOnlyFeet(', '  function splitXrayGroupsForTint(') + '\nreturn selectWaterOnlyFeet;')(
+  () => mesh => mesh !== distantFoot, false, {}, () => null, () => true,
+  mesh => mesh.parent, () => true, () => true, mesh => mesh === wetFoot);
+const dryOthers = [wetFoot,dryFoot,wetPants,distantFoot,playerBlade], wetOnly = [];
+selectWaterOnly(scene,[cover],dryOthers,wetOnly);
+assert.deepEqual(wetOnly,[wetFoot,wetPants], 'water-only path selects actual submerged foot and pants but not dry, distant or unrelated gear');
+assert.deepEqual(dryOthers,[dryFoot,distantFoot,playerBlade], 'selected water-only meshes are removed from suppression list exactly once');
+assert.match(source,/classifyReplayOwners\(scene, overlayMeshes\)/, 'visible water-only feet explicitly enter the ordinary group');
+// The shipped local gate keeps whole actors together, independent of the camera.
+assert.equal(api.ringDefault, true);
+at(player, -0.2, -0.2);
+at(shorty, -1.2, 0.8);
+const nearClub = shortClub;
+const farShort = at(node('far_short', scene, { hobunjiXrayActorRoot:true, speciesId:'porakaneki' }), 1.2, -0.2);
+const farClub = node('far_club', farShort);
+const farOrphan = at(node('orphan', scene), 12, 12);
+const ringOthers = [];
+assert.deepEqual(api.split([playerBlade, nearClub, farClub, farOrphan], scene, ringOthers, false, true), [playerBlade, nearClub]);
+assert.deepEqual(ringOthers, [farClub, farOrphan]);
+assert.equal(api.ringSkips(),2);
+at(player, 1.5, -0.2);
+assert.deepEqual(api.split([nearClub, farClub], scene, [], false, true), [farClub], 'crossing tiles changes membership immediately');
+// Held items still use the owner's tile, even when their mesh is detached.
+at(player, 0.9, 0.9); at(shorty, 1.9, 1.9); at(farShort, 2.0, 0.9);
+const externalHolder = node('external_tool', scene, {hobunjiHeldPortraitOwner:farShort});
+externalHolder.isObject3D = true; farShort.isObject3D = true;
+const remoteFlail = at(node('flail', externalHolder), 0.5, 0.5);
+assert.deepEqual(api.split([shortHand, remoteFlail], scene, [], false, true), [shortHand],
+  'scene-sibling weapon remains ordinary when its holder is distant, even if the weapon swings into the ring');
+at(player, 1.0, 0.9);
+assert.deepEqual(api.split([shortHand,remoteFlail],scene,[],false,true),[shortHand,remoteFlail]);
+const preview = {isScene:true,parent:null};
+assert.deepEqual(api.split([farOrphan],preview,[],false,true),[farOrphan],'unrelated preview scenes retain legacy presentation');
+api.setPolicy('all');
+assert.deepEqual(api.split([farOrphan],scene,[],false,true),[farOrphan],'explicit full replay bypasses the local gate');
+api.setPolicy('rule');
+at(player, 0, 0); at(shorty, 0, 0);
+api.repaired.length = 0;
+api.setRing(false); // The remaining legacy A/B fixtures deliberately exercise the old distance policy.
 
 // Shipped defaults: owners resolved, other characters' weapons in the base pass (budget 0).
 assert.equal(api.ownerLinkDefault, true, 'owner link on by default');
@@ -69,27 +128,21 @@ assert.deepEqual(api.split([playerHand, tallHand, tallSpear], scene, heldWithRep
   'single-pass partition leaves the same hands out of the x-ray');
 assert.deepEqual(heldWithRepairOthers, [tallHand], 'only the nonparticipant hand remains in the normal scene pass');
 assert.deepEqual(api.repaired, [tallHand], 'ordinary held hand invariant repaired once without a second ownership test');
-const feetOthers = [];
-const feet = api.split([playerFootNear, playerFootFar, tallFoot, shortFootNear, shortFootFar], scene, feetOthers, true);
-assert.deepEqual(feet, [playerFootNear, shortFootNear], 'feet x-ray only for the player and short species, and only near the camera');
-assert.deepEqual(feetOthers, [playerFootFar, tallFoot, shortFootFar]);
-// Pants must follow the production FEET policy through real avatar ancestry,
-// not merely pass a mocked standalone owner predicate. This also verifies
-// distant NPC garments never force extra actor-centered depth replays.
 const pantsAt = (actor, x) => at(node('PantsGarmentMesh', node('avatar', actor),
   { hobunjiPantsGarment: true }), x, 0); // Same nesting as the authored separate pants mesh.
-const playerPantsNear = pantsAt(player, 2), playerPantsFar = pantsAt(player, 10);
-const tallPants = pantsAt(tall, 1);
-const shortPantsNear = pantsAt(shorty, 3), shortPantsFar = pantsAt(shorty, 20);
-const pantsOthers = [];
-const includedPants = api.split([playerPantsNear, playerPantsFar, tallPants, shortPantsNear, shortPantsFar],
-  scene, pantsOthers, true);
-assert.deepEqual(includedPants, [playerPantsNear, shortPantsNear],
-  'actual player/short avatar pants follow exactly the near-camera feet replay policy');
-assert.deepEqual(pantsOthers, [playerPantsFar, tallPants, shortPantsFar],
-  'far pants and taller NPC pants stay in ordinary world depth without a replay');
-
-
+const allLowerBody = [playerFootNear, playerFootFar, tallFoot, shortFootNear, shortFootFar,
+  pantsAt(player, 2), pantsAt(player, 10), pantsAt(tall, 1), pantsAt(shorty, 3), pantsAt(shorty, 20)];
+for (const policy of ['rule','all']) {
+  api.setPolicy(policy);
+  for (const ring of [true,false]) {
+    api.setRing(ring);
+    const ordinary = [];
+    assert.deepEqual(api.split(allLowerBody, scene, ordinary, true), [],
+      'no distance, actor ring or full-participants A/B can re-enable ground X-ray for feet or pants');
+    assert.deepEqual(ordinary, allLowerBody);
+  }
+}
+api.setPolicy('rule');
 // Scene-sibling hostile weapons (BanditCombat tool holders) name their bearer
 // with userData.hobunjiHeldPortraitOwner. With the link off they are unowned
 // (fail-safe x-ray); on (the default), they resolve to the bearer and the
@@ -122,8 +175,8 @@ api.setLimit(Infinity); api.setOwnerLink(false);
 
 api.setPolicy('all');
 const othersAll = [];
-assert.deepEqual(api.split([tallHand, tallFoot], scene, othersAll, true), [tallHand, tallFoot], "'all' restores the previous participant set");
-assert.equal(othersAll.length, 0);
+assert.deepEqual(api.split([tallFoot, defaultPants], scene, othersAll, true), [], "'all' cannot restore lower-body ground X-ray");
+assert.deepEqual(othersAll, [tallFoot, defaultPants]);
 
 // The category switches take precedence over the legacy all-participants and
 // weapon-link A/B settings, while the draw lists keep every excluded part in
@@ -161,6 +214,13 @@ for (const [group, expected] of [
   assert.deepEqual(ordinary, expected, group + ' alone uses ordinary depth');
   assert.equal(api.setActorXrayEnabled(group, true), true);
 }
+for (const group of ['player', 'animals', 'enemies']) api.setActorXrayEnabled(group, false);
+const allDisabledOrdinary = [];
+assert.deepEqual(api.split(replaySet, scene, allDisabledOrdinary, false, true), [],
+  'all-off skips even ownerless held parts and legacy all-participants mode');
+assert.deepEqual(allDisabledOrdinary, replaySet, 'all-off retains every mesh in ordinary rendering');
+assert.deepEqual(api.split(replaySet, scene, [], true), [], 'all-off also excludes every foot');
+for (const group of ['player', 'animals', 'enemies']) api.setActorXrayEnabled(group, true);
 assert.equal(api.setActorXrayEnabled('unrecognized', false), null);
 assert.deepEqual(api.split(replaySet, scene, [], false, true), replaySet, 'turning the settings back on restores the existing replay policy');
 
@@ -169,4 +229,4 @@ assert.match(source, /const held = collectVisible\(heldRegistry, scene, replayOt
 assert.match(source, /const feet = collectVisible\(waterOccludedRegistry, scene, replayOthers\);/);
 assert.match(source, /suppressDraws\(otherParticles\?\.length \? replayOthers\.concat\(otherParticles\) : replayOthers, HELD_OVERLAY_MASK\)/, 'non-participants (and their gear particles) are hidden from the replays that draw the held-overlay layer');
 assert.match(source, /const shortXraySpecies = new Set\(\['porakaneki'\]\);/, 'Porakaneki are on the short-species list by default');
-console.log('ok - other characters weapons in the base pass by default (x-ray for every weapon when switched off); hands for the player and short species; feet for those, near the camera only');
+console.log('ok - other characters weapons in the base pass by default (x-ray for every weapon when switched off); hands for the player and short species; feet and pants always ordinary with submerged tint only');

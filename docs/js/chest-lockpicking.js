@@ -10,15 +10,15 @@
   const COLORS = ['#f3d99b', '#9ee7df', '#f1b2a5', '#aebff0']; // Ring-specific markers, notches, and touch-button hints.
   const SPEED_FACTORS = [1, -0.79, 0.66, -1.13]; // Opposing speeds prevent all rings from aligning at once.
   const PRESETS = Object.freeze({
-    1: { rings: 2, speed: 105, window: 18, slipMs: 4200, stages: 2 },
-    2: { rings: 3, speed: 135, window: 15, slipMs: 6800, stages: 3 },
-    3: { rings: 3, speed: 170, window: 12, slipMs: 6300, stages: 3 },
-    4: { rings: 4, speed: 190, window: 11, slipMs: 10000, stages: 3 },
+    1: { rings: 2, speed: 90, window: 26, slipMs: 6500, stages: 2 },
+    2: { rings: 3, speed: 115, window: 23, slipMs: 9000, stages: 3 },
+    3: { rings: 3, speed: 145, window: 20, slipMs: 10000, stages: 3 },
+    4: { rings: 4, speed: 165, window: 18, slipMs: 14000, stages: 3 },
   }); // Chest tier maps to difficulty, including the four-ring top tier.
   const DEBUG_INTERVAL_MS = 250; // Throttles diagnostics so mobile browsers never rebuild a debug panel each frame.
   const STUTTER_THRESHOLD_MS = 125; // A blocked browser frame never advances a ring or expires its catch timer.
   const STUTTER_GRACE_MS = 135; // Small post-stall tolerance covers delayed gamepad dispatch after a visible hitch.
-  const PROGRESS_FIELD = 'chestLockProgress'; // Character/world-scoped save field read on entry and written on first failure in each set.
+  const PROGRESS_FIELD = 'chestLockProgress'; // Character/world-scoped save field read on entry and staged on meaningful progress and merged by normal saves.
   const PROGRESS_VERSION = 2; // Ring-level streak weighting is incompatible with the earlier prototype's set-level scores.
 
   let session = null; // Only one chest may own a minigame, callback and cleanup at any time.
@@ -40,11 +40,7 @@
   let lastOutcome = null; // Last completed/cancelled chest, visible in the debug snapshot.
   let mounted = false; // Prevents duplicate event handlers when a chest is reopened.
   let lastSaveStatus = 'not attempted'; // Shown in mobile diagnostics when storage or a character profile is unavailable.
-  let lastFolderSaveDurationMs = null; // Actual time spent waiting for the most recent first-failure folder commit, visible on mobile.
-  let lastFolderSaveAction = null; // Shows whether the character-only or full-snapshot fallback was used.
-  let retrySaveButton = null; // Touch-accessible retry when a primary-folder write was rejected or failed.
-  const folderOnlyProgress = new Map(); // Per-character/world lock state staged in CharacterMetaSave when browser storage is full; used on same-session reentry.
-  const pendingFolderSaves = new Map(); // Lock-scoped writes continuing after the player closes the modal; prevents reopening an unacknowledged lock.
+  const deferredProgress = new Map(); // Emergency session-only continuity if the shared save helper is unavailable.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value)); // Constrains tier and frame-delta inputs.
   const wrap = angle => ((angle % 360) + 360) % 360; // Keeps arbitrary ring rotations in degree space.
@@ -64,21 +60,25 @@
   function progressKey(scope, id) { return JSON.stringify([scope.characterId, scope.worldId, id]); } // Shared identity for browser-fallback records and reopening the same lock.
   function readProgress(id, tier, stages) {
     const scope = profileScope();
-    if (!scope || typeof localStorage === 'undefined') return null;
+    if (!scope) return null;
+    const fallback = deferredProgress.get(progressKey(scope,id)); // Session-only progress survives even when browser reads throw.
+    let meta = null; // Normal browser baseline, or a minimal character for reading pending mutations when storage is inaccessible.
     try {
-      let saved = folderOnlyProgress.get(progressKey(scope,id)); // A queued folder-backed lock does not need to reparse the enormous browser meta on reentry.
-      if (!saved) {
-        const meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
-        saved = meta?.characters?.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
+      if (typeof localStorage !== 'undefined') meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
+    } catch (error) { describeError(error); }
+    try {
+      if (!meta?.characters?.some(character => character.id === scope.characterId)) {
+        meta = {characters:[{id:scope.characterId}]};
       }
+      window.CharacterMetaSave?.capturePending?.(meta); // Includes unflushed mutations without rewriting browser storage.
+      const saved = fallback || meta.characters.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
       if (!saved || saved.version !== PROGRESS_VERSION || saved.tier !== tier) return null;
       return {
-        stage:safeInt(saved.stage, stages - 1), misses:safeInt(saved.misses, 9999),
+        stage:safeInt(saved.stage, stages), misses:safeInt(saved.misses, 9999),
         streak:safeInt(saved.streak, stages * PRESETS[tier].rings), streakScore:clamp(Number(saved.streakScore)||0,0,100),
         bestStreak:safeInt(saved.bestStreak, stages * PRESETS[tier].rings), bestScore:clamp(Number(saved.bestScore)||0,0,100),
-        persistedSignature:JSON.stringify(saved),
-        folderUnsynced:saved.folderUnsynced === true, // A rejected primary-folder save remains blocked even after cancel/reentry.
-        failedStage:Number.isInteger(saved.failedStage) && saved.failedStage === safeInt(saved.stage, stages - 1),
+        persistedSignature:fallback ? null : JSON.stringify(saved),
+        failedStage:Number.isInteger(saved.failedStage) && saved.failedStage === safeInt(saved.stage, stages),
       };
     } catch (error) { describeError(error); return null; }
   }
@@ -89,204 +89,50 @@
       streak:state.streak, streakScore:state.streakScore,
       bestStreak:state.bestStreak, bestScore:state.bestScore,
       failedStage:state.failedStage ? state.stage : null,
-      folderUnsynced:state.folderUnsynced === true, // A browser-only failure cannot be laundered into a fresh folder-backed attempt.
-    }; // Stored per lock; no reset on cancel and no second fresh chance after a saved failure.
+      folderUnsynced:false, // Legacy blocking marker is retired; normal saves own durability.
+    }; // Stored per lock; secured sets and scoring survive cancellation.
+  }
+
+  function scopeMatches(scope) {
+    const current = profileScope(); // A character switch must never write another character's lock progress.
+    return scope?.characterId === current?.characterId && scope?.worldId === current?.worldId;
+  }
+
+  function validSession(state) {
+    if (!scopeMatches(state.scope)) return false;
+    try { return typeof state.valid !== 'function' || state.valid() !== false; }
+    catch (error) { describeError(error); return false; }
   }
 
   function saveProgress(state, reason) {
-    const scope = profileScope();
-    if (!scope) { lastSaveStatus = 'No character/world loaded (test or pre-boot)'; return true; }
-    if (!window.CharacterMetaSave?.update) { lastSaveStatus = 'Character save unavailable'; return false; }
-    const record = progressRecord(state); // Shared with the character-only primary-folder path so both formats are identical.
-    const fingerprint = JSON.stringify(record); // Skips redundant metadata rewrites on successful closure or unchanged cancellation.
-    if (state.persistedSignature === fingerprint) { lastSaveStatus = 'Already saved (' + reason + ')'; return true; }
-    const folder = window.LocalSaveFolder; // Only events with an immediate verified primary-folder commit may bypass the synchronous browser-meta rewrite.
-    const fastSecuredStage = reason.startsWith('secured set '); // Secure completed sets in the same small folder commit as failed stages.
-    const fastReason = fastSecuredStage || reason.startsWith('first failure at set ') || reason === 'retry failed lock save'
-      || reason === 'folder failure-save acknowledged';
-    if (fastReason && folder?.canSaveLockProgress?.(scope.characterId) && typeof window.CharacterMetaSave.stageMutation === 'function') {
-      const stagedRecord = JSON.parse(fingerprint); // Preserve this exact lock state even when the mutable session advances during disk I/O.
-      if (fastSecuredStage) stagedRecord.folderUnsynced = true; // A completed set is not acknowledged until its actual folder commit succeeds.
-      const staged = window.CharacterMetaSave.stageMutation('lock:' + scope.worldId + ':' + state.id, character => {
-        character[PROGRESS_FIELD] ||= {};
-        character[PROGRESS_FIELD][scope.worldId] ||= {};
-        character[PROGRESS_FIELD][scope.worldId][state.id] = stagedRecord;
-      }); // capturePending merges this one lock into live folder snapshots; other locks and fields stay unchanged.
-      if (staged) {
-        folderOnlyProgress.set(progressKey(scope, state.id), stagedRecord);
-        state.folderUnsynced = stagedRecord.folderUnsynced;
-        state.folderFallback = fastSecuredStage; // Existing completed-set flow blocks progression until the targeted folder write confirms success.
-        state.persistedSignature = JSON.stringify(stagedRecord);
-        lastSaveStatus = 'Staged for targeted primary-folder commit: ' + reason;
-        return true;
-      }
-    }
-    let ok = window.CharacterMetaSave.update(character => {
+    const scope = state.scope; // Original character/world, captured when the lock opens.
+    if (!scope || !scopeMatches(scope)) return;
+    const record = progressRecord(state); // Immutable snapshot for the keyed normal-save mutation.
+    const fingerprint = JSON.stringify(record); // Avoid staging unchanged records.
+    if (state.persistedSignature === fingerprint) return;
+    const key = progressKey(scope, state.id); // Character/world/lock identity for the emergency cache.
+    const staged = window.CharacterMetaSave?.stageMutation?.('lock:' + JSON.stringify([scope.worldId, state.id]), character => {
       character[PROGRESS_FIELD] ||= {};
       character[PROGRESS_FIELD][scope.worldId] ||= {};
       character[PROGRESS_FIELD][scope.worldId][state.id] = record;
-    }); // CharacterMetaSave writes synchronously to the canonical saved character, including folder snapshots.
-    const key = progressKey(scope, state.id); // Live fallback entry is deleted once an ordinary character write succeeds.
-    if (ok) { folderOnlyProgress.delete(key); state.folderFallback = false; } // Resume ordinary character saves automatically if browser storage recovers.
-    if (!ok && window.LocalSaveFolder?.getStatus?.()?.state === 'ready'
-      && window.LocalSaveFolder?.getStatus?.()?.autoSyncArmed === true
-      && typeof window.CharacterMetaSave.schedule === 'function'
-      && typeof window.HobunjiRuntimeSave?.captureSnapshot === 'function') {
-      try {
-        const meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave.META_KEY || 'hobunjiSaveMeta') || 'null');
-        const character = meta?.characters?.find(item => item.id === scope.characterId);
-        const combined = { ...(character?.[PROGRESS_FIELD] || {}) }; // Start with existing completed locks, not just the new pending one.
-        for (const [encodedKey, pending] of folderOnlyProgress) {
-          const [characterId, worldId, lockId] = JSON.parse(encodedKey);
-          if (characterId !== scope.characterId) continue;
-          combined[worldId] ||= {};
-          combined[worldId][lockId] = pending;
-        }
-        combined[scope.worldId] ||= {};
-        combined[scope.worldId][state.id] = record;
-        folderOnlyProgress.set(key, record); // In-memory continuity survives cancellation while the real folder writes asynchronously.
-        window.CharacterMetaSave.schedule({ [PROGRESS_FIELD]: combined }); // Runtime capture merges pending character fields without requiring browser writes.
-        state.folderFallback = true;
-        ok = true;
-      } catch (error) { describeError(error); }
+    }); // Repeated misses replace a single pending mutation; regular capture/flush merges it.
+    if (staged) {
+      deferredProgress.delete(key);
+      state.persistedSignature = fingerprint;
+      lastSaveStatus = 'Queued for normal save: ' + reason;
+    } else {
+      deferredProgress.set(key, record);
+      lastSaveStatus = 'Session only (save queue unavailable): ' + reason;
+      window.__farmLog?.('[chest-lockpicking] Progress queue unavailable: ' + reason, 'warn');
     }
-    if (ok) state.persistedSignature = fingerprint;
-    lastSaveStatus = ok ? (state.folderFallback ? 'Queued for direct primary-folder capture: ' : '') + reason : 'Failed saving ' + reason;
-    if (!ok) window.__farmLog?.('[chest-lockpicking] Could not persist lock progress: ' + reason, 'warn');
-    return !!ok;
-  }
-
-  function syncFailedStageToFolder(state) {
-    const folder = window.LocalSaveFolder; // Primary folder is the authoritative save when armed; browser-only metadata is not enough.
-    const status = folder?.getStatus?.();
-    if (status?.state !== 'ready' || status.autoSyncArmed !== true || typeof folder.syncNow !== 'function') {
-      if (state.folderUnsynced) {
-        state.saveFailed = true;
-        state.phase = 'save-error';
-        lastSaveStatus = 'Reconnect primary save folder to finish the failed-stage save';
-        announce(lastSaveStatus);
-        render();
-      }
-      return;
-    }
-    state.folderUnsynced = true; // The marker remains in the browser character save until a real primary-folder commit.
-    state.savePending = true;
-    state.phase = 'saving'; // A blocked main thread or async disk write must never consume ring timing or accept another catch.
-    if (window.HobunjiAutosavePause?.isPaused?.()) {
-      state.savePending = false;
-      state.saveFailed = true;
-      state.phase = 'save-error';
-      lastSaveStatus = 'Primary folder autosave is paused';
-      render();
-      announce('Autosave paused. Resume autosaving, then retry the lock save.');
-      return;
-    }
-    const previousSync = Number(status.lastSyncedAt) || 0; // Detect a folder operation that was skipped instead of committed.
-    const saveStartedAt = Date.now(); // Time from lock freeze to canonical acknowledgement, including any queued older save.
-    const scope = profileScope(); // Identifies this lock's pending disk write even after its modal is dismissed.
-    const saveKey = scope ? progressKey(scope, state.id) : null; // Blocks only reentry to the lock currently being saved, not combat or other interactions.
-    if (saveKey) pendingFolderSaves.set(saveKey, state);
-    const finishSave = () => {
-      if (saveKey && pendingFolderSaves.get(saveKey) === state) pendingFolderSaves.delete(saveKey);
-    }; // Both successful and rejected writes must release the reentry guard.
-    Promise.resolve().then(() => {
-      if (!scope) throw new Error('Cannot save a lock without its original character scope.');
-      if (folder.canSaveLockProgress?.(scope.characterId) && typeof folder.saveLockProgress === 'function') {
-        return folder.saveLockProgress({ characterId:scope.characterId, worldId:scope.worldId, lockId:state.id, record:progressRecord(state) }); // Only the failed lock's canonical character data needs an immediate durable write.
-      }
-      const captured = window.HobunjiRuntimeSave?.captureSnapshot?.({ reason:'lockpicking-first-failure' }); // Without a verified incremental baseline, retain the full guarded save path.
-      if (!captured?.ok || !captured.snapshot) throw new Error(captured?.error || 'Cannot capture the current character save for the primary folder.');
-      const serialized = captured.snapshot.meta?.characters?.find(character => character.id === scope?.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[state.id];
-      if (!serialized || serialized.stage !== state.stage || serialized.folderUnsynced !== true) {
-        throw new Error('The primary-folder snapshot does not include the latest secured set or failure penalty.');
-      } // A folder-only save may have pending metadata even when the browser copy is full.
-      return folder.syncNow({ automatic:true, reason:'lockpicking-first-failure', snapshot:captured.snapshot }); // A pinned snapshot queues AFTER an in-flight autosave instead of reusing its stale Promise.
-    }).then(saved => {
-      lastFolderSaveDurationMs = Date.now() - saveStartedAt;
-      lastFolderSaveAction = saved?.lastAction || 'unknown';
-      const committed = saved?.state === 'ready'
-        && (saved.lastAction === 'autosaved-browser-to-folder' || saved.lastAction === 'autosaved-primary-recovery-error' || saved.lastAction === 'autosaved-lock-progress')
-        && Number(saved.lastSyncedAt) > previousSync
-        && (!saved.lastError || saved.lastAction === 'autosaved-primary-recovery-error');
-      state.savePending = false;
-      const currentScope = profileScope(); // Prevent a detached save acknowledgement from changing another active character's metadata.
-      const switchedProfile = !scope || currentScope?.characterId !== scope.characterId || currentScope?.worldId !== scope.worldId;
-      if (committed && !switchedProfile) {
-        state.folderUnsynced = false;
-        if (!saveProgress(state, 'folder failure-save acknowledged')) state.saveFailed = true;
-      } else state.saveFailed = true; // Preserve the original lock's unsynced marker for retry after a character/world switch.
-      lastSaveStatus = committed && switchedProfile
-        ? 'Lock saved to folder; return to its character and retry acknowledgement'
-        : committed ? 'Lock progress flushed to primary folder' : 'Primary folder failed to save lock progress';
-      finishSave();
-      if (session !== state) return; // An abandoned lock never reopens itself or awards treasure when a delayed folder write resolves.
-      state.phase = committed && !state.saveFailed ? 'playing' : 'save-error';
-      lastFrame = 0; // Resume with fresh RAF timing rather than charging the interval spent writing to disk.
-      if (state.phase === 'playing' && state.pendingStageFolderSync) {
-        state.pendingStageFolderSync = false;
-        advanceSecuredStage(state); // A full-browser-storage player advances only after the completed set reached the folder.
-        return;
-      }
-      announce(state.phase === 'playing' ? 'Failure saved. Continue from the secured sets.' : 'Primary folder save failed. Retry the save before picking further.');
-      render();
-    }).catch(error => {
-      lastFolderSaveDurationMs = Date.now() - saveStartedAt;
-      lastFolderSaveAction = 'save-error';
-      describeError(error);
-      state.savePending = false;
-      state.saveFailed = true;
-      lastSaveStatus = 'Primary folder save error';
-      finishSave();
-      if (session !== state) return;
-      state.phase = 'save-error';
-      announce('Primary folder save failed. Retry the save before picking further.');
-      render();
-    });
-  }
-
-  function retrySave() {
-    const active = session; // Used by the in-game retry button after a failed character or primary-folder write.
-    if (!active || active.phase !== 'save-error') return false;
-    if (active.pendingStageSave) {
-      if (!saveProgress(active, 'retry secured set ' + active.stage)) {
-        announce('Secured set could not be saved. Retry after checking Save Diagnostics.');
-        return false;
-      }
-      active.pendingStageSave = false;
-      active.saveFailed = false;
-      advanceSecuredStage(active); // Continue the saved set (or final win), never require another successful set.
-      return true;
-    }
-    const folderStatus = window.LocalSaveFolder?.getStatus?.(); // A retry must persist the pending-folder marker before its disk write starts.
-    if (folderStatus?.state === 'ready' && folderStatus?.autoSyncArmed === true) active.folderUnsynced = true;
-    if (!saveProgress(active, 'retry failed lock save')) {
-      announce('Character save still unavailable. Check Save Diagnostics.');
-      return false;
-    }
-    active.saveFailed = false;
-    active.phase = 'playing';
-    syncFailedStageToFolder(active);
-    if (active.phase === 'playing') announce('Lock progress saved. Continue picking.');
-    render();
-    return true;
   }
 
   function recordFailure(state, cause) {
     state.misses++;
     state.streak = 0;
     state.streakScore = 0;
-    const firstAtStage = !state.failedStage;
     state.failedStage = true;
-    if (firstAtStage) {
-      const status = window.LocalSaveFolder?.getStatus?.(); // Mark an armed-folder failure before the immediate browser write, not after.
-      state.folderUnsynced = status?.state === 'ready' && status?.autoSyncArmed === true;
-      if (saveProgress(state, 'first failure at set ' + (state.stage + 1))) syncFailedStageToFolder(state);
-      else {
-        state.saveFailed = true; // A failed write cannot be erased by immediately quitting and reopening.
-        state.phase = 'save-error';
-        announce('Lock progress could not be saved. Retry before continuing.');
-      }
-    }
+    saveProgress(state, 'miss at set ' + (state.stage + 1));
     window.__farmLog?.('[chest-lockpicking] ' + cause + '; stage=' + (state.stage+1) + '; best=' + state.bestStreak, 'world');
   }
 
@@ -351,7 +197,6 @@
       #chestLockOverlay .cl-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-width:580px;width:100%;margin:auto}
       #chestLockOverlay .cl-ring{border:2px solid var(--ring-color);background:#151917;border-radius:6px;padding:8px 6px;display:grid;gap:2px;place-items:center;line-height:1.18}
       #chestLockOverlay .cl-ring[disabled]{opacity:.52;cursor:default}
-      #chestLockOverlay .cl-retry{display:none;justify-self:center;padding:8px 16px;border:1px solid #cb9a52;background:#3f311f;border-radius:5px}
       #chestLockOverlay .cl-ring small{font:13px/1.2 system-ui,sans-serif;color:#cecbc2}
       #chestLockOverlay .cl-hints{font:clamp(11px,2.1vmin,13px)/1.5 system-ui,sans-serif;color:#b2a999}
       #chestLockOverlay .cl-debug{font:11px/1.25 ui-monospace,monospace;text-align:left;border-top:1px solid #594c39;padding:5px;max-height:36dvh;overflow:auto}
@@ -362,7 +207,7 @@
     `;
     root = document.createElement('section'); // Modal has no generic data-ctrl-panel: this interaction owns LB/RB rather than menu navigation.
     root.id = 'chestLockOverlay'; root.setAttribute('aria-label','Pick chest lock'); root.setAttribute('aria-hidden','true');
-    root.innerHTML = `<div class="cl-shell"><button type="button" class="cl-x" aria-label="Leave lockpicking">×</button><h2 class="cl-heading">RING TUMBLERS</h2><div class="cl-subhead" id="chestLockTitle">Chest Lock</div><div class="cl-progress" id="chestLockProgress"></div><svg class="cl-dial" viewBox="0 0 500 320" role="img" aria-label="Rotating ring tumblers with colored timing notches"><g id="chestLockDial"></g></svg><div class="cl-feedback" id="chestLockFeedback" role="status" aria-live="polite"></div><button type="button" class="cl-retry" id="chestLockRetry">Retry saving lock</button><div class="cl-buttons" id="chestLockButtons"></div><div class="cl-hints">LB / RB / LT / RT to catch rings · B / Esc to leave<br>Keyboard: Q / E / Z / C · Touch: ring buttons</div><details class="cl-debug" id="chestLockDiagnostics"><summary>Lockpicking diagnostics</summary><pre id="chestLockDebug"></pre><button class="cl-copy" type="button" id="chestLockCopy">Copy diagnostics</button></details></div>`;
+    root.innerHTML = `<div class="cl-shell"><button type="button" class="cl-x" aria-label="Leave lockpicking">×</button><h2 class="cl-heading">RING TUMBLERS</h2><div class="cl-subhead" id="chestLockTitle">Chest Lock</div><div class="cl-progress" id="chestLockProgress"></div><svg class="cl-dial" viewBox="0 0 500 320" role="img" aria-label="Rotating ring tumblers with colored timing notches"><g id="chestLockDial"></g></svg><div class="cl-feedback" id="chestLockFeedback" role="status" aria-live="polite"></div><div class="cl-buttons" id="chestLockButtons"></div><div class="cl-hints">LB / RB / LT / RT to catch rings · B / Esc to leave<br>Keyboard: Q / E / Z / C · Touch: ring buttons</div><details class="cl-debug" id="chestLockDiagnostics"><summary>Lockpicking diagnostics</summary><pre id="chestLockDebug"></pre><button class="cl-copy" type="button" id="chestLockCopy">Copy diagnostics</button></details></div>`;
     document.head.append(style); document.body.append(root);
     svg = root.querySelector('.cl-dial');
     feedback = root.querySelector('#chestLockFeedback');
@@ -370,8 +215,6 @@
     debug = root.querySelector('#chestLockDebug');
     closeButton = root.querySelector('.cl-x');
     closeButton.addEventListener('click', () => close('cancelled'));
-    retrySaveButton = root.querySelector('#chestLockRetry'); // Retry is inside the focus-trapped modal, usable on mobile without a console.
-    retrySaveButton?.addEventListener('click', retrySave);
     root.querySelector('#chestLockCopy').addEventListener('click', () => {
       const value = JSON.stringify(snapshot(),null,2); // Copyable without a console; avoids dumping live world state.
       navigator.clipboard?.writeText?.(value)?.catch?.(() => { debug.textContent = value; });
@@ -383,7 +226,7 @@
 
   function setProgress() {
     if (!session || !progress) return;
-    progress.textContent = `Set ${session.stage + 1} of ${session.cfg.stages} · ${session.misses} misses · Best clean streak ${session.bestStreak} · +${bonusDrops(session)} bonus drops`;
+    progress.textContent = `Set ${Math.min(session.stage + 1, session.cfg.stages)} of ${session.cfg.stages} · ${session.misses} misses · Best clean streak ${session.bestStreak} · +${bonusDrops(session)} bonus drops`;
   }
 
   function makeRings() {
@@ -420,7 +263,7 @@
     recordFailure(session, message); // Misses reset the clean streak, never a previously secured set.
     sound(180,.2,.06,'sawtooth'); rumble(60);
     announce(message + ' Completed sets remain secured.');
-    session.phase = session.savePending ? 'saving' : session.saveFailed ? 'save-error' : 'playing';
+    session.phase = 'playing';
     makeRings();
   }
 
@@ -442,6 +285,7 @@
   function catchRing(i, source='unknown') {
     const active = session;
     if (!active || active.phase!=='playing') return false;
+    if (!validSession(active)) { close('invalid'); return false; }
     const ring = active.rings[i];
     if (!ring || ring.frozen) return false;
     active.lastInput = `${source}: ${ring.name}`;
@@ -463,25 +307,9 @@
     if (caught!==active.rings.length) announce(`${ring.name} seated · ${caught} / ${active.rings.length}`);
     else {
       active.stage++;
-      active.failedStage = false; // The next set's first miss must produce its own immediate progress save.
-      if (!saveProgress(active, 'secured set ' + active.stage)) {
-        active.saveFailed = true;
-        active.pendingStageSave = true; // An unsaved complete set is held for retry, not discarded or awarded prematurely.
-        active.phase = 'save-error';
-        announce('Set secured, but saving failed. Retry saving before continuing.');
-        setProgress();
-        render();
-        return true;
-      }
-      if (active.folderFallback) {
-        active.folderUnsynced = true;
-        active.pendingStageFolderSync = true;
-        if (!saveProgress(active, 'secured-set primary-folder pending')) {
-          active.saveFailed = true; active.pendingStageSave = true; active.phase = 'save-error';
-        } else syncFailedStageToFolder(active); // Browser-quota fallback does not award an uncommitted final set.
-        setProgress(); render();
-        return true;
-      }
+      active.failedStage = false;
+      // Final progress is queued only after close validates the reward target.
+      if (active.stage < active.cfg.stages) saveProgress(active, 'secured set ' + active.stage);
       advanceSecuredStage(active);
       return true;
     }
@@ -499,7 +327,6 @@
       marker?.setAttribute('opacity',ring.frozen?'.45':'1');
       if (buttons[i]) buttons[i].disabled=ring.frozen || state.phase!=='playing';
     }
-    if (retrySaveButton) retrySaveButton.style.display = state.phase === 'save-error' ? 'block' : 'none';
     const remaining=state.firstCatch<0?null:Math.max(0,state.cfg.slipMs-(state.elapsed-state.firstCatch));
     const clock=svg.querySelector('#chestLockTimer');
     if (clock) clock.textContent=remaining==null?'':(remaining/1000).toFixed(1)+'s';
@@ -508,11 +335,8 @@
   function tick(dt) {
     const active=session;
     if(!active) return;
-    if(typeof active.valid==='function') {
-      let okay=false;
-      try {okay=active.valid()!==false;} catch(error){describeError(error);}
-      if(!okay){close('invalid');return;}
-    }
+    if(!validSession(active)){close('invalid');return;}
+    if(active.phase==='reward-ready'){advanceSecuredStage(active);return;} // Resume a saved final set without another scoring opportunity.
     if(active.phase==='transition'){
       active.transitionMs-=dt;
       if(active.transitionMs<=0){active.phase='playing';makeRings();announce('Catch every moving notch before the rings slip.');}
@@ -578,11 +402,8 @@
       streak:session?.streak||0, bestStreak:session?.bestStreak||0, bestScore:session?.bestScore||0,
       bonusDrops:session?bonusDrops(session):0, failedStage:session?.failedStage||false,
       stutters:session?.stutters||0, lastStallMs:session?.lastStallMs||0, lastSaveStatus,
-      lastFolderSaveDurationMs, lastFolderSaveAction, // Copyable on-device timing and path diagnostics.
-      savePending:session?.savePending||false, backgroundSaves:pendingFolderSaves.size, saveFailed:session?.saveFailed||false,
-      pendingStageSave:session?.pendingStageSave||false,
-      pendingStageFolderSync:session?.pendingStageFolderSync||false, folderFallback:session?.folderFallback||false,
-      folderUnsynced:session?.folderUnsynced||false,
+      savePolicy:'normal-save-queue', catchWindowDegrees:session?.cfg?.window||null,
+      slipMs:session?.cfg?.slipMs||null,
       remainingMs:!session||session.firstCatch<0?null:Math.max(0,Math.round(session.cfg.slipMs-(session.elapsed-session.firstCatch))),
       lastInput:session?.lastInput||null,
       controllerOwner:window.ControllerInput?.owner||null,
@@ -593,20 +414,16 @@
   function close(outcome='cancelled') {
     const finished=session;
     if(!finished)return false;
-    if (outcome === 'success' && typeof finished.valid === 'function') {
-      try {
-        if (finished.valid() === false) outcome = 'invalid'; // The chest must still exist at the reward boundary, not just on the last animation frame.
-      } catch (error) { describeError(error); outcome = 'invalid'; }
-    }
+    if (!scopeMatches(finished.scope)) outcome = 'invalid';
+    if (outcome === 'success' && (finished.stage < finished.cfg.stages || !validSession(finished))) outcome = 'invalid'; // Never pay an incomplete or stale lock.
     if (outcome === 'cancelled' && finished.phase === 'playing' && finished.rings.some(ring => ring.frozen)) {
       recordFailure(finished, 'Abandoned an in-progress set'); // Cancelling a nearly slipped set cannot preserve a flawless streak.
     }
-    if (outcome !== 'invalid' && !finished.savePending && !saveProgress(finished, outcome)) finished.saveFailed = true;
-    // A pending folder commit already owns the frozen record. Do not issue a second stale save or award cancelled progress.
-    if (outcome === 'success' && (finished.saveFailed || finished.savePending || finished.folderUnsynced || finished.pendingStageSave)) {
-      outcome = 'save-failed'; // Never grant extra loot if the penalty/progress could not be committed.
-      announce('Could not save lock progress. Check Save Diagnostics.');
+    if (outcome === 'success') saveProgress(finished, 'lock opened');
+    else if (outcome === 'cancelled' && deferredProgress.has(finished.scope ? progressKey(finished.scope, finished.id) : '')) {
+      saveProgress(finished, 'retry queued progress'); // Recover a previously unavailable queue without another scored attempt.
     }
+    // The reward consumer owns the normal loot save; never wait for disk inside the minigame.
     session=null; // Prevents reentrancy and grants loot once even if callback opens another chest.
     const award = {tier:finished.tier,misses:finished.misses,bestStreak:finished.bestStreak,bestScore:finished.bestScore,bonusDrops:bonusDrops(finished)};
     lastOutcome={id:finished.id,outcome,...award};
@@ -641,23 +458,17 @@
     const tier=clamp(Math.round(Number(options.tier)||1),1,4); // Shared tier selection used by ruin, buried, and cave-cache chests.
     const cfg=PRESETS[tier];
     const id = String(options.id || 'chest');
-    const scope = profileScope(); // Reentry is guarded only for this character/world/lock while its folder commit is running.
-    if (scope && pendingFolderSaves.has(progressKey(scope, id))) {
-      lastSaveStatus = 'Previous lock result still saving in the background; try this lock again after it finishes.';
-      return false;
-    }
+    const scope = profileScope(); // Scope all progress and validate character switches.
     const saved = readProgress(id, tier, cfg.stages); // Re-entry uses canonical character/world lock state instead of a fresh run.
-    session={id,tier,cfg,valid:options.valid,onSuccess:options.onSuccess,onCancel:options.onCancel,
-      phase:'playing',stage:saved?.stage||0,misses:saved?.misses||0,elapsed:0,rings:[],firstCatch:-1,transitionMs:0,lastInput:'',
+    session={id,tier,cfg,scope,valid:options.valid,onSuccess:options.onSuccess,onCancel:options.onCancel,
+      phase:saved?.stage===cfg.stages?'reward-ready':'playing',stage:saved?.stage||0,misses:saved?.misses||0,elapsed:0,rings:[],firstCatch:-1,transitionMs:0,lastInput:'',
       streak:saved?.streak||0,streakScore:saved?.streakScore||0,bestStreak:saved?.bestStreak||0,bestScore:saved?.bestScore||0,
       failedStage:saved?.failedStage||false,persistedSignature:saved?.persistedSignature||null,
-      folderUnsynced:saved?.folderUnsynced||false,
-      saveFailed:saved?.folderUnsynced||false,savePending:false,pendingStageSave:false,
-      pendingStageFolderSync:false,folderFallback:folderOnlyProgress.has(profileScope() ? progressKey(profileScope(),id) : ''),stutters:0,graceUntil:0,lastStallMs:0};
+      stutters:0,graceUntil:0,lastStallMs:0};
+    if (scope && deferredProgress.has(progressKey(scope,id))) saveProgress(session, 'retry queued progress');
     root.querySelector('#chestLockTitle').textContent=String(options.title||'Chest Lock');
     root.setAttribute('aria-hidden','false');
-    if (session.folderUnsynced) session.phase = 'save-error';
-    makeRings();announce(session.folderUnsynced ? 'Primary folder save is unfinished. Retry saving before picking.' : saved?.stage ? 'Previously secured sets remain complete. Catch the next set.' : 'Catch every rotating notch before the first ring slips.');
+    makeRings();announce(session.phase==='reward-ready' ? 'Lock already picked. Opening…' : saved?.stage ? 'Previously secured sets remain complete. Catch the next set.' : 'Catch every rotating notch before the first ring slips.');
     priorOwner=window.ControllerInput?.owner||'gameplay';
     window.ControllerInput?.setOwner?.(OWNER);
     actionLock=window.CharacterActionLocks?.acquire?.({owner:OWNER,participants:[{id:'player',channels:['movement','actions','tools']}],reason:'Picking a chest lock'})||null;

@@ -128,6 +128,30 @@ assert.equal(targets.get('gorobi_ginju').pose, 'sit');
 assert.ok(Math.abs(gorobi.root.position.x - 10) < 2, 'front-row family sit on the aisle-side seat (the aisle is 2 tiles wide)');
 assert.equal(new Set([...targets.values()].map(t => t.stationId)).size, 3, 'no two guests share a seat');
 
+// ── Co-op: other players sit in the pews after the villager guests ─────
+{
+  context.performance = { now: () => 1000 };
+  vm.runInContext(read('docs/js/actor-registry.js'), context);
+  vm.runInContext(read('docs/js/time-consensus.js'), context);
+  vm.runInContext(read('docs/js/shared-cutscene.js'), context);
+  const reg = windowStub.ActorRegistry, sc = windowStub.SharedCutscene;
+  const groom = { x: 0, y: 0, health: 100 }, guestA = { x: 99, y: 99, health: 100, areaId: 'farm' }, guestB = { x: 5, y: 5, health: 100, areaId: 'cave' };
+  reg.registerPlayer(groom, { local: true }); reg.registerPlayer(guestA, { playerId: 'ga' }); reg.registerPlayer(guestB, { playerId: 'gb' });
+  sc.init({ tilePx: 64 });
+  sc.begin({ id: 'wedding', area: 'map_i_temple', controller: groom });
+  const coopTargets = W._test.seatGuests('aliri_ginju', 'father_hunundi_hodu');
+  const villagerSeats = new Set([...coopTargets.values()].map(t => t.stationId));
+  assert.ok(sc.isInCrowd(guestA) && sc.isInCrowd(guestB), 'both other players joined the wedding wherever they were');
+  assert.equal(guestA.areaId, 'map_i_temple');
+  assert.equal(guestA._crowdSlot.pose, 'sit', 'players sit in the pews like the villagers');
+  const playerSeats = [guestA, guestB].map(g => g._crowdSlot.seatTarget.stationId);
+  assert.equal(new Set([...playerSeats, ...villagerSeats]).size, villagerSeats.size + 2, 'a player never takes a villager\'s seat or another player\'s');
+  assert.ok(playerSeats.every(id => !villagerSeats.has(id)));
+  sc.end();
+  assert.deepEqual([guestA.x, guestA.y, guestA.areaId], [99, 99, 'farm'], 'put back after the ceremony');
+  reg.unregisterPlayer(guestA); reg.unregisterPlayer(guestB); reg.unregisterPlayer(groom);
+}
+
 // ── play(): lock, layout, seating, outcome-specific release ─────────────
 (async () => {
   const locks = [];

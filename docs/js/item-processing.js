@@ -326,6 +326,19 @@
   function getProcessingOutputs(methodId, inputKey) {
     const input = deps.ITEM_DEFS[inputKey];
     if (!canProcess(methodId, inputKey, input)) return null;
+    if (inputKey === 'feyHeftroot') {
+      const baseOutput = getProcessingOutput(methodId, 'heftroot'); // Share the ordinary root's entire processing recipe list.
+      if (baseOutput) {
+        if (methodId === 'composting' || methodId === 'grindingFeed') return [baseOutput];
+        const suffix = baseOutput.key.startsWith('heftroot') ? baseOutput.key.slice('heftroot'.length) : null; // Keep Fey products separate from ordinary Fortitude stacks.
+        if (suffix) return enrichOutputs(methodId, inputKey, [{
+          ...baseOutput, key: inputKey + suffix,
+          label: baseOutput.label.replace(/heftroot/i, 'Fey Heftroot'),
+          ingredientKeys: [inputKey], giftIngredientKeys: [inputKey],
+          ...cookingFromSource(input, baseOutput.cookingCategories?.length ? baseOutput.cookingCategories : input.cookingCategories || [], baseOutput.cookingProcessingTier || 'quick', 'feySight'),
+        }]);
+      }
+    }
     const cultivar = window.CropVarieties?.ensure?.(inputKey); // Only harvested variety keys resolve; seeds remain ineligible.
     if (cultivar) {
       const baseOutput = getProcessingOutput(methodId, cultivar.family); // Existing species recipes stay the one authoritative recipe list.

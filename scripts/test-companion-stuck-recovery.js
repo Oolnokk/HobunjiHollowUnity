@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Ensures the single live companion frame loop calls this module.
+const pathSource = fs.readFileSync('docs/js/tile-pathfinding.js', 'utf8'); // Exercise real A* in addition to the bounded-budget mock.
 const source = fs.readFileSync('docs/js/companion-follow-navigation.js', 'utf8'); // Actual runtime implementation, not a copied helper.
 const TILE = 64; // Pixels per tile in this controlled ruin fixture.
 const AREA = 'map_i_dev_random_ruin'; // Same map identifier as the real procedural ruin runtime.
@@ -37,6 +38,7 @@ const windowMock = {
     findPath: (_sc, _sr, _tc, _tr, walkable) => {
       routedChecks++;
       if (state.pathProbe && !walkable(state.pathProbe.col, state.pathProbe.row)) return null;
+      if (state.pathGate && !state.pathGate(_sc, _sr)) return null;
       return state.pathExists ? [{ col: 18, row: 18 }] : null;
     },
   },
@@ -113,11 +115,133 @@ const blocked = makePet();
 assert.equal(simulate(blocked), false, 'registered blocker geometry prevents unsafe recovery');
 state.blocked = false;
 
+// Hard distance is independent of progress and ordinary stall patience.
+owner.x = 25.5 * TILE;
+owner.angle = 0; // +x is forward; recoveries must land behind (-x).
+const distant = makePet(1.5 * TILE);
+distant._travelPath = [{ col: 2, row: 18 }];
+distant.treasureCue = { phase: 'lead' }; distant.wanderTarget = { x: 1, y: 1 }; distant.watchPlayerIdle = { timer: 5 };
+distant._companionCombatTarget = { health: 100 }; // Abandoned remote combat intention.
+assert.equal(simulate(distant, 1), true, 'an unseen distant pet recovers without eight seconds of stalling');
+assert(distant.x < owner.x, 'landing is behind the player, not an arbitrary visible-side ring point');
+assert(Math.hypot(distant.x - owner.x, distant.y - owner.y) <= 7 * TILE, 'uses a nearby hidden landing');
+assert.equal(distant._travelPath, null, 'abandoned path is cleared');
+assert.equal(distant.treasureCue, null, 'distant treasure cannot immediately send the pet back');
+assert.equal(distant.wanderTarget, null, 'remote wander goal is retired');
+assert.equal(distant.watchPlayerIdle, null, 'old idle pose is retired');
+assert.equal(distant._companionCombatTarget, null, 'remote combat target is released');
+assert.equal(Navigation.debugSnapshot().lastEvent.reason, 'distance-limit');
+distant.x = 1.5 * TILE;
+distant.avatarRef.group.position.x = 1.5;
+assert.equal(simulate(distant, 20), false, 'hard distance still has a short cooldown');
+assert.equal(simulate(distant, 15), true, 'hard catch-up is not held for the full ordinary cooldown');
+
+const activeAttack = makePet(1.5 * TILE);
+activeAttack._animalAttack = {};
+assert.equal(simulate(activeAttack, 1), false, 'distance limit does not interrupt a committed attack');
+const infant = makePet(1.5 * TILE);
+infant._familyBabyFollower = true;
+assert.equal(simulate(infant, 1), false, 'shared infant recovery retains the ordinary stall threshold');
+const visiblySmoothed = makePet(1.5 * TILE);
+visiblySmoothed.avatarRef.group.position.x = owner.x / TILE;
+assert.equal(simulate(visiblySmoothed, 1), false, 'a visible render position prevents even hard-distance recovery');
+const retryPet = makePet(1.5 * TILE);
+state.pathExists = false;
+const checksBefore = routedChecks;
+assert.equal(simulate(retryPet, 1), false, 'no valid same-floor path means no hard teleport');
+const checksAfter = routedChecks;
+assert(checksAfter > checksBefore && checksAfter - checksBefore <= 4, 'hard recovery respects bounded path budget');
+for (let i = 0; i < 10; i++) {
+  retryPet.x += 0.1 * TILE; // Continuous progress must not defeat failed-search backoff.
+  assert.equal(simulate(retryPet, 1), false);
+}
+assert.equal(routedChecks, checksAfter, 'no additional A* probes on every frame');
+// A brief busy state cannot clear a failed-search throttle.
+retryPet._animalAttack = {};
+assert.equal(simulate(retryPet, 1), false);
+retryPet._animalAttack = null;
+assert.equal(simulate(retryPet, 1), false);
+assert.equal(routedChecks, checksAfter, 'busy-state transitions do not rearm the expensive search');
+state.pathExists = true;
+assert.equal(simulate(retryPet, 10), true, 'retry can succeed after the obstruction clears');
+// The next retry must advance past four rejected same-floor path starts.
+const visited = new Set();
+state.pathGate = (col, row) => {
+  visited.add(col + ',' + row);
+  return visited.size >= 5;
+};
+const laterCandidate = makePet(1.5*TILE);
+const beforeBatch = routedChecks;
+assert.equal(simulate(laterCandidate, 1), false, 'first four distinct route starts exhaust the budget');
+assert.equal(routedChecks - beforeBatch, 4, 'exactly four A* probes in the first batch');
+assert.equal(visited.size, 4);
+assert.equal(simulate(laterCandidate, 16), true, 'second retry reaches a fifth distinct viable landing');
+assert(visited.size >= 5, 'candidate cursor prevents repeating the same four failures');
+// Live movement changes the absolute start tiles but should not reset the relative fan.
+state.pathGate = () => false;
+const movingOwnerPet = makePet(1.5*TILE);
+assert.equal(simulate(movingOwnerPet, 1), false);
+const cursor = movingOwnerPet._companionStuckRecovery.searchCursor;
+assert(cursor > 0, 'bounded batch retains its position');
+owner.x += TILE;
+assert.equal(simulate(movingOwnerPet, 16), false);
+assert(movingOwnerPet._companionStuckRecovery.searchCursor > cursor, 'owner walking one tile cannot restart the same four candidates');
+owner.x -= TILE;
+state.pathGate = null;
+owner.x = 18.5 * TILE;
+delete owner.angle;
+
+// An actor spanning the screen is not hidden even when both end points are outside.
+const ordinaryProject = camera.projectPoint;
+camera.projectPoint = p => ({ x: 0, y: p.y < 5.4 ? -3 : 3, z: 0 });
+const spanning = makePet(0.1 * TILE);
+owner.x = 25.5 * TILE;
+assert.equal(simulate(spanning, 1), false, 'opposite screen edges cannot prove the whole animal is off-camera');
+camera.projectPoint = ordinaryProject;
+owner.x = 18.5 * TILE;
+
+// Real-camera homogeneous clip planes: use an orthographic fixture centered on the owner.
+const ortho = { projectionMatrix: { elements: [
+  .25,0,0,0, 0,0,.01,0, 0,.25,0,0, 0,0,0,1
+] }, matrixWorldInverse: { elements: [
+  1,0,0,0, 0,1,0,0, 0,0,1,0, -owner.x/TILE,0,-owner.y/TILE,1
+] } }; // Screen X/Z cover +/- four tiles; world height maps to clip depth.
+Navigation.init({ TILE, player: owner, getCurrentArea: () => AREA, isZoneArea: () => false,
+  getActiveGrid: () => grid, getCamera: () => ortho, surfaceYForTile: () => 0, creatureCanEnter: () => true });
+const wide = makePet(12.5*TILE);
+wide.visualModelWidth = 4; // Center is outside padded screen; body extends visibly into it.
+assert.equal(simulate(wide), false, 'wide body overlapping the screen cannot vanish');
+const wideDistant = makePet(0.1*TILE);
+wideDistant.visualModelWidth = 4;
+owner.x = 25.5*TILE; owner.angle = 0;
+ortho.matrixWorldInverse.elements[12] = -owner.x/TILE;
+assert.equal(simulate(wideDistant, 1), true, 'a fully offscreen wide animal can recover');
+assert(owner.x - wideDistant.x > 6.8*TILE, 'landing leaves the entire wide body beyond the padded screen');
+owner.x = 18.5*TILE; delete owner.angle;
+Navigation.init({ TILE, player: owner, getCurrentArea: () => AREA, isZoneArea: () => false,
+  getActiveGrid: () => grid, getCamera: () => camera, surfaceYForTile: () => 0, creatureCanEnter: () => true });
+
+// Run the production pathfinder and place a wall from map edge to map edge.
+const mockPathfinder = windowMock.TilePathfinding;
+vm.runInNewContext(pathSource, context, { filename: 'tile-pathfinding.js' });
+owner.x = 25.5*TILE; owner.angle = 0;
+for (const row of grid) row[24].type = 'rock';
+const realWall = makePet(1.5*TILE);
+assert.equal(simulate(realWall, 60), false, 'actual A* cannot certify a landing behind a sealed wall');
+for (const row of grid) row[24].type = 'floor';
+assert.equal(simulate(realWall, 20), true, 'actual A* finds a route once the wall opens');
+windowMock.TilePathfinding = mockPathfinder;
+owner.x = 18.5*TILE; delete owner.angle;
 const acrossArea = makePet();
 acrossArea.areaId = 'town';
 assert.equal(simulate(acrossArea), false, 'no cross-area teleport');
 assert.match(game, /CompanionFollowNavigation\.tickRecovery\(c, master, followGoal, dt\)/,
   'game.js runs recovery from the one existing companion update loop');
+const loopStart = game.indexOf('function updateCompanions(dt)');
+const loopEnd = game.indexOf('// Second pass for the real player', loopStart);
+const loop = game.slice(loopStart, loopEnd); // Verify real movement integration, not only the isolated module.
+assert(loop.indexOf('isHardDistance(c, followGoal)') < loop.indexOf('shouldReevaluate(c, master'), 'hard catch-up precedes target scoring');
+assert.match(loop, /!hardCatchup && window\.CompanionFollowNavigation\.tickRecovery/, 'no double recovery timer tick');
 assert.doesNotMatch(game, /function companionFollowGoal\(c, master\)/,
   'follow destination calculations have been extracted from game.js');
 console.log('Companion off-screen stuck recovery and ruin-floor safety passed');

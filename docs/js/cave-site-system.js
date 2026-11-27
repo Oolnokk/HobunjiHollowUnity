@@ -755,27 +755,226 @@
     return true;
   }
 
-  function addCatacombLayer(mapData, rng, candidates, blockedKeys, plan) {
-    const count = clamp(Math.round(candidates.length / 11), 3, 7); // Coffin density scaled to chamber size but bounded for mobile scene cost.
-    const hidden = pickSpacedTiles(rng, extensionTiles(candidates, plan), 1, blockedKeys, 2.15); // At least one tomb is worth excavating toward.
-    const coffins = [...hidden, ...pickSpacedTiles(rng, candidates, count - hidden.length, blockedKeys, 2.15)];
-    plan.coffins = coffins.map((tile, index) => ({ id: `cave_coffin_${index + 1}`, col: tile.col, row: tile.row, rotY: Math.floor(rng() * 4) * 90 }));
-    for (const coffin of plan.coffins) addProp(mapData, { id: coffin.id, key: 'ruinSanctumCoffin', col: coffin.col, row: coffin.row, rotY: coffin.rotY });
+  const COFFIN_DIRECTIONS = Object.freeze([[0,1],[1,0],[0,-1],[-1,0]]); // Local +Z is the safe exit, opposite the sliding lid.
+  const COFFIN_HALF_LENGTH = .83, COFFIN_HALF_WIDTH = .48; // Authored plinth 1.66 x .96.
+  const COFFIN_LID_EXTENT = 1.08, COFFIN_HEIGHT = .56; // Conservative bounds for the tilted open lid.
+  const COFFIN_OPEN_S = .8, COFFIN_REACH_TILES = 1.65; // Authored animation duration and interaction range.
+  const COFFIN_RISE_S=.7, COFFIN_WALK_TILES_S=1.65; // Deliberate standing transition followed by ordinary walking pace.
+  const COFFIN_FLOOR_Y=.0541, COFFIN_RIM_Y=.41585; // Fallback authored plinth and south-panel top for headless/late asset loads.
 
-    // Mao'ao skeleton bodies lie among the coffins: lootable with a short
-    // hold, and now and then one gets back up (see updateBodies).
-    const bodyCandidates = candidates.filter(tile => !blockedKeys.has(tileKey(tile.col, tile.row)));
-    const targetBodies = clamp(Math.round(candidates.length / 14), 8, 16); // Keep the existing catacomb population even when a branch is walled off.
-    let bodies = []; // Best deterministic nonoverlapping placement of the scattered corpses.
-    for (let attempt = 0; attempt < 10 && bodies.length < targetBodies; attempt++) {
-      const tryBlocked = new Set(blockedKeys); // Trial picks must not reserve cells until their layout wins.
-      const bodyRng = attempt === 0 ? rng : makeRng(`${mapData.id}:catacomb-body-layout:${attempt}`); // Stable alternate distributions avoid unlucky greedy packing in compact caves.
-      const trial = pickSpacedTiles(bodyRng, bodyCandidates, targetBodies, tryBlocked, 1.4);
-      if (trial.length > bodies.length) bodies = trial;
+  function coffinOpenBounds(coffin){
+    const [dc,dr]=COFFIN_DIRECTIONS[coffin.rotY/90];
+    const x=coffin.col+.5,z=coffin.row+.5;
+    const alongX=Math.abs(dr)*COFFIN_HALF_LENGTH,alongZ=Math.abs(dc)*COFFIN_HALF_LENGTH;
+    return {minX:x-alongX+Math.min(-dc*COFFIN_LID_EXTENT,dc*COFFIN_HALF_WIDTH),maxX:x+alongX+Math.max(-dc*COFFIN_LID_EXTENT,dc*COFFIN_HALF_WIDTH),
+      minZ:z-alongZ+Math.min(-dr*COFFIN_LID_EXTENT,dr*COFFIN_HALF_WIDTH),maxZ:z+alongZ+Math.max(-dr*COFFIN_LID_EXTENT,dr*COFFIN_HALF_WIDTH)};
+  }
+
+  function addCatacombLayer(mapData,rng,candidates,blockedKeys,plan){
+    const target=clamp(Math.round(candidates.length/9),6,11);
+    const tiles=floorTiles(mapData),floor=new Set(tiles.map(tile=>tileKey(tile.col,tile.row)));
+    const components=[]; // Preserve every connected floor component, including annexes behind mineable barriers.
+    const unvisited=new Set(floor);
+    while(unvisited.size){const component=bfsKeys(unvisited.values().next().value,floor);components.push(component);for(const key of component)unvisited.delete(key);}
+    const originalBlocked=new Set(blockedKeys);
+    const eligible=candidates.filter(tile=>{
+      if(!hasFeatureClearance(tile,originalBlocked,1.4))return false;
+      for(let dc=-1;dc<=1;dc++)for(let dr=-1;dr<=1;dr++)if(!floor.has(tileKey(tile.col+dc,tile.row+dr)))return false;
+      return true;
+    });
+    const hidden=extensionTiles(eligible,plan);
+    function layout(random){
+      const chosen=[],reserved=new Set(originalBlocked),occupied=new Set(); // Occupied includes the lid's maximum sweep at walking clearance.
+      function place(pool,limit){
+        pool=[...pool];
+        while(pool.length&&chosen.length<limit){
+          const tile=pool.splice(Math.floor(random()*pool.length),1)[0];
+          if(reserved.has(tileKey(tile.col,tile.row)))continue;
+          const directions=COFFIN_DIRECTIONS.map(([dc,dr],i)=>({dc,dr,i}));
+          const offset=Math.floor(random()*directions.length);
+          for(let attempt=0;attempt<directions.length;attempt++){
+            const {dc,dr,i}=directions[(offset+attempt)%directions.length];
+            const coffin={id:'cave_coffin_'+(chosen.length+1),col:tile.col,row:tile.row,rotY:i*90,exitCol:tile.col+dc,exitRow:tile.row+dr};
+            const bounds=coffinOpenBounds(coffin);
+            if(chosen.some(other=>{const b=coffinOpenBounds(other);return bounds.minX<b.maxX+.05&&bounds.maxX>b.minX-.05&&bounds.minZ<b.maxZ+.05&&bounds.maxZ>b.minZ-.05;}))continue;
+            const open={openedCoffins:[coffin.id]},footprint=[];
+            for(let x=tile.col-1;x<=tile.col+1;x++)for(let z=tile.row-1;z<=tile.row+1;z++)
+              if(coffinBlocksBox(coffin,open,x+.5,z+.5,.32,null))footprint.push(tileKey(x,z));
+            if(footprint.some(key=>reserved.has(key)))continue; // Do not cover another tomb, exit, mineral, nest or reserved escape.
+            const exits=[{col:coffin.exitCol,row:coffin.exitRow},
+              {col:coffin.exitCol+dr,row:coffin.exitRow-dc},{col:coffin.exitCol-dr,row:coffin.exitRow+dc}]
+              .filter(p=>floor.has(tileKey(p.col,p.row))&&!reserved.has(tileKey(p.col,p.row))&&!footprint.includes(tileKey(p.col,p.row)));
+            if(!exits.length||exits[0].col!==coffin.exitCol||exits[0].row!==coffin.exitRow)continue;
+            const nextOccupied=new Set([...occupied,...footprint]);
+            if(components.some(component=>{
+              const remaining=[...component].filter(key=>!nextOccupied.has(key));
+              return remaining.length&&bfsKeys(remaining[0],component,nextOccupied).size!==remaining.length;
+            }))continue; // Opening every lid must still leave a continuous route around the tombs.
+            coffin.exits=exits.slice(0,2); // Reserve a second emergence tile when possible so the player need not move off the primary one.
+            chosen.push(coffin);
+            for(const key of footprint){occupied.add(key);reserved.add(key);}
+            for(const p of coffin.exits)reserved.add(tileKey(p.col,p.row));
+            break;
+          }
+        }
+      }
+      place(hidden,1);
+      place(eligible,target);
+      return {chosen,reserved};
     }
-    for (const tile of bodies) blockedKeys.add(tileKey(tile.col, tile.row));
-    plan.bodies = bodies.map((tile, index) => ({ id: `cave_body_${index + 1}`, col: tile.col, row: tile.row, yaw: rng() * Math.PI * 2 }));
-    mapData.caveBodies = clone(plan.bodies);
+    let best=layout(rng);
+    for(let attempt=1;attempt<7&&best.chosen.length<target;attempt++){
+      const candidate=layout(makeRng(mapData.id+':coffin-layout:'+attempt));
+      if(candidate.chosen.length>best.chosen.length)best=candidate;
+    }
+    const chosen=best.chosen;
+    for(const key of best.reserved)blockedKeys.add(key);
+    plan.coffins=chosen;
+    for(const coffin of chosen)addProp(mapData,{id:coffin.id,key:'ruinSanctumCoffin',col:coffin.col,row:coffin.row,rotY:coffin.rotY});
+    const occupied=Math.min(10,chosen.length>=6?chosen.length-1:chosen.length);
+    plan.bodies=chosen.slice(0,occupied).map((coffin,index)=>({
+      id:'cave_body_'+(index+1),coffinId:coffin.id,col:coffin.col,row:coffin.row,
+      yaw:coffin.rotY*Math.PI/180,exitCol:coffin.exitCol,exitRow:coffin.exitRow,exits:coffin.exits,
+    }));
+    mapData.caveBodies=clone(plan.bodies);
+  }
+
+  function coffinProgress(coffin,state) {
+    if(!coffin)return 1;
+    if(Number.isFinite(coffin.openStartedAt))return clamp((caveClock-coffin.openStartedAt)/COFFIN_OPEN_S,0,1);
+    return (state.openedCoffins||[]).includes(coffin.id)?1:0;
+  }
+
+  function coffinForBody(plan,body){return plan.coffins.find(coffin=>coffin.id===body.coffinId);}
+
+  function restoreCoffinState(plan,state) {
+    // Old saves only recorded searched bodies. Retain their spent rewards and reveal those lids.
+    for(const body of plan.bodies||[])if((state.lootedBodies||[]).includes(body.id)){
+      state.openedCoffins||=[];
+      if(!state.openedCoffins.includes(body.coffinId))state.openedCoffins.push(body.coffinId);
+    }
+  }
+
+  function coffinSupportId(mapId,coffin,partId){return 'cave-coffin:'+mapId+':'+coffin.id+':'+partId;}
+
+  function registerCoffinSupports(mapId,coffin,group,data,state){
+    const api=window.HobunjiWalkableElevation;
+    const parts=data.parts||[]; // Same authored geometry as the visible coffin; register floor and individual rims, not a fictitious solid deck.
+    const [dc,dr]=COFFIN_DIRECTIONS[coffin.rotY/90];
+    const floor=parts.find(p=>p.id==='plinth')?.transform;
+    if(floor)coffin.floorY=Number(floor.y)+Number(floor.sy)/2;
+    coffin.solidParts=[]; // Finite-height collision uses the same authored bounds as walkable support.
+    for(const part of parts){
+      const p=part.transform,id=coffinSupportId(mapId,coffin,part.id);
+      if(!p)continue;
+      const x=coffin.col+.5+p.x*dr+p.z*dc,z=coffin.row+.5-p.x*dc+p.z*dr;
+      const hx=(Math.abs(dr)*p.sx+Math.abs(dc)*p.sz)/2,hz=(Math.abs(dc)*p.sx+Math.abs(dr)*p.sz)/2;
+      const bounds={minX:x-hx,maxX:x+hx,minZ:z-hz,maxZ:z+hz,baseY:p.y-p.sy/2,topY:p.y+p.sy/2};
+      coffin.solidParts.push({id:part.id,...bounds});
+      if(part.id==='lid'&&(state.openedCoffins||[]).includes(coffin.id)){api?.unregister?.(id);continue;}
+      api?.registerBox?.(bounds,{id,kind:'cave-coffin',area:mapId,owner:group,sourceId:coffin.id,sourceKey:'ruinSanctumCoffin'});
+    }
+    const motion=data.puzzle?.motion?.parts?.lid?.on; // Tilted lid's conservative world-space bounds.
+    if(motion){
+      const angle=motion.rx*Math.PI/180,hx=motion.sx/2,hz=Math.abs(Math.cos(angle))*motion.sz/2+Math.abs(Math.sin(angle))*motion.sy/2;
+      const hy=Math.abs(Math.cos(angle))*motion.sy/2+Math.abs(Math.sin(angle))*motion.sz/2;
+      const x=coffin.col+.5+motion.x*dr+motion.z*dc,z=coffin.row+.5-motion.x*dc+motion.z*dr;
+      const wx=Math.abs(dr)*hx+Math.abs(dc)*hz,wz=Math.abs(dc)*hx+Math.abs(dr)*hz;
+      coffin.openLidBounds={minX:x-wx,maxX:x+wx,minZ:z-wz,maxZ:z+wz,baseY:motion.y-hy,topY:motion.y+hy};
+    }
+    coffin.supportParts=parts.map(p=>p.id); // Used to unregister every surface during cave renewal or rebuild.
+  }
+
+  function unregisterCoffinSupports(mapId,plan){
+    for(const coffin of plan?.coffins||[])for(const part of coffin.supportParts||[])
+      window.HobunjiWalkableElevation?.unregister?.(coffinSupportId(mapId,coffin,part));
+  }
+
+  function coffinFloorY(coffin){return Number.isFinite(coffin?.floorY)?coffin.floorY:COFFIN_FLOOR_Y;}
+
+  function syncCoffinVisual(mapId,coffin,state) {
+    const group=propMeshesByMapId.get(mapId)?.groups?.get(coffin.id);
+    const progress=coffinProgress(coffin,state);
+    if(!group||group.userData.caveCoffinProgress===progress)return;
+    const motion=group.userData.caveCoffinMotion;
+    const lid=group.userData.puzzlePartMeshes?.get?.('lid')||group.userData.meshById?.get?.('lid');
+    if(lid&&motion?.off&&motion?.on){
+      const a=motion.off,b=motion.on; // Shipped furniture asset defines actual travel and tilt.
+      const lerp=key=>Number(a[key])+(Number(b[key])-Number(a[key]))*progress;
+      lid.position.set(lerp('x'),lerp('y'),lerp('z'));
+      lid.rotation.set(lerp('rx')*Math.PI/180,lerp('ry')*Math.PI/180,lerp('rz')*Math.PI/180);
+      lid.updateMatrixWorld?.(true);
+    }
+    group.userData.caveCoffinProgress=progress;
+  }
+
+  function coffinBlocksBox(coffin,state,x,z,half,worldY) {
+    const opened=(state.openedCoffins||[]).includes(coffin.id);
+    if(worldY!=null&&coffin.solidParts?.length){
+      const overlaps=b=>worldY>=b.baseY&&worldY<=b.topY&&x+half>b.minX&&x-half<b.maxX&&z+half>b.minZ&&z-half<b.maxZ;
+      if(coffin.solidParts.some(b=>(b.id!=='lid'||!opened)&&overlaps(b)))return true;
+      if(opened&&coffin.openLidBounds){
+        const b=coffin.openLidBounds,closed=coffin.solidParts.find(part=>part.id==='lid');
+        // While sliding, reserve the whole swept envelope; afterward use the actual displaced lid.
+        if(Number.isFinite(coffin.openStartedAt)&&closed)return overlaps({minX:Math.min(b.minX,closed.minX),maxX:Math.max(b.maxX,closed.maxX),minZ:Math.min(b.minZ,closed.minZ),maxZ:Math.max(b.maxZ,closed.maxZ),baseY:Math.min(b.baseY,closed.baseY),topY:Math.max(b.topY,closed.topY)});
+        return overlaps(b);
+      }
+      return false;
+    }
+    if(worldY!=null&&worldY>COFFIN_HEIGHT)return false;
+    const dx=x-(coffin.col+.5),dz=z-(coffin.row+.5);
+    const [dc,dr]=COFFIN_DIRECTIONS[Math.round(coffin.rotY/90)%4];
+    const along=dx*dr-dz*dc,across=dx*dc+dz*dr;
+    return Math.abs(along)<COFFIN_HALF_LENGTH+half&&across<COFFIN_HALF_WIDTH+half&&across>-(opened?COFFIN_LID_EXTENT:COFFIN_HALF_WIDTH)-half;
+  }
+
+  function openCoffin(mapId,coffin,state) {
+    if(!coffin||Number.isFinite(coffin.openStartedAt)||(state.openedCoffins||[]).includes(coffin.id))return false;
+    const tile=Number(wildlifeDeps?.TILE)||32;
+    const opened={openedCoffins:[coffin.id]}; // Test the full lid sweep before making it solid.
+    function wouldTrap(actor,half){
+      return actor&&Number.isFinite(actor.x)&&Number.isFinite(actor.y)&&
+        coffinBlocksBox(coffin,opened,actor.x/tile,actor.y/tile,half,null)&&
+        !coffinBlocksBox(coffin,state,actor.x/tile,actor.y/tile,half,null);
+    }
+    const player=wildlifeDeps?.player; // A closed lid is now a real walkable support: don't pull it out from beneath the player.
+    const lid=coffin.solidParts?.find(part=>part.id==='lid');
+    if(lid&&player&&Number.isFinite(player.physicalFeetY)&&Math.abs(player.physicalFeetY-lid.topY)<.08&&
+      player.x/tile>=lid.minX-.12&&player.x/tile<=lid.maxX+.12&&player.y/tile>=lid.minZ-.12&&player.y/tile<=lid.maxZ+.12)return false;
+    if(wouldTrap(player,.3))return false;
+    for(const set of [wildlifeDeps?.hostileObjects,wildlifeDeps?.companionObjects])
+      for(const actor of set||[])if(actor.areaId===mapId&&actor.health>0&&wouldTrap(actor,.32))return false; // Do not trap another cave inhabitant under a moving lid.
+    for(const record of bodiesByMapId.get(mapId)||[])if(record.emergence&&wouldTrap(record.entity,.32))return false; // Staged actors are not in the hostile registry yet.
+    coffin.openStartedAt=caveClock;
+    state.openedCoffins||=[];
+    state.openedCoffins.push(coffin.id);
+    window.HobunjiWalkableElevation?.unregister?.(coffinSupportId(mapId,coffin,'lid')); // A moving lid cannot remain an invisible standing surface.
+    const group=propMeshesByMapId.get(mapId)?.groups?.get(coffin.id);
+    window.RuinInteractionAudio?.activator?.(group||null,{size:1.58,position:{x:coffin.col+.5,y:.4,z:coffin.row+.5}}); // Same cue as a successful ruin push block.
+    persistState(true);
+    return true;
+  }
+
+  function registerCoffinCollision(mapId,plan,state) {
+    const id='cave-coffins:'+mapId;
+    window.AreaFootprintBlockers?.remove?.(id);
+    if(!plan?.coffins?.length)return;
+    window.AreaFootprintBlockers?.register?.(id,{area:mapId,
+      enabled:()=>plansByMapId.get(mapId)===plan, // Reject a stale scene's provider after plan replacement.
+      blocksBox:(x,z,half,worldY)=>{
+        const current=runtimeStateBySignature.get(plan.profile.signature)||state; // Save restore can replace a state object without rebuilding its scene.
+        return plan.coffins.some(coffin=>coffinBlocksBox(coffin,current,x,z,half,worldY));
+      },
+    }); // Cached footprint data; no scene traversal.
+  }
+
+  function setBodySealed(entity,sealed) {
+    entity._caveCoffinSealed=sealed;
+    if(entity.avatarRef?.group)entity.avatarRef.group.visible=!sealed;
+    if(entity.groundShadow)entity.groundShadow.visible=false;
+    const corpses=devSpawnerDeps?.corpseObjects;
+    if(sealed)corpses?.delete?.(entity);
+    else corpses?.add?.(entity);
   }
 
   function caveMushroomKeys(zoneId, signature, count) {
@@ -952,6 +1151,8 @@
     for(const [propId,group] of propMeshesByMapId.get(id)?.groups||[])if(group.userData?.caveSiteProp?.key==='crateStack')
       window.CratePiles?.unregisterPile?.(id,propId);
     propMeshesByMapId.set(id, propRecord);
+    const plan=plansByMapId.get(id),state=trapProfile?stateFor(trapProfile):null;
+    if(plan&&state){unregisterCoffinSupports(id,plan);restoreCoffinState(plan,state);registerCoffinCollision(id,plan,state);}
     const A = window.AuthoredFurniture;
     if (!A?.load || !A?.buildGroup || !scene || !mapData?.caveProps?.length) return Promise.resolve(0);
     return Promise.all(mapData.caveProps.map(prop => Promise.resolve(A.load(prop.key)).then(data => {
@@ -971,6 +1172,11 @@
       group.userData.caveSiteProp = { mapId, id: prop.id, key: prop.key };
       scene.add(group);
       propRecord.groups.set(prop.id, group); // Only actual, scene-attached props become candidate Sense Mode targets.
+      if(prop.key==='ruinSanctumCoffin'&&plan&&state){
+        group.userData.caveCoffinMotion=data.puzzle?.motion?.parts?.lid;
+        const coffin=plan.coffins.find(item=>item.id===prop.id);
+        if(coffin){registerCoffinSupports(id,coffin,group,data,state);syncCoffinVisual(id,coffin,state);}
+      }
       if(prop.id===plansByMapId.get(id)?.puzzleTreasure?.id)syncPuzzleTreasureVisual(id); // Late-loaded chests obey the already saved solve/claim state.
       if(prop.key==='crateStack'){
         const profile=sitesByMapId.get(id); // Cache cave crate counts in its existing world-save state.
@@ -1050,6 +1256,11 @@
     try {
       const compose = challengeKind => creator({
         THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:challengeKind,y:0,area:key,authoredCliffDoor:true,
+        sampleCaveFloorY:(x,z)=>{
+          const tileY=Number(mapData.floorSurfaceByTile?.[tileKey(Math.floor(x),Math.floor(z))]); // Same carved tile elevation used by the movement grid.
+          const caveFloorY=Number(mapData.floorSurfaceY); // Legacy caves can supply only a map-wide ground height.
+          return Number.isFinite(tileY)?tileY:Number.isFinite(caveFloorY)?caveFloorY:0;
+        },
         caveRoofHeight:Math.max(9,Number(mapData.mesh?.vaultCeiling?.topY)||0), // Seals the sculpted wall up to the new vaulted ceiling instead of leaving a jumpable gap.
         songOptions:{difficulty:puzzle.difficulty}, // Deterministic 1–2-measure challenge range, not a universal easy one-measure song.
         isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
@@ -1064,7 +1275,7 @@
           const p=wildlifeDeps?.player,t=Number(wildlifeDeps?.TILE)||32;
           return p?{x:Number(p.x)/t,z:Number(p.y)/t}:null;
         },
-        getPlayerY:()=>0, // Cave interiors are flat, level-zero generated slices.
+        getPlayerY:()=>0, // Preserve the cave puzzle’s level-zero activation datum.
         onMusicUnavailable:()=>wildlifeDeps?.showToast?.('Equip an instrument to attempt the stone song.',false),
       });
       let challenge;
@@ -1110,7 +1321,7 @@
     if (props?.scene === scene) for (const group of props.groups.values()) {
       if (group.parent !== scene) continue;
       const key = group.userData?.caveSiteProp?.key;
-      if (key === 'ruinEntranceDoor' ||
+      if ((key === 'ruinSanctumCoffin' && !(state.openedCoffins||[]).includes(group.userData.caveSiteProp.id)) || key === 'ruinEntranceDoor' ||
         (key === 'ruinDungeonChestT2' && (group.userData.caveSiteProp.id === plansByMapId.get(mapId)?.puzzleTreasure?.id
           ? state.puzzleSolved&&!state.puzzleRewardClaimed : !state.cacheOpened))) roots.push(group); // Puzzle chest is sensed only after the gate opens.
     }
@@ -1517,7 +1728,7 @@
       rockPuzzleSitesByParent.delete(mapId);
     }
     for (const record of bodiesByMapId.get(mapId) || []) {
-      const resident = wildlifeDeps?.hostileObjects?.has?.(record.entity) || devSpawnerDeps?.corpseObjects?.has?.(record.entity); // Wildlife renewal may already have removed this entity through the shared despawn owner.
+      const resident = record.rising || record.entity?._caveCoffinSealed || wildlifeDeps?.hostileObjects?.has?.(record.entity) || devSpawnerDeps?.corpseObjects?.has?.(record.entity); // Wildlife renewal may already have removed this entity through the shared despawn owner.
       wildlifeDeps?.hostileObjects?.delete?.(record.entity);
       devSpawnerDeps?.corpseObjects?.delete?.(record.entity);
       if (resident) devSpawnerDeps?.despawnCreature?.(record.entity);
@@ -1526,7 +1737,9 @@
     puzzleChallengesByMapId.get(mapId)?.challenge?.dispose?.();
     puzzleChallengesByMapId.delete(mapId); // Retire the timed puzzle's listeners and authored meshes with the cavern.
     window.CavernOreRocks?.forgetMap?.(mapId); // Tear down the fused cave wall and its mineable indices when a relocated cave is retired.
+    unregisterCoffinSupports(mapId,plansByMapId.get(mapId));
     plansByMapId.delete(mapId);
+    window.AreaFootprintBlockers?.remove?.('cave-coffins:'+mapId);
     window.CaveTripwireTraps?.dispose?.(mapId); // The old cave's string meshes, pendulum, and physical cask cannot survive relocation.
     bodiesByMapId.delete(mapId);
     bodySpawnPromises.delete(mapId);
@@ -1662,6 +1875,22 @@
     const plan = plansByMapId.get(id);
     if (!plan || String(wildlifeDeps?.getCurrentArea?.() || '') !== id) return null;
     const profile = sitesByMapId.get(id); // The cave profile validates both cache and Duskcap world interactions.
+    const coffin=plan.coffins?.find(item=>item.col===col&&item.row===row);
+    if(profile&&coffin){
+      const state=stateFor(profile);
+      if(coffinProgress(coffin,state)<1&&caveDistanceTiles(coffin)<=COFFIN_REACH_TILES){
+        return {id:coffin.id,type:'treasure_chest',col,row,label:'Stone Coffin',
+          promptRoot:propMeshesByMapId.get(id)?.groups?.get(coffin.id)||null,
+          getButtons:()=>Number.isFinite(coffin.openStartedAt)?[]:[{icon:'🪨',label:'Open Coffin',action:'obj_open_cave_coffin',style:'primary',allowed:true}],
+          onAction(action){
+            if(action!=='obj_open_cave_coffin'||String(wildlifeDeps?.getCurrentArea?.()||'')!==id||
+              plansByMapId.get(id)!==plan||caveDistanceTiles(coffin)>COFFIN_REACH_TILES)return {ok:false,message:'The coffin is out of reach.'};
+            const opened=openCoffin(id,coffin,stateFor(profile));
+            return {ok:opened,message:opened?'':'Move clear of the lid or wait for it to open.',deferMemberSave:true};
+          },
+        };
+      }
+    }
     const treasure=plan.puzzleTreasure; // The physical puzzle reward has its own visible chest and one-shot claim action.
     if(profile&&treasure&&treasure.col===col&&treasure.row===row&&stateFor(profile).puzzleSolved
       &&!stateFor(profile).puzzleRewardClaimed&&caveDistanceTiles(treasure)<=CACHE_OPEN_RADIUS_TILES){
@@ -1774,42 +2003,175 @@
     if (!plan.bodies?.length || bodiesByMapId.has(mapId) || bodySpawnPromises.has(mapId)) return;
     if (!window.MinionCombat?.makeEntity || !window.CreatureDeath?.settleAsCorpse) return;
     const tileSize = Number(wildlifeDeps?.TILE) || 32;
+    restoreCoffinState(plan,state);
     const looted = new Set(state.lootedBodies || []);
+    const records=[]; // Kept outside the async body so a rejected portrait build can dispose already-created occupants.
     const promise = (async () => {
-      const records = [];
       for (const body of plan.bodies) {
         const x = (body.col + 0.5) * tileSize, y = (body.row + 0.5) * tileSize;
         const entity = await makeSkeleton(mapId, x, y, { state: 'idle', caveBodyId: body.id });
         if (wildlifeDeps?.getCurrentArea?.() !== mapId || plansByMapId.get(mapId) !== plan) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
         if (!entity) continue;
-        window.CreatureDeath.settleAsCorpse(entity, { yaw: body.yaw });
+        const group=entity.avatarRef?.group,authoredScaleY=group?.scale?.y; // Shared corpse settling resets scale.y to one; keep the authored humanoid silhouette.
+        window.CreatureDeath.settleAsCorpse(entity, { yaw: body.yaw, roll:0 });
+        if(group?.scale&&Number.isFinite(authoredScaleY))group.scale.y=authoredScaleY;
+        if(group?.position)group.position.y+=coffinFloorY(coffinForBody(plan,body)); // The corpse lies on the actual elevated plinth, not below it.
         if (looted.has(body.id)) entity.corpseLooted = true;
+        setBodySealed(entity,coffinProgress(coffinForBody(plan,body),state)<1);
         records.push({ body, entity, riser: Math.random() < BODY_RISE_CHANCE, armedAt: null, delay: 0, rising: false, risen: false });
       }
-      if (plansByMapId.get(mapId) === plan) bodiesByMapId.set(mapId, records);
+      if(plansByMapId.get(mapId)===plan&&wildlifeDeps?.getCurrentArea?.()===mapId)bodiesByMapId.set(mapId,records);
+      else for(const record of records){devSpawnerDeps?.corpseObjects?.delete?.(record.entity);devSpawnerDeps?.despawnCreature?.(record.entity);} // Leaving mid-load cannot cache a partial population.
       window.__farmLog?.(`[cave-sites] laid out ${records.length} skeleton bodies in ${mapId} (${records.filter(r => r.riser).length} restless).`, 'world');
-    })().catch(error => window.__farmLog?.(`[cave-sites] body spawn failed for ${mapId}: ${error.message}`, 'warn'))
+    })().catch(error => {
+      for(const record of records){devSpawnerDeps?.corpseObjects?.delete?.(record.entity);devSpawnerDeps?.despawnCreature?.(record.entity);}
+      window.__farmLog?.(`[cave-sites] body spawn failed for ${mapId}: ${error.message}`, 'warn');
+    })
       .finally(() => { if (bodySpawnPromises.get(mapId) === promise) bodySpawnPromises.delete(mapId); });
     bodySpawnPromises.set(mapId, promise);
   }
 
   // A restless body gets up the same way the sanctum lich raises its dead: a
   // fresh skeleton from the same roster replaces the corpse where it lies.
+  function emergenceActors(mapId,record){
+    const actors=[wildlifeDeps?.player]; // Staged actors are not registered with combat AI yet.
+    for(const set of [wildlifeDeps?.hostileObjects,wildlifeDeps?.companionObjects])
+      for(const actor of set||[])if(actor.areaId===mapId&&actor.health>0&&actor!==record.entity)actors.push(actor);
+    for(const other of bodiesByMapId.get(mapId)||[])if(other!==record&&other.emergence)actors.push(other.entity);
+    return actors;
+  }
+  function emergencePathClear(mapId,record,tx,ty){
+    const tile=Number(wildlifeDeps?.TILE)||32,actor=record.entity;
+    const dx=tx-actor.x,dy=ty-actor.y,span=dx*dx+dy*dy;
+    for(const other of emergenceActors(mapId,record)){
+      if(!other||!Number.isFinite(other.x)||!Number.isFinite(other.y))continue;
+      const u=span>0?clamp(((other.x-actor.x)*dx+(other.y-actor.y)*dy)/span,0,1):0;
+      const gap=Math.hypot(other.x-(actor.x+dx*u),other.y-(actor.y+dy*u));
+      const startGap=Math.hypot(other.x-actor.x,other.y-actor.y);
+      if(gap<tile*.7&&!(startGap<tile*.7&&Math.hypot(other.x-tx,other.y-ty)>startGap&&u===0))return false; // Permit moving away from existing overlap, never toward another body.
+    }
+    return true;
+  }
+  function clearEmergenceExit(mapId,record,preferred=null){
+    const tile=Number(wildlifeDeps?.TILE)||32;
+    const exits=preferred?[preferred]:(record.body.exits||[{col:record.body.exitCol,row:record.body.exitRow}]);
+    return exits.find(p=>{
+      const x=(p.col+.5)*tile,y=(p.row+.5)*tile;
+      if(window.AreaFootprintBlockers?.blocksBox?.(mapId,x/tile,y/tile,.32,null))return false;
+      if(emergenceActors(mapId,record).some(actor=>actor&&Math.hypot(x-actor.x,y-actor.y)<tile*.7))return false;
+      return emergencePathClear(mapId,record,x,y);
+    })||null;
+  }
+
+  const smoothCoffinStep=t=>{t=clamp(t,0,1);return t*t*(3-2*t);}; // No abrupt angular or height velocity at either end of the rise.
+  const shortestCoffinYaw=(from,to)=>Math.atan2(Math.sin(to-from),Math.cos(to-from));
+
   async function raiseBody(mapId, record) {
-    record.rising = true;
-    const corpse = record.entity;
-    const base = corpse.rosterRecord || null;
-    const roster = base ? (corpse.corpseLooted ? { ...base, equippedCosmetics: [], cosmeticSlots: {}, appliedDyes: {} } : base) : null; // Searched bodies rise without the rags the player took.
-    const minion = await makeSkeleton(mapId, corpse.x, corpse.y, { state: 'chase', caveBodyId: record.body.id }, roster);
-    if (!minion || wildlifeDeps?.getCurrentArea?.() !== mapId || !bodiesByMapId.get(mapId)?.includes(record)) { if (minion) devSpawnerDeps?.despawnCreature?.(minion); record.rising = false; return; }
-    if (corpse.corpseLooted) minion.corpseLooted = true; // Killing it again yields nothing new.
+    if(!clearEmergenceExit(mapId,record))return;
+    record.rising=true;
+    const corpse=record.entity;
+    corpse._caveBodyRising=true;
+    const base=corpse.rosterRecord||null;
+    const roster=base?(corpse.corpseLooted?{...base,equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},metalArmorItems:[]}:base):null;
+    const tile=Number(wildlifeDeps?.TILE)||32,body=record.body;
+    const x=(body.col+.5)*tile,y=(body.row+.5)*tile;
+    let minion;
+    try{minion=await makeSkeleton(mapId,x,y,{state:'chase',caveBodyId:body.id},roster);}
+    catch(error){window.__farmLog?.('[cave-sites] skeleton emergence failed: '+error.message,'warn');}
+    if(!minion||wildlifeDeps?.getCurrentArea?.()!==mapId||!bodiesByMapId.get(mapId)?.includes(record)){
+      if(minion)devSpawnerDeps?.despawnCreature?.(minion);
+      record.rising=false;corpse._caveBodyRising=false;return;
+    }
+    if(corpse.corpseLooted)minion.corpseLooted=true;
+    const group=minion.avatarRef?.group,old=corpse.avatarRef?.group;
+    const coffin=coffinForBody(plansByMapId.get(mapId),body);
+    const floor=coffinFloorY(coffin);
+    const half=Number(minion.groundLift??minion.halfHeight)||.5;
+    const startY=Number.isFinite(old?.position?.y)?old.position.y:floor+half*.12;
+    const startYaw=Number.isFinite(old?.rotation?.y)?old.rotation.y:body.yaw;
+    const startRoll=Number.isFinite(old?.rotation?.z)?old.rotation.z:Math.PI/2;
+    if(group){
+      group.position.set(x/tile,startY,y/tile);
+      group.rotation.set(0,startYaw,startRoll);
+      if(minion.avatarRef.frontPlane)minion.avatarRef.frontPlane.rotation.y=Math.PI/2;
+      if(minion.avatarRef.backPlane)minion.avatarRef.backPlane.rotation.y=-Math.PI/2;
+      minion.avatarRef.legs?.update?.(0,0,true);
+    }
+    if(minion.groundShadow)minion.groundShadow.visible=false;
+    for(const holder of [minion._banditToolHolder,minion._banditRangedToolHolder,minion._banditFlaskToolHolder])if(holder)holder.visible=false; // Never expose scene-sibling equipment at its uninitialized transform.
+    minion._caveBodyRising=true;
     devSpawnerDeps?.corpseObjects?.delete?.(corpse);
     devSpawnerDeps?.despawnCreature?.(corpse);
-    wildlifeDeps?.hostileObjects?.add(minion);
-    record.entity = minion;
-    record.rising = false;
-    record.risen = true;
-    window.__farmLog?.(`[cave-sites] ${record.body.id} rose in ${mapId}.`, 'world');
+    record.entity=minion;
+    record.emergence={phase:'rise',elapsed:0,x,y,floor,half,startY,startYaw,startRoll,exit:null,walk:0}; // No hostile AI until the complete staged exit.
+  }
+
+  function emergenceSurface(mapId,record,exit,p){
+    const e=record.emergence,body=record.body;
+    const dx=exit.col-body.col,dz=exit.row-body.row;
+    const [dc,dr]=COFFIN_DIRECTIONS[coffinForBody(plansByMapId.get(mapId),body).rotY/90];
+    const across=Math.abs(dx*dc+dz*dr)||1;
+    const rimPoint=.35/across; // South panel's authored local center; sample its actual walkable top.
+    const api=window.HobunjiWalkableElevation;
+    const rim=api?.worldSurfaceTopAt?.(body.col+.5+dx*rimPoint,body.row+.5+dz*rimPoint,COFFIN_RIM_Y,mapId)??COFFIN_RIM_Y;
+    const tile=record.entity.areaGrid?.[exit.row]?.[exit.col]; // Match the native combat renderer's ground datum at handoff.
+    const terrain=tile?Number(wildlifeDeps?.tileSurfaceYInArea?.(tile,mapId))||0:0;
+    const ground=api?.worldSurfaceTopAt?.(exit.col+.5,exit.row+.5,terrain,mapId)??terrain;
+    // Step up over the panel and down onto ordinary floor. Blend the narrow vertical ledge instead of snapping.
+    if(p<.12)return e.floor+(rim-e.floor)*smoothCoffinStep(p/.12);
+    const clearAt=.8; // Authored plinth extends .48 tiles plus .32 walking half-width on the exit axis.
+    if(p<clearAt)return rim;
+    return rim+(ground-rim)*smoothCoffinStep((p-clearAt)/(1-clearAt));
+  }
+
+  function animateEmergence(mapId,record,dt){
+    const e=record.emergence,c=record.entity;
+    if(!e||!record.rising)return;
+    const tile=Number(wildlifeDeps?.TILE)||32,g=c.avatarRef?.group;
+    if(e.phase==='rise'){
+      const consumed=Math.min(dt,COFFIN_RISE_S-e.elapsed); // Do not spend the same frame time on both the rise and the walk.
+      e.elapsed+=consumed;
+      dt-=consumed;
+      const p=smoothCoffinStep(e.elapsed/COFFIN_RISE_S);
+      if(g){g.position.set(e.x/tile,e.startY+(e.floor+e.half-e.startY)*p,e.y/tile);g.rotation.set(0,e.startYaw,e.startRoll*(1-p));}
+      c.avatarRef?.legs?.update?.(consumed,0,false,undefined,{combat:true});
+      c.avatarRef?.syncHandFrame?.();
+      if(e.elapsed<COFFIN_RISE_S)return;
+      e.phase='wait'; // The upright skeleton can wait inside its open coffin if the route is occupied.
+      c.groupRot=e.startYaw;c.pngRot=e.startYaw;
+    }
+    if(e.phase==='wait'){
+      e.exit=clearEmergenceExit(mapId,record);
+      if(!e.exit)return;
+      e.phase='walk';e.walk=0;
+    }
+    if(e.phase!=='walk'||dt<=0)return;
+    const exit=e.exit,tx=(exit.col+.5)*tile,ty=(exit.row+.5)*tile;
+    const distance=Math.hypot(tx-e.x,ty-e.y),direction=Math.atan2(ty-e.y,tx-e.x);
+    const clear=!!clearEmergenceExit(mapId,record,exit);
+    const step=dt*COFFIN_WALK_TILES_S*tile/Math.max(1,distance);
+    const old=e.walk;
+    const next=clamp(e.walk+(clear?step:-step),0,1);
+    if(clear||emergencePathClear(mapId,record,e.x+(tx-e.x)*next,e.y+(ty-e.y)*next))e.walk=next; // Retreat only along a clear route.
+    c.x=e.x+(tx-e.x)*e.walk;c.y=e.y+(ty-e.y)*e.walk;
+    c.vx=dt>0?(tx-e.x)*(e.walk-old)/dt:0;c.vy=dt>0?(ty-e.y)*(e.walk-old)/dt:0;
+    c.facing=direction;
+    const targetYaw=-(direction+(c.def?.aimAngleOffset||0))+Math.PI/2;
+    c.groupRot+=shortestCoffinYaw(c.groupRot,targetYaw)*Math.min(1,dt*10);c.pngRot=c.groupRot;
+    if(g){g.position.set(c.x/tile,emergenceSurface(mapId,record,exit,e.walk)+e.half,c.y/tile);g.rotation.set(0,c.groupRot,0);}
+    c.avatarRef?.legs?.update?.(dt,Math.hypot(c.vx,c.vy)/tile,false,undefined,{combat:true});
+    c.avatarRef?.syncHandFrame?.();
+    if(c._banditToolHolder)c._banditToolHolder.visible=true;
+    window.BanditCombat?.updateToolMesh?.(c);
+    if(!clear&&e.walk===0){e.phase='wait';e.exit=null;return;}
+    if(e.walk<1)return;
+    c.vx=0;c.vy=0;c.homeX=c.x;c.homeY=c.y;
+    c._caveBodyRising=false;c.state='chase';
+    if(c.groundShadow){c.groundShadow.visible=true; c.groundShadow.position?.set?.(c.x/tile,emergenceSurface(mapId,record,exit,1)+.01,c.y/tile);}
+    wildlifeDeps?.hostileObjects?.add(c);
+    record.emergence=null;record.rising=false;record.risen=true;
+    window.BanditCombat?.setCombatExpression?.(c,true); // After registry handoff so the native alert callback sees a live hostile.
+    window.__farmLog?.(`[cave-sites] ${record.body.id} stood and walked out in ${mapId}.`,'world');
   }
 
   function updateBodies(profile, plan, state) {
@@ -1817,6 +2179,12 @@
     if (!records?.length) return;
     let lootedChanged = false;
     for (const record of records) {
+      const coffin=coffinForBody(plan,record.body);
+      if(record.entity?._caveCoffinSealed){
+        const progress=coffinProgress(coffin,state);
+        if(progress>=1)setBodySealed(record.entity,false);
+        else if(progress>0&&record.entity.avatarRef?.group)record.entity.avatarRef.group.visible=true; // Reveal the body under the moving lid, but keep loot sealed until it stops.
+      }
       if (record.entity?.corpseLooted && !(state.lootedBodies || []).includes(record.body.id)) {
         state.lootedBodies = [...(state.lootedBodies || []), record.body.id];
         lootedChanged = true;
@@ -1829,9 +2197,35 @@
         record.delay = BODY_RISE_DELAY_S[0] + Math.random() * (BODY_RISE_DELAY_S[1] - BODY_RISE_DELAY_S[0]);
         continue;
       }
-      if (caveClock - record.armedAt >= record.delay && distance <= BODY_RISE_MAX_DISTANCE_TILES) raiseBody(profile.mapId, record);
+      if(caveClock-record.armedAt>=record.delay&&distance<=BODY_RISE_MAX_DISTANCE_TILES){
+        if(coffinProgress(coffin,state)<1){openCoffin(profile.mapId,coffin,state);continue;}
+        if(!clearEmergenceExit(profile.mapId,record))continue; // Wait instead of interrupting a search for a rise that cannot happen safely.
+        if(window.CorpseHoldLoot?.debugSnapshot?.()?.holdId==='corpse_'+record.entity.id)window.CorpseHoldLoot.interrupt();
+        raiseBody(profile.mapId,record);
+      }
     }
     if (lootedChanged) persistState();
+  }
+
+  function canSearchBody(entity){
+    if(!entity?.caveBodyId||entity.state!=='corpse'||entity.corpseLooted||entity._caveBodyRising||entity._caveCoffinSealed)return false;
+    const mapId=entity.caveSiteMapId,player=wildlifeDeps?.player,tile=Number(wildlifeDeps?.TILE)||32;
+    if(wildlifeDeps?.getCurrentArea?.()!==mapId||!player||Math.hypot(player.x-entity.x,player.y-entity.y)>tile*2.25)return false;
+    const profile=sitesByMapId.get(mapId);
+    return !!profile&&!!bodiesByMapId.get(mapId)?.some(record=>record.entity===entity)&&
+      !(stateFor(profile).lootedBodies||[]).includes(entity.caveBodyId); // Validate the exact live record, not merely its reusable body ID.
+  }
+
+  function recordBodyLooted(entity){
+    if(!entity?.caveBodyId)return false;
+    const mapId=entity.caveSiteMapId,profile=sitesByMapId.get(mapId);
+    if(!profile||!bodiesByMapId.get(mapId)?.some(record=>record.entity===entity))return false;
+    const state=stateFor(profile);
+    state.lootedBodies||=[];
+    if(state.lootedBodies.includes(entity.caveBodyId))return false;
+    state.lootedBodies.push(entity.caveBodyId);
+    persistState(true); // Mark before the shared loot action schedules its save.
+    return true;
   }
 
   function maybeEnterRuin(profile, plan, state) {
@@ -1878,6 +2272,16 @@
     caveClock += elapsed;
     tickPuzzleRuntime(elapsed); // Legacy wildlife wrapper owns cave ecology; the puzzle clock can also run independently when AI is disabled.
     const mapId=String(wildlifeDeps?.getCurrentArea?.() || '');
+    const coffinPlan=plansByMapId.get(mapId),coffinProfile=coffinPlan?.coffins?.length&&sitesByMapId.get(mapId);
+    if(coffinProfile){
+      for(const record of bodiesByMapId.get(mapId)||[])if(record.emergence)animateEmergence(mapId,record,elapsed); // Only staged actors in the active map need per-frame interpolation.
+      const saved=stateFor(coffinProfile);
+      for(const coffin of coffinPlan.coffins)if(Number.isFinite(coffin.openStartedAt)){
+        const progress=coffinProgress(coffin,saved);
+        syncCoffinVisual(mapId,coffin,saved);
+        if(progress>=1)delete coffin.openStartedAt; // Saved openedCoffins is the settled authority; no permanent per-frame animation work.
+      }
+    }
     caveRuntimeTimer -= elapsed;
     if (caveRuntimeTimer > 0) return;
     caveRuntimeTimer = CAVE_RUNTIME_INTERVAL_S;
@@ -1994,7 +2398,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Wilderness caves favor dens and grow multiple native mushroom reagents; sparse second resource pockets reuse existing cave floor and harvest systems.',
+      latestChange: 'Restless catacomb skeletons stand up inside raised coffins, step over the rim and walk to a free tile before fighting.',
       groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null,
       caveTripwires: window.CaveTripwireTraps?.debugSnapshot?.(currentArea) || null, // Mobile-friendly armed/disarmed/rope state.
       cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
@@ -2015,13 +2419,13 @@
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
         bodies: plansByMapId.get(currentArea).bodies,
-        bodyStates: (bodiesByMapId.get(currentArea) || []).map(record => ({ id: record.body.id, riser: record.riser, armed: record.armedAt != null, risen: record.risen, looted: !!record.entity?.corpseLooted, state: record.entity?.state || null })),
+        bodyStates: (bodiesByMapId.get(currentArea) || []).map(record => ({ id: record.body.id, riser: record.riser, armed: record.armedAt != null, risen: record.risen, emergence: record.emergence?.phase||null, walkProgress: record.emergence?.walk??null, looted: !!record.entity?.corpseLooted, state: record.entity?.state || null })),
         shattercasks: plansByMapId.get(currentArea).shattercasks,
         traps: plansByMapId.get(currentArea).traps,
         cache: plansByMapId.get(currentArea).cache,
         hiddenReward: plansByMapId.get(currentArea).hiddenReward, // Direct mobile diagnostic for the room/door/chest that justifies a destructible barrier.
         puzzleDoor: plansByMapId.get(currentArea).puzzleDoor,
-        coffins: plansByMapId.get(currentArea).coffins,
+        coffins: plansByMapId.get(currentArea).coffins.map(coffin=>({...coffin,progress:coffinProgress(coffin,stateFor(sitesByMapId.get(currentArea)))})),
         ruinEntrance: plansByMapId.get(currentArea).ruinEntrance,
         puzzleCave: plansByMapId.get(currentArea).puzzleCave,
         puzzleTreasure: plansByMapId.get(currentArea).puzzleTreasure, // Mobile diagnostics show the reward chest tile even if a model fails to load.
@@ -2053,6 +2457,8 @@
     buildInteriorProps,
     senseTargets,
     objectAt,
+    canSearchBody,
+    recordBodyLooted,
     resetCave,
     isZoneOccupied,
     mapLabelFor,
@@ -2089,6 +2495,11 @@
       banditPopulatedMaps,
       bodiesByMapId,
       bodySpawnPromises,
+      coffinBlocksBox,
+      coffinProgress,
+      registerCoffinSupports,
+      unregisterCoffinSupports,
+      clearEmergenceExit,
     }),
   });
 

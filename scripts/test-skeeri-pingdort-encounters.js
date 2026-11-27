@@ -177,7 +177,7 @@ class TestCanvas{
 }
 const fakeDocument={createElement:tag=>{assert.equal(tag,'canvas');return new TestCanvas();}}; // Avoids Node DOM dependencies while testing pixels.
 
-const testFetch=async()=>({ok:true,json:async()=>({version:1})}); // The physical wing geometry is owned by FlyingAnimalRig, not this integration test.
+const testFetch=async()=>({ok:true,json:async()=>JSON.parse(read('docs/config/creatures/pingdort-flying-rig.json'))}); // Exercise the actual authored perch settings.
 const renderColors={SPECIES:{},
   hexToRgb:hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)],
   recolorPixels(data,color,predicate){for(let i=0;i<data.length;i+=4)if(predicate(i))for(let n=0;n<3;n++)data[i+n]=color[n];},
@@ -227,9 +227,29 @@ async function check(){
   assert.equal(w.CreatureGeneticsRender.SPECIES.pingdort.baseRecolorKeyHex,'#9dc09c','Farm and Stable colors should target green feathers, not white eyes');
   const makeColor=()=>({value:'ffffff',getHexString(){return this.value;},set(hex){this.value=hex.slice(1).toLowerCase();}}); // Covers the existing material white-reset after damage.
   const materials=Object.fromEntries(['flying','perched','wings'].map(p=>[p,{color:makeColor(),map:null}])); // Actual pose material ownership, including the perched gripping alias.
-  w.FlyingAnimalRig={normalize:value=>value,create:(_settings,images)=>{for(const pose of Object.keys(materials))materials[pose].map={image:images[pose],dispose(){this.disposed=true;}};
+  w.FlyingAnimalRig={normalize:value=>value,create:(settings,images)=>{
+    assert.equal(settings.perchSpline?.afterPoints.length,7,'Wild Pingdorts curl into the authored perch on their nest shelf');
+    for(const pose of Object.keys(materials))materials[pose].map={image:images[pose],dispose(){this.disposed=true;}};
     return {root:{},bodyMaterials:materials,dispose(){}};}}; // Only geometry and GPU upload are stubbed, not Pingdort's pixel recolor or map-swapping code.
   const tintedRig=await w.PingdortRegistration.createRig({base:{color:'#485543'}});
+  const avatar={headRig:{},group:{parent:{}}}; // A mounted native shoulder card can receive the shared spline once its settings load.
+  const shoulder={stableRole:'shoulderPet',avatarRef:avatar};
+  const shoulderRig=w.PingdortRegistration.shoulderHeadRig(null);
+  let appliedRest;
+  w.AnimalShoulderSpline={decorateAvatar(_three,target,settings,options){
+    assert.equal(target,avatar);
+    assert.equal(options.fullSprite,true);
+    appliedRest=settings.shoulderRest;
+  }};
+  await w.PingdortRegistration.attachShoulderRest(shoulder,avatar,shoulderRig);
+  assert.equal(appliedRest.enabled,true);
+  assert.equal(appliedRest.afterPoints,(await w.PingdortRegistration.loadRig()).settings.perchSpline.afterPoints,
+    'the shoulder uses the same authored curl as a wild Pingdort');
+  appliedRest=null;
+  const obsolete=w.PingdortRegistration.attachShoulderRest(shoulder,avatar,shoulderRig);
+  shoulder.stableRole='companion';
+  await obsolete;
+  assert.equal(appliedRest,null,'a role switch invalidates a pending shoulder curl');
   for(const material of Object.values(materials)){
     assert.deepEqual([...material.map.image.pixels.slice(0,3)],[72,85,67],'Only approved moss-green plumage is recolored');
     assert.deepEqual([...material.map.image.pixels.slice(4,8)],[255,255,255,255],'The white eye remains white');

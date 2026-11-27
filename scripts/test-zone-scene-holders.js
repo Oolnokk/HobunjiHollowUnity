@@ -33,13 +33,12 @@ function slice(source, from, to) {
     const actorXrayRoots = new Map(); // Used by the immediately preceding world frame.
     let actorXrayScene = null;
     const lastSceneScan = new WeakMap();
-    const groundElevationCache = new WeakMap();
-    let lastGroundElevationMaterials = null;
+    const scanJobs = new WeakMap();
 
     const pendingClassification = new Set(); // The deferred add queue also holds scene members until the next flush.
     ${forgetFn}
-    this.api = { forgetScene, pendingClassification, actorXrayRoots, setActorXrayScene: scene => { actorXrayScene = scene; }, groundElevationCache, lastMaterials: () => lastGroundElevationMaterials, setLastMaterials: value => { lastGroundElevationMaterials = value; }, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry } };`, context);
-  const { forgetScene, pendingClassification, actorXrayRoots, setActorXrayScene, groundElevationCache, lastMaterials, setLastMaterials, registries } = context.api;
+    this.api = { forgetScene, pendingClassification, actorXrayRoots, setActorXrayScene: scene => { actorXrayScene = scene; }, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry } };`, context);
+  const { forgetScene, pendingClassification, actorXrayRoots, setActorXrayScene, registries } = context.api;
   const scene = children => ({ children, traverse(fn) { children.forEach(fn); } });
   const meshesA = [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }], meshesB = [{ id: 'b1' }, { id: 'b2' }];
   const sceneA = scene(meshesA), sceneB = scene(meshesB);
@@ -51,17 +50,10 @@ function slice(source, from, to) {
   }
   pendingClassification.add(meshesA[2]);
   pendingClassification.add(meshesB[0]);
-  const oldMaterials = new Set(); // The diagnostics can outlive the most recently used scene.
-  groundElevationCache.set(sceneA, { materials: oldMaterials });
-  groundElevationCache.set(sceneB, { materials: new Set() });
-  setLastMaterials(oldMaterials);
   setActorXrayScene(sceneA);
   actorXrayRoots.set(meshesA[0], 'animals');
   const removed = forgetScene(sceneA);
   assert.equal(actorXrayRoots.size, 0, 'eviction releases the actor x-ray roots');
-  assert.equal(groundElevationCache.has(sceneA), false, 'the evicted scene also releases its ground material cache');
-  assert.equal(groundElevationCache.has(sceneB), true, 'another scene keeps its cached ground materials');
-  assert.equal(lastMaterials(), null, 'eviction releases the recent replay diagnostic reference');
 
   assert.deepEqual([...pendingClassification], [meshesB[0]], 'only the discarded scene leaves the pending classification queue');
   assert.equal(removed, 3 * Object.keys(registries).length, 'every member of the scene leaves every registry');

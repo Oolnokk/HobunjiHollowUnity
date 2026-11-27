@@ -198,6 +198,7 @@ function makeSeededRandom(seed) {
   const startTimedJobCalls = [];
   const vat = {
     id: 'vat1', furnitureKey: 'squeezingVat', getJob: () => null,
+    onAction() { return { ok: true }; },
     startTimedJob(options) { startTimedJobCalls.push(options); return { ok: true, started: true, durationS: 5 }; },
   };
   const processingFurnitureObjects = new Set([vat]);
@@ -227,15 +228,45 @@ function makeSeededRandom(seed) {
 
   // Family workers must use their own level, not inherited player Farming rolls or animal hearts.
   livestock.length = 0;
+  assert.equal(vat.onAction('obj_process_squeezingVat').workerRequired, true);
+  assert.equal(vat.startTimedJob({}).workerRequired, true);
   let familyQualityRolls = 0; // Confirms a family squeezer asks RomanceFamily exactly once per job.
-  windowStub.RomanceFamily = { rollWorkQuality: id => { assert.equal(id, 'toddler1'); familyQualityRolls++; return 1; } };
+  let workerUnavailable = true; // Simulates a toddler leaving and returning to their assigned vat.
+  windowStub.RomanceFamily = {
+    isFamilyWorkUnavailable: id => id === 'toddler1' && workerUnavailable,
+    rollWorkQuality: id => { assert.equal(id, 'toddler1'); familyQualityRolls++; return 1; },
+  };
   DewVats.setExternalWorker('vat1', { id: 'toddler1', name: 'Pip', familyWorker: true, efficacy: 2 });
+  assert.equal(vat.onAction('obj_process_squeezingVat').workerRequired, true);
+  assert.equal(vat.startTimedJob({}).workerRequired, true);
+  assert.equal(DewVats.autoSqueezeAtVat('vat1', 'blue'), false);
+  assert.equal(familyQualityRolls, 0, 'blocked batches do not roll family quality');
+  workerUnavailable = false;
+  assert.equal(vat.onAction('obj_process_squeezingVat').ok, true);
   assert.equal(DewVats.autoSqueezeAtVat('vat1', 'blue'), 'started');
   const familyJob = startTimedJobCalls.at(-1);
   assert.equal(familyJob.inputStars, 1, 'a level-one toddler gives the job one-star quality even with the player animal perk');
   assert.equal(familyJob.source, 'family', 'family processing is identifiable at completion so player skill cannot reroll its stars');
   assert.equal(familyJob.yieldMultiplier, 2, 'the existing family squeezer quantity multiplier is retained');
   assert.equal(familyQualityRolls, 1, 'a single family job does not reroll usefulness quality multiple times');
+  const competingAnimal = { id: 'l2', name: 'Small animal', barnId: 'barn1', kind: 'testSmall', genotype: {} }; // An eligible animal cannot displace a family worker.
+  livestock.push(competingAnimal);
+  assert.equal(DewVats.assignToVat('l2', 'vat1').ok, false, 'a family worker occupies the exclusive vat assignment');
+  assert.equal(competingAnimal.assignedVatId, undefined);
+  assert.equal(DewVats.assignedWorkerForVat('vat1').id, 'toddler1');
+  competingAnimal.assignedVatId = 'vat1'; // Simulate an older save with conflicting assignment data.
+  assert.equal(DewVats.squeezePileWithExternalWorker('vat1'), false, 'a conflicting legacy family job does not consume dew under another worker');
+  livestock.length = 0;
+  const movedFamilyVats = []; // Verify the shared processor move/remove hook also updates family save state.
+  windowStub.RomanceFamily.retargetVatAssignments = (oldId, newId) => { movedFamilyVats.push([oldId, newId]); return 1; };
+  assert.equal(DewVats.retargetAssignments('vat1', 'new_vat'), 1);
+  assert.equal(DewVats.assignedWorkerForVat('vat1'), null);
+  assert.equal(DewVats.assignedWorkerForVat('new_vat').id, 'toddler1');
+  assert.deepEqual(movedFamilyVats.at(-1), ['vat1', 'new_vat']);
+  assert.equal(DewVats.retargetAssignments('new_vat', null), 1);
+  assert.equal(DewVats.assignedWorkerForVat('new_vat'), null);
+  assert.deepEqual(movedFamilyVats.at(-1), ['new_vat', null]);
+  DewVats.setExternalWorker('vat1', { id: 'toddler1', familyWorker: true });
 
   DewVats.setExternalWorker('vat2', { id: 'otherExternal' });
   DewVats.clearFamilyWorkers();

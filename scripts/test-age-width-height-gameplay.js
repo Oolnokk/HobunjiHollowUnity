@@ -1,0 +1,159 @@
+'use strict';
+// Age authoring's width/height split must reach family records and the REAL child portrait builder.
+const assert=require('node:assert/strict'); // Checks runtime configs, legacy saves, head/portrait geometry, and restore.
+const fs=require('node:fs'); // Load shipped modules instead of rewriting age math in the test.
+const vm=require('node:vm'); // Browser-only runtime can be inspected without Three.js.
+const age=fs.readFileSync('docs/js/character-age-rig-config.js','utf8'); // Shared same-site age application bridge.
+const portrait=fs.readFileSync('docs/js/png-plane-avatar.js','utf8'); // Creates child modelWidth/modelHeight and head factors.
+const familySource=fs.readFileSync('docs/js/romance-family.js','utf8'); // Produces child NPC records in each growth phase.
+const scaleRuntime=fs.readFileSync('docs/js/character-rig-scale.js','utf8'); // Head compensation prevents width-only distortion.
+
+const family={phaseScales:{basket:{body:.32,head:.5,hand:1.2,foot:1.2},
+  toddler:{body:.4,head:.66,hand:1,foot:1}},childLimbModifiers:{hand:1,foot:1}};
+const png={childScaleMultiplier:.5,childHeadScaleMultiplier:.72}; // Existing game defaults have one body dimension.
+const saved=new Map(); // Simulates real browser localStorage with controlled legacy/applied preferences.
+const world={HobunjiRomanceConfig:{family},SCRATCHBONES_CONFIG:{game:{assets:{pngPlaneAvatar:png}}},
+  localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)},
+  console};
+world.window=world;
+vm.runInNewContext(age,world);
+const api=world.HobunjiCharacterAgeRigConfig;
+assert(api,'shared age configuration installed');
+const defaults=api.repositoryDefaults();
+assert.equal(defaults.baby.width,.32,'legacy baby body sets width');
+assert.equal(defaults.baby.height,.32,'legacy baby body sets height');
+assert.equal(defaults.child.width,.5,'legacy child width matches previous single body factor');
+assert.equal(defaults.child.height,.5,'legacy child height matches previous single body factor');
+assert.equal(defaults.child.head,.72,'default child head remains independently authored');
+const draft=api.sanitize({baby:{width:.29,height:.38,head:.55,hand:1.4,foot:1.3},
+  toddler:{body:.43,head:.64},child:{width:.51,height:.64,head:.78}});
+assert.equal(draft.baby.width,.29);
+assert.equal(draft.baby.height,.38);
+assert.equal(draft.toddler.width,.43,'old body field migrates to width');
+assert.equal(draft.toddler.height,.43,'old body field migrates to height');
+const composed=api.composePreviewScale({x:1.3,y:1.7,head:.8,offsetY:-.04},draft.baby);
+assert.equal(composed.x,1.3*.29,'editor preview scales Width independently');
+assert.equal(composed.y,1.7*.38,'editor preview scales Height independently');
+assert.equal(composed.head,.8*.55,'Head is separate from both body axes');
+const applied=api.applyOnThisDevice(draft);
+assert.equal(applied.baby.width,.29);
+assert.equal(family.phaseScales.basket.width,.29,'family baby width reaches the game');
+assert.equal(family.phaseScales.basket.height,.38,'family baby height reaches the game');
+assert.equal(family.phaseScales.basket.body,.38,'legacy family consumers get height as body');
+assert.equal(family.phaseScales.toddler.width,.43,'migrated toddler width reaches family');
+assert.equal(png.childWidthScaleMultiplier,.51,'independent child width reaches PNGPlaneAvatar config');
+assert.equal(png.childScaleMultiplier,.64,'legacy child body means vertical stature');
+assert.equal(png.childHeadScaleMultiplier,.78,'child head remains independent');
+assert.equal(api.snapshot().applied,true,'explicit Apply is required for gameplay changes');
+const pBegin=portrait.indexOf('  function childScaleFor(options = {}) {');
+const pEnd=portrait.indexOf('  function avatarScaleMultiplierFor(',pBegin);
+assert(pBegin>0&&pEnd>pBegin,'actual child portrait dimension builder found');
+const childFixture={cfg:()=>png,isChildAvatar:()=>true};
+vm.runInNewContext(portrait.slice(pBegin,pEnd)+'\nthis.childScaleFor=childScaleFor;',childFixture);
+const c=childFixture.childScaleFor({npcRecord:{isChild:true}});
+assert.equal(c.width,.51,'actual PNG portrait builder reads independent child width');
+assert.equal(c.height,.64,'actual PNG portrait builder reads independent child height');
+assert.equal(c.body,.64,'old avatarScaleMultiplierFor remains vertical for compatibility');
+assert.equal(c.head,.78,'head final size unchanged by width edit');
+assert.equal(c.headFactorX,.78/.51,'head width compensates for changed child portrait width');
+assert.equal(c.headFactor,.78/.64,'head height compensates for changed child portrait height');
+assert.equal(c.width*c.headFactorX,c.height*c.headFactor,'head visual size matches in both axes');
+assert.match(portrait,/const modelWidth = baseModelWidth \* scaleMultiplier \* \(childDimensions \? childDimensions\.width \/ childDimensions\.height : 1\)/,
+  'actual modelWidth uses separate child width factor');
+assert.match(portrait,/const modelHeight = baseModelHeight \* scaleMultiplier/,'modelHeight stays on child height');
+const fBegin=familySource.indexOf('  function phaseScaleFields(phase) {');
+const fEnd=familySource.indexOf('  function childRecord(child) {',fBegin);
+assert(fBegin>0&&fEnd>fBegin,'real family child record adapter found');
+const familyFixture={cfg:()=>family};
+vm.runInNewContext(familySource.slice(fBegin,fEnd)+'\nthis.phaseScaleFields=phaseScaleFields;',familyFixture);
+const babyRecord=familyFixture.phaseScaleFields('basket');
+assert.equal(babyRecord.childBodyWidthScale,.29,'family newborn NPC receives independent width');
+assert.equal(babyRecord.childBodyHeightScale,.38,'family newborn NPC receives independent height');
+assert.equal(babyRecord.childBodyScale,.38,'old child body record retains vertical height');
+const realChild=childFixture.childScaleFor({npcRecord:{isChild:true,...babyRecord}});
+assert.equal(realChild.width,.29,'portrait builder uses family record width over child config default');
+assert.equal(realChild.height,.38,'portrait builder uses family record height over child config default');
+assert.equal(realChild.head,.55,'portrait builder uses family record head');
+assert.match(scaleRuntime,/function childHeadFactorXFor\(/,'shared head compensation reuses per-child width factor');
+assert.match(scaleRuntime,/horizontalChildHead \/ verticalChildHead/,'body width is canceled on head scale bone, without stretching head');
+const oldChild=childFixture.childScaleFor({npcRecord:{isChild:true,childBodyScale:.4,childHeadScale:.66}});
+assert.equal(oldChild.width,.51,'nonfamily child without a width inherits applied width default');
+assert.equal(oldChild.height,.4,'old child record body still overrides height');
+assert.equal(oldChild.head,.66,'old record head remains authoritative');
+const wideTall = { x: 2, y: 2, legLength: 3, head: .8 }; // Nominal adult height 2.5 and width 2 relative to its own source rig.
+const narrowShort = { x: .5, y: .5, legLength: .5, head: .8 };
+const full = { width: .6, height: .4, head: .7, widthConvergence: 1, heightConvergence: 1 };
+const wide = api.resolveStageAxes(wideTall, full);
+const narrow = api.resolveStageAxes(narrowShort, full);
+assert.equal(wide.width, .3); assert.equal(narrow.width, 1.2);
+assert.ok(Math.abs(wide.height - .16) < 1e-12); assert.equal(narrow.height, .8);
+assert.equal(api.composePreviewScale(wideTall, full).head, .8 * .7, 'convergence cannot change authored age head');
+const zero = api.resolveStageAxes(wideTall, { ...full, widthConvergence: 0, heightConvergence: 0 });
+assert.equal(zero.width, .6); assert.equal(zero.height, .4);
+api.applyOnThisDevice({ baby: full, child: full });
+assert.equal(png.childWidthConvergence, 1); assert.equal(png.childHeightConvergence, 1);
+assert.equal(family.phaseScales.basket.widthConvergence, 1);
+childFixture.window = { HobunjiCharacterAgeRigConfig: api, HobunjiCharacterRigScale: { scaleFor: () => wideTall } };
+childFixture.avatarSpeciesAndGender = () => ({ species: 'test', gender: 'male' });
+const actual = childFixture.childScaleFor({ npcRecord: { isChild: true } });
+assert.equal(actual.width, wide.width); assert.equal(actual.height, wide.height);
+assert.ok(Math.abs(actual.headFactorX * actual.width - full.head) < 1e-12, 'derived head ratio survives floating-point roundoff');
+// Identical authored scales, different original art dimensions: the measured lineup must distinguish them.
+const equalRig = { x: 1, y: 1, legLength: 1, head: 1 };
+world.HobunjiCharacterRigScale = { scaleFor: () => equalRig, heightBeltlineFor: () => ({ height: 1 }) };
+world.HobunjiCharacterDimensions = { dimensionsFor: (species, gender) => ({ body: { width: species === 'wide' ? 4 : 1 }, height: gender === 'male' ? 4 : 1, factors: { modelHeight: 1 } }) };
+const basis = api.buildConvergenceBasis([{species:'wide',gender:'male'},{species:'narrow',gender:'female'}]);
+assert.equal(basis['wide::male'].width, 2); assert.equal(basis['narrow::female'].width, .5);
+assert.equal(basis['wide::male'].height, 2); assert.equal(basis['narrow::female'].height, .5);
+const wideMeasured = api.resolveStageAxes(equalRig, full, {species:'wide',gender:'male'}, basis);
+const narrowMeasured = api.resolveStageAxes(equalRig, full, {species:'narrow',gender:'female'}, basis);
+assert.equal(wideMeasured.width * 4, narrowMeasured.width, 'identical authored X but distinct original art converges physically');
+assert.equal(wideMeasured.height * 4, narrowMeasured.height, 'identical authored Y but distinct stature converges physically');
+api.applyOnThisDevice({ child: full }, basis);
+assert.equal(png.ageConvergenceBasis['wide::male'].width, 2, 'game gets the same frozen measured reference');
+assert.equal(JSON.parse(saved.get(api.appliedStorageKey)).convergenceBasis['narrow::female'].height, .5, 'measured reference survives game reload');
+childFixture.avatarSpeciesAndGender = () => ({species:'wide',gender:'male'});
+childFixture.window.HobunjiCharacterRigScale = world.HobunjiCharacterRigScale;
+const measuredChild = childFixture.childScaleFor({npcRecord:{isChild:true}});
+assert.equal(measuredChild.width,wideMeasured.width); assert.equal(measuredChild.height,wideMeasured.height);
+const preset = api.repositoryProfiles().baby;
+assert.equal(preset['kenkari::male'].width,.561);
+assert.equal(preset['longoran::male'].height,.14800000000000002);
+assert.equal(Object.keys(preset).length,26);
+const toddlerPreset=api.repositoryProfiles().toddler;
+assert.equal(Object.keys(toddlerPreset).length,26);
+for(const [key,row] of Object.entries(preset)) {
+  assert.equal(row.head,.65,key+' baby head is 65% of the adult head');
+  assert.equal(toddlerPreset[key].head,.65,key+' toddler head is 65% of the adult head');
+  assert.equal(toddlerPreset[key].height,row.height+.2,key+' height adds exactly 20 percentage points');
+  for(const axis of ['width','hand','foot']) assert.equal(toddlerPreset[key][axis],row[axis],key+' '+axis+' unchanged');
+}
+assert.equal(Object.keys(api.repositoryProfiles().child).length,0,'Gantami child defaults remain shared, no new individual child presets');
+const migrated=api.upgradePresetProfiles({baby:{'kenkari::male':{height:.9}},toddler:{},child:{'kenkari::male':{width:.8,height:.7,head:.6,hand:1,foot:1}}},1);
+assert.equal(migrated.baby['kenkari::male'].height,.303);
+assert.equal(migrated.toddler['kenkari::male'].height,.503);
+assert.equal(migrated.child['kenkari::male'].height,.7,'upgrade preserves unrelated child edits');
+assert.equal(api.upgradePresetProfiles({baby:{'kenkari::male':{...preset['kenkari::male'],height:.9}}},api.presetVersion).baby['kenkari::male'].height,.9,'later edits survive preset migration');
+assert.equal(preset['mao-ao::female'].hand,1.66); assert.equal(preset['mao-ao::female'].foot,1.62);
+const separate={baby:{...preset},toddler:{},child:{'wide::male':{width:.5,height:.4,head:.7,hand:1.1,foot:.9,adultReference:{x:2,y:2,head:2}}}};
+const currentBasis=api.stageConvergenceBasis({'wide::male':{width:.5,height:.5},'narrow::female':{width:2,height:2}},basis);
+assert.equal(currentBasis['wide::male'].width,1); assert.equal(currentBasis['narrow::female'].height,1);
+const baked=api.convergeProfile({width:.5,height:.5,head:.7,hand:1.1,foot:.9},{width:2,height:.5},{widthConvergence:1,heightConvergence:1});
+assert.equal(baked.width,.25); assert.equal(baked.height,1); assert.equal(baked.head,.7);
+const scaled=api.scaledProfile(baked,1.5);
+assert.equal(scaled.width,.375); assert.equal(scaled.height,1.5); assert.equal(scaled.hand,1.1); assert.equal(scaled.foot,.9);
+api.applyOnThisDevice({child:full},basis,separate);
+assert.equal(api.profileFor('baby','mashtzarr','female').head,.65);
+assert.equal(api.profileFor('child','wide','female'),null);
+const currentAdult={x:1,y:1,head:1};
+childFixture.window.HobunjiCharacterRigScale={scaleFor:()=>currentAdult};
+const independentChild=childFixture.childScaleFor({npcRecord:{isChild:true}});
+assert.equal(independentChild.width,1); assert.equal(independentChild.height,.8); assert.equal(independentChild.head,1.4);
+assert.equal(api.nonFamilyChildLimbsFor({role:'child',species:'wide',gender:'male'}).hand,1.1);
+assert.equal(JSON.parse(saved.get(api.appliedStorageKey)).profiles.child['wide::male'].adultReference.x,2);
+const restored=api.restoreRepositoryOnThisDevice();
+assert.equal(restored.child.width,.5,'restoring game returns prior uniform child size');
+assert.equal(png.childWidthScaleMultiplier,.5,'reset also clears applied child width');
+assert.equal(family.phaseScales.basket.body,.32,'reset preserves historical baby size');
+assert.equal(api.snapshot().applied,false,'reset removes the game-facing age override');
+console.log('PASS age Width/Height in actual game: old body migration, family NPC records, PNG model axes, head ratios, explicit apply/reset');

@@ -1,5 +1,5 @@
-// Refreshes the gameplay renderer's shadow map a few times per second instead
-// of on every frame.
+// Real-time cast shadows are off by default. If opted in, refresh the
+// gameplay renderer's shadow map a few times per second rather than every frame.
 //
 // Only the farm has a shadow-casting light (game.js's fixed sunLight; its
 // position and shadow camera never move). Three.js re-renders every shadow
@@ -20,8 +20,10 @@
   if (window.ShadowMapRefreshThrottle) return;
 
   const REFRESH_MS = 250;
-  let enabled = true;
+  let enabled = true; // Existing refresh throttle, used only if real-time shadows are enabled.
+  let shadowRenderingEnabled = false; // Performance-first default, independent of lighting and authored blob shadows.
   let owned = false; // True while this module holds shadowMap.autoUpdate at false.
+  let previousMap = null; // A replacement gameplay renderer must not inherit another map's throttle state.
   let lastRefreshAt = -Infinity;
   let lastScene = null;
   let lastChildCount = -1;
@@ -32,7 +34,25 @@
   function tick(now = performance.now()) {
     const r = renderer();
     const shadowMap = r?.shadowMap;
-    if (!shadowMap?.enabled) return;
+    if (!shadowMap) return;
+    if (shadowMap !== previousMap) {
+      if (owned && previousMap) previousMap.autoUpdate = true;
+      previousMap = shadowMap;
+      owned = false;
+      lastRefreshAt = -Infinity;
+    }
+    if (!shadowRenderingEnabled) {
+      if (shadowMap.enabled) shadowMap.enabled = false;
+      if (shadowMap.needsUpdate) shadowMap.needsUpdate = false;
+      if (owned) { shadowMap.autoUpdate = true; owned = false; }
+      return; // Three.js never submits the shadow caster pass.
+    }
+    if (!shadowMap.enabled) {
+      // A stored opt-in may precede renderer creation. Re-enable on its first tick.
+      shadowMap.enabled = true;
+      shadowMap.needsUpdate = true;
+      lastRefreshAt = -Infinity;
+    }
     if (!enabled) {
       if (owned) { shadowMap.autoUpdate = true; owned = false; }
       return;
@@ -60,6 +80,22 @@
     return enabled;
   }
 
+  function setShadowRenderingEnabled(value) {
+    shadowRenderingEnabled = value === true;
+    const shadowMap = renderer()?.shadowMap;
+    if (shadowMap) {
+      shadowMap.enabled = shadowRenderingEnabled;
+      if (shadowRenderingEnabled) {
+        lastRefreshAt = -Infinity; // Refresh immediately after switching back on.
+        shadowMap.needsUpdate = true;
+      }
+    }
+    tick();
+    return shadowRenderingEnabled;
+  }
+
+  // Settings may apply before the game renderer exists. The pre-render
+  // callback below also applies the stored policy to a newly created map.
   window.RuntimeFrameScheduler?.register?.('shadow-map-refresh-throttle', frame => tick(Number(frame?.timestamp) || performance.now()), {
     phase: 'pre-render',
     owner: 'ShadowMapRefreshThrottle',
@@ -69,6 +105,7 @@
   window.ShadowMapRefreshThrottle = {
     tick,
     setEnabled,
-    snapshot: () => ({ enabled, owned, refreshMs: REFRESH_MS, ...stats }),
+    setShadowRenderingEnabled,
+    snapshot: () => ({ enabled, shadowRenderingEnabled, activeShadowMap: !!renderer()?.shadowMap?.enabled, owned, refreshMs: REFRESH_MS, ...stats }),
   };
 })();

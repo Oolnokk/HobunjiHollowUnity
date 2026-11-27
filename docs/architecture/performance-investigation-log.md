@@ -1,5 +1,94 @@
 # Performance investigation log
 
+## 25 Nov 2026: CPU profile of a 12-bandit arena (headless); `normalizeKey` memoized
+
+Headless, dev arena, 12 grunt bandits, PerfProfiler buckets over ~1,590 frames plus a 120 s CDP CPU profile (500 us sampling). SwiftShader inflates GL time; the JS split carries over, the absolute frame time does not.
+
+- **Where the time is.** 78-79% of sampled time is native `(program)` (software GL). Per-frame buckets: `render: main scene` 9.6 ms, `held-overlay` passes ~10 ms combined (base render 6.1, replay 2.7, depth rebuild 1.0), **`hostiles` 4.6 ms (~0.4 ms per bandit)**, `mesh+visual updates` 1.8, `npc walkers` 1.0. `updateHostiles` itself is only 0.14% self time; its cost is spread over many callees, with no single hot function.
+- **Fixed:** `normalizeKey` (five chained regex replaces, identical copies in `png-plane-avatar.js` and `hand-tool-grips.js`) ran every frame per character on a few repeated strings: ~520 ms of a 120 s profile, now ~50 ms (bounded memo; ~25x cheaper per call in isolation, outputs identical for strings/null/numbers).
+- **Not a bug:** `drawImage` 694 ms from `drawVariantCanvas` <- `refreshSinglePlaneAvatarModel` <- `world-portrait-life.js` is the intended breathing/blinking portrait refresh (already avoids reallocating backing stores). Skipping it when the composed frame is unchanged is the next idea; not attempted.
+- **GL-side:** `texImage2D` under the main render (325 ms) is texture upload during the scene pass; `At`/`ctxAt` under `render-hooks.js` is the three.js render call itself.
+- **Next candidate (unmeasured):** the held-overlay passes cost about as much as the main scene render for 12 armed humanoids; see item 4 under "Real but not fixed".
+
+## 25 Nov 2026: bandit sight-check broad phase measured, not kept
+
+- **Idea:** `computeBanditLos` builds/looks up a hitbox for every other hostile on each sight check (O(n²) for a camp), so skip hostiles more than ~4 tiles from the sight segment.
+- **Measured (headless, dev arena, 9-10 grunt bandits, 20 forced `hasLineOfSight(h, player, true)` passes, `window.__rangedDebug.hitboxWork`):** baseline 180 checks, 0.022 ms/check, 2160 hitbox reuses (12/check); with broad phase 200 checks, 0.081 ms/check (single-run noise, 16 ms total), 2299 reuses (11.5/check). The arena's bandits stand within 4 tiles of every sight line, so nothing was rejected, and hitboxes are already cached per frame, so a sight check costs ~0.02 ms here. **No benefit shown; reverted.** A spread-out camp could still gain; re-measure with a real camp before retrying.
+- **Measurement trap:** an in-page `requestAnimationFrame` loop over 20 s never finishes with ~10 bandits in software WebGL (a frame takes tens of seconds); time the function directly inside one `page.evaluate`. `hostileObjects` is a `Set`; the hitbox counters are on `window.__rangedDebug`, not `RangedWeapons`.
+- **Kept (correctness, not a speed claim):** bandit sleep/wake and Porakaneki ecology/aggro radii use the nearest player, so a guest's camp stays awake on the host (`scripts/test-simulation-lod-multiplayer.js`).
+
+## 23 Nov 2026: prioritized animal colors and patterns for owned pets
+
+**Observed bottleneck in code:** \`CreatureGeneticsRender.composeFrame\` processed every native-resolution
+genotype appearance in strict first-in-first-out order, including wilderness spawns, farm
+livestock, mounts, ordinary companions and shoulder pets. A burst of wild requests could
+delay the player's own animal, making its fully authored base colors, inherited patterns,
+Color Pools surface motifs and eye overlays appear late. The existing wild and farm
+texture caches already deduplicate requests; they were not the cause of the ordering.
+
+The same canonical compositor now schedules by role: **player-owned active pets / mounts /
+shoulder pets**, then **farm livestock**, then **wilderness and regular previews**.
+Only one native-resolution composition runs at once, retaining the existing memory cap;
+all patterns and eyes remain atomic (a missing required layer rejects and retries).
+Priority is FIFO within each class, with one lower-priority frame allowed after four
+consecutive pet frames so wilderness is not starved. The game texture owner can promote
+an existing in-flight wildlife request to pet priority instead of composing twice.
+Small shoulder heads and split shoulder frames explicitly request pet priority.
+For owned pets, the compositor also starts only the *selected* idle/run frame's
+required base/pattern/eye artwork and masks while queued CPU work is still finishing.
+Ordinary global three-frame prewarming remains opt-in for developer tools.
+
+In-game mobile texture diagnostics through \`CreatureGeneticsRender.memorySnapshot()\`
+expose \`queuedPets\`, \`queuedFarm\`, \`composePending\`, \`composeActive\`,
+\`composePetStarts\`, \`composePromotions\` and \`petSpritePrefetches\`.
+\`scripts/test-animal-appearance-priority.js\` executes the production queue to
+assert pet/farm/wild ordering, fairness, promotion, per-pet prefetch and failure recovery.
+
+**Limits:** This removes avoidable *waiting behind other animals* and overlaps pet
+network loads with other composition work; a single expensive recolor/pattern pass
+still costs its original CPU time. Actual mobile seconds saved and FPS impact have
+not yet been benchmarked in an on-device run.
+
+
+## 23 Nov 2026: Skeeri source-art prewarm and appearance review
+
+Entering a generated ruin now starts `SkeeriRuins.prewarm()` on the normal transition
+without awaiting it. The first call downloads the three shared source sprites and rig
+JSON, extracts the base coat, darker mint pattern, off-hue details, and independently
+colored purple eye once. Later birds reuse the preparation while their individual
+body, marking and glowing-eye material colors remain separate. Repeated entry calls
+share the same promise and do not allocate another set of source masks.
+
+The eye selector now matches the **scaled #7F00FF marker family**, not arbitrary
+purple pixels. It preserves the value of shaded purple pixels; mint body pixels and
+dark-green markings remain distinct. The real-art PNG regression checks that every
+original opaque pixel belongs to exactly one source partition (the runtime glow is
+allowed to blur beyond that partition). Large source passes yield through the
+existing `PixelWorkYield` authority between flying/perched/wing masks rather than
+running every pose back-to-back during ruin entry. No new recurring frame work.
+
+Mobile Wildlife diagnostics display prewarm-ready state, request/failure counts,
+marked eye pixels and fur-marking pixels. Reviewed the priority compositor as well:
+optional pet-prefetch errors now fail open to full composition, without permanently
+stranding a pet on plain artwork. Standalone tests verify role ordering, fairness,
+in-flight promotion, failed downloads, failed composite rejection and queue cleanup.
+Legacy cutscene and shoulder animation fixtures were updated to inject the new
+priority bookkeeping and owner dependency; the latter now checks that another
+player's animal is *not* prioritized.
+
+**Measured here:** functional regressions and synthetic scheduler/appearance
+fixtures. **Not measured on device:** wall-clock speedup, GPU material upload
+latency per individual Skeeri, or whether the first entry still causes visible
+hitches on low-end phones. The prewarm caches *source masks*, not GPU textures for
+every possible individual palette. Keep those distinctions when profiling.
+
+## 23 Nov 2026: fog and sky lighting work
+
+Fog reads the skydome's lunar sampler directly, avoiding a full diagnostic
+snapshot for each lighting sample. The skydome reuses its time-of-day lighting
+table and skips overcast easing once the current value reaches its target.
+Device frame times have yet to be measured.
+
 ## 23 Nov 2026: Cloud Forest dense wall merged across chunks; wilderness leads measured
 
 A per-render-call draw census of a Southern Cloud Forest frame (headless, fresh world, 480×320,
@@ -40,6 +129,48 @@ Measured and ruled out in the same session (Cloud Forest, same harness):
 - **Rain planes** (15–17 draws everywhere it rains) are overlapping transparent sheets with
   per-sheet UV transforms: not mergeable.
 - Remaining wall cost: the fading chunks' 36 draws (per-chunk transparent clones).
+
+## 22 Nov 2026: town houses and NPC farm plots drawn as merged batches
+
+A main-pass draw census in town (headless, fresh world outside the temple) found the largest
+draw source was nameless: `Group > Mesh`, 111–549 draws per main pass depending on the camera
+heading. Those are authored house faces (`HousePieceGen.buildGroupFromPiece`): every wall,
+roof, porch and tunnel quad is its own 6-vertex mesh with its own geometry, ~1,070 across
+town's house groups, sharing only 3–5 materials per house. Looking at the NPC farm plots
+(`npc-farm-plots.js`), their per-tile soil, trench and water meshes were 339 of 517 draws.
+
+`FarmTileRenderBatches` (render scope `farm-tile-batches`) now also merges, outside wilderness
+zones, the children tagged `hobunjiStaticBatchable` of scene-level groups tagged
+`hobunjiStaticBatchGroup`, per 8×8 cell and render state. House faces and plot soil, trench
+and water tiles carry the tags (water is transparent, so it also sets
+`hobunjiStaticBatchFlat`: tiles that never overlap can share one draw). These batches are
+render proxies only, with no terrain tags, so the held/x-ray classifiers see what they saw
+for the sources. Each batch sits at its members' centroid for Three's sort. A group's member
+list is cached while its children, their materials and geometries, and the group's own
+transform are unchanged; a full rescan, including the geometry/matrix signature, runs at
+least every second. Tagged batches set `geometryAutoLODExclude`: opt-in AutoLOD never touched
+the 2-triangle sources (below its 96-triangle floor) and must not decimate their merge. Signatures now include attribute
+identity, so a replaced attribute at version 0 counts as a change.
+
+Measured headless (480×320, same save, batches on vs off in the same session): main-pass
+draws −151 at the spawn view, −56 to −669 across four headings (1,182 → 513 facing the houses),
+−289 facing the plots (531 → 242). 1,331 sources become 41 batches. Raw same-task renders,
+tiles vs batches: 0–1 px differ in house views; 25–32 px of 129,600 (maxd ~30) seam speckles on
+the plots, from vertex rounding where adjacent tiles meet. One view showed ~770 px, all in
+the player's portrait: the first raw render after a game frame differs there from every
+later one (tiles vs tiles too), and with the player hidden tiles vs batches is 0 px.
+Measurement trap for raw-render parity checks: discard the first render after a frame. Whole
+profile at the spawn view (30 s, A/B on the same save): 219 → 186 ms a frame in software GL,
+world render JS 19.4 → 15.3 ms a frame, with the scope's own cost 0.2 → 0.7 ms (the 1 s full
+rescans run every ~5th frame at this frame rate, so the rescan share is smaller on a device). Not yet measured on a device; the
+draw counts are what should carry over to a draw-call-bound GPU like the GTX 1060. A/B:
+Settings → Render optimizations → "Merge farm ground tiles" (also covers these groups),
+`FarmTileRenderBatches.setEnabled(false)`. `snapshot()` reports `groupFullScans` /
+`groupCachedScans`.
+
+Not done: the remaining plot draws are crops (per-crop materials, and crops sway through
+frame hooks, so they stay unbatched). The first house builder (`_buildFaceMeshes`) emits
+faces without UVs and is not tagged.
 
 ## 22 Nov 2026: incremental NPC combat resource rings
 
@@ -393,6 +524,16 @@ replay cull cannot drop them outside a replay's scissor (32 tree-batch draws sho
 x-ray shell replays alone), and the per-frame regroup costs CPU. `WildernessTreeInstancer` is
 now off by default under a new opt-in key (benchmark windows had persisted the old key as on);
 chunk-local batches with tight bounds are the version to try next (`treeInstancingOn`).
+
+**24 Nov follow-up — spatial instancing experiment:** the optional tree scope now groups
+by 8×8 world cells as well as variant/render state. Existing instance bounds give each
+cell a separate camera/replay cull decision. Weakly cached grouping keys eliminate repeated
+string construction for unchanged parts; inactive buffers release source references,
+expire after 30 render frames, and are capped at 64. Negative transforms and child-bearing
+source meshes stay unbatched. Pixel Probe exposes cells, grouping-key hits, uploads and
+retired buffers. Real Three.js fixtures exercise actual view culling and source restoration.
+Still off by default until a device A/B proves it faster; no new FPS claim.
+Audit: all five initial CI workflows passed. Refresh drawn tree world transforms before the first render after streaming; fail open for custom shader/uncullable/group-order members; guard duplicate discoveries and restore originals on partial setup failure. Rebased after the popup optimization merge, retaining both log entries.
 
 ## 20 Nov 2026: procedural wilderness trees drawn instanced
 
@@ -2125,3 +2266,1112 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - Exhausted Stamina and the orange Health-risk overlay each combine nine dashes into one indexed mesh. The batch preserves disconnected dash geometry, per-dash elevation, material and snow/slush projection. This saves eight meshes and eight world-pass submissions per visible dashed arc. Arc geometry writes its final height during construction.
 - Affliction pulses update only the three possible resource groups instead of visiting the descendant meshes every frame. The ring fixture verifies projection binding, open gaps, pulse timing, and disposal. Pixel Probe shows dash batches and mesh allocations avoided. Real-device frame time has yet to be measured.
 - A headless Three.js r128 WebGL comparison confirmed pixel-for-pixel parity in three workloads, including two overlapping actors and a simulated snow lift. World-pass submission counts for the ring fixture were 35 → 27 (one dashed arc), 44 → 28 (two), and 86 → 54 (four). Triangle counts matched.
+
+## 23 Nov 2026: Kanthic engraving through-wall and performance regression
+
+The separate 2D glyph darkness exemption could not sample the actual world depth and approximated it using per-wall raycasts, projected triangles and platform silhouettes. Replace it with the existing lighting canvas as a reusable GPU texture plus a depth-tested redraw of the occupied room or shaft's authored glyph meshes. The room system supplies distinct room/shaft IDs; unowned corridors are not one shared glow region. Cache discovery and proxies, hide inactive emissive meshes during world presentation, upload lighting only on a new paint, and restore visibility on frame exit. Pixel Probe exposes region, candidates, depth passes, texture uploads and errors. Real-device FPS and rendered visual parity are not yet measured.
+
+### Kanthic audit follow-up
+
+CI identified an obsolete exact-source assertion in the shaft firelight fixture. Bounds-based selection and local GPU clipping address wide panels across room boundaries and tall shaft walls. Lighting uploads are capped at 524,288 pixels (at most 2 MiB of RGBA per paint); this is a transfer bound, not measured FPS. Room bounds are cached at session creation and native room registration. The original DOM lighting placement is restored when the effect sleeps or during transition fades.
+
+Further render-order audit: the lighting compositor's presentation-surface repair can reset the WebGL target. Paint before any world depth pass. Disable all three clear flags while replaying PNG silhouettes (a THREE.Color scene background can force a clear even when autoClear=false). Added real alpha-cutout sprite regression coverage for both direct and offscreen depth paths. Cache native room extents lazily; reject camera-offscreen glyphs before uploading the darkness texture; observe pending atlas promises and use a five-second fallback discovery interval rather than 1.6 seconds. These are correctness/operation-count changes, not a measured mobile speedup.
+
+## 23 Nov 2026: companion combat and targeting audit
+
+- Friendly target decisions retain the existing 140 ms cadence and validate roster membership immediately. Beastmaster pets now reuse their proximity decision for the same interval, with immediate invalidation on a lost, removed, or out-of-range target. Wild scent selection no longer creates roster arrays or writes diagnostic objects on every frame; shoulder passengers and mounts are excluded as independent marked targets. Sicced is resolved once per companion update, not separately for each follower.
+- Attack geometry is evaluated only when a move could commit, with a short 100 ms per-target lease; the fallback bite validates current geometry on impact. Blocked pursuit reuses the existing delayed tile detour. Furious move-cost normalization is skipped when the animal has no Furious Stamina. Ambient scanning/idle checks are skipped while combat owns focus. Ground-follow diagnostics are reused. Owner-speed lookup skips redundant unmounted alchemy/global reads and no longer copies the tracked roster every update.
+- These are source-level operation reductions; mobile FPS and real-world latency remain unmeasured. The short decision leases do not throttle movement or committed attack animations. Regression fixtures cover target and terrain-lease invalidation.
+
+- Animal pounce/Guard Charge substep collision now selects `Combat.meleeHit`'s scratch probe mode, with one reused options object per committed lunge, rather than allocating diagnostic collider geometry for every candidate and substep. Rear Kick's approach also uses scratch probes; its actual strike still publishes the normal diagnostic. Drenkirra pellet candidates now distinguish Beastmaster pets from player companions and skip unavailable actors at contact. Enemy scent selection avoids copied rosters and redundant diagnostic writes. The cached Beastmaster fixture counts one roster enumeration across eight updates, then verifies immediate invalidation on removal.
+
+## 23 Nov 2026: opaque furniture render proxies and projectile resource reuse
+
+The wilderness prop batcher merges compatible authored leaf parts within one
+placement even when their materials are separate. A shared texture must be
+proven opaque at native resolution before a transparent source is eligible.
+The proof is sliced over timer turns, cached by image and fails closed.
+Sources keep independent materials; only proxies own clones. The settled
+fast path revalidates live material keys, and liquids, unsupported materials
+and partially transparent images stay on the original path. Existing
+ZonePropRenderBatches A/B switch and draw counts apply.
+
+Ranged projectiles retain up to 16 retired PNG materials, 16 exact-dimension
+geometries and 16 trail meshes. Trail draw ranges reset on reuse; active
+projectiles never share mutable materials. Per-shot textures remain separately
+owned and disposed. Ranged debug snapshots report reuse and pool counts.
+Actual device frame times and visual parity remain unmeasured.
+
+### Review follow-up
+
+CI caught the versioned enemy editor's transitive preview/app loader chain.
+Both loader tokens are now bumped. Furniture settled reuse compares scalar
+material state and leaf flags directly rather than rebuilding strings/owner
+keys every frame; attribute identity changes invalidate cached geometry.
+The existing Three.js integration fixture now exercises creation, restoration,
+material changes and attribute replacement. Retired projectile texture
+callbacks cannot mutate dead shots; trail buffers/materials are leased to
+fresh mesh wrappers so scene-specific object metadata is never recycled.
+Pixel Probe exposes resource-pool and prop-batch statistics on mobile.
+
+## 24 Nov 2026: world popup and emoji allocation churn
+
+The remaining icon-effect path created and disposed a separate shader material
+for every coin/ray and a fresh GPU texture per completed reaction, although
+Scratchbones already cached its immutable tinted canvases. WorldPopupText now
+owns a per-Three-namespace, bounded LRU of 32 immutable artwork textures with
+one live reference per event, plus 32 retired icon materials and eight retired
+quad geometries. The PNG factory and cutoff remain canonical; mutable canvas
+consumers opt out by default. Scene eviction cancels pending loads and returns
+leases without destroying resources still used by other scenes. No new frame
+loop; no active material or geometry is shared across events. Popup updates
+skip the camera entirely when idle and sort each active row list once per
+root/list kind until a removal invalidates it. Counters are exposed in the
+existing WorldPopupText and emoji debug snapshots.
+
+The earlier headless lunge-stamp result (15 Nov) found no meaningful frame
+cost from ring geometry allocation. That optimization is not pursued here;
+the large game.js owner also exceeds the connected file retrieval limit.
+No measured FPS or shader-rebuild reduction is claimed until a device A/B.
+
+Follow-up: lazy row-layout allocation leaves emoji-only and damage-only frames untouched; partial icon construction failures release already acquired leases. Added overlapping scene/cache eviction and row compaction coverage, and an on-demand pool-stat button in the existing emoji debug UI. Rebased onto latest main, preserving intervening changes.
+
+## 24 Nov 2026: CPU trace follow-up — portrait readbacks, X-ray, AutoLOD, HUD and flails
+
+Pre-#2142 trace (271b1fca, ~5.8 s, 46 game frames): ~818 ms sampled in getImageData, ~906 ms inclusive in held-overlay replay, ~722 ms inclusive in shell X-ray, ~212 ms AutoLOD self time. Browser style recalc includes ~50 ms spikes involving 5,209 nodes; the trace does not establish which mutation caused the whole-tree invalidation.
+
+- Beard/hood scratch contexts request willReadFrequently on the first context acquisition. A bounded shared cache stores pristine unwarped beard readbacks, and a separate bounded cache reuses exact negotiated still layers (actual resolved art/tint identity, transform, static deformation, masks, stretch and cone policy). Animated hoods still negotiate their actual current pixels; emote-deformed beards, pixel dyes, mutable/custom art and custom composers are conservative fallbacks. No pose quantization or new redraw timer. Pristine input is read-only and refused edges write a separate ImageData.
+- X-ray protected/tint cover queries now call the canonical surface composer's cover-only classifier rather than recomputing terrain/floor/path ancestry; ordinary scene groups bypass drawable-only scissor checks. Depth/material/visibility rules and all render passes remain.
+- AutoLOD builds active-scene candidates once per world frame and memoizes effective ancestor visibility per native draw; live geometry signatures are still validated on each eligible draw. No visual LOD is applied to hidden or detached scene objects.
+- Keyboard HUD skips unchanged HTML; Gear fit ignores only its own completed font-floor removal notifications, not external re-additions. These remove identifiable DOM writes, not proof of the trace's whole-tree CSS cost.
+- Flail physics remains at 240 Hz substeps except exact zero-torque/zero-velocity equilibrium; share one inverse holder matrix between connector and head; repeated identical rendered camera/carrier poses reuse the rope facing. Pixel Probe reports the readback, LOD, HUD and flail counters. Real-device frame-time and rendered-pixel A/B measurement remains pending.
+
+Audit follow-up: first full CI run passed 1,417/1,418 fast tests and all eight other workflows; the flail depth fixture lacked Quaternion support. Extended it to exercise actual cache hit/miss behavior and unconditional leaf matrix refresh. AutoLOD no longer snapshots candidate membership across native draws: a scene move during a render hook could make the list stale. It retains shared, per-draw ancestor visibility checks and live source validation, and avoids allocating a candidate list each frame. The HUD always rechecks the canonical deduplicated sprite request, including same-label item changes. A no-op hood stretch transfers its exact current readback to negotiation, avoiding a redundant read; a real warp deliberately rereads the canvas to preserve browser alpha-roundtrip behavior. Closed Gear observer batches now avoid filtering allocations and the real self-removal path has regression coverage.
+
+Additional cache audit: logical portrait dimensions and layer size are mutable via the authoring config, and resolving multiple tint canvases can evict earlier entries. Keys now include logical dimensions and capture the exact resolved immutable tint and transform used for each layer, with noncanonical or invalid inputs falling back. The shared result key includes the cutout API identity. Added no-op versus warped hood readback parity and identical-label HUD item replacement coverage.
+
+Final targeted audit: isolated executions of the real AutoLOD, Gear cadence, flail depth/facing, HUD dedup and beard matte/readback fixtures passed. Added an actual renderer-block cache integration fixture for separate portrait targets, exact still hits, dynamic bypass, immutable retained pixels, policy and dimension changes, tint changes, editor and pixel-dye bypass, context policy, and bounded eviction. Gear self-removal markers now last only through the next observer delivery and no filtering array is built unless such a release actually occurred. Mutable mask overrides and invalid/unserializable static deformation or policy values use the original uncached path.
+
+## 24 Nov 2026: Cloud Forest dense wall distance LOD (triangles, not draws)
+
+**Where the frame goes (headless, SwiftShader).** A CPU profile of town and the Southern Cloud
+Forest put only 12–20% of frame time in JS; ~80% was native `(program)` time. Wrapping every
+WebGL call showed tiny call overhead (no `readPixels`/`getError` stalls), so the cost is
+rasterising and vertex work. The Cloud Forest main pass drew ~0.9–1.24 M triangles at 360×240,
+and a per-mesh census put ~87% of the in-view triangles in the dense shadewood wall
+(`AuthoredCloudForestDenseChunk_*`). Hiding the wall raised headless fps 5.07 → 7.13 (+40%). This
+was the "dense-wall triangles / tree LOD" lead left open in the 20 Nov entry. (Town's equivalent
+is `Roughbrick1.glb` instancing, ~570 k triangles, and HousePieceGen "Surface roots", ~200 k:
+hiding them gave +23% / +30%. Not addressed here.)
+
+**What a wall tree is.** A procedural shadewood is 4,218 triangles: bark (trunk + 9 roots + 15
+canopy branches merged) 2,592, vines 1,500, climb branch 96, leaf cards 30. The baked
+`shadewood_0N_lod-decimate-90.glb` LODs (661 triangles) are not used, because tree assets default
+to procedural mode and their materials and shapes differ from the procedural trees.
+
+**Change.**
+- `FoliageGenerator.liteTreeGeometry(fullPartGeometry)` (foliage-generator.js) builds, once per
+  shared variant, a far twin from the same seed and random sequence. The spines, branch tips,
+  roots, vine wraps and leaf-card positions are therefore identical. Only tube emission changes:
+  the trunk is unchanged; roots, canopy branches and the climb branch keep every other ring (5/4
+  sides); vines keep their sides and every other ring, lifted by 1/cos(half the chord angle) so
+  straight segments do not cut into the trunk. Full bark 2,592 → 864, vines 1,500 → 750, so a far
+  tree is ~1,670 triangles. Bounds match within ~0.07 units. Leaf cards are reused as they are.
+- `dense-forest-wall-batches.js` (the existing render-only scope) classifies each wall tree by
+  its own base distance from the camera (default 12 tiles, 1.5-tile hysteresis). Near and far
+  trees of a part go to separate batches, so far trees use the twin with the chunk's own instance
+  matrices, live material and layers (shell outline). Fading chunks' transparent parts are never
+  merged: an all-far part swaps its geometry in place for the render (no extra draw), and a
+  straddling one splits into its own near/far batches. Chunk meshes keep full geometry for
+  gameplay.
+- `border-terrain.js` instanced every mesh of each wall tree, including the climb branch that
+  the tree's own roll had hidden, and every level of a baked tree's `THREE.LOD`. It now
+  instances only drawn meshes (level 0 of a LOD). It also builds the twins at zone build time.
+
+**Visual checks (1280×720, same camera, LOD off vs 8 vs 12 tiles).**
+- The first twin dropped roots and vines and used 3-sided vines. At 8 tiles that visibly removed
+  root flares and the green vines.
+- Coarse vines then showed as black zigzags: chords buried the green tube under the trunk's
+  noisy surface, leaving only its shell outline. A 6-sided trunk did the same, because its noise
+  is sampled at different angles.
+- Both fixed (trunk unchanged, vines lifted). At 12 tiles, off and LOD frames are
+  indistinguishable by eye; pixel differences (6.3–8.0% > 24 levels) are within the off-vs-off
+  animation/rain noise (7.2–9.2%). 8 tiles still showed small differences, so 12 is the default.
+
+**Measured (headless, same spawn view, 360×240, alternating 12 s windows):** main-pass triangles
+895 k → 601 k (−33%; −40% from another spawn, 1.24 M → 748 k); all passes 1.09 M → 0.80 M; fps
+6.72 → 7.30 average over three pairs (+8.6%; noisy); draws +12 to +18 (near/far splits); 0 batch
+rebuilds while standing still. Walking the same 12 s route (south then back): frames 74/70 →
+76/79; batch rebuilds ~0.4 → ~3 per frame (small matrix copies as trees cross the boundary);
+instance-buffer allocations 23 → 35–45, mostly new per-chunk batches for corridor-edge fading
+chunks. Tried and removed: keeping emptied LOD batches hidden for 30 frames and 1.5× capacity
+headroom (allocations 35–49 with them, no measurable change). **Not yet measured on a device.** A/B: Settings → Render
+optimizations → "Lighter far Cloud Forest wall trees", benchmark variant `denseWallLodOff`,
+`DenseForestWallBatches.setLodEnabled(false)` / `setLodDistance(n)`; `snapshot()` reports
+far/near trees, triangles avoided, in-place swaps and buffer allocations.
+
+## 24 Nov 2026: surface-growth root/vine tubes drop redundant rings
+
+**Found while profiling the Cloud Forest wall LOD.** A per-mesh triangle census of town put
+~200 k in-view triangles in 18 "Surface roots" meshes (the temple's Corner Fill roots: radius
+0.2, length 12, up to 48 strands per recognized surface; single meshes up to 43,820 triangles).
+Hiding them raised headless town fps 2.93 → 3.80 (+30%). Strand tracing places a ring every
+~3× radius (Corner Fill: every 0.14 units, up to 128 rings) so that paths hug walls, seams and
+corners. On flat runs, most of those rings add no shape.
+
+**Change.** `simplifySurfaceStrandRings` (foliage-generator.js) is a final pass on every
+surface-growth tube (houses, temple, caves, furniture), after `varySurfaceStrandRadii` and the
+shrinkwrap. Douglas–Peucker on ring centres drops a ring only when the straight tube between its
+kept neighbours stays within 12% of the strand radius of its centre and its radius, with at most
+12 ring gaps per segment. Kept rings keep their exact shrinkwrapped vertices and PNG stretch UVs,
+so strands cannot sink further than the tolerance and their texture still runs 0..1. Ends and
+corners are kept. Build stats report `strandRingsBefore/After`.
+
+**Measured (headless, fresh world, town spawn, main vs branch in separate sessions):**
+surface-growth triangles 217 k → 106 k (−51%; rings 22,281 → 11,157); all-pass triangles
+1.62 M → 1.29 M; town fps 2.95 → 3.47 average over three 12 s windows (+18%). Screenshots of the
+temple's roots and vines are indistinguishable at 1280×720. Generation-time only: no per-frame
+cost, and the same savings apply to cave and furniture growth. **Not yet measured on a device.**
+
+### Same pass: far brick walls and paths draw a 12-triangle brick
+
+`Roughbrick1.glb` is a 70-triangle faceted rock (37 corners, flat-shaded) that WallBuilder
+instances for house walls, gables and path chunks: ~8,000 bricks and ~570 k triangles in the town
+view (hiding them: +23% headless fps). AutoLOD skips it (below its 96-triangle floor), and a
+per-brick decimation does not pay for itself.
+
+New render scope `instanced-brick-lod` (`js/instanced-brick-lod.js`, order 450). WallBuilder tags
+its default-brick InstancedMeshes; logs, stacks and custom GLBs are untouched. The far brick is the
+**octant hull** of the same geometry: for each of the 8 box-corner directions, the source corner
+reaching furthest that way. These are joined as 12 outward-wound, flat-shaded triangles and
+stretched per axis to the brick's exact bounding box (volume within ~5% of the source). uv, when a
+tint added projected uvs, is copied from the matching source corner, and the hull is rebuilt if
+the source's attributes change. Selection is per mesh, since WallBuilder groups bricks per wall or
+path chunk. A mesh whose InstancedMeshBounds sphere edge is ≥ 14 tiles from the camera swaps
+geometry for the world render only and is restored afterwards: no extra draws, no buffer copies.
+Matrices, count, material, layers and raycasts are unchanged.
+
+**Measured (headless town, same session, toggled, with the roots fix above):** 6,061 of ~6,700
+in-view bricks drew the hull; main pass 697 k → 526 k triangles (−25%), all passes 1.29 M →
+1.11 M; fps 3.45 → 3.58 (+4%, three alternating 12 s windows each, noisy). At 8 tiles: 499 k,
+3.83 fps. At 1280×720, distant walls keep the same courses, sizes and outlines; far bricks shade
+slightly more evenly (fewer facets), visible only at 2× zoom. Default 14. **Not yet measured on a
+device.** A/B: Settings → Render optimizations → "Lighter far brick walls and paths", benchmark
+variant `brickLodOff`, `InstancedBrickLod.setEnabled(false)` / `setDistance(n)`; Pixel Probe shows
+far meshes, instances and triangles avoided.
+
+
+## 24 Nov 2026: 18:55 trace — redundant CPU-side render and clock work
+
+The uploaded trace sampled `isDepthReplayInert` (~88 ms self), registry visibility
+collection (~74 ms self), `classifyObject` (~57 ms self), and repeated prop-owner
+and batch validation. Calendar report generation also appeared under relationship,
+rest/buff, movement and camp AI callers. These are sample totals, not a measured
+speedup from the changes below.
+
+- Ordinary actor-only transparency sorting uses the original comparator and
+  live rank maps directly; manual layer and shoulder-pet sorting retain their
+  existing caches. Before/after comparison of 6,400 pairs was identical.
+- Full root-scene classification places known members directly in their scene
+  registries in traversal order, skipping redundant pending/root walks. Dynamic
+  registrations still use pending discovery. The replay-inert predicate rejects
+  ordinary single-material depth writers early, while preserving explicitly
+  pinned far-plane candidates, custom hooks and cutouts. 15,360 synthetic
+  predicate combinations matched the previous implementation; scene
+  classification and retirement fixture also passed.
+- Prop batching shares nearest-owner lookups only within one collection and
+  combines effective visibility and attachment checks. Tagged crop producers
+  register new PNG anchors before drawing; initial adoption scans and legacy
+  fallback remain available, with counters in the crop diagnostics.
+- CalendarSystem exposes raw day/fraction accessors and a minimal clock
+  snapshot. Romance/family, rest blessings, camp AI, cooking and relationship
+  queries use them rather than constructing date/UI debug reports. Civil
+  midnight still uses the existing bridge; rest and cooking timer origins are
+  unchanged. Targeted startup, rollover and rapport tests passed; a full
+  regression run and real-device A/B remain necessary.
+- No new frame loop, geometry reduction, pass-order change or actor-update
+  cadence reduction. Static world-matrix freezing and cross-native-render
+  visibility sharing remain unproven: render hooks may change transforms or
+  visibility, and relying on stale state can break occlusion.
+
+
+## 24 Nov 2026: performance-first shadow and actor replay range
+
+The user reported that the preceding CPU-hotpath changes did not deliver a
+satisfactory FPS improvement and explicitly accepted sacrificing shadows and
+distant X-ray. The earlier farm draw census counted about 270 shadow caster
+submissions on a refresh; disabling shadow maps removes those submissions
+instead of throttling them. This primarily benefits the farm (the existing
+shadow throttle identifies the farm sun as the only shadow-casting light).
+Ordinary lighting and authored shadow art remain.
+
+- ShadowMapRefreshThrottle owns the gameplay renderer's shadow-map enable
+  policy, defaults off, and preserves the previous 250 ms refresh mode when
+  opted in again. It also applies the policy to a newly created renderer.
+- HeldObjectRenderOrder filters participants by their owner's world-grid tile
+  relative to the player: the occupied tile plus its eight neighbors. The
+  same eligibility applies to color and shell replay, with distant parts
+  retained in ordinary color/depth and normal shell draws. Unknown owners use
+  the part's world position; previews without an active player and explicit
+  legacy all-participants mode retain the old policy. Local actor category,
+  weapon budget, and existing floor-circle/elevation rules still apply.
+  Independent portrait water tint is similarly local. A near actor's own
+  floor circle remains unchanged; this is a participant limit, not a new
+  shader clip boundary. Leaving the ring restores any prior hand masking.
+- Settings > Render optimizations exposes both policies; Pixel Probe reports
+  the real shadow-map flag and excluded X-ray part counts. The on-device
+  Render A/B benchmark includes fullXrayRange/localXrayRing and
+  shadowsOn/shadowsOff, restoring the original settings after each window.
+- Real ownership/partition fixtures and shadow toggle/renderer-replacement
+  fixtures passed in an isolated JavaScript harness. Full CI and same-save
+  device measurements remain required; no FPS improvement is claimed yet.
+
+
+### Consolidation: one tile-distance authority
+
+The local participant gate and the holder-centered floor circle now derive
+their reach from the same `XRAY_TILE_RADIUS` constant. In a gameplay scene
+with a valid player position, feet and pants use the player ring instead of
+also being rejected by the legacy six-unit 3D camera sphere. The camera
+distance setting is retained only for legacy range A/B and playerless
+previews; explicit all-participants mode still bypasses both distance
+restrictions. Species/category/weapon budgets, actual floor occlusion,
+elevation, scissor and water ordering remain unchanged. The expanded
+runtime fixture passes with a camera twenty units above the player and
+checks that the old camera rejection returns when local mode is disabled.
+No new frame loop or extra scene traversal is introduced. FPS remains
+unmeasured on-device.
+
+
+### Experimental generated outline modes (24 Nov 2026)
+
+Settings → Render optimizations → Generated outlines (experiment) selects
+`shell` (shipped default), `screen` or `none`. The ordinary Outlines
+setting remains the master offscreen/composite switch. The A/B benchmark
+compares `shellOutlines`, `screenDepthOutlines` and
+`generatedOutlinesOff` while preserving painterly and the master setting.
+
+Screen mode replaces the expanded-shell pass and its selective shell X-ray
+replay with one unexpanded front-facing depth draw on the existing
+SHELL_OUTLINE layer. The mask target is allocated only when used, resized
+with the main target, and disposed when leaving screen mode. Existing
+outline pass classification allows base-matrix reuse. The composite accepts
+only pixels whose mask depth matches the world depth, then detects an inward
+one-pixel silhouette or substantial depth discontinuity. Authored PNGs and
+hard-faced textured meshes are excluded by the existing shell-layer policy;
+an unrestricted world-depth Sobel filter would violate that policy. Standard
+scene fog fades the generated ink, and the painterly patch signatures are
+preserved. Reticle highlights, actor probes, PNG occlusion depth, water/color
+X-ray and perception overlays remain independent.
+
+This is deliberately a selective-mask experiment, NOT a zero-geometry-pass
+implementation: sampling the current depth alone cannot identify authorized
+outline surfaces, and the r128 world materials have no common eligibility
+channel. Depthless transparent foreground effects, restored ground depth
+over X-rayed limbs, and custom mist can differ from the original shell
+appearance. The default remains shell until device and visual validation.
+Recording-renderer fixtures exercise all three modes, resize, disposal,
+error restoration and persistence; real WebGL visual parity and FPS are not
+yet established.
+
+
+## 25 Nov 2026: deep hotpath follow-up and depth outlines as default
+
+Related investigation: draft PR #2164, branch perf/deep-trace-investigation-20261124, records trace 20261124T210514 on revision 6777fc8 and its corrected attribution. This implementation starts from current main rather than that older branch.
+
+- Default generated-outline mode is now screen-space; reset and persistence share the pipeline's default. Inward stroke sample offset is 3 render-target texels instead of 1, with correspondingly scaled smooth-slope rejection thresholds. No additional neighbor reads. Shell/none remain available and master Outlines still owns compositing.
+- Ranged archetypes: NPC registration requests only the required hunter/bandit key (cultural loadout path ensures registered definitions); unchanged definition/config pairs skip construction. Registration no longer calls player setLoaded; missing player state defaults according to weapon type, with existing player action state preserved. Explicit authored rebuilds still rebuild and sanitize loadouts. NPC calls never refresh player HUD. Runtime diagnostics count reused registrations. Test repeated NPC registration and replacement of a definition.
+- Inventory wheel cache hit validates ownership and definitions in place instead of allocating a key array; direct same-frame inventory mutations and periodic eligibility refresh remain correct. Action-arch mutation fixes avoid identical visibility writes, throwaway potion icon creation and DOM rebuilding when only hold CSS changes.
+- Expose existing portrait.waterTint rule in Render optimizations and as a benchmark variant; preserves ordinary water and gear tint. The three-stage water depth transaction itself is not removed: later depth consumers still require review.
+- Terrain spatial bucket children have identity local matrices under the original source mesh. Disable their redundant local composition while retaining parent/world transform propagation. This is deliberately not global hidden-node freezing.
+- User observed distant barbarian particles through cliffs. Shared combat VFX range is 24 tiles for non-player melee trails, death sprays and burning visuals (active area/scene required when known); normal depth testing and fog apply to swipes and sprays. Burning visual records outside the budget are released, gameplay afflictions and damage unchanged. Exact observed effect not identified; additional effect sources may need audit.
+- Quick attack bonus cue and melee HUD now use the same reach profile, including actual horizontal lunge projection via meleeLungeProfile and pitched cone length; mounted stance excludes the normal player lunge. The preview remains a forward half-disc opportunity bound, not a terrain obstruction, swept collision or exact reticle prediction. Aim pitch and mounted state invalidate the short cue cache.
+
+Validation: existing world pipeline recording-renderer fixtures, composite wiring, settings persistence and inventory wheel list fixtures passed in isolated JS harnesses. Extracted runtime fixtures passed for NPC definition identity reuse/replacement with zero player refresh/load writes, flat/pitched/mounted reach, and non-player VFX distance/area/scene bounds. New regression assertions are in the existing ranged and pipeline tests. Live WebGL/visual and FPS validation and full CI are not established at this point.
+
+Remaining investigation: broader invisible scene hierarchy/matrix dirty-state lifecycle, actual scene census, per-group prop batch invalidation, water replay reduction (not merely A/B), scene-scoped brick registry, checkpoint serialization reuse, character creation/cache churn, hand solve deduplication, full inventory mutation revisions and event-driven action bar. Do not treat those items as implemented or use unsafe global visibility/matrix skipping or disable save safeguards.
+
+
+### Follow-up audit
+
+- Cultural bandit ranged loadout registration now targets only the relevant species/material's candidate keys, and a cached NPC registration exits before modifying the tool definition or calling the slot-aware animStyle accessor.
+- The Quick Attack profile exposes both horizontal reach and the vector length consumed by the 3D HUD collider. The previous revision accidentally fed the horizontal radius back into a collider that applies its own pitch projection; corrected and covered with the real meleeLungeProfile (flat, upward, downward, vertical and mounted cases). HUD cardinal-direction zero-X aim also no longer defaults to +X. Cue pitch is sampled once per evaluation and the committed attack skips preview projection entirely.
+- The NPC VFX range budget also covers fixed enchanted-weapon particle emitters on captains and Shadowknights; leaving and returning to the range disposes and recreates only the emitter. Burning visual range/reentry tests verify the actual combat range helper and preserve the affliction amount. The exact observed barbarian particle source and cliff occlusion still require in-game verification.
+- Executed the modified opportunity reach fixture, extracted HUD cadence fixture, Burning Health fixture and extracted NPC weapon emitter lifecycle tests with isolated JavaScript test doubles; passed. Browser/GPU visual appearance, real-device FPS, and full CI on the newest revision are not yet verified. Broader deferred performance work remains outstanding.
+
+
+### Follow-up: independent prop group repair and instance registry (25 Nov 2026)
+
+Continuing PR #2165 from its audited revision 25583ae79de4ec38095499d51290ea84fbd367d2 (all seven PR workflows, including Regression suite, passed). This phase does not change the thicker default depth outlines, combat rules, save integrity guards or water replay order.
+
+- **ZonePropRenderBatches:** an invalid settled cell/material group now repairs only its own known members. A moved, hidden, removed, reparented, edited or otherwise ineligible source stays in normal drawing immediately; still-eligible siblings in the same group can remain merged. Untouched groups preserve their proxies and GPU buffers. New sources and members that migrate between group keys join at the next timed collection (at most the existing 300 ms collection cadence, subject to existing owner discovery and 1 s stillness policy). Empty/unsettled collections also respect the cadence instead of repeatedly scanning every owner. Source visibility is committed after all proxy builds succeed. Meshes with children are not merged, because hiding such a parent may also hide independent child visuals.
+- Motion validation now compares geometry and attribute references/versions and world matrices directly; unchanged sources do not write a 27-slot scratch signature or perform five attribute-ID WeakMap lookups. World matrices are still last render's, as in the existing batching contract; this does not fix its possible one-frame pose delay. New counters in the existing Pixel Probe prop snapshot: partialRepairFrames, repairedGroups, emptyReuseFrames.
+- **InstancedMeshBounds / InstancedBrickLod:** WallBuilder publishes the default-brick tag before enrolling the mesh. The LOD scope iterates a dedicated weak brick registry instead of visiting every grass/tree/other instanced mesh in the general bounds registry. Retagging cannot duplicate weak references; replay-only enrollment remains replay-only. Live ancestry/visibility still determines whether a brick belongs to the current scene. This is type partitioning, not yet a fully scene-scoped registry; inactive-scene bricks may still be visited. Pixel Probe reports candidates as well as active meshes.
+- **Scene matrix census:** WorldRenderPipeline.sceneMatrixCensus(scene), called only by an explicit Pixel Probe capture, counts total descendants, meshes, inherited-hidden nodes, auto-updated local matrices, hidden auto-updated matrices and render-proxy branches. Reports the largest twelve branch categories. This is a baseline outside the temporary render scopes, not a per-frame measurement or proof that a hidden node is safe to freeze. No extra scene walk in ordinary gameplay.
+- Validation: executed the complete zone-prop regression fixture with actual Three.js r128 (from its tagged upstream source), including independent dirty groups, immediate removal, timed rediscovery, material/attribute edits, child attachment and restored visibility. Executed the real bounds/brick LOD modules with Three r128 geometry and 500 unrelated instance meshes: only four tagged bricks visited; hidden, detached/reparented, replay-only and duplicate registrations handled correctly. The real census function counted inherited-hidden nodes without mutating visibility. Full CI on the follow-up revision and on-device frame timing are pending.
+
+Remaining: capture the actual Cloud Forest matrix census before choosing explicit static subtree invalidation; no unsafe global skip of invisible objects. Continue water-only depth-consumer review, immutable save serialization reuse, appearance/materialization churn, redundant hand pose solve and event-driven UI/inventory revisions. No performance number claimed until measured.
+
+
+### Next stage: water-only traversal, checkpoint stats and hand publication
+
+Continues the original rainy Cloud Forest investigation from current main (the
+previous PR #2165, including independent prop-group repair, brick registry
+type partitioning, thicker depth outlines and the on-demand scene matrix
+census, is already merged). No global hidden-node matrix freeze is introduced.
+
+- **Water-only selective replay:** one live postorder walk finds maximal
+  disjoint branches without a drawable on either private water replay layer
+  or the selected portrait stamp. Hide them only during the three existing
+  native submissions (portrait stencil, water color, translucent cover
+  depth), then restore even on exceptions. Lights/cameras and selected
+  descendants' ancestry remain. Visible LODs, unknown object types and
+  arbitrary matching render hooks cause conservative fallback. The portrait
+  parity owner advertises its exact local matrix-lock/restore hook pair only
+  when neither hook chains unknown behavior; replacement hooks invalidate
+  that permission. No cross-frame visibility cache, extra render pass,
+  change to water alpha/depth, or changes to normal gear replay. The setting
+  and A/B variant waterOnlyPruneOff/On permit direct comparison. Pixel Probe
+  reports pruned frames, maximal branches, and fallback counts.
+- **Browser recovery checkpoints:** compute checkpointStats once per
+  synchronous manual, campfire, travel or changed autosave transaction and
+  reuse for both the existing integrity guard and the record. Keep
+  canonical byte exclusion, all risk rules, rotation and fingerprint checks.
+  Do not share stats across asynchronous folder writes (provenance changes,
+  disk verification and mutable snapshot safety still require fresh checks).
+  The new checkpointStatsBuilds counter verifies the reduced work. This is
+  not a fix for every folder autosave cost.
+- **Hand pose publication:** the actual procedural rig owns left/right
+  sockets as direct children. Prefer those to recursive GLB searches;
+  legacy/nested editor rigs retain name-search fallback. No change to pose
+  solving cadence, pre-render/first-draw ownership or animation.
+
+Targeted source-executing isolated fixtures passed for water-only draw
+identity/order, old-mode comparison, local parity hook identity (including
+unknown predecessor/replacement), LOD/custom hook fallback, restoration on
+draw failure, browser manual/travel/autosave stats counts, direct hand socket
+publication and replacement/nested fallback. These are not live WebGL or
+whole-repository tests. Local Git network access was unavailable; updated
+versioned gameplay/editor loader references via the repository connector.
+Full regression and same-save FPS measurement still required.
+
+Remaining roadmap: actual Cloud Forest scene matrix census and explicit
+static-subtree invalidation; appearance-materialization counts/cache churn;
+folder checkpoint serialization across the I/O boundary (retain mutation
+guards); actual scene partitioning for tracked brick instances; full
+inventory revision/event-driven action bar; safe same-frame hand solve
+deduplication only if no late pose writers are lost. The water change
+reduces potential traversal, not the number of native passes. Measure
+fallback rates and actual FPS before treating it as a speedup.
+
+
+### Audit and next continuation: active-scene instance indexes, spawn cancellation and combat UI
+
+The previous revision 82113f7f14070185a27bc9d43cd06971c4d54f11 passed all
+nine PR workflows (full regression, Android APK and browser smoke included).
+The same PR continues from that verified revision.
+
+- Water-only pruning now abandons unsafe scans immediately and retains the
+  unpruned scene when an enabled shadow map has a pending manual refresh.
+  Three native water operations and the existing material/depth state
+  restoration remain unchanged.
+- InstancedMeshBounds maintains per-root-scene weak membership, seeded once
+  from the existing global registry. The already-installed scene structure
+  hook in OutlineRenderPerformance publishes attachment notifications; no
+  additional Object3D prototype wrapper is introduced. New tracked tags
+  enroll immediately, queued nested attachments coalesce, and live
+  ancestry checks remove moved/detached entries. Culler and brick LOD share
+  the same visibility walk. Replay-only tags are excluded. Inactive-scene
+  queues cap at 256 roots; overflow safely reindexes from the global list.
+  Global weak refs are compacted periodically at registration. Nested
+  preview scenes and older hosts without structure notifications fall back
+  to the original global behavior where required. Settings and benchmark
+  globalInstanceRegistry/sceneInstanceRegistry support A/B; Pixel Probe
+  reports visits, overflow, reindex, stale and fallback counts. The
+  synthetic two-map fixture visits two active instances instead of 502
+  global candidates; this is a count, not a real-frame FPS measurement.
+- Hunter materialization: validate the actual resident, generation, life
+  revision, area and activation range before and after asynchronous config
+  and avatar creation. A stale request cannot start an expensive factory
+  after configuration resolves, nor publish a completed obsolete rig.
+  Existing three-second dormant grace, detailed AI, release radius and
+  faction logic remain intact. Tribe diagnostics count attempts, successful
+  materializations, cancellation before/after factory, failures, dormant
+  releases and reuses. These are diagnostic counters, not a new spawn cap.
+- Combat coin UI resolves the symbol signature before creating DOM nodes.
+  Holding changes CSS only. A changed ability, combo step, label, loaded
+  artwork, regenerated combo raster or removed coin rebuilds normally.
+  Combat slots and stale ownership share one physical-button lookup.
+  Pixel Probe reports actual coin builds/reuses. Existing observers and
+  timer fallback still run; this is not a complete event-driven UI rewrite.
+
+Executed source-based fixtures for the actual scene attachment hook and
+registry (500 inactive instances, late tags, replay-only tags, moves,
+visibility, nested scenes, overflow and A/B), and for the actual coin and
+hunter build functions (30 unchanged refreshes allocate zero DOM elements,
+config-await cancellation, obsolete-life rejection, successful neutral
+publication and retry after failure). Previous regression was green;
+new revision needs full CI and on-device verification. No global matrix
+freezing, save safety changes, or asserted FPS improvement. Remaining major
+work: capture Cloud Forest scene matrix census to identify high-value
+immutable subtrees; optimize full folder checkpoint serialization and
+appearance readbacks; prove hand-solve deduplication and inventory revision
+ownership before changing them.
+
+
+### Registry failure audit and sparse portrait masks
+
+The earlier 82113f7 revision passed all nine PR workflows. The later
+0f1b1b5 revision passed 1425/1426 fast regression tests; the failure was
+the instanced-view-cull exception fixture still injecting an exception into
+the old global iterator rather than the newly used scene iterator.
+The corrected test now exercises both scene-aware and legacy iterator
+exceptions and verifies restoration of both instanced and distant scenery
+visibility. The audit also exposed a real exception-safety hole in global
+weak-ref compaction: a throwing visitor after a collected entry could leave
+a duplicate reference and stale array length. Compaction now preserves the
+unread tail and finalizes length even on throw. A deterministic fake WeakRef
+fixture reproduces the old failure and verifies the fix.
+
+Continued the appearance hotpath in the existing beard/hood compositor:
+painted requests use the disjoint union of the normalized RLE request and
+whisker ranges instead of decoding an additional request bitmap and scanning
+all 40,000 portrait pixels. Missing whisker/top-cover bitmaps need no
+allocation; explicit empty hood permission still means protect-all.
+Silhouette mode retains the full source-alpha inspection, including the
+242-alpha threshold. If no hood pixel is approved, the erasure scan is
+also skipped. No change to tuft warp, canvas readback, permission precedence,
+beard outline, front/rear draw ordering or editor behavior. This reduces CPU
+work in sparse painted-mask negotiation, not every portrait's texture
+generation or the Canvas readback itself.
+
+Executed scene-registry fixture and instanced cull fixture through the
+actual exception/grass/replay sections, the full beard/hood pixel and canvas
+unit section, and 240 deterministic comparison cases against main's exact
+old partition implementation (every output bit and diagnostic count equal).
+Updated known transitive cache references for gameplay and shared authoring
+pages. Whole-repository CI and actual device performance on the newest
+revision remain to be confirmed. Still need the real scene census to
+justify any static subtree freeze; no global matrix update override or
+unsafe save/hand cadence shortcuts.
+
+
+### Folder recovery: exact committed-byte mirroring
+
+The canonical file delta scan, disk stamps, external-edit guard, checkpoint
+integrity checks and recovery rotation remain unchanged. Recovery slot
+writing now serializes its record once before asynchronous filesystem
+operations and can return the committed JSON to the checkpoint manager.
+The browser mirror stores that exact string, and its cached record is
+parsed from that string rather than the potentially mutated input. This
+eliminates a second full stringify for each newly written or rotated
+recovery slot, at the cost of one JSON parse and keeping one serialized
+string through the write. The original record-returning public interface
+remains the default; older adapters fall back to the existing mirror path.
+A close failure cannot advance the mirror; quota fallback retains the
+committed disk record. committedRecoveryMirrors counts the new path.
+No change to save cadence or canonical data-loss guards.
+
+The extracted actual writer and manager persistence functions passed
+single-stringify, mutation during async lookup, disk/browser equality,
+failed disk close, quota fallback and legacy-return checks. The broader
+isolated save fixture stopped on its existing asynchronous baseline-seed
+assertion; the full native Node regression run is needed before claiming
+all save tests pass. Added integration assertions for both adapter modes,
+rotation and exact bytes, plus the real writer fixture. Updated the two
+runtime version tokens. Real device timing still needed: this removes
+serialization work, but is not a measured wall-time or FPS improvement.
+Static hierarchy freeze remains deferred pending an actual scene census;
+the save capture/integrity-size and canonical file serialization passes
+are not eliminated.
+
+
+### Static procedural tree matrix arithmetic
+
+The rainy Cloud Forest trace's ~5.92 ms/frame native main-render matrix
+walk remains the motivating evidence. The generator's shared tree variants
+bake wood, vine, canopy and climb-branch coordinates into local geometry.
+Fresh per-tree clones normally have identity-local direct mesh leaves.
+Instead of disabling transforms on arbitrary static-looking or invisible
+scene nodes, install a per-instance world-update fast path only on these
+generator-owned leaves when their update methods are the native ones.
+For auto-updated identity TRS, reset the local matrix to identity and copy
+the current parent's world matrix (or identity when detached), clearing
+matrixWorldNeedsUpdate exactly as native leaf traversal would do. This
+avoids quaternion composition and general 4x4 multiplication; it does
+not skip the scene traversal or assume any ancestor remains stationary.
+
+A moved/rotated/scaled leaf, manual matrix, added descendant, changed
+local-update hook or disabled A/B switch delegates to the original native
+world updater. Root transforms, explicit updateMatrix/updateWorldMatrix,
+visibility, fade, layers, culling, raycasts and reparenting remain live.
+No Object3D prototype changes. Only freshly generated procedural leaves
+are enrolled; baked GLB trees and other scenery are not implicitly opted
+in. The persisted Fast static tree matrices setting and
+identityTreeMatricesOff/On benchmark permit direct comparison. Pixel
+Probe exposes enrollments, actual copy executions and fallback counts.
+This is a narrower arithmetic reduction, not a cached whole-subtree
+traversal or a guarantee of FPS improvement.
+
+Executed the production enrollment/updater functions with a source-based
+matrix fixture (moving parents, hidden leaves, manual transforms, late
+attachments and reparenting); all parity checks passed. Added tests using
+the real Three.js dependency in the existing foliage-lite-tree-twin
+regression, including rotations, custom local hooks and A/B parity.
+The native Three.js suite is not available in the isolated connector
+environment; full CI and actual Cloud Forest A/B timing remain required.
+All known versioned foliage generator authoring/gameplay loaders and the
+new diagnostics/settings loaders were refreshed. The previous folder
+recovery revision had ten of eleven workflows green, with the full
+regression suite in progress. Larger static subtree invalidation still
+requires the on-device scene matrix census.
+
+
+### Resumed static-tree work: runtime isolation repair
+
+Recovered the interrupted conversation at commit f31364cc. Nine of eleven
+workflows passed; the fast regression suite (four foliage-related tests)
+and semantic surface foliage browser smoke both failed with the same
+ReferenceError at generator initialization. The new matrix shortcut
+looked up bare THREE, even though createFoliageGenerator receives T and
+has legitimate metadata-only and separately injected editor runtimes.
+
+Resolved the native updater pair from T, and deliberately restricted
+enrollment to the verified Three r128 contract. Newer editor runtimes
+keep their own native matrix updates; runtimes with no Object3D simply
+do not enroll any leaves. No changes to geometry, authored visual
+rules, tree placement, scene visibility, or the A/B default. Updated
+all nine known versioned generator consumers. The real-Three fixture now
+initializes without bare global THREE and tests an alternate revision;
+the fast isolation fixture also executes the actual enrollment/updater
+with an injected minimal r128 runtime and verifies conservative fallback.
+
+Targeted connector-based runs passed surface foliage lifecycle,
+instance placement, runtime isolation (including the added fast matrix
+fixture), the actual Five Blossoms metadata-only startup, and extracted
+matrix updater tests for parent movement, manual transforms, hidden
+leaves, late descendants, reparenting and opt-out. The complete Five
+Blossoms fixture could not run in the isolated adapter because it needs
+filesystem methods not provided there. Native Node/Three and browser
+CI remain required; no local clone (network DNS unavailable). No new
+FPS claim; compare Fast static tree matrices on/off and the scene
+matrix census before expanding to additional static subtree owners.
+
+
+### Pristine front-hood readback reuse
+
+The recovered static-tree repair (aa146ad17bf6e9178c010bbaf47723fa9972da36)
+passed all eleven CI workflows, including the full regression suite and
+semantic surface foliage browser smoke.
+
+Continued the original portrait-materialization readback investigation.
+The negotiated result cache already handles exact beard/hood combinations,
+and the pristine beard cache handles changing hood poses. A new bounded
+pristine cloth cache (4 MiB/24 entries, estimated RGBA bytes) now shares
+the unwarped front-hood readback across different beard/policy combinations.
+It is keyed by the existing exact canonical hood image/tint/transform
+identity and static deformation, independent of beard permissions. It is
+only used on the existing static, canonical result-key path; animated
+breathing, custom composer/tint, mutable mask overrides and pixel-dye
+paths retain their previous behavior. Scratch canvas drawing still takes
+place, so cached input does not replace the original unmodified artwork.
+Warping and approved cutout holes copy the immutable cached data before
+writing. Real warps still reread the canvas after putImageData to preserve
+browser premultiplied-alpha rounding; no-op warps transfer the readback.
+No changes to mask policy, outlines or original draw stages. Pixel Probe's
+existing Beard/hood CPU cache report automatically includes clothReads,
+clothReadHits and pristineCloth memory/eviction statistics.
+
+Targeted source-executing tests passed the entire pixel/canvas and actual
+portrait negotiation-cache section, including distinct beard identity,
+permission changes, no-op and real warp pixel parity, animated bypass,
+source replacement, static deformation invalidation, immutable cached
+input and bounded eviction. This is not a native browser pixel test or a
+measured FPS improvement. On cache hits this avoids one full Canvas
+getImageData call; extra retained pixel memory and private copies on
+mutation are the trade-off. Known direct and transitive gameplay/editor
+loader versions updated using the repository connector; local cache-bust
+checker/full Node suite could not be run without a checkout. Latest CI
+must validate the integration. Remaining priorities: on-device scene
+matrix census and A/B timing, broader appearance churn, hand solve
+deduplication and event-driven inventory. Do not bypass fresh animated
+pixels or global scene transforms.
+
+
+### Pre-merge audit (PR #2167)
+
+Reviewed the cumulative PR diff from main, focusing on private render
+passes, scene-index lifetimes, async NPC creation, r128 identity-leaf
+matrices, portrait cache ownership, save durability and loader versions.
+Two additional edge cases corrected: offscreen Avenger death now bumps
+the same resident lifetime revision as ordinary slayHunter, so a pending
+factory cannot publish a deceased resident after replacement; global
+weak-ref iteration now defers compaction until the outermost callback
+iteration completes, preventing a nested visitor or threshold sweep from
+seeing partially compacted array positions. Collected entries still
+compact after an exceptional exit, with no second pass if all visited
+references are live. Added tests for the actual Avenger loss branch and
+nested weak-registry visits; updated gameplay and editor version tokens.
+
+Re-executed the two complete source-executing regression fixtures,
+the pixel/canvas and actual portrait-cache sections, water replay draw
+parity/fallback/exception assertions, direct hand socket replacement and
+nested fallback, and the extracted real folder writer/manager mirror
+fixture (one stringify, mutation isolation, exact committed bytes,
+failed close, quota fallback, legacy result). An additional 120 seeded
+randomized painted/silhouette mask comparisons against main matched every
+bit and diagnostic count. These checks use isolated connector fixtures,
+not native browser execution. The earlier aa146ad revision was green;
+the later pristine-cloth and pre-merge audit revisions must pass the
+full native regression and browser workflows independently. Actual
+device FPS and live save/recovery/visual smoke still unmeasured. Do not
+merge on the strength of an older green commit alone.
+
+## 25 Nov 2026: continuous hierarchy investigation — capture draw-state graph
+
+Starting from unmerged PR #2167 head 4da6e02c (main f2eb854b at recovery),
+stacked on perf/water-save-and-hand-hotpaths rather than duplicating changes.
+Initial CI: six workflows passed, one running, four queued. Prior rainy Cloud
+Forest trace attributed ~5.92 ms/frame to native main matrix walk; historical
+attribution, not a current device measurement.
+
+Verified upstream Three.js r128 Object3D.updateMatrixWorld and WebGLRenderer:
+scene.autoUpdate === true calls updateMatrixWorld before render-list projection.
+Auto-updated local matrices mark matrixWorldNeedsUpdate; a dirty/forced ancestor
+forces every descendant. Neither visible, layers nor frustum tests prevent matrix
+recursion. projectObject separately returns on visible=false, but layer mismatch
+and frustum rejection do not prune children. Disabling matrixAutoUpdate alone
+is not a subtree optimization. Existing identity tree-leaf updater avoids
+arithmetic, not visits. Explicit updateWorldMatrix is a separate path. Do not
+freeze arbitrary hidden objects or actors; SkinnedMesh, weapon stance and late
+hand/portrait writers can do work inside traversal.
+
+Source audit:
+- WorldRenderPipeline prepares nine ordered scopes before frame hooks and actor
+  occlusion. Frame writers apply on first draw; secondary render-list traversal
+  still occurs even where OutlineRenderPerformance reuses base matrices. PNG
+  depth updates only participants then disables scene.autoUpdate. Water-only
+  branch pruning already exists.
+- WildernessDistanceCull caches candidates by residency/prop revision with a
+  fallback scan; every frame still checks ancestry, bounds and distances.
+  Vegetation corridor hides whole trees and dense-wall chunks; prop/forest
+  batches hide originals. All remain in the native matrix graph.
+- DenseForestWallBatches visits visible chunk parts, frustum-tests, classifies
+  instances with hysteresis and walks signatures/far flags before reusing
+  buffers. If scope timing is significant, investigate classification reuse with
+  exact camera, transform, buffer versions and hysteresis. ~63 groups x ~12 mesh
+  parts is a narrow scenery owner, not proof of dominant active hierarchy cost.
+  Tree instancing remains off by default after earlier device regression.
+- Hand socket lookup is already optimized; weapon-holder updateMatrixWorld
+  wrappers and late onBeforeRender writers remain. Do not deduplicate by frame
+  ID without exact pose-input/ownership and first-draw proof.
+
+Extended existing one-shot WorldRenderPipeline capture, armed from Pixel Probe:
+time enabled scope preparation, sample per-native-pass sceneAutoUpdate and
+world-scene identity, count actual draw-state graph once before first main-camera
+native submission after scopes and frame presentation hooks. Keep logical census
+separate. Fix numeric branch name aggregation and honor wilderness chunk tag.
+Census excluded from its pass timer, failed frames marked incomplete, stale
+arm/area capture rejected. Diagnostic only: no new frame loop, freeze, render
+wrapper, geometry, visibility or pass-order change, no continuous census.
+Elapsed scope/pass timing can include stalls; sampled autoUpdate is traversal
+intent, not measured visits under custom updaters. Known direct loaders are
+fresh classic manifests; no extra versioned editor consumers found by search.
+
+Next measurement: same rainy Cloud Forest save/camera, streaming settled, arm
+Pixel Probe, allow one gameplay frame, tap and copy report. Repeat with all actor
+X-ray categories and generated outlines off, otherwise same settings/weather.
+If possible provide fresh steady 10–20 second Chrome trace without active probe.
+Rank large hidden/static branches by main census and current matrix-stack samples,
+compare scope timings and native matrix-update requests. Trace most expensive
+producer's transform/attachment/disposal writers. Static-owner prototype needs
+explicit membership and transform invalidation, parent-world equality (not force
+alone), native mutation fallback, first draw/reparent/load/unload correctness,
+no raycast/gameplay effect, independent A/B. If projectObject rather than matrix
+work dominates, use selective pass registries/pruning instead. Inventory revision
+and materialization remain secondary until sustained render cost is attributed.
+
+Validation: complete source-executing recording-renderer pipeline fixture passed
+in isolated V8 adapter (one-shot, hidden descendants, per-pass reuse, scope
+restoration, native render failure and capture cleanup). Changed JS parsed.
+Native Node checkout, cache checker, full CI and device timings unverified.
+
+### Static dense Cloud Forest wall branch pilot (25 Nov 2026)
+
+The diagnostic-only head 288b3d5b passed all five reported stacked-PR
+workflows. No new device census/trace was supplied. Chose the narrow
+dense-wall producer for the first true subtree-elimination experiment, not
+because it has been measured as the largest current branch. The historical
+layout is ~63 chunk groups x ~12 flat InstancedMesh parts. Their placement
+is entirely in instance buffers; quarter-density, fading, culling, outline
+and LOD paths change counts/buffers, visibility, materials, layers or geometry,
+not object-local transforms. Ordinary procedural trees and actor rigs are
+not enrolled.
+
+BorderTerrain explicitly enrolls its newly attached flat dense-wall groups.
+A per-instance root updater warms via native r128 recursion and verifies
+identity local/world transforms and native leaf methods. The render hook
+temporarily marks the actual active scene's native matrix walk with a scene
+instance method, restored on success/error. On a cached identity root under
+an identity scene, skip ALL descendant matrix calls, with no leaf scan.
+Hidden and visible branches follow the same rule. Parent/root changes,
+explicit root updates outside the native scene walk, toggle-off, nonnative
+methods and unsupported runtimes fall back. The existing structure epoch
+observer retires edited roots/leaves; removal/reparent retires enrollment.
+The owner must call invalidateStaticMatrixBranch before adding any leaf
+TRS/manual-matrix/update-method writer (arbitrary raw edits are not observable
+without scanning). Explicit Pixel Probe audit detects a missed invalidation
+and retires the branch; this is a static-owner contract, not a generic
+invisible-node freeze. Shared weak state retains no scene or member objects.
+No native render pass, visual policy, raycast, instance placement or
+gameplay change; no Three matrix prototype override.
+
+Independent Settings toggle "Cache static Cloud Forest wall matrix subtrees"
+defaults OFF; Render A/B benchmark uses staticWallMatricesOn/Off. Pixel
+Probe reports enrollments, actual skipped branch/leaf calls, refreshes,
+retirements and audit violations. A synthetic 63 x 12 scene using real
+Three r128, actual RenderHooks and structure observer skipped 756 leaf
+updates on its steady cached draw; counts are not measured FPS. Complete
+new static-wall and existing dense-wall batching regression fixtures ran
+against actual upstream r128 in an isolated V8 adapter; changed JavaScript
+parsed. Native full Node and browser CI, repository cache checker and
+device A/B remain unverified. Updated known gameplay cache chains; authoring
+preview does not load the matrix owner and stays native. Keep default off
+until device reports confirm worthwhile reduction and no audit violations.
+
+Follow-up audit: explicit leaf-writer invalidation permanently retires the
+immutable branch even when its first edit is identity. Late Group prototype
+matrix hooks remain native. Added real producer enrollment and direct leaf
+composition count checks, plus settings persistence/reset and A/B restoration
+fixtures. The opt-in remains off.
+
+Verified the revised committed source at 7eca9165 in the isolated adapter:
+the full static-wall fixture ran against actual upstream Three r128 and
+counted zero leaf matrix compositions on the cached draw versus 756 in
+each native draw; actual BorderTerrain producer enrollment, delayed
+writer retirement and a late Group prototype hook all passed. The
+existing complete dense-wall batch/LOD test and complete settings and
+A/B benchmark fixtures passed as well. The authoring preview's
+BorderTerrain URL is now explicitly versioned; the preview remains native
+because it does not load the optimization owner. No real-device speedup
+claimed. Full CI and the repository cache-bust checker remain pending.
+
+
+## 2026-11-25 — Pixel Probe gameplay window and selective replay pilot
+
+The 13:28 dry Cloud Forest trace and accompanying probe (626909d8) showed
+9,895 scene nodes, 6,379 hidden; 4,262 wilderness chunk nodes, 1,305
+bandit avatar nodes, and 804 dense wall nodes. Static wall counters
+confirmed 974,415 skipped leaf updates and 82,845 skipped branches with
+63 refreshes and no retired branches. The post-probe audit showed zero
+ready branches, so audit now runs just after the actual main native
+submission while the scopes are still applied. The report was not a
+controlled FPS comparison. Main draw was 431 calls / 14.8 ms in the
+one-shot census; 16 native submissions included ten world submissions.
+Trace attribution suggested ~10.75 ms render-list construction and
+~16.28 ms held replay per frame. These are inclusive, overlapping costs.
+
+Pixel Probe now starts a bounded 20-second / 1,200-frame gameplay timing
+window when armed. It uses the existing scheduler, PerfProfiler brackets
+and render hooks, not another RAF, forced readback, stack capture or the
+heavy profiler overlay. First completed world frame is excluded (warmup
+and one-shot census); failed or non-world frames are excluded and gaps
+across them are not counted. The tap stops recording before pixel analysis
+or diagnostic draws. Report includes mean/p50/p90/p99/max frame intervals,
+driver and scheduler durations, subsystem/callback/hook/scope times,
+native pass wall-clock times, scene matrix timings, calls/triangles, and
+counter deltas. Explicit between-frame brackets have a separate cumulative
+bucket. Start/end counters include warmup and interrupted work. Native
+times are CPU submission wall time (possibly including waits), not GPU
+execution or exclusive JS samples. Unknown/uninstrumented work still
+requires a trace. Timed hooks exist only during capture; scheduler and
+PerfProfiler take their normal inactive paths otherwise.
+
+Two default-off, independently benchmarkable experiments:
+- Mixed gear/water frames reuse the existing conservative visible branch
+  pruning transaction for the two final water-only draws after portrait
+  stamping and gear/ground depth restoration. One JS branch scan trades
+  against two native render-list walks. No removal of draw passes or water
+  depth restoration. Existing water-only path remains separate.
+- Adjacent held registry reads reuse ancestor root/visibility information
+  within a synchronous batch and reuse the immediately preceding front
+  portrait classification for stencil stamping. Never cache across a
+  render, frame or intervening visibility edit. No broad scissor-cull or
+  full depth reconstruction redesign yet.
+
+Isolated source-executing fixtures passed capture, scheduler ordering,
+held registry ancestry, mixed-water/depth parity, near replay depth,
+outdoor replay budget, front portrait masks, settings persistence/reset,
+A/B restoration and world pipeline capture/audit. Browser visual and
+device performance parity remain unmeasured. Native full suite and
+repository cache-bust checker require a checkout/CI.
+
+
+### 25 Nov — first gameplay-window report (35aeffc6)
+
+Dry Southern Cloud Forest, 47 complete frames: 2.329 FPS, mean RAF
+interval 429.35 ms, median 133.4 ms, worst 8033.3 ms. Mean driver
+74.696 ms and scheduler 86.387 ms; the difference from RAF intervals
+is **unattributed**, not proof of GPU stalls, GC or storage. Main
+native submission 17.8 ms, of which scene matrix walk 4.153 ms;
+held replay 15.053 ms inclusive, fallback classification 4.102 ms
+(67 calls / 47 frames), registry visibility 0.719 ms. Zone prop batch
+scope 2.966 ms (24 collections in 48 counter frames, no rebuilds).
+Scheduled stable-animal progression 8.449 ms/frame, max call 202.7 ms.
+Both replay pilots were off. Static wall cache enabled: +3,024
+skipped branches/+35,568 skipped leaves, no refreshes, invalidations
+or violations during the window. No controlled speedup claim.
+
+Follow-up changes:
+- Stable XP service and new shoulder warnings share one synchronous
+  save at the end of the scheduled callback (finally, including error
+  paths). Public XP awards remain immediately persisted. No XP amount,
+  level curve, warning cadence, aura art, or perk balance change.
+  Resolve role/alert perks once, avoid temporary empty aura maps,
+  share the actor anchor for simultaneous warnings. Separate timings
+  for service, warning update, anchor calculation and actual XP save.
+  One remaining synchronous save can still stall; inspect its measured
+  cost before changing durability policy.
+- Held classification: optional 3-second repair cadence instead of
+  750 ms. Add-hook queue and explicit targeted reclassification
+  (invalidateClassification(root)) still flush before rendering.
+  Forced scans and toggle reseeding retained. This is an experiment,
+  default off: not a proven complete revision-driven replacement.
+  Unannounced late tag/material changes can take longer to discover.
+  Classifier is still the existing additive registration/repair owner,
+  not an unregister API. Counters and active-world vs auxiliary timing
+  distinguish scan sources.
+- Pixel Probe v2 captures top 12 slow scheduler frames with subsystem
+  and native buckets, top 12 RAF gaps with preceding scheduler and
+  measured between-callback time, plus a terminal gap if the window
+  expires between callbacks. Bounded browser longtask/long-animation-frame
+  observers, script attribution (URL queries stripped), focus and
+  visibility transitions only while armed. Unsupported browsers still
+  collect ordinary timing. Pending entries drained before diagnostic
+  draws; entries straddling boundaries or delivered late may be absent.
+  These browser times overlap one another and scheduler timings. No
+  automatic attribution of idle/GPU wait/GC from an unexplained gap.
+
+Focused source-executing JS adapter tests passed scheduled stable XP
+(single save for three service and two warning awards, immediate public
+save, shared centroid and cleanup), existing stable progression,
+Probe v2 browser observer/bounded gap accounting and cleanup,
+classification batching/retirement/targeted late reclassification,
+settings, A/B and outdoor replay budget. Native Node suite, cache
+checker and live device performance/visual parity not run locally;
+known loader cache chains bumped. Next: record matching dry forest
+baseline, then independently enable the classification pilot, and
+compare actual slow-frame sources and save timing before more rendering
+architecture changes.
+
+
+### 25 Nov — browser long-task attribution and shared sprite pixel worker
+
+The next dry Southern Cloud Forest probe (02ac6870) directly attributed
+an 8,026.4 ms browser event listener to fish-catalog.js. Other long
+animation frame scripts included fish-catalog.js (490.3 and 376 ms) and
+sprite-recolor.js (568.7, 297.2, 255.1 ms). The page remained focused and
+visible. This attributes browser execution to the listener and its
+continuations; it does not isolate the exact image or inner function.
+The 18 measured scheduler frames averaged 90.37 ms; the RAF timestamps
+reported more elapsed interval time than the actual window. v3 uses
+actual callback-entry wall-clock intervals for FPS and retains raw RAF
+timestamp intervals separately. Two remaining stable XP saves cost
+63.0/64.8 ms, accounting for virtually all of the 7.139 ms/frame
+stable callback. Persistence remains a separate next target.
+
+Fish profile work no longer allocates an array entry per eligible
+pixel and repeatedly filters it. Streaming bin accumulation preserves
+pixel order, thresholds and tie-breaking. One bounded color memo per
+job avoids repeated RGB/HSV/chroma/ignore computations; final profile
+cache is bounded to 32 immutable source/species entries, shared across
+variants. Pattern HSV fills use a 256-value palette. No source-art
+resampling or change to dimensions/alpha/color rules.
+
+PixelWorkYield now owns a serial canvas job queue (acquired before
+readback), a single lazy classic worker and one in-flight transferred
+private buffer. Fish and SpriteRecolor use their same source math in
+the worker and main-thread fallback. The worker imports the existing
+owners with explicit versions, bypassing gameplay hooks; it has no
+DOM, canvas or scheduler loop. The caller retains its original RGBA
+buffer until a valid reply so worker startup/CSP/message/timeout failure
+can safely fall back. Failure disables the worker for this page session;
+fallback slices at 4,096 pixels and uses the existing shared yield
+budget. Generic direct fallback computes the exact global shade
+reference before chunked application; synchronous public recolor APIs
+and tools without PixelWorkYield retain their previous behavior.
+Concurrent identical canvas requests still share promises; failures
+remain retryable. Existing sixfin layer ordering and scroll/sheen
+compositing remain intact. Worker queue may delay uncached art rather
+than block gameplay. Browser canvas draw/readback/upload, consumer
+PNG encoding, and unrelated pixel jobs remain potential main-thread
+costs; this does not guarantee a hard 6 ms task deadline or zero stalls.
+
+Pixel Probe v3 includes pixel queue, worker success/failure/timing,
+fallback/yield counters and local/worker fish profile stats. Worker and
+fallback elapsed job durations are not exclusive main-thread CPU times.
+No real-device speedup claimed. Differential execution against the
+unmodified 02ac6870 fish algorithm matched exact RGBA for all 16
+non-patterned variants on 1, 19 and 20,000 pixel fixtures. New regression
+fixture covers those legacy hashes, pattern alpha, worker dispatch
+using real worker source in a mock transport, generic color modes,
+failure and retry fallback, low-luminance normalization and serial
+queue recovery. Existing scroll/sheen, fish presentation and probe
+fixtures passed in isolated JS adapter. Native full suite, cache
+checker, actual worker startup/transfer and browser visual/device
+performance verification remain pending. Known gameplay and editor
+loader tokens refreshed.
+
+
+### 25 Nov — automated real-browser verification of the pixel worker (no manual probe needed)
+
+`node scripts/perf-pixel-jobs-browser.js` (needs Chromium; not part of the CI suite) serves the baseline
+(`02ac68705`, the build with the 8 s stall) and the working tree side by side, loads only
+`pixel-work-yield.js` + `fish-catalog.js`, and recolours all 24 authored fish from their real sprite
+sheets (up to 1857x1851) at once while recording `longtask`, `long-animation-frame` and RAF gaps. Hashes of
+the finished canvases are taken after the measured window so the verification readback is not counted.
+It exits non-zero if the worker is not `ready`, output differs from baseline, or any task is >= 250 ms.
+
+Measured in headless Chromium (real Worker, software rendering irrelevant: no WebGL on the bench page),
+3 runs: baseline longest task **8,035 ms** (the field probe saw 8,026 ms; 5 long tasks, 10.7 s to finish),
+working tree longest task **60-72 ms** (1 long task, worst RAF gap 87 ms, 1.5 s to finish), `workerJobs` 32,
+`fallbackJobs` 0, `workerFailures` 0, output identical to baseline for all 24 fish. Booting the real
+`index.html?skipIntro=1` also reached `workerState: 'ready'` with 4 worker sprite jobs, 0 fallbacks and no
+page errors. **Not measured:** a physical device, or the CPU cost of canvas readback/PNG encode in the live
+game with a GPU renderer; the bench shows the algorithmic stall is gone, not that no 60 ms task remains.
+
+Stable-animal XP persistence (the two ~64 ms saves in the same probe): the scheduler's XP batch now defers
+`saveStable()` into one trailing 5 s save, flushed on `pagehide`/`visibilitychange:hidden`, and cancelled
+by any other full save. Public `awardXp` still saves immediately. Trade-off: up to 5 s of passive service/alert
+XP can be lost on a hard crash; no gameplay state other than that XP is deferred.
+
+Also fixed on the branch: six tests that failed against `origin/main` only on the perf branch (stale
+frame-ownership manifest line for `presentationLoop`, an exact `?v=` pin in test data, the pre-game-diagnostics
+module list, and three source-text assertions that did not allow the new replay-memo arguments).
+
+
+### 25 Nov — opt-in coarse ticking of off-area NPC walkers (not yet playtested)
+
+Design direction: the wilderness should feel alive the way staged-encounter mods do, not through a full
+world simulation. Every NPC walker used to run its complete schedule `update` every frame, including walkers in other
+areas that nobody can see. `docs/js/offarea-npc-tick.js` (`window.OffAreaNpcTick`) runs that same real update at 4 Hz with the
+skipped time accumulated (capped at 0.5 s) for walkers that are in a different area than the player. Walkers that need
+per-frame control keep it: named animals, baby-following, cliff climbs, paused/dialogue/cutscene walkers and wildlife flight.
+Off by default; enable with `?offAreaNpcTick=1`, `localStorage.hobunjiOffAreaNpcTick='1'` or
+`OffAreaNpcTick.setEnabled(true)`, and compare with `OffAreaNpcTick.getDebug()` (skipped vs coarse updates).
+**Not measured / not played:** the effect on frame time, and whether NPC arrivals, area transfers, seats and beds behave
+identically. Unit tests cover the cadence and every exclusion, not the live schedule.
+
+Testing note: a githack commit URL (`1c712d2db`) served `fishing-minigame.js` truncated at ~35 KB (browser: "Unexpected end of input", line 598)
+while the same file from raw.githubusercontent.com was complete and byte-identical to the repo (92,147 bytes). Githack caches per
+commit, so a reload does not recover; pushing any new commit gives a fresh URL. The visible symptom was a hang at 84% loading.
+
+
+### 26 Nov — second real-device Pixel Probe (GTX 1060 3GB, Cloud Forest fight, offAreaNpcTick ON)
+
+- 6.5 FPS; driver mean 61 ms but frame interval mean 153 ms. About 90 ms per frame passes outside our JavaScript
+  (between scheduler callbacks), and the first probe showed the same (interval 122 ms vs driver 62 ms). The probe's timings are
+  CPU submission only, so this points at GPU or compositor back-pressure, not at game logic. Candidates to A/B on the device
+  (existing settings): Painterly post-process (Medium = 72 samples per pixel at the full 1850x858 buffer, `PainterlyPostprocess`),
+  Resolution (100% -> 75%/50%), and the held-overlay replay (~16 ms CPU + extra full-screen passes). Not yet measured separately.
+- Off-area NPC tick: 86% of walker updates skipped (3,322 coarse, 20,032 skipped), `npc walkers` 0.93 ms/frame. The earlier
+  report's 5.39 ms mean was one 72 ms warmup spike; without it ~0.95 ms. No measurable win, so it stays opt-in.
+- Deferred stable XP save: the ~80 ms callback in `stable-animal-progression.js` is the save, followed by a ~30 ms forced
+  layout in `folder-save-quit-guard.js` and a ~26 ms folder-write completion. Coalescing window raised from 5 s to 30 s.
+
+
+### 26 Nov — Painterly off / resolution 75% device probes (GTX 1060 3GB, Cloud Forest fight)
+
+| Settings | FPS | driver mean | frame interval | gap outside our JS |
+| --- | --- | --- | --- | --- |
+| Painterly Medium, 100% | 6.5 | 61 ms | 153 ms | ~92 ms |
+| Painterly Off, 100% | 10.9 | 63.6 ms | 91.4 ms | ~28 ms |
+| Painterly Off, 75% (1387x643) | 10.9 | 69.4 ms | 91.8 ms | ~22 ms |
+
+- The painterly post-process costs roughly 60 ms of GPU/compositor time per frame on this card (153 -> 91 ms interval with game
+  logic unchanged). It is three full-screen passes (49-tap oil, 7-tap horizontal wash, 7-tap vertical wash + tone) on 8-bit
+  targets at the full 1850x858 buffer; on paper that is small, so the measured cost is unexplained. `PainterlyPostprocess` now
+  wraps each pass in `EXT_disjoint_timer_query_webgl2` queries (every 4th frame, asynchronous, hard-failing to "off") and the
+  Pixel Probe prints `Paint filter GPU ms (avg/max): oil / washH / washV+tone`. **Next: one recording with Painterly Medium.**
+- With Painterly off, lowering resolution to 75% changed nothing (10.9 FPS both), so the game is CPU-submission bound there:
+  driver 64-69 ms, of which render passes ~47-53 ms (world pass ~600 draws / ~520k triangles, matrix-walk ~18.5 ms of which only
+  ~5 ms is matrix updates, held-overlay replay ~16-20 ms). Game logic (hostiles, NPCs, companions) is a few ms.
+- Folder-save/controller-ui-nav forced layouts (22-37 ms) appear only in the frame where the probe tap itself opens its UI.
+
+
+### 26 Nov — CORRECTION: painterly GPU cost measured at ~4 ms, not ~60 ms
+
+The first Painterly-on vs off comparison above attributed ~60 ms/frame to the painterly post-process. That inference was wrong: the
+runs were in different scenes (different combatant counts and draw loads), and the first Medium run also had pixel-asset work
+in flight. With GPU timer queries (PainterlyPostprocess, 31 samples, Cloud Forest, rain, 6 bandits chasing + Drenkirra):
+`oil=2.74 ms washH=0.93 ms washV+tone=0.20 ms sum=3.87 ms` average (single-sample maxima of 23-38 ms look like warmup/contention
+spikes). Same recording: Painterly Medium, 100%: **15.9 FPS**, driver mean 49.8 ms, frame interval 63.1 ms (gap outside our JS
+~11 ms). Painterly is therefore not the bottleneck on this card; do not optimize it on that basis.
+
+What dominates now (CPU submission): render passes 34.7 ms/frame (world pass ~560 draws / ~490k triangles ~13.6 ms, held-overlay
+replay ~10.9 ms plus ~14.8 ms base-render bucket), game logic a few ms. One-frame spike: `npc walkers` 36.8 ms
+(path-search suspect; 200 searches / ~70k node expansions this session; first attempt 1,200 nodes, widened attempt 4,000).
+
+Comparability: reports in different fights are not comparable, so Pixel Probe now prints `Scene load:` (hostiles alive / in area /
+engaged, counts within 10/20/40 tiles, companions, animals) and the performance window records that block plus the NPC
+pathfinding counters at its start and end (`counterDeltas.sceneLoad`, `counterDeltas.npcPathing`).
+
+Unrelated finding: `assets/audio/sfx/farming/sfx_harvest.mp3` is referenced by `config/scratchbones-config.js` and the sfx README
+but has never existed in the repository (combat audio HTTP 404 in the probe).
+
+## Wilderness zone first build: water-body outline distance (2026-11-26)
+
+Profiled `buildZoneScene('map_northern_cliffs')` (first build, headless software GL, Chrome CPU profiler): 3972 ms. About 1.8 s of it was
+`water-body-outline-overlay.js` `buildDomain` -> `applyProtectedBand`, which measured every mapped vertex against every boundary
+segment (O(vertices x segments), `Math.hypot` per pair; `pointSegmentDistance` alone ~1.0 s self time).
+
+Fix: `buildBoundaryDistanceIndex` (uniform grid + outward ring search that stops once nothing unseen can be closer, squared distances,
+one sqrt per query). Exact: `scripts/test-water-body-boundary-index.js` compares against brute force (random, pond rim, diagonal,
+degenerate, outside points) to 1e-9, and it is ~21x faster on a 1200-segment outline. Same zone after: 2466 ms (-38%).
+
+Remaining top of the build (not yet touched): `buildZoneMesaMeshes` ~0.94 s (surface-stretch UV remap/unwrap), `buildPathNetworkGeo`
+~0.3 s self. This benefits every first zone entry, single-player included, and shortens the co-op host's guest-zone build hitch.
+
+### Mesa UV unwrap: interned vertex ids, numeric edge keys (2026-11-26)
+
+`HobunjiSurfaceStretchUV.mapGeometry` (the mesa/cliff surface-stretch UV remap, ~0.9-1.1 s of a wilderness zone build) spent its time on
+string keys: `edgeKey` (`${a}|${b}` concat + long-string hashing) was the top self-time function (~350 ms), then `collectTriangles` /
+`islandData`. Vertex keys are now interned to integer ids once per mesh and an edge is one number; the edge's orientation still comes
+from the original string order of the vertex names, because it decides which end seeds a boundary loop and the adjacency insertion order.
+Gotcha found by the equivalence test: ids start at 1, since `traceBoundaryLoops` tests `if (!next)` and a vertex id of 0 is falsy.
+
+Proof of identical output: `scripts/test-surface-stretch-topology-equivalence.js` (golden hashes from the pre-change code over 7
+deterministic mesas: holes, pieces, material slot, tight angle, quad pairs, edge options; needs `THREE_PATH` or `npm i three`, else it skips).
+Node micro-benchmark, 7,200-triangle mesa: 186 ms -> 105 ms per `mapGeometry`.
+
+### Zone build: plateau mesa bookkeeping and path network heightfield (2026-11-26)
+
+Both are pure functions of the zone grid, so each got a golden-hash test generated from the pre-change code before any edit
+(`scripts/test-plateau-mesa-golden.js`, `scripts/test-path-network-golden.js`; real three.js needed via `THREE_PATH` or `npm i three`,
+otherwise they skip).
+
+- `buildPlateauMesa`: `inMask` built a template-string key per call (several per vertex), the BFS allocated `[gi, gj]` arrays and a
+  neighbour table per step, and every quad built a string key for the own-mask test. Memoized per tile / indexed BFS / per-tile gate.
+  41 -> 25 ms per 66x66-tile mesa (Node).
+- `buildPathNetworkGeo` (route heightfield for a whole zone): profiling showed the bilinear `maskAt` lookup plus `roughDisp` ran for every
+  render vertex even though the blurred route mask is exactly 0 almost everywhere. Tiles whose sampling window sees no non-zero mask cell
+  skip the lookup (result is exactly +0) and `roughDisp` is skipped where the blend is +0 (it adds +/-0). The mask build/blur also lost
+  its per-vertex arrays and per-pass buffers (same float summation order). 1203 -> 758 ms on a 200x180-tile zone (Node).
+
+Gotcha while doing this: a Python splice used `str.index("const seamDisp")` from the start of the file and silently duplicated ~230
+lines because an earlier function has the same text; the golden test still passed because the stale copy was the one being called.
+When splicing, search from the start marker, and check `git diff --stat` before trusting a green test.
+
+### Where the first zone build stands after these passes (2026-11-26, map_northern_cliffs, headless software GL)
+
+First build of the zone went 3972 ms -> ~2500 ms (run-to-run spread about +/-0.3 s). The profile is now flat; remaining stable costs, inclusive:
+`buildZoneMesaMeshes` ~1.0 s (of which `buildPlateauMesa` ~0.45 s, the natural-surface UV post-pass ~0.5 s, `batchMesaMeshes` ~0.3 s),
+chunk priming ~0.5 s, waterfall curtain overlay `buildDomain` ~0.3-0.45 s, path brick chunks ~0.33 s, border terrain ~0.28 s,
+`ZoneGrassBillboards`/log-wall `build` ~0.3 s, plus ~0.5 s of garbage collection (many short-lived index arrays and typed buffers).
+
+Unrelated to the zone build but visible in one wide profile (the async `buildBuildingScene` continuation landing in the same window):
+`FoliageGenerator.applySurfaceGrowth` -> `buildSurfaceGrowth` ~1.2 s, `surfaceGuideEdges` alone ~0.46 s self + 0.09 s in its `quant` helper.
+That is a separate, larger candidate for building interiors.
+
+Ideas not yet tried: write `buildPlateauMesa`'s grass/stone indices straight into typed arrays (it builds two plain arrays, `concat`s them, then copies
+into a Uint16/Uint32 array), and pool the per-chunk typed buffers to cut GC.

@@ -4,8 +4,8 @@
 // authored 200x200 points and portrait-hand-shoulder-scan.js remain fallbacks.
 // The hand socket/origin IS the wrist. The authored hand GLBs point fingers local -Y,
 // so the wrist/proximal side is local +Y. That axis targets the pose-authored elbow.
-// The correction
-// may rotate only around two HAND-LOCAL hinges:
+// For a grip, read the rendered anatomical basis without changing the model alignment.
+// The correction may rotate only around two HAND-LOCAL hinges:
 // local X (grip axis) and local -Z (directed palm-normal axis). There is deliberately no local-Y
 // shoulder hinge. Per-pose weights come from hand-shoulder-pose-runtime.js.
 (function (global) {
@@ -38,6 +38,21 @@
     };
   }
 
+  // Approximate adult wrist limits in the generic hand frame, radians.
+  // Fingers extend -Y and flex toward the palm (-Z), so the forearm direction in the flexed hand frame has negative Z.
+  const WRIST_FLEXION = 80 * Math.PI / 180;
+  const WRIST_EXTENSION = 70 * Math.PI / 180;
+  const WRIST_RADIAL = 20 * Math.PI / 180;
+  const WRIST_ULNAR = 35 * Math.PI / 180;
+
+  function wristHingeLeeway(grip, palmNormal, side, out) {
+    // Left/right generic hand frames mirror their thumbward deviation.
+    const sign = side === 'left' ? -1 : 1;
+    out.grip = Math.max(-WRIST_FLEXION, Math.min(WRIST_EXTENSION, grip));
+    out.palmNormal = sign * Math.max(-WRIST_RADIAL, Math.min(WRIST_ULNAR, sign * palmNormal));
+    return out;
+  }
+
   function installShoulderAim(THREE, rig, options = {}) {
     const avatarRoot = options.avatarRoot || rig?.avatarRoot || null;
     const parent = rig?.parent || avatarRoot?.parent || null;
@@ -60,9 +75,14 @@
     const localTargetDirection = new THREE.Vector3();
     const aimedWristAxis = new THREE.Vector3();
     const inverseAuthoredQuaternion = new THREE.Quaternion();
+    const wristBasis = new THREE.Quaternion(); // Socket-to-anatomical frame of the gripped visual.
+    const inverseWristBasis = new THREE.Quaternion(); // Maps the hand-local correction back to the socket.
+    const anatomicalOutput = new THREE.Quaternion(); // Used for visible wrist-angle diagnostics.
     const gripCorrectionQuaternion = new THREE.Quaternion();
     const palmNormalCorrectionQuaternion = new THREE.Quaternion();
     const localCorrectionQuaternion = new THREE.Quaternion();
+    const wristLeeway = { grip: 0, palmNormal: 0 }; // Reused angular bounds for either hand.
+    const wristLeewayInverse = new THREE.Quaternion(); // Removes permitted palm deviation from the full target rotation.
     const authoredQuaternion = new THREE.Quaternion();
     const outputQuaternion = new THREE.Quaternion();
     const guideSpan = new THREE.Vector3(); // Reused by the optional paper-arm preview.
@@ -70,6 +90,8 @@
     const guideMidpoint = new THREE.Vector3(); // Reused midpoint between shoulder and wrist for the paper-arm preview.
     const guideElbow = new THREE.Vector3(); // Reused computed elbow position for the paper-arm preview.
     const guideDirection = new THREE.Vector3(); // Reused segment direction when orienting paper strips.
+    const guideWristAxis = new THREE.Vector3(); // Endpoint of the actual solved proximal axis, editor guide only.
+    const guideWristBasis = new THREE.Quaternion(); // Current calibrated hand basis for the guide.
     const guideLocalY = new THREE.Vector3(0, 1, 0); // Plane-strip length axis used by the paper-arm preview.
     const debugEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const debugBySide = { left: null, right: null };
@@ -99,6 +121,8 @@
       appliedGripAngle: 0,
       appliedPalmNormalAngle: 0,
       residualRad: 0,
+      authoredResidualRad: 0,
+      wristBasis: new THREE.Quaternion(),
       outputQuaternion: new THREE.Quaternion(),
     });
     const aimDebugSnapshotBySide = { left: makeAimDebugSnapshot(), right: makeAimDebugSnapshot() };
@@ -121,16 +145,30 @@
         shoulderWristDistance: snap.shoulderWristDistance,
         elbowSource: snap.elbowSource,
         authoredElbowOffset: snap.authoredElbowOffset,
-        calibrationOwnership: 'ignored-child-layer',
+        calibrationOwnership: 'read-only-anatomical-basis',
+        gripAttached: !freeSide[side],
+        authoredResidualDeg: toDeg(snap.authoredResidualRad),
+        anatomicalBasis: quaternionDebug(snap.wristBasis),
         authoredQuaternion: quaternionDebug(snap.authoredQuaternion),
         authoredDeg: eulerDebug(snap.authoredQuaternion),
         targetDirectionLocal: { x: snap.targetDirectionLocal.x, y: snap.targetDirectionLocal.y, z: snap.targetDirectionLocal.z },
         solvedLocalAnglesDeg: { grip: toDeg(snap.gripAngle), palmNormal: toDeg(snap.palmNormalAngle) },
         appliedLocalAnglesDeg: { grip: toDeg(snap.appliedGripAngle), palmNormal: toDeg(snap.appliedPalmNormalAngle) },
         residualDeg: toDeg(snap.residualRad),
+        // Compare the actual current socket with the solved result to expose a late writer.
+        currentResidualDeg: currentWristResidualDeg(side, snap),
         outputQuaternion: quaternionDebug(snap.outputQuaternion),
         outputDeg: eulerDebug(snap.outputQuaternion),
       };
+    }
+    function currentWristResidualDeg(side, snap) {
+      const socket = socketFor(side);
+      if (!socket) return null;
+      anatomicalOutput.copy(socket.quaternion).multiply(snap.wristBasis);
+      aimedWristAxis.copy(localWristProximalAxis).applyQuaternion(anatomicalOutput).normalize();
+      targetDirection.copy(snap.elbow).sub(socket.position);
+      if (targetDirection.lengthSq() < 1e-10) return null;
+      return THREE.MathUtils.radToDeg(Math.acos(clampUnit(aimedWristAxis.dot(targetDirection.normalize()))));
     }
     const authoredBaseBySide = {
       left: new THREE.Quaternion(),
@@ -148,7 +186,7 @@
     }
 
     function weightsFor(side) {
-      const weights = poseRuntime?.currentWeights?.(side, avatarRoot) || { grip: 1, palmNormal: 1 }; // Avatar scope prevents the player's musical stance leaking to NPCs.
+      const weights = poseRuntime?.currentWeights?.(side, avatarRoot, !freeSide[side]) || { grip: 1, palmNormal: 1 }; // Pass actual socket ownership so a held offhand uses the pose's hinge weights.
       return { grip: clamp01(weights.grip), palmNormal: clamp01(weights.palmNormal) };
     }
 
@@ -166,6 +204,8 @@
     }
 
     function profileShoulderInParent(side) {
+      const fixed=avatarRoot.userData?.instanceHandShoulders?.[side]; // Instance anchors are already transformed by the portrait-binding owner; do not shift again.
+      if(fixed){shoulderSource[side]='instance-portrait-anchor';return new THREE.Vector3(fixed.x,fixed.y,fixed.z);}
       const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder';
       const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
       if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
@@ -248,6 +288,8 @@
     };
 
     function posteriorYInParent() {
+      const explicit=avatarRoot.userData?.posteriorYOverride; // Instance-specific anatomical center, shared with the leg rig.
+      if(Number.isFinite(explicit))return explicit;
       const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
       if (Number.isFinite(resolvedY)) return resolvedY;
       const posteriorRule = attachmentRigProfile()?.posteriorRule;
@@ -270,6 +312,7 @@
       if (!socket || !shoulder) return false;
       socket.position.x = shoulder.x + (Number(fallbackPose?.position?.x) || 0); // Walk/idle poses author x = 0; gameplay poses (crawl) may reach sideways.
       socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
+      if(!fallbackPose?.overridden) global.HeldGroundPose?.constrainFreeHand?.(parent,socket,shoulder,rig.armLengthForSide?.(side),modelHeight);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
       return true;
@@ -363,8 +406,8 @@
       const material = solid('paper_arm_bone', 0xf1f5f9, 0.78);
       const radius = Math.max(0.014, modelHeight * 0.03); // Joint sphere size; the elbow is a little larger so it reads first.
       const boneRadius = Math.max(0.006, radius * 0.38);
-      const makeBone = name => {
-        const bone = new THREE.Mesh(new THREE.CylinderGeometry(boneRadius, boneRadius, 1, 10), material); // Unit-length cylinder along local Y; placePaperStrip stretches it between joints.
+      const makeBone = (name, boneMaterial = material, thickness = boneRadius) => {
+        const bone = new THREE.Mesh(new THREE.CylinderGeometry(thickness, thickness, 1, 10), boneMaterial); // Unit-length cylinder along local Y; placePaperStrip stretches it between joints.
         bone.name = name;
         bone.renderOrder = 9999;
         bone.frustumCulled = false;
@@ -381,12 +424,15 @@
       };
       const upper = makeBone(`${side}_paper_upper_arm`);
       const lower = makeBone(`${side}_paper_forearm`);
+      const axisMaterial = solid(`${side}_paper_wrist_axis_material`, 0xe879f9, 1); // Magenta distinguishes the actual hand axis from the white forearm target.
+      const axis = makeBone(`${side}_paper_wrist_axis`, axisMaterial, boneRadius * 0.65);
+      axis.renderOrder = 10001;
       const shoulder = makeBall(`${side}_paper_shoulder`, 0x22c55e);
       const elbow = makeBall(`${side}_paper_elbow`, 0xf97316, 1.3);
       const wrist = makeBall(`${side}_paper_hand_socket`, 0x22d3ee);
       root.visible = false;
       parent.add(root);
-      paperArmBySide[side] = { root, upper, lower, shoulder, elbow, wrist, material };
+      paperArmBySide[side] = { root, upper, lower, shoulder, elbow, wrist, axis, axisMaterial, material };
       return paperArmBySide[side];
     }
 
@@ -421,6 +467,10 @@
       const elbow = elbowSolve.elbow;
       placePaperStrip(guide.upper, shoulder, elbow);
       placePaperStrip(guide.lower, elbow, socket.position);
+      guideWristBasis.identity();
+      if (!freeSide[side]) rig.copyGripWristBasis?.(side, guideWristBasis);
+      guideWristAxis.copy(localWristProximalAxis).applyQuaternion(guideWristBasis).applyQuaternion(socket.quaternion).normalize().multiplyScalar(modelHeight * 0.20).add(socket.position);
+      placePaperStrip(guide.axis, socket.position, guideWristAxis); // White is the target ray; magenta is the hand's measured proximal direction.
       guide.elbow.position.copy(elbow);
       guide.shoulder.position.copy(shoulder);
       guide.wrist.position.copy(socket.position);
@@ -473,30 +523,36 @@
       }
       targetDirection.normalize();
 
-      // Elbow targeting owns the GENERIC hand socket only. Per-GLB calibration
-      // remains a child layer. Convert the elbow direction into this authored
-      // socket's LOCAL hand basis, then solve only the X and Z hinges.
+      // The socket remains the grip pivot. Measure the actual anatomical basis,
+      // not the uncalibrated socket: the right GLB has an extra half-turn which
+      // otherwise makes the left/right flexion and lateral limits disagree.
+      wristBasis.identity();
+      if (!freeSide[side]) rig.copyGripWristBasis?.(side, wristBasis);
+      inverseWristBasis.copy(wristBasis).invert();
       inverseAuthoredQuaternion.copy(authoredQuaternion).invert();
-      localTargetDirection.copy(targetDirection).applyQuaternion(inverseAuthoredQuaternion).normalize();
+      localTargetDirection.copy(targetDirection).applyQuaternion(inverseAuthoredQuaternion).applyQuaternion(inverseWristBasis).normalize();
       const solvedHinges = solveLocalHingeAngles(localTargetDirection);
       const gripAngle = solvedHinges.grip; // Local +X hinge moves the +Y proximal axis out of the palm plane.
       const palmNormalAngle = solvedHinges.palmNormal; // Local -Z hinge turns the +Y proximal axis within the palm plane.
-      // Composing both hinges together aims the proximal axis exactly at the target
-      // (2 degrees of freedom) but leaves the remaining twist around that axis
-      // wherever the composition happens to put it -- unnoticeable for the small
-      // corrections a real authored elbow needs, but for the legacy shoulder
-      // fallback (elbow == shoulder, no authored offset) the required angles can be
-      // large, and that unconstrained twist can flip the hand. A single hinge alone
-      // has no such ambiguity, so only let grip engage once a real elbow is authored;
-      // the legacy fallback keeps the well-defined palm-normal-only correction it
-      // already used for swings.
-      const gripWeight = elbowSolve?.source === 'pose-authored' ? weights.grip : 0;
-      const appliedGripAngle = gripAngle * gripWeight;
-      const appliedPalmNormalAngle = palmNormalAngle * weights.palmNormal;
+      // A gripped hand has the same wrist limits for a shoulder or elbow target.
+      // Only ungripped legacy idle retains its palm-only fallback.
+      const gripWeight = !freeSide[side] || elbowSolve?.source === 'pose-authored' ? weights.grip : 0;
+      wristHingeLeeway(gripAngle, palmNormalAngle, side, wristLeeway);
+      const appliedGripAngle = (gripAngle - wristLeeway.grip) * gripWeight;
+      const appliedPalmNormalAngle = (palmNormalAngle - wristLeeway.palmNormal) * weights.palmNormal;
 
-      gripCorrectionQuaternion.setFromAxisAngle(localGripAxis, appliedGripAngle);
-      palmNormalCorrectionQuaternion.setFromAxisAngle(localPalmNormalAxis, appliedPalmNormalAngle);
-      localCorrectionQuaternion.copy(palmNormalCorrectionQuaternion).multiply(gripCorrectionQuaternion).normalize();
+      // Within both limits, preserve the authored orientation exactly. Otherwise
+      // compose target * inverse(allowed) in hinge order, rather than subtracting
+      // two noncommuting angles. Zero grip correction keeps the palm-only path.
+      if (appliedGripAngle === 0) {
+        localCorrectionQuaternion.setFromAxisAngle(localPalmNormalAxis, appliedPalmNormalAngle);
+      } else {
+        gripCorrectionQuaternion.setFromAxisAngle(localGripAxis, appliedGripAngle);
+        palmNormalCorrectionQuaternion.setFromAxisAngle(localPalmNormalAxis, wristLeeway.palmNormal * weights.palmNormal + appliedPalmNormalAngle);
+        wristLeewayInverse.setFromAxisAngle(localPalmNormalAxis, -wristLeeway.palmNormal * weights.palmNormal);
+        localCorrectionQuaternion.copy(palmNormalCorrectionQuaternion).multiply(gripCorrectionQuaternion).multiply(wristLeewayInverse).normalize();
+      }
+      localCorrectionQuaternion.premultiply(wristBasis).multiply(inverseWristBasis); // Return the anatomical correction to the generic grip socket.
       outputQuaternion.copy(authoredQuaternion).multiply(localCorrectionQuaternion).normalize(); // Right multiply keeps both hinge axes hand-local.
       socket.quaternion.copy(outputQuaternion);
       const compositor = window.ActorRigCompositor; // Preserve additive effects above a clean, scale-free elbow/shoulder IK solve.
@@ -507,7 +563,8 @@
       socket.updateMatrixWorld?.(true);
       updatePaperArmGuide(side, shoulder, elbowSolve);
 
-      aimedWristAxis.copy(localWristProximalAxis).applyQuaternion(outputQuaternion).normalize();
+      anatomicalOutput.copy(outputQuaternion).multiply(wristBasis);
+      aimedWristAxis.copy(localWristProximalAxis).applyQuaternion(anatomicalOutput).normalize();
       const residualRad = Math.acos(clampUnit(aimedWristAxis.dot(targetDirection)));
       const snap = aimDebugSnapshotBySide[side];
       snap.valid = true;
@@ -531,6 +588,8 @@
       snap.appliedGripAngle = appliedGripAngle;
       snap.appliedPalmNormalAngle = appliedPalmNormalAngle;
       snap.residualRad = residualRad;
+      snap.authoredResidualRad = Math.acos(clampUnit(localTargetDirection.y));
+      snap.wristBasis.copy(wristBasis);
       snap.outputQuaternion.copy(outputQuaternion);
       debugBySide[side] = null; // Built on demand by aimDebugForSide().
       return weights.grip > 0 || weights.palmNormal > 0;
@@ -546,6 +605,18 @@
     // a clean base instead of treating a previously aimed quaternion as authored.
     captureAuthoredBase('left');
     captureAuthoredBase('right');
+    // Save the uncorrected idle endpoint so secondary grips blend BEFORE wrist targeting.
+    const leftIdlePosition = new THREE.Vector3();
+    const leftIdleQuaternion = new THREE.Quaternion();
+    let leftIdleValid = false;
+    function captureLeftIdleBase() {
+      const socket = socketFor('left');
+      if (!socket) return;
+      leftIdlePosition.copy(socket.position);
+      leftIdleQuaternion.copy(authoredBaseBySide.left);
+      leftIdleValid = authoredBaseValid.left;
+    }
+    captureLeftIdleBase();
 
     const needsFallback = installManualPoints();
     if (!needsFallback) {
@@ -586,10 +657,20 @@
 
     const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
     if (originalPlaceHandWorld) {
-      rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
+      rig.blendsGripBeforeShoulderAim = true; // Secondary-span wrapper delegates partial blends to this final pose owner.
+      rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null, gripInfluence = 1) {
         const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Forward the calibration child payload unchanged; proximal targeting owns only the socket quaternion.
         if (result) {
           freeSide[side] = false;
+          const influence = clamp01(gripInfluence); // Explicit secondary/dual/idle grip weight, applied to the raw endpoints.
+          if (side === 'left' && leftIdleValid && influence < 0.9999) {
+            const socket = socketFor(side);
+            if (socket) {
+              socket.position.lerp(leftIdlePosition, 1 - influence);
+              socket.quaternion.slerp(leftIdleQuaternion, 1 - influence);
+              socket.updateMatrix?.();
+            }
+          }
           captureAuthoredBase(side);
           aimSide(side);
         }
@@ -604,6 +685,7 @@
         freeSide[side] = true;
         alignFreeHandToFallbackAnchor(side, fallbackPose);
         captureAuthoredBase(side);
+        if (side === 'left') captureLeftIdleBase();
         aimSide(side);
         return result;
       };
@@ -619,6 +701,7 @@
         alignFreeHandToFallbackAnchor('right', fallbackPoses?.right || null);
         captureAuthoredBase('left');
         captureAuthoredBase('right');
+        captureLeftIdleBase();
         aimAll();
         return result;
       };
@@ -633,6 +716,8 @@
           guide.upper.geometry?.dispose?.();
           guide.lower.geometry?.dispose?.();
           guide.elbow.geometry?.dispose?.();
+          guide.axis.geometry?.dispose?.();
+          guide.axisMaterial?.dispose?.();
           guide.material?.dispose?.();
         }
       },
@@ -695,6 +780,7 @@
     wristProximalAxis: '+Y',
     allowedHinges: Object.freeze({ grip: '+X', palmNormal: '-Z' }),
     solveLocalHingeAngles,
+    wristHingeLeeway,
     idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
     activeWeights: Object.freeze({ grip: 0, palmNormal: 1 }),
     setPaperArmGuideVisible(value) {

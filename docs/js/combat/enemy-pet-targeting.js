@@ -6,10 +6,16 @@
   const RETAIN_RATIO = 0.76; // Beastmaster pets retain a current opponent until another is substantially closer.
 
   function viable(target, areaId) {
-    return !!target && Number(target.health) > 0 && !target._downed &&
+    return !!target && Number(target.health) > 0 && !target._downed && !target._inCutscene &&
       !target._deathTransitionStarted && !target._denHidden &&
       Number.isFinite(target.x) && Number.isFinite(target.y) &&
-      (!target.areaId || target.areaId === areaId);
+      areaMatches(target, areaId);
+  }
+  // A registered player's area comes from the registry (the local avatar has no areaId of its own); anything else uses areaId.
+  function areaMatches(target, areaId) {
+    const reg = window.ActorRegistry;
+    const area = reg?.isPlayer(target) ? reg.areaOf(target) : target.areaId;
+    return !area || area === areaId;
   }
 
   function groundPet(target, areaId, players = null) {
@@ -53,6 +59,18 @@
       Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY) <= leash;
   }
 
+  const beastmasterLeases = new WeakMap(); // Each pet owns a short target-decision lease; per-frame attack and movement remain live.
+  function chooseBeastmasterTargetCached(enemyPet, master, players, companions, areaId, alertRangePx) {
+    if (!enemyPet?.banditCompanion || !master || !(alertRangePx > 0)) return null;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const lease = beastmasterLeases.get(enemyPet);
+    const incumbent = enemyPet._beastmasterCombatTarget;
+    const incumbentPresent = !incumbent || players?.includes?.(incumbent) || ((companions?.has?.(incumbent) || companions?.includes?.(incumbent)) && groundPet(incumbent, areaId, players));
+    if (lease && lease.master === master && lease.area === areaId && lease.radius === alertRangePx && now < lease.until && incumbentPresent && (!incumbent || (viable(incumbent, areaId) && Math.hypot(incumbent.x - master.x, incumbent.y - master.y) <= alertRangePx))) return incumbent || null;
+    beastmasterLeases.set(enemyPet, { master, area: areaId, radius: alertRangePx, until: now + 140 });
+    return chooseBeastmasterTarget(enemyPet, master, players, companions, areaId, alertRangePx);
+  }
+
   function chooseBeastmasterTarget(enemyPet, master, players, companions, areaId, alertRangePx) {
     if (!enemyPet?.banditCompanion || !master || !(alertRangePx > 0)) return null;
     let best = null; // Nearest player-side combatant inside the Beastmaster's alert circle.
@@ -86,7 +104,7 @@
   }
 
   window.EnemyPetTargeting = Object.freeze({
-    viable, groundPet, chooseAggroTarget, shouldRetaliateToPetHit, chooseBeastmasterTarget,
+    viable, groundPet, chooseAggroTarget, shouldRetaliateToPetHit, chooseBeastmasterTarget, chooseBeastmasterTargetCached,
     snapshot: enemy => ({
       target: enemy?.targetPlayer?.id || enemy?.targetPlayer?.creatureKey || null,
       targetIsPet: !!enemy?.targetPlayer?.isCompanion && !enemy?.targetPlayer?.banditCompanion,

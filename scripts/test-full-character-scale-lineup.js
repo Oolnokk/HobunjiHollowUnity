@@ -26,10 +26,10 @@ const context = vm.createContext({ // Minimal browser globals; test-only injecti
   clearTimeout() {},
   fetch: async () => ({ ok: true, json: async () => db }),
 });
-vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { representatives, portraitExportFor };
+vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { representatives, portraitExportFor, previewPortraitExport };
   window.testFocusControl = {
     configure() { active = true; THREE = {}; previewRoot = {}; },
-    select, focusSelected, frame, applyLongoranSliders, applyBodyHeadSliders, applyAgeSlider,
+    select, focusSelected, frame, applyLongoranSliders, refreshFromScaleChange, applyAgeSlider,
     get focusKey() { return focusedEntryKey; },
   };
 })();`), context);
@@ -46,6 +46,25 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
     }
   }
   assert.equal(JSON.stringify(db), original, 'preview clones must not modify shipping NPC records');
+  window.HOBUNJI_PANTS_RIGS = { garments: { pants_basic: {}, layered_skirt: {} } }; // Minimal registry for the shared gameplay wardrobe helper.
+  vm.runInContext(fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'), context);
+  const { previewPortraitExport } = window.testLineup;
+  const wardrobeNpc = { id: 'wardrobe-parity', appearance: { speciesId: 'mao-ao', gender: 'female' },
+    restingExpression: 'neutral', clothingPatterns: { pants: 'plain' }, equippedCosmetics: ['layered_skirt'], appliedDyes: { PANTS: 'current' },
+    avatarEditor: { rawExport: { equippedCosmetics: ['pants_basic'], appliedDyes: { PANTS: 'stale' } } } }; // Old raw snapshot differs from the live NPC fields.
+  const exported = previewPortraitExport(wardrobeNpc);
+  assert.equal(exported.id, wardrobeNpc.id);
+  assert.equal(exported.restingExpression, wardrobeNpc.restingExpression);
+  assert.equal(exported.clothingPatterns, wardrobeNpc.clothingPatterns);
+  assert.equal(exported.equippedCosmetics[0], 'layered_skirt');
+  assert.equal(exported.appliedDyes.PANTS, 'current');
+  assert.equal(previewPortraitExport({ ...wardrobeNpc, equippedCosmetics: [] }).equippedCosmetics.length, 0,
+    'authored empty wardrobes do not receive generated pants');
+  const generated = { appearance: wardrobeNpc.appearance, appliedDyes: { CLOTH: 'dye:CLOTH:blue' } }; // Gameplay generates and tints the default female Mao-ao skirt.
+  const generatedExport = previewPortraitExport(generated);
+  assert.equal(generatedExport.equippedCosmetics[0], 'layered_skirt');
+  assert.equal(generatedExport.appliedDyes.PANTS, generated.appliedDyes.CLOTH);
+  assert.equal(generated.appliedDyes.PANTS, undefined, 'preview wardrobe fallback does not mutate the source');
   const authored = JSON.parse(JSON.stringify(lineup.find(item => item.key === 'nuhongan::male').npc)); // Simulates a future authored Nuhongan NPC superseding the fallback.
   authored.id = 'authored_nuhongan';
   db.npcs.push(authored);
@@ -83,9 +102,11 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
   assert.equal(cameraFrames.length, 0, 'choosing a Longoran must not move the camera');
   assert.equal(getUiNode('maaFullScaleFocus').disabled, false, 'a valid selection enables the Focus selected button');
   window.testFocusControl.applyLongoranSliders();
-  window.testFocusControl.applyBodyHeadSliders();
+  window.testFocusControl.refreshFromScaleChange({ x: 1, y: 1, legLength: 1, handScale: 1, footScale: 1, head: 1, offsetY: 0 }, 'head');
   window.testFocusControl.applyAgeSlider();
-  assert.equal(cameraFrames.length, 0, 'editing posture, body/head scale, and NPC hunch must never reframe the camera');
+  assert.equal(cameraFrames.length, 0, 'editing posture, guarded scale, and NPC hunch must never reframe the camera');
+  assert(!source.includes('function applyBodyHeadSliders()'), 'a second all-fields scale listener must not compete with the guarded one-field handler');
+  assert(source.includes('HobunjiFullScaleBodyInputGuard?.applyScaleField'), 'the comparison requires the authoritative input guard instead of silently using an incompatible fallback');
   window.testFocusControl.focusSelected();
   assert.equal(window.testFocusControl.focusKey, longoran.key, 'Focus selected must lock onto the specific Longoran');
   assert.equal(cameraFrames.length, 1, 'Focus selected explicitly requests one camera frame');
@@ -103,10 +124,11 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
   assert(source.includes('applyLongoranSliders'), 'Authoring controls must apply tuning, not be decorative');
   assert(source.includes('rebuildLongoranFeet'), 'Gait changes must rebuild the existing real foot solver');
   assert(source.includes('exportLongoranTuning'), 'Longoran tunings must be exportable');
-  assert.match(source, /reps\.filter\(item => item\.species === 'longoran'\)/, 'Longoran should become available before the remaining slow species previews'); // Prioritize authoring without dropping any other species.
+  assert.match(source, /const ordered = reps\.sort\(compareLineupEntries\)/, 'progressive preview loading follows the requested species and gender lineup order');
+  assert.match(source, /for \(const rep of ordered\)/, 'builds every ordered representative rather than skipping slower species');
   assert.match(source, /buildPreviewEntry\(rep, buildId\)/, 'progressive builds must carry the cancellation generation');
   assert.match(source, /if \(buildId !== generation \|\| !previewRoot\) return null;/, 'an exited editor must not attach a stale avatar after image loading');
-  assert.match(source, /active = true; \/\/ The first Longoran becomes tweakable/, 'the author must unlock before the entire lineup finishes');
+  assert.match(source, /active = true; \/\/ The first Kenkari is editable/, 'the first Kenkari is editable without loading the whole lineup');
   assert.match(source, /portraitLoading: window\.__portraitPixelCacheDebug/, 'mobile preview must expose real image-load diagnostics');
   console.log('Full Character Scale Longoran, Nuhongan and Mashtzarr lineup checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

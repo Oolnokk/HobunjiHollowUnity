@@ -56,6 +56,14 @@
       handAttachY: avatarRoot.userData?.handAttachY,
       avatarRoot,
       name: record.name || avatarRoot.name || 'avatar',
+      onHandVisualReplaced(side, visual) {
+        const factor = Number(avatarRoot.userData?.hobunjiChildLimbVisualModifiers?.hand) || 1;
+        if (factor > 0 && factor !== 1 && visual?.scale?.multiplyScalar) {
+          visual.scale.multiplyScalar(factor); // Independent child NPCs get the same global hand modifier as the age lineup.
+          visual.updateMatrix?.();
+        }
+        record.onHandVisualReplaced?.(side, visual); // Author-only callback rebinds final imported GLBs after their fallback has gone away.
+      },
     });
     if (!rig) return false;
     avatarRoot.userData.proceduralHandRig = rig;
@@ -78,6 +86,7 @@
       gender: identity.gender,
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
       name: options.name,
+      onHandVisualReplaced: options.onHandVisualReplaced, // Avatar construction may provide a low-frequency visual replacement callback.
       rig: null,
       syncSentinel: null,
       lastToolKey: null,
@@ -421,12 +430,16 @@
       toolHolder.updateWorldMatrix?.(true, true);
       quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
     }
-    quaternion.multiply(visualBasis.quaternion);
+    const groundPose=global.HeldGroundPose; // Exact final sprite basis published by the clearance solver for this holder only.
+    quaternion.multiply(groundPose?.gripBasisFor?.(toolHolder)||visualBasis.quaternion);
     if (gripFrame) {
-      const p = gripFrame.position || {};
-      const localOffset = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
-        .applyQuaternion(visualBasis.quaternion);
-      if (visualBasis.mirrorX) localOffset.x = -localOffset.x; // Backhand reflects the entire weapon child after its sweep-plane twist, so hands must follow that same final handle location.
+      const rawPoint = gripFrame.position || {};
+      const localOffset = new Vector3();
+      if(!groundPose?.resolveGripLocal?.(toolHolder,rawPoint,localOffset)){
+        const p = groundPose?.adjustGrip?.(toolHolder, rawPoint) || rawPoint; // Legacy unsupported geometry retains the longitudinal fit.
+        localOffset.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0).applyQuaternion(visualBasis.quaternion);
+        if (visualBasis.mirrorX) localOffset.x = -localOffset.x; // Backhand reflects the entire weapon child after its sweep-plane twist.
+      }
       if (bakedWorldMatrix) localOffset.applyMatrix4(bakedWorldMatrix);
       else toolHolder.localToWorld(localOffset);
       position = localOffset;
@@ -625,6 +638,15 @@
   // Reuse the actual shoulder targets and rigger reach from the attached rig.
   function restoreHeldItemReach(record) {
     const scratch = record.heldItemScratch;
+    const corrected=scratch?.clearanceHolder; // Undo the render-only floor correction before releasing the earlier reach lift.
+    if(corrected){
+      if(corrected.parent&&corrected.position.distanceToSquared(scratch.clearancePlaced)<1e-10&&Math.abs(corrected.quaternion.dot(scratch.clearancePlacedQ))>1-1e-10){
+        corrected.position.copy(scratch.clearanceBase);
+        corrected.quaternion.copy(scratch.clearanceBaseQ);
+        corrected.updateWorldMatrix(true,true);
+      }
+      scratch.clearanceHolder=null; // Gameplay may already have replaced the pose (e.g. drink, throw, or note).
+    }
     const holder = scratch?.reachHolder;
     if (!holder) return;
     // Gameplay may have authored a new holder pose since our last render.
@@ -712,10 +734,48 @@
     holder.updateWorldMatrix(true, false);
   }
 
+  function applyCarryClearance(record,holder,root,context){
+    const solver=global.HeldGroundPose;
+    if(inAttackEditor()||!gameDeps?.playerMesh||record.rig?.parent!==gameDeps.playerMesh||!solver?.enabled?.()||!root)return false;
+    const scratch=heldItemScratch(record);
+    const T=record.THREE;
+    scratch.clearanceBase||=new T.Vector3(); // Local authored position to restore before a subsequent action or render.
+    scratch.clearanceBaseQ||=new T.Quaternion();
+    scratch.clearancePlaced||=new T.Vector3();
+    scratch.clearancePlacedQ||=new T.Quaternion();
+    scratch.clearanceBase.copy(holder.position);scratch.clearanceBaseQ.copy(holder.quaternion);
+    if(!solver.constrainCarry?.(holder,root,{...context,rig:record.rig}))return false;
+    scratch.clearancePlaced.copy(holder.position);scratch.clearancePlacedQ.copy(holder.quaternion);
+    scratch.clearanceHolder=holder;
+    return true;
+  }
+
+  function constrainIdleHeldItem(record,target){
+    if(target.groundPoseIdle!==true)return; // A drink, aimed throw or living carry must keep its explicit pose owner.
+    const scratch=heldItemScratch(record);
+    scratch.clearanceGrip||=new record.THREE.Vector3(); // Same exact socket coordinates as the placement below.
+    scratch.clearanceOther||=new record.THREE.Vector3();
+    scratch.clearanceGrips||=[scratch.clearanceGrip,scratch.clearanceOther];
+    const grip=scratch.clearanceGrip,other=scratch.clearanceOther;
+    let otherGrips=null;
+    if(target.mode==='authored-world'){
+      const right=target.handTargets?.right||{},left=target.handTargets?.left||{};
+      grip.set(Number(right.x)||0,Number(right.y)||0,Number(right.z)||0);
+      other.set(Number(left.x)||0,Number(left.y)||0,Number(left.z)||0);
+      otherGrips=scratch.clearanceGrips;
+    }else if(target.mode==='large'){
+      const edge=target.width/2+HELD_LARGE_EDGE_MARGIN;
+      grip.set(edge,0,0);other.set(-edge,0,0);
+      otherGrips=scratch.clearanceGrips;
+    }else grip.set(0,0,target.height*(Number(target.neckFraction)||0.2));
+    applyCarryClearance(record,target.holder,target.plane||target.holder,{itemKey:target.itemKey,grip,otherGrips,preserveOrientation:target.mode!=='bottle'});
+  }
+
   function syncRigToHeldItem(record, target) {
     const holder = target.holder;
     const scratch = heldItemScratch(record);
     liftHeldItemIntoReach(record, target, scratch);
+    constrainIdleHeldItem(record,target); // Resolve the visible prop before either hand reads its socket.
     holder.updateWorldMatrix(true, false);
     const holderQuat = hierarchyWorldQuaternion(record, holder, scratch.holderQuat);
     const modelCalibration = modelCalibrationForRecord(record);
@@ -764,6 +824,38 @@
     record.lastVisualGripBasis = null;
   }
 
+  // Only the player's eligible equipment needs an early clearance bake.
+  // Other actors and editors retain their existing hand-sync workload.
+  function prepareGroundPoseForSockets(record,toolHolder,toolKey,gripContext,scaleIdentity,dualWield,dualSolve) {
+    const groundPose=global.HeldGroundPose;
+    if(inAttackEditor()||!gameDeps?.playerMesh||record.avatarRoot?.userData?.proceduralHandToolHolder
+      ||record.rig?.parent!==gameDeps.playerMesh||toolHolder!==gameDeps.toolHolder
+      ||!groundPose?.enabled?.())return undefined;
+    const stances=global.WeaponToolStances;
+    const state=stances?.getRuntimeState?.();
+    const slot=state?.activeSlot;
+    if(!(stances?.groundPoseEligible?.(slot,state?.itemKey||toolKey,toolHolder)??(slot==='weapon'&&gripContext==='melee')))return undefined;
+    const weaponDual=slot==='weapon'&&gripContext==='melee'; // Tool and ranged slots must never spawn weapon-only copies.
+    const offhandIdle=!weaponDual||dualWield?null:(toolGrips.offhandIdleStateForTool?.(toolKey,gripContext,scaleIdentity)||null);
+    // Dual sync can rebake the holder and move both visible copies. Do it
+    // before either canonical socket, then reuse this one prepared result.
+    if(weaponDual&&(dualWield||offhandIdle)){
+      const visuals=global.HobunjiDualWieldWeaponVisuals;
+      if(visuals?.syncNow){
+        toolHolder.parent.updateWorldMatrix?.(true,false);
+        dualSolve.dualWieldState=visuals.syncNow(record);
+        dualSolve.dualWieldRecord=record;dualSolve.dualWieldSynced=true;dualSolve.clearancePrepared=true;
+      }
+    }
+    // A single weapon without a dual helper may not have baked yet this
+    // frame. Avoid another traversal when an earlier owner already did.
+    if(!groundPose.hasCurrentGripPose?.(toolHolder)){
+      toolHolder.parent.updateWorldMatrix?.(true,false);
+      toolHolder.updateMatrixWorld?.(true);
+    }
+    return offhandIdle;
+  }
+
   function syncRigToTool(record, toolHolder, diagnostic = false) {
     if (!record?.rig || !toolHolder?.parent || syncing) return null;
     if (!toolHolder.visible) {
@@ -787,7 +879,13 @@
         scaleIdentity.animationGripState = record.avatarRoot.userData.proceduralHandAnimationGrip ?? null; // Each NPC’s own animation gates both ranges; idle NPCs stay 1H.
       }
       const dualWield = toolGrips.dualWieldStateForTool?.(toolKey, gripContext, scaleIdentity) || null;
+      const preparedOffhandIdle=prepareGroundPoseForSockets(record,toolHolder,toolKey,gripContext,scaleIdentity,dualWield,dualSolve);
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
+      const instrument=toolKey==='kurraya'?playerKurrayaTarget(record):null; // Only the silent, visible player instrument may use the carry correction.
+      if(instrument?.groundPoseIdle&&instrument.holder===toolHolder){
+        const secondary=toolGrips.secondaryGripForTool(toolKey,gripContext,scaleIdentity);
+        applyCarryClearance(record,toolHolder,instrument.root,{itemKey:toolKey,grip:secondary?.position||primaryGrip?.position,preserveOrientation:true});
+      }
       const visualBasis = visualGripBasisDelta(record, toolHolder); // The holder and its visual basis are stable throughout this synchronous multi-hand solve.
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip, visualBasis); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
@@ -824,6 +922,9 @@
         const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip, visualBasis);
         const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket, dualSolve) || offhandBaseSocket;
         const secondary = handSocketAfterGripMode(record, offhandSocket);
+        // Reflected pairs use the anatomical mirror of the raw main grip, before either wrist is constrained.
+        // Preserve the existing offhand position and the non-reflected authoring/legacy socket path.
+        global.HobunjiDualWieldWeaponVisuals?.mirrorPairedWristOrientation?.(record, dualSolve, primary.quaternion, secondary.quaternion);
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, dualWield.influence);
         record.secondaryActive = true;
         ensureFallbackState(record).owners.left = 'dual-wield-offhand-grip';
@@ -837,7 +938,7 @@
         } else {
           // Not 2H and not Dual Wield: the free hand holds an INVISIBLE copy of the weapon at an authored offhand pose (default: the dual-wield
           // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Enemies read it from their own animation grip.
-          const offhandIdle = toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
+          const offhandIdle=preparedOffhandIdle===undefined?toolGrips.offhandIdleStateForTool?.(toolKey,gripContext,scaleIdentity):preparedOffhandIdle;
           const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip, visualBasis) : null;
           const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket, dualSolve) : null;
           if (offhandSocket && offhandSocket !== offhandBaseSocket && offhandSocket.dualWield) {
@@ -975,7 +1076,9 @@
     const compositor = global.ActorRigCompositor; // One registry for authored hand-placement baselines and named dance/yawn/grip overlays.
     if (!compositor?.setSolvedBase) return;
     for (const side of ['left', 'right']) {
-      const socket = record.rig?.group?.getObjectByName?.(side + '_hand_socket'); // Existing authored socket, never another preview hand.
+      const group = record.rig?.group; // The owning rig builds left/right sockets as direct children.
+      const name = side + '_hand_socket';
+      const socket = group?.children?.find(child => child.name === name) || group?.getObjectByName?.(name); // Legacy/nested authoring hosts retain recursive discovery.
       if (!socket?.parent) continue;
       compositor.setSolvedBase(socket, 'position', socket.position);
       compositor.setSolvedBase(socket, 'quaternion', socket.quaternion); // The complete scale-free shoulder/grip solve is the neutral orientation.
@@ -1025,6 +1128,7 @@
   // exact tool/hand matrix stays entirely in ensureSyncSentinel's
   // onBeforeRender hook below, untouched by either piece of this split.
   function attachmentSweep() {
+    if (!pending.size) return; // No per-frame array copy when nothing is waiting.
     for (const record of [...pending]) {
       if (!record.avatarRoot?.userData) {
         pending.delete(record);
@@ -1042,6 +1146,27 @@
   }
 
   global.ProceduralHandFrameDriver = {
+    groundPoseContext(holder, itemKey) {
+      const preview=inAttackEditor();
+      if(preview?holder!==global.HobunjiAttackEditorToolContext?.toolHolder:(!gameDeps?.playerMesh||holder!==gameDeps.toolHolder))return null;
+      for(const record of managed) {
+        if((!preview&&record.rig?.parent!==gameDeps.playerMesh)||record.avatarRoot?.userData?.proceduralHandToolHolder||currentToolHolder(record)!==holder)continue;
+        const key=preview?toolGrips.toolKeyFor(itemKey):currentToolKey(record);
+        const gripContext=currentGripContext(record);
+        if(!key||(preview&&gripContext!=='melee'))return null;
+        const identity={speciesId:record.speciesId,gender:record.gender,rigScaleY:Number(record.avatarRoot?.userData?.proceduralHandRigScaleY)||null};
+        const slot=preview?'weapon':global.WeaponToolStances?.getRuntimeState?.()?.activeSlot;
+        const dual=(preview||slot==='weapon')&&gripContext==='melee'&&!!toolGrips.dualWieldStateForTool?.(key,'melee',identity);
+        return {rig:record.rig,itemKey:itemKey||key,preview,scaleIdentity:identity,dual,gripContext,
+          offhand:dual?toolGrips.offhandPrimaryGripForTool?.(key,'melee',identity):null,
+          fitIdentity:[identity.speciesId,identity.gender,identity.rigScaleY||'',toolGrips.actualCharacterHeight?.(identity.speciesId,identity.gender,identity.rigScaleY)||''].join(':'),
+          authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,gripContext)?.position?.z,
+          primary:toolGrips.primaryGripForTool(key,gripContext,identity),
+          secondary:toolGrips.secondaryGripForTool(key,gripContext,identity),
+          profile:toolGrips.groundProfileForTool?.(itemKey||key)};
+      }
+      return null;
+    },
     syncNow() {
       const results = [];
       for (const record of managed) {

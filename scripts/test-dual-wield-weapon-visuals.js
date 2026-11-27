@@ -56,8 +56,10 @@ class DuplicateMesh {
   }
 }
 const builderSource = dual.slice(dual.indexOf('  function makeDuplicateMesh('), dual.indexOf('  function makeRoot(')); // Isolates the unchanged production factory dependencies.
+const fixtureGlobal = {}; // The source geometry owner is optional, but must be honored when installed.
 const builder = vm.runInNewContext(`(${builderSource.trim()})`, {
   HALF_Z_SEPARATION: 0.075,
+  global: fixtureGlobal,
   cloneOwnedMaterial: material => ({ ...material }),
 }); // Calls the actual factory for both anatomical sides.
 const sourcePlane = new DuplicateMesh({ axeBlade: true }, {}); // Shared source geometry must retain its authored handedness.
@@ -70,10 +72,18 @@ for (const side of ['main', 'off']) {
   assert.equal(copy.position.z, side === 'main' ? -0.075 : 0.075);
 }
 
+// A temporary compressed buffer must not become a duplicate's permanent source.
+const originalGeometry = {original: true};
+fixtureGlobal.HeldGroundPose = {originalGeometryFor: geometry => {assert.equal(geometry, sourcePlane.geometry);return originalGeometry;}};
+assert.equal(builder(sourcePlane, 'main').geometry, originalGeometry);
+assert.equal(builder(sourcePlane, 'off').geometry, originalGeometry);
+delete fixtureGlobal.HeldGroundPose;
+
 class GripQuaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { this.set(x, y, z, w); }
   set(x, y, z, w) { Object.assign(this, { x, y, z, w }); return this; }
   clone() { return new GripQuaternion(this.x, this.y, this.z, this.w); }
+  copy(q) { return this.set(q.x, q.y, q.z, q.w); }
   invert() { this.x *= -1; this.y *= -1; this.z *= -1; return this; }
   normalize() { return this; }
   multiply(q) {
@@ -89,7 +99,7 @@ class GripPoint {
 }
 const gripMatrix = z => ({ z, clone() { return gripMatrix(this.z); }, invert() { this.z *= -1; return this; } }); // Translation-only fixture isolates the hand direction from the weapon position.
 const gripWeapon = z => ({ matrixWorld: gripMatrix(z), quaternion: new GripQuaternion(), scale: { x: 1 }, updateMatrixWorld() {} }); // Both visible sprites retain the corrected forward facing.
-const gripState = { influence: 1, idleBlend: 0, plane: { matrixWorld: gripMatrix(0), quaternion: new GripQuaternion() }, mainMesh: gripWeapon(-0.075), offMesh: gripWeapon(0.075) }; // Supplies a live dual pair to the production socket resolver.
+const gripState = { influence: 1, idleBlend: 0, invisible: false, plane: { matrixWorld: gripMatrix(0), quaternion: new GripQuaternion() }, mainMesh: gripWeapon(-0.075), offMesh: gripWeapon(0.075) }; // Supplies a live dual pair to the production socket resolver.
 const mirrorStart = dual.indexOf('  function mirrorQuaternionAcrossLocalX('); // Bounds of the production direction conversion.
 const mirrorEnd = dual.indexOf('  function currentPlanePose(', mirrorStart);
 const socketStart = dual.indexOf('  function transformSocketForHand('); // Bounds of the production per-hand dispatch.
@@ -109,12 +119,16 @@ const authoredSocket = { position: new GripPoint(-0.04, -0.04, -0.1), quaternion
 const rightGrip = socketResolver({}, 'right', authoredSocket); // Main hand keeps the authored direction.
 const leftGrip = socketResolver({}, 'left', authoredSocket); // Offhand flips its grip while remaining on its own visible weapon.
 assert.deepEqual([rightGrip.quaternion.x, rightGrip.quaternion.y, rightGrip.quaternion.z, rightGrip.quaternion.w], [0.5, -0.5, 0.5, 0.5]);
-assert.deepEqual([leftGrip.quaternion.x, leftGrip.quaternion.y, leftGrip.quaternion.z, leftGrip.quaternion.w], [0.5, 0.5, -0.5, 0.5]);
+assert.deepEqual([leftGrip.quaternion.x, leftGrip.quaternion.y, leftGrip.quaternion.z, leftGrip.quaternion.w], [0.5, -0.5, -0.5, -0.5], 'visible offhand corrects the half-turn about its local grip X axis');
 assert.equal(leftGrip.dualWield.mirroredGripFrame, true);
 assert.equal(rightGrip.dualWield.mirroredGripFrame, false);
 assert.equal(leftGrip.position.x, authoredSocket.position.x);
 assert(Math.abs(leftGrip.position.z - (authoredSocket.position.z + 0.075)) < 1e-9);
 assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mutate the shared authored grip');
+gripState.invisible = true;
+const invisibleGrip = socketResolver({}, 'left', authoredSocket);
+assert.deepEqual([invisibleGrip.quaternion.x, invisibleGrip.quaternion.y, invisibleGrip.quaternion.z, invisibleGrip.quaternion.w], [0.5, 0.5, -0.5, 0.5], 'invisible offhand idle keeps its original orientation');
+gripState.invisible = false;
 // Lean sync: one rig solve (procedural-hand-frame-driver.js passes the same object for both hands) syncs once,
 // and both hands still resolve exactly the frames they resolve with a sync each.
 {
@@ -134,6 +148,43 @@ assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mut
   assert.equal(syncCalls, 2, 'full sync (Settings off): one sync per hand, as before');
   socketScope.leanSync = true;
 }
+// Execute the real anatomical reflection helper with the default calibrated
+// right/left bases, arbitrary grip rotation, and a yawed portrait.
+{
+  const mirrorPaired = vm.runInNewContext(`${dual.slice(mirrorStart, dual.indexOf('  function bakedWorldQuaternion(', mirrorStart))}\n(${dual.slice(dual.indexOf('  function mirrorPairedWristOrientation('), dual.indexOf('  function transformSocketForHand(')).trim()})`, {});
+  const q = (x=0,y=0,z=0,w=1) => new GripQuaternion(x,y,z,w);
+  const yaw = q(0, Math.sin(.37), 0, Math.cos(.37));
+  const halfTurn = q(0,1,0,0);
+  const rightBasis = q(), leftBasis = halfTurn;
+  const rig = { copyGripWristBasis(side, out, calibrationSide) {
+    if (side === 'left') assert.equal(calibrationSide, 'right');
+    return out.copy(side === 'right' ? rightBasis : leftBasis);
+  }};
+  const record = { rig };
+  const state = { mirrorOffhand: true, invisible: false, frameScratch: {
+    bodyQuaternion: yaw, mirrorWristLocal: q(), mirrorWristInverse: q(),
+    mirrorWristRightBasis: q(), mirrorWristLeftBasis: q(),
+  }};
+  const solve = { dualWieldRecord: record, dualWieldState: state };
+  const raw = yaw.clone().multiply(q(.5,.5,-.5,.5));
+  const out = q();
+  assert.equal(mirrorPaired(record, solve, raw, out), true);
+  // The resulting visible hand frame, expressed in portrait space, must
+  // preserve proximal Y (and Z) under X reflection, not reverse it.
+  const actual = yaw.clone().invert().multiply(out).multiply(leftBasis);
+  const source = yaw.clone().invert().multiply(raw).multiply(rightBasis);
+  const expected = q(source.x, -source.y, -source.z, source.w);
+  const dot = actual.x*expected.x + actual.y*expected.y + actual.z*expected.z + actual.w*expected.w;
+  assert(Math.abs(Math.abs(dot)-1)<1e-10, 'paired visible hand orientation must be the anatomical reflection');
+  state.mirrorOffhand = false;
+  const original = out.clone();
+  assert.equal(mirrorPaired(record, solve, raw, out), false, 'independently authored offhand keeps its legacy grip');
+  assert.deepEqual(out, original);
+  state.mirrorOffhand = true; state.invisible = true;
+  assert.equal(mirrorPaired(record, solve, raw, out), false, 'invisible idle offhand is unaffected');
+}
+assert.match(driver, /mirrorPairedWristOrientation\?\.\(record, dualSolve, primary\.quaternion, secondary\.quaternion\)/, 'the shared frame driver reflects the authored wrist before applying offhand shoulder constraints');
+
 // The holder bake skipping the copy roots is executed in test-dual-wield-state-consistency.js.
 
 const runtimeDeps = { toolHolder: { children: [] }, playerMesh: {} }; // Mirrors the real hand-runtime injection, which omits toolMeshMap.
@@ -160,3 +211,24 @@ delete runtimeDeps.toolMeshMap;
 const replacementWeapon = { visible: true, userData: { toolPlane: { isObject3D: true } } }; // Simulates swapping the dagger mesh without reconstructing the injected dependencies.
 runtimeDeps.toolHolder.children = [replacementWeapon];
 assert.equal(runtimeContext().visual, replacementWeapon, 'equipment swaps resolve the new attached weapon');
+
+// Horizontal movement lean must not rotate the neutral offhand's mirror plane.
+const uprightYaw = vm.runInNewContext('('+dual.slice(dual.indexOf('  function uprightMirrorYaw('),dual.indexOf('  function mirrorSolvedWeapon(')).trim()+')');
+const angleDiff=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+for(const yaw of [-Math.PI,-2,-.3,0,.7,2,Math.PI]){
+  for(const lean of [-.6,-.2,0,.2,.6]){
+    for(const direction of [0,.8,Math.PI/2,2.4]){
+      const qYaw=new GripQuaternion(0,Math.sin(yaw/2),0,Math.cos(yaw/2));
+      const qLean=new GripQuaternion(Math.cos(direction)*Math.sin(lean/2),0,Math.sin(direction)*Math.sin(lean/2),Math.cos(lean/2));
+      const result=uprightYaw(qLean.multiply(qYaw));
+      assert(Math.abs(angleDiff(result,yaw))<1e-9,'world-space pitch/roll cannot change the neutral mirror yaw');
+      const nx=Math.cos(result),nz=-Math.sin(result);
+      const main={x:.8,y:.15,z:.2},pivot={x:.1,y:1,z:.4};
+      const side=(main.x-pivot.x)*nx+(main.z-pivot.z)*nz;
+      const off={x:main.x-2*side*nx,y:main.y,z:main.z-2*side*nz};
+      assert.equal(off.y,main.y,'vertical reflection preserves the source ground clearance');
+    }
+  }
+}
+assert.match(dual,/const upright=current\.source==='runtime'&&current\.idleBlend>=1-ACTIVE_EPSILON/,'editor and authored attack poses retain their original mirror frame');
+assert.match(dual,/s\.bodyPosition\.addScaledVector\(s\.bodyRight\.set\(e\[4\],e\[5\],e\[6\]\),posterior\)/,'mirror passes through the same posterior pivot as the movement lean');

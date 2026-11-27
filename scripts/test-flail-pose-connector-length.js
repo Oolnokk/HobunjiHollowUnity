@@ -53,9 +53,9 @@ assert.equal(SAP.sampleLegacyThrust(SAP.createSample(), 0.3, WF, SF, HF).flailLe
 const config = JSON.parse(fs.readFileSync('docs/config/combat/weapon-idle-stances.json', 'utf8')); // Committed stance is the player's default, not a preview-only override.
 assert.equal(config.stances.lightWeapon.flailLengthScale, 0.6);
 const visual = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // The single flail renderer owns rope, contact point and physics projection.
-assert.match(visual, /chainScaleY \*= state\.flailLengthScale/, 'physical and visible connector share the same length multiplier');
+assert.match(visual, /chainScaleY \*= fixedScale<1\?Math\.min\(1,state\.flailLengthScale\):state\.flailLengthScale/, 'physical and visible connector share the same pose multiplier, capped by the immutable fit when shortened');
 assert.match(visual, /const authoredChainScaleY = chainScaleY/, 'rope width retains its independently authored scale');
-assert.match(visual, /state\.physicsLength = Math\.max\(0\.01, chainSpan\.length\(\) \* attachmentScale\)/,
+assert.match(visual, /state\.physicsLength = Math\.max\(0\.01, maxReach\)/,
   'pendulum uses actual newly shortened connector length');
 assert.match(visual, /const endWorld = .*bottomLocal/, 'flail head follows the shortened connector endpoint');
 assert.match(visual, /if \(!state\.chain \|\| !state\.headRoot\)/, 'ordinary non-flail weapon visuals bypass length changes');

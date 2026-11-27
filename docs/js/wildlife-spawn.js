@@ -1414,7 +1414,7 @@
 
     if (spawned > 0) {
       window.__farmLog?.(`[${speciesKey}] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
-      if (zoneId === deps.getCurrentArea() && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
+      if (isLocalListenerZone(zoneId) && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
     }
     return spawned;
   }
@@ -1681,7 +1681,7 @@
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
       else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
     }
-    if (spawned > 0 && zoneId === deps.getCurrentArea()) {
+    if (spawned > 0 && isLocalListenerZone(zoneId)) {
       deps.showToast(`${deps.CREATURE_DB[speciesKey]?.label || speciesKey} pack moved into a den nearby.`, false);
     } else if (spawned === 0) {
       window.__farmLog?.(`[wildlife] ${denKey}: pack spawn for "${speciesKey}" placed 0/${count} creatures (fallback: den left empty).`, 'wildlife');
@@ -1954,7 +1954,7 @@
       }
     }
 
-    if (zoneId === deps.getCurrentArea()) deps.showToast(`${motherDef.label || 'A drenkirra Nestmother'} is nesting nearby.`, false);
+    if (isLocalListenerZone(zoneId)) deps.showToast(`${motherDef.label || 'A drenkirra Nestmother'} is nesting nearby.`, false);
   }
 
   function ensureCurrentZoneNestTrees() {
@@ -1985,12 +1985,16 @@
     }
   }
 
+  // Player-facing toasts are for the zone the LOCAL player is in. During a co-op remote-area tick `getCurrentArea()` is
+  // swapped to the guest's zone, so compare with the listener's real area instead (js/remote-area-tick.js).
+  const isLocalListenerZone = zoneId => zoneId === (window.AreaScope?.listenerArea?.() ?? deps.getCurrentArea());
+
   const tothalWildlifeShelterZones = new Set(); // Wilderness zones holding temporary roaming-animal shelter assignments.
   function updateTothalWildlifeShelter(zoneId) {
     if (!deps._isZoneArea(zoneId)) return false; // Only the four generated wilderness zones participate.
     const storm = !!window.TothalBlizzard?.isShelteringFor?.(zoneId);
     if (!storm && !tothalWildlifeShelterZones.has(zoneId)) return false; // No actor scan during the other 27 days of ordinary weather.
-    const dens = storm ? (deps.zoneLayouts.get(zoneId)?.dens || []).filter(den => !den.collapsed && den.turnoverStage !== 'collapsed') : [];
+    let dens = null; // Resolve viable den entrances only when a roaming animal needs a new shelter.
     for (const c of deps.hostileObjects) {
       const prior = c?._tothalStormShelter; // Temporary den metadata belongs to the specific zone and only this storm.
       if (!storm) {
@@ -2034,13 +2038,22 @@
         c.targetCreature = null; c.targetPlayer = false; c.state = 'return';
         continue;
       }
+      if (dens === null) {
+        // Cache entrance coordinates for this scan, not across map regeneration or den collapse.
+        dens = [];
+        for (const den of deps.zoneLayouts.get(zoneId)?.dens || []) {
+          if (den.collapsed || den.turnoverStage === 'collapsed') continue;
+          const x = den.mouthAnchor ? (den.mouthAnchor.x + 0.5) * deps.TILE : (den.x + (den.w || 1) * 0.5) * deps.TILE;
+          const y = den.mouthAnchor ? (den.mouthAnchor.y + 0.5) * deps.TILE : (den.y + (den.h || 1) * 0.5) * deps.TILE;
+          dens.push({ den, x, y });
+        }
+      }
       if (!dens.length) continue; // Roaming animals need a real den entrance; never invent a map transition.
       let nearest = null, best = Infinity;
-      for (const den of dens) {
-        const x = den.mouthAnchor ? (den.mouthAnchor.x + 0.5) * deps.TILE : (den.x + (den.w || 1) * 0.5) * deps.TILE;
-        const y = den.mouthAnchor ? (den.mouthAnchor.y + 0.5) * deps.TILE : (den.y + (den.h || 1) * 0.5) * deps.TILE;
-        const distance = Math.hypot(c.x - x, c.y - y);
-        if (distance < best) { best = distance; nearest = { den, x, y }; }
+      for (const entrance of dens) {
+        const dx = c.x - entrance.x, dy = c.y - entrance.y; // Squared world-space distance preserves nearest-den ordering.
+        const distance = dx * dx + dy * dy;
+        if (distance < best) { best = distance; nearest = entrance; }
       }
       if (!nearest) continue;
       const temporaryDenKey = denKeyFor(zoneId, nearest.den); // Distinguishes this storm's borrowed den from a later legitimate reassignment.
@@ -2191,8 +2204,22 @@
       caution:'Wildlife population alive right now is not the same as world-wide encounter or capture success'};
   }
 
+  // Co-op remote-area tick (js/remote-area-tick.js): populate `currentArea` (an AreaScope-swapped guest zone) the way the
+  // den check does, minus camps/ticking UI. Callers must already have the zone's scene built.
+  function populateZone() {
+    const currentArea = deps.getCurrentArea();
+    if (!deps._isZoneArea(currentArea) || !deps.buildZoneScene(currentArea)) return false;
+    ensureCurrentZoneDenPacks();
+    ensureCurrentZoneRoamingHerds();
+    ensureCurrentZoneNestTrees();
+    window.TzatzulFlightRuntime?.ensureZone?.(currentArea);
+    window.PingdortFlocks?.ensureZone?.(currentArea);
+    return true;
+  }
+
   window.WildlifeSpawn = {
     init,
+    populateZone,
     applyWildlifeSkirmishDamage,
     denKeyFor,
     denCavernMapId,

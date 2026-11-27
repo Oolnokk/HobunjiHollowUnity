@@ -428,14 +428,9 @@
       ...(frozenPortraits?.enabled ? [`Frozen portraits: ${frozenPortraits.flat} flat · ${frozenPortraits.posed} baked · ${frozenPortraits.trianglesSaved} fewer triangles per eligible draw`] : []),
       npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} camera-hidden · ${npcVisual.replayHidden}/${npcVisual.replayChecks} depth-replay skips · ${npcVisual.close} near · ${npcVisual.inside} onscreen${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
       actorOcclusion ? `Actor occlusion: ${actorOcclusion.frustumHidden} frustum · ${actorOcclusion.occludedHidden} covered · ${actorOcclusion.visible} drawn · ${actorOcclusion.corpseFrustumHidden + actorOcclusion.corpseOccludedHidden}/${actorOcclusion.corpseCandidates} corpse rigs culled · ${actorOcclusion.probes} GPU probes · ${actorOcclusion.queriesPending} pending · ${actorOcclusion.gpuAvailable ? 'WebGL2 active' : actorOcclusion.gpuError ? 'fail-open' : 'GPU unavailable'}` : 'Actor occlusion: unavailable',
-      (() => { // Whether the held/shell x-ray replays copy depth back (cheap) or redraw the whole scene (the fallback).
-        const depth = root.ScissorDepthSnapshot?.snapshot?.();
-        const held = root.HeldObjectRenderOrder?.snapshot?.() || {};
-        const depthLine = depth ? `X-ray depth snapshot: near replay ${held.nearReplayEnabled === false ? 'OFF (Settings)' : 'on'} · ${depth.saves} saves · ${depth.restores} restores · ${depth.wholeBuffer ? 'whole-buffer copies (partial blits rejected)' : 'partial copies'} · ${held.nearReplayFallbacks || 0} redraw fallbacks · disabled: ${depth.disabledReason}` : 'X-ray depth snapshot: unavailable';
+      (() => { // AutoLOD effect on this frame's draws.
         const lod = root.GeometryAutoLOD?.snapshot?.();
-        const ground = held.groundMaterialCacheHits !== undefined ? `${held.groundMaterialCacheHits} ground cache hits · ${held.groundMaterialCacheBuilds} builds` : 'ground cache unavailable';
-        const geometry = lod?.enabled ? `${lod.renderGeometryChecks} AutoLOD source checks · ${lod.renderSwaps} draw swaps` : 'AutoLOD off';
-        return `${depthLine}\nRender reuse: ${ground} · ${geometry}`;
+        return `Render reuse: ${lod?.enabled ? `${lod.renderGeometryChecks} AutoLOD source checks · ${lod.renderSwaps} draw swaps` : 'AutoLOD off'}`;
       })(),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Creature path searches: ground ${groundDetour?.samples || 0} (max ${(groundDetour?.max || 0).toFixed(2)} ms) · cliff ${cliffDetour?.samples || 0} (max ${(cliffDetour?.max || 0).toFixed(2)} ms)`,
@@ -1455,21 +1450,45 @@
     };
   }
 
+  // Reuse existing timing sites during a short, headless Pixel Probe window.
+  // The ordinary profiler flag remains independent: no live overlay, stack
+  // unwinding, geometry scan, persisted preference or forced GPU sync is
+  // enabled by arming a probe.
+  function beginTiming(name) {
+    const capture = root.ProbePerformanceCapture;
+    if (!profilerEnabled && !capture?.active) return null;
+    const key = String(name || 'unnamed');
+    const probeFrame = capture?.beginTiming?.(key) || null;
+    if (!profilerEnabled && !probeFrame) return null;
+    return { name: key, t: performance.now(), probeFrame, profiler: profilerEnabled };
+  }
+
+  function endTiming(token) {
+    if (!token) return 0;
+    const ms = performance.now() - token.t;
+    if (token.probeFrame) root.ProbePerformanceCapture?.recordTiming?.(token.probeFrame, token.name, ms);
+    if (token.profiler) recordSubsystem(token.name, ms);
+    return ms;
+  }
+
   root.PerfProfiler = Object.freeze({
     get traceLivestockCallers() { return profilerEnabled && traceLivestockCallers; },
     isEnabled: () => profilerEnabled,
     setEnabled: setProfilerEnabled,
     setFpsEnabled,
     getLiveGpuInfo,
-    begin(name) { return profilerEnabled ? { name: String(name || 'unnamed'), t: performance.now() } : null; },
-    end(token) { return token ? recordSubsystem(token.name, performance.now() - token.t) : 0; },
+    begin: beginTiming,
+    end: endTiming,
     measure(name, fn) {
-      if (!profilerEnabled) return fn();
-      const start = performance.now();
+      const token = beginTiming(name);
+      if (!token) return fn();
       try { return fn(); }
-      finally { recordSubsystem(name, performance.now() - start); }
+      finally { endTiming(token); }
     },
-    record: recordSubsystem,
+    record(name, elapsed) {
+      root.ProbePerformanceCapture?.recordDirect?.(String(name || 'unnamed'), elapsed);
+      return recordSubsystem(name, elapsed);
+    },
     snapshot() {
       return {
         fps: perfState.fps,

@@ -584,7 +584,9 @@
   const previousAttach = legApi.attach.bind(legApi);
   legApi.attach = function composerAwareLegAttach(THREEArg, parent, options = {}) {
     const handle = previousAttach(THREEArg, parent, options);
-    if (String(options.name || '').toLowerCase() !== 'player' || !handle) return handle;
+    // A label is not sufficient to identify an NPC/cinematic rig as the live player.
+    // Keep the legacy name fallback for independent tools that omit the explicit role.
+    if (!handle || options.isLivePlayer === false || (options.isLivePlayer !== true && String(options.name || '').toLowerCase() !== 'player')) return handle;
     registerPlayerRig(parent, handle);
     const originalDispose = typeof handle.dispose === 'function' ? handle.dispose.bind(handle) : null;
     handle.dispose = function composerAwareLegDispose() {

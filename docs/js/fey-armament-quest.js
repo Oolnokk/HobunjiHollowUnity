@@ -34,8 +34,9 @@
   function ownedFeyWeaponKeys() {
     const keys = new Set(); // Deduplicates bound inventory and gear references during load/migration.
     for (const [key, quantity] of Object.entries(inventoryDeps?.inventory || {})) {
-      if (!(Number(quantity) > 0) || !key.startsWith('feyBound_')) continue;
-      if (window.HarlyaoRelics?.decodeBoundKey?.(key)?.origin === 'Fey') keys.add(key);
+      if (!(Number(quantity) > 0)) continue;
+      if ((key.startsWith('feyBound_') && window.HarlyaoRelics?.decodeBoundKey?.(key)?.origin === 'Fey') ||
+          (key.startsWith('captainBound_') && window.BanditCaptainArmaments?.decodeBoundKey?.(key)?.origin === 'Fey')) keys.add(key);
     }
     const gear = inventoryDeps?.getGearInventory?.();
     if (!gear) return [...keys];

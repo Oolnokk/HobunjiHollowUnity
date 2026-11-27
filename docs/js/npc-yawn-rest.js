@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 8; // Fallback yawns now use shared species/gender pitch while retaining 0.350x tempo and natural audio tails.
+  const VERSION = 9; // Fallback yawns now use shared species/gender pitch while retaining 0.350x tempo and natural audio tails.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
@@ -35,8 +35,7 @@
   let lastPlayerVoice = null; // Retains the player's most recent request and actual playback status even if town NPCs yawn afterward.
   let lastYawn = null; // Included in mobile diagnostics to verify each scheduled wake or hourly trigger.
   let lastError = null; // Included in mobile diagnostics instead of requiring browser devtools.
-  let playerWakePending = false; // Set by a real Sleep passage or finished bed lie; consumed when the player's avatar/actions become ready.
-  let lastBedSleepCount = null; // Tracks completed legacy bed animations without touching BedLiePose's private sleep/rollover logic.
+  let playerWakePending = false; // Set by a positive Sleep passage; consumed when the player's avatar/actions become ready.
   let playerWalker = null; // One stable adapter for the player's real avatar, allowing hourly yawns to reuse the NPC state machine.
 
   function nowGameHour() {
@@ -75,7 +74,6 @@
         playerWalker = null;
         voicePlans.clear();
         playerWakePending = false;
-        lastBedSleepCount = null;
         lastPlayerVoice = null;
       }
       return false;
@@ -99,7 +97,6 @@
       void voiceFor(identity.species, identity.gender).catch(error => { lastError = 'player voice prewarm: ' + String(error?.message || error); });
     } // Resolve the absent/borrowed yawn clip while the world is loading, rather than eating the first five-second yawn.
     playerWakePending = false; // A pending wake from another selected character must not animate the new one.
-    lastBedSleepCount = null; // BedLiePose counters are runtime-global, not per save character.
     dirty = false;
     return true;
   }
@@ -249,6 +246,9 @@
     if (actor && Number(audioSpatial?.(actor, { earshotTiles: 14 })?.gain ?? 1) < 0.002) return; // NPCs outside earshot do not request voice clips.
     const identity = sourceIdentity(walker);
     const plan = await voiceFor(identity.species, identity.gender);
+    const ageStage = window.CombatVocalizations?.getVoiceAgeStage?.(walker.rec) || 'adult'; // Re-read the saved phase at playback; file existence cache stays species/gender-only.
+    const agePitchSemitones = Number(window.CombatVocalizations?.getAgePitchOffset?.(walker.rec)) || 0; // Age shifts apply even to dedicated yawn recordings.
+    const pitchSemitones = Math.max(-24, Math.min(24, plan.pitch + agePitchSemitones)); // Renderer keeps this pitch independent from the yawn tempo.
     if (!active.has(entry) || entry.finished || walker.area !== window.Combat?.deps?.getCurrentArea?.()) return;
     const spatial = entry.isPlayer
       ? { gain: 1, panX: 0, position3d: null, extraWetBoost: 0 }
@@ -265,7 +265,7 @@
     if (!renderer) { owner?.release?.(claim); lastError = 'audio: voice renderer unavailable'; return; }
     const voiceDebug = {
       npcId: walker.rec?.id, isPlayer: entry.isPlayer, species: identity.species, gender: identity.gender,
-      source: plan.source, fallbackBreath: plan.fallbackBreath === true, url: plan.url, tempo: plan.tempo, pitch: plan.pitch, volume,
+      source: plan.source, fallbackBreath: plan.fallbackBreath === true, url: plan.url, tempo: plan.tempo, pitch: pitchSemitones, ageStage, agePitchSemitones, volume,
       positional: !entry.isPlayer, status: 'queued',
     }; // The real renderer's started/error/finished events update this same record for copyable mobile diagnostics.
     entry.voiceDebug = voiceDebug;
@@ -278,10 +278,10 @@
         voiceDebug.status = 'error';
         lastError = 'audio: ' + String(error?.message || error);
       },
-      tempo: plan.tempo, pitchSemitones: plan.pitch, volume,
+      tempo: plan.tempo, pitchSemitones, volume,
       trimSilence: !plan.fallbackBreath, // The fallback uses the complete, untrimmed intensity-5 recording.
-      preservePitchOnFallback: Math.abs(plan.pitch) < 0.05, // Neutral-pitch yawns still play slowly without lowering the original recording's pitch.
-      preferPitchShiftOnFallback: Math.abs(plan.pitch) >= 0.05, // Emergency native media prioritizes the species/gender pitch; it cannot independently retain the 0.350x yawn tempo.
+      preservePitchOnFallback: Math.abs(pitchSemitones) < 0.05, // Neutral-pitch yawns still play slowly without lowering the original recording's pitch.
+      preferPitchShiftOnFallback: Math.abs(pitchSemitones) >= 0.05, // Emergency native media prioritizes the species/gender pitch; it cannot independently retain the 0.350x yawn tempo.
       tailPadS: 0, extraWetBase: 0,
       panX: spatial.panX || 0, position3d: spatial.position3d || null,
       sourceActor: actor, extraWetBoost: spatial.extraWetBoost || 0,
@@ -485,7 +485,7 @@
       || window.PlayerCrawl?.isActive?.()) return false; // Combat impacts, downed crawl and recovery fully own the body.
     if (player?._freeJump || player?.climbing || player?.onClimbSurface || player?.onCliffBalcony
         || player?._cliffRouteSession || player?.onBranch) return false; // Airborne, rope, climbing and branch traversal have their own hand/leg poses.
-    if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
+    if (window.Combat?.deps?.isDialogueOpen?.() || window.CalendarSystem?.isTimePassageActive?.()) return false;
     const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // Includes 'out': the player's stand-up animation still owns the body until sitInteraction becomes null.
     if (window.PlayerSocialPoses?.active || seat) return false;
     if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active || playerMountTransitionActive()) return false; // Tool modes and mount/dismount transitions own the body and hands.
@@ -509,7 +509,7 @@
     const rested = window.TemplePrayerRestBlessings?.isRested?.() === true
       || window.TemplePrayerRestBlessings?.isWellRested?.() === true; // Both rest tiers prevent fatigue; only Well Rested also gives stat boosts.
     const player = window.Combat?.deps?.player; // Active forced player poses interrupt even a Koma ceremony that owns its own action lock.
-    const scriptedPose = !!(window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
+    const scriptedPose = !!(window.Combat?.deps?.isDialogueOpen?.() || window.CalendarSystem?.isTimePassageActive?.()
       || window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState
       || window.__hobunjiFurnitureDebug?.sitInteraction || window.Fishing?.state?.active
       || window.MusicMinigame?.state?.active || playerMountTransitionActive()
@@ -531,11 +531,6 @@
     lastCheckMs = now;
     const hour = nowGameHour();
     if (!Number.isFinite(hour)) return;
-    const completedBedSleeps = window.BedLiePose?.debug?.()?.completed; // Legacy bed animation calls game.js sleepInBed without emitting the newer Sleep passage event.
-    if (Number.isFinite(completedBedSleeps)) {
-      if (lastBedSleepCount !== null && completedBedSleeps > lastBedSleepCount) playerWakePending = true;
-      lastBedSleepCount = completedBedSleeps;
-    }
     const area = window.Combat?.deps?.getCurrentArea?.();
     const globalCombat = combatNow();
     for (const entry of active) {
@@ -595,7 +590,7 @@
     debugSnapshot: () => ({
       version: VERSION, characterId: saveCharacterId,
       active: [...active].map(entry => ({ npcId: entry.state.id, elapsedS: (performance.now() - entry.startedAt) / 1000, koma: entry.komaStarted })),
-      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastPlayerVoice, trailingBreathCount: trailingBreaths.size, lastError,
+      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastYawn, lastVoice, lastPlayerVoice, trailingBreathCount: trailingBreaths.size, lastError,
       playerStretch: window.PlayerYawnStretchPresentation?.debugSnapshot?.() || null,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),

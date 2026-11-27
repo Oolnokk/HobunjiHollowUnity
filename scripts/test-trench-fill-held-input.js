@@ -110,6 +110,79 @@ const disabled = makeFixture({
 disabled.press(3);
 assert.deepEqual(disabled.state().selected, [], 'a disabled action must not execute or claim a hold');
 
+// Run the real HUD default-selection block and charge updater together. A
+// shallow trench offers Redig first, even while the player explicitly holds Fill.
+const hudStart = game.indexOf('const first = nonClimbBtns.find(');
+const hudEnd = game.indexOf('// The dodge button is climbing', hudStart);
+assert(hudStart >= 0 && hudEnd > hudStart, 'HUD default selection must exist');
+const selectDefault = game.slice(hudStart, hudEnd);
+const chargeUpdate = productionFunction('updateChargeAction');
+const makeHudCharge = Function('initialAction', 'buttons', 'depth', 'currentArea', 'permission', [
+  "let activeTool = 'shovel', activeAction = initialAction, heldMode = 'tool', actionHeldDown = true, toolSwingT = 0, chargeAnimOverride = null;",
+  "const TileType = { TRENCH: 'trench', GRASS: 'grass', ROCK: 'rock' }, CropType = { NONE: null };",
+  "const tile = {type: 'trench', depth, water: 0.5, crop: null};",
+  "const grid = []; grid[3] = []; grid[3][2] = tile;",
+  "const effects = {farmWater:0, dirty:0, farmSave:0, zoneDelta:0, zoneRefresh:0, memberSave:0};",
+  "const window = { GridTileAccessors: {getActiveGrid: () => grid, isHouseFootprint: () => false}, HudUpdate: {contextualActionLabel: a => a}, FormatUtils: {actionName: a => a}, WaterSystem: {recomputeWater: () => effects.farmWater++}, FarmEditor: {saveFarmLayout: () => effects.farmSave++}, ZoneRegrowth: {refreshZoneGroundVisuals: () => effects.zoneRefresh++} };",
+  "const tileStyles = {grass: {label:'Grass'}};",
+  "const _isZoneArea = area => area === 'wilderness';",
+  "const markTileDirty = () => effects.dirty++, recordWildernessChunkTileDelta = () => effects.zoneDelta++, saveMemberWorldData = () => effects.memberSave++;",
+  "let canceled = null, lastActionMessage = '', reticle = {col: 2, row: 3};",
+  "const hasFarmPermission = () => permission;",
+  "function debugLog() {} function showToast() {} function awardToolUseMasteryXp() {}",
+  "function cancelChargeAction(reason) { canceled = reason; chargeAction = null; }",
+  "function getReticleTile() { return reticle; }",
+  "function spawnActionParticles() {} function beginChargeStage() {}",
+  game.slice(game.indexOf('const REFILL_FLOURISH_REP ='), game.indexOf(';', game.indexOf('const FILL_TRENCH_STAGES =')) + 1),
+  "let chargeAction = { tool: activeTool, action: initialAction, col: 2, row: 3, stage: 0, stages: FILL_TRENCH_STAGES };",
+  productionFunction('canUseAction'),
+  productionFunction('applyAction'),
+  productionFunction('farmActionPermissionCategory'),
+  productionFunction('completeChargeAction'),
+  chargeUpdate,
+  "function refresh(nonClimbBtns) {" + selectDefault + "}",
+  "function refreshActionBar() { refresh(buttons); }",
+  "return { refresh: refreshActionBar, tick: updateChargeAction, release: () => { actionHeldDown = false; }, move: () => { reticle = {col: 3, row: 3}; }, select: action => { activeAction = action; }, stow: () => { heldMode = 'item'; }, switchTool: () => { activeTool = 'hoe'; }, stageCount: FILL_TRENCH_STAGES.length, state: () => ({ activeAction, canceled, active: !!chargeAction, tile: {...tile}, effects: {...effects} }) };",
+].join('\n'));
+const offered = [{action:'dig', allowed:true, style:'primary'}, {action:'fill', allowed:true, style:'secondary'}];
+for (const area of ['farm', 'wilderness']) {
+  for (const depth of [0.5, 1]) {
+    const buttons = depth === 1 ? [{...offered[0], allowed:false}, offered[1]] : offered;
+    const hudFill = makeHudCharge('fill', buttons, depth, area, true);
+    for (let stage = 0; stage < hudFill.stageCount; stage++) {
+      hudFill.refresh();
+      assert.equal(hudFill.state().activeAction, 'fill', 'HUD cannot replace an explicit in-progress Fill');
+      assert.equal(hudFill.state().tile.type, 'trench', 'no terrain mutation before the last stage');
+      hudFill.tick();
+    }
+    assert.equal(hudFill.state().active, false, 'Fill charge ends after its actual stage count');
+    assert.equal(hudFill.state().tile.type, 'grass', 'Fill restores actual terrain after all stages');
+    assert.equal(hudFill.state().tile.water, 0, 'Fill clears trench water');
+    assert.equal(hudFill.state().effects.memberSave, 1, 'completed Fill saves once');
+    assert.equal(hudFill.state().effects.farmSave, area === 'farm' ? 1 : 0);
+    assert.equal(hudFill.state().effects.farmWater, area === 'farm' ? 1 : 0);
+    assert.equal(hudFill.state().effects.dirty, area === 'farm' ? 1 : 0);
+    assert.equal(hudFill.state().effects.zoneDelta, area === 'wilderness' ? 1 : 0);
+    assert.equal(hudFill.state().effects.zoneRefresh, area === 'wilderness' ? 1 : 0);
+  }
+}
+const denied = makeHudCharge('fill', offered, 0.5, 'farm', false);
+for (let stage = 0; stage < denied.stageCount; stage++) { denied.refresh(); denied.tick(); }
+assert.equal(denied.state().tile.type, 'trench', 'permission is rechecked before filling');
+assert.equal(denied.state().effects.memberSave, 0);
+for (const [interrupt, reason] of [['release', 'input released'], ['move', 'reticle moved'], ['select', 'tool/action changed'], ['stow', 'tool/action changed'], ['switchTool', 'tool/action changed']]) {
+  const held = makeHudCharge('fill', offered, 0.5, 'farm', true);
+  held[interrupt]('dig');
+  held.refresh();
+  held.tick();
+  assert.equal(held.state().canceled, reason, 'actual input, equipment or target changes must still cancel');
+  assert.equal(held.state().tile.type, 'trench', 'canceled Fill cannot mutate terrain');
+  assert.equal(held.state().effects.memberSave, 0, 'canceled Fill cannot save a mutation');
+}
+const idle = makeHudCharge('fill', offered, 0.5, 'farm', true);
+idle.release(); idle.tick(); idle.refresh();
+assert.equal(idle.state().activeAction, 'dig', 'normal HUD default selection resumes after cancellation');
+
 assert.match(game, /startChargeAction\(_chargeReticle, activeAction === 'fill' \? FILL_TRENCH_STAGES : _digStages\)/, 'actual resolved Fill must choose the fill stages');
 assert.match(game, /action: activeAction,\s*tool: activeTool,/, 'charge must commit the same resolved action it animates');
 assert.match(game, /cancelChargeAction\('input released'\)/, 'held-action release should report a useful mobile debug reason');

@@ -53,14 +53,22 @@
     return window.LootRolling?.getShopStock?.()?.carpenterBarnPlans?.additions || {};
   }
 
-  function buyBarnPlan(tier) {
+  function planLimit(def, key) {
+    return window.ShopQuantity.max(deps.inventory, { price: def.price, grants: { [key]: 1 } });
+  }
+
+  function bindPlanBuy(button, def, key, purchase) {
+    window.ShopQuantity.attach(button, { maximum: () => _townValueLock(def) ? 0 : planLimit(def, key), price: def.price, purchase });
+  }
+
+  function buyBarnPlan(tier, quantity = 1) {
     const tierDef = deps.getBarnTiers()[tier];
-    if (!tierDef || _refuseLocked(tierDef)) return;
+    if (!tierDef?.planItem || _refuseLocked(tierDef)) return;
     const gold = deps.inventory.gold || 0;
-    if (gold < tierDef.price) { deps.showToast('Not enough ganang.', false); return; }
-    deps.inventory.gold = gold - tierDef.price;
-    deps.inventory[tierDef.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[tierDef.planItem] || 0) + 1);
-    deps.showToast(`Bought a ${tierDef.label} plan!`, true);
+    if (!window.ShopQuantity.valid(quantity, planLimit(tierDef, tierDef.planItem))) { deps.showToast('Not enough ganang or plan space.', false); return; }
+    deps.inventory.gold = gold - tierDef.price * quantity;
+    deps.inventory[tierDef.planItem] = (deps.inventory[tierDef.planItem] || 0) + quantity;
+    deps.showToast(`Bought ${quantity}× ${tierDef.label} plan!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
@@ -70,14 +78,14 @@
   // plan item here; its feature module decides how/where that plan is placed
   // and consumed. This keeps the carpenter independent of Incubator logic and
   // lets future barn rooms use the same stock shape without new shop code.
-  function buyBarnAddition(additionKey) {
+  function buyBarnAddition(additionKey, quantity = 1) {
     const def = _barnAdditions()[additionKey];
     if (!def?.planItem || _refuseLocked(def)) return;
     const gold = deps.inventory.gold || 0;
-    if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
-    deps.inventory.gold = gold - def.price;
-    deps.inventory[def.planItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.planItem] || 0) + 1);
-    deps.showToast(`Bought a ${def.label}!`, true);
+    if (!window.ShopQuantity.valid(quantity, planLimit(def, def.planItem))) { deps.showToast('Not enough ganang or plan space.', false); return; }
+    deps.inventory.gold = gold - def.price * quantity;
+    deps.inventory[def.planItem] = (deps.inventory[def.planItem] || 0) + quantity;
+    deps.showToast(`Bought ${quantity}× ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
@@ -86,14 +94,14 @@
   // House piece deeds — bought here instead of built outright; place the
   // owned deed touching the existing house from the Farm tab, then interact
   // with the resulting foundation to build (see js/house-pieces.js).
-  function buyHousePieceDeed(pieceKey) {
+  function buyHousePieceDeed(pieceKey, quantity = 1) {
     const def = deps.getHousePieceDeeds()[pieceKey];
-    if (!def) return;
+    if (!def?.deedItem || _refuseLocked(def)) return;
     const gold = deps.inventory.gold || 0;
-    if (gold < def.price) { deps.showToast('Not enough ganang.', false); return; }
-    deps.inventory.gold = gold - def.price;
-    deps.inventory[def.deedItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[def.deedItem] || 0) + 1);
-    deps.showToast(`Bought a ${def.label}!`, true);
+    if (!window.ShopQuantity.valid(quantity, planLimit(def, def.deedItem))) { deps.showToast('Not enough ganang or plan space.', false); return; }
+    deps.inventory.gold = gold - def.price * quantity;
+    deps.inventory[def.deedItem] = (deps.inventory[def.deedItem] || 0) + quantity;
+    deps.showToast(`Bought ${quantity}× ${def.label}!`, true);
     renderCarpenterShopPage();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
@@ -144,7 +152,7 @@
         </div>
         ${_buyButtonHtml(def, `data-tier="${tier}"`)}
       `;
-      row.querySelector('[data-tier]')?.addEventListener('click', () => buyBarnPlan(tier));
+      bindPlanBuy(row.querySelector('[data-tier]'), def, def.planItem, quantity => buyBarnPlan(tier, quantity));
       list.appendChild(row);
     });
 
@@ -168,7 +176,7 @@
           </div>
           ${_buyButtonHtml(def, `data-barn-addition="${deps.esc(additionKey)}"`)}
         `;
-        row.querySelector('[data-barn-addition]')?.addEventListener('click', () => buyBarnAddition(additionKey));
+        bindPlanBuy(row.querySelector('[data-barn-addition]'), def, def.planItem, quantity => buyBarnAddition(additionKey, quantity));
         list.appendChild(row);
       });
     }
@@ -189,9 +197,9 @@
           <div class="sh-desc">A ${def.w}×${def.h} room, placed touching your house from the Farm tab. Owned: ${owned}</div>
           <div class="sh-price">${def.price}g each</div>
         </div>
-        <button class="shop-buy-btn" data-deed="${pieceKey}">Buy</button>
+        ${_buyButtonHtml(def, `data-deed="${pieceKey}"`)}
       `;
-      row.querySelector('[data-deed]')?.addEventListener('click', () => buyHousePieceDeed(pieceKey));
+      bindPlanBuy(row.querySelector('[data-deed]'), def, def.deedItem, quantity => buyHousePieceDeed(pieceKey, quantity));
       list.appendChild(row);
     });
 

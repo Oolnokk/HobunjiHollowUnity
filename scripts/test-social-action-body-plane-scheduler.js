@@ -86,4 +86,19 @@ function buildFixture() {
   assert.equal(plane.worldMatrixUpdates, 1, 'the onBeforeRender sentinel still refreshes matrixWorld while dancing, independent of the scheduler');
 }
 
+// Discovery must not traverse the player subtree on every frame.
+{
+  const { registered, windowObject } = buildFixture();
+  const player = windowObject.PlayerBodyTransformComposer.getPlayerMesh();
+  let traversals = 0; const realTraverse = player.traverse;
+  player.traverse = function (cb) { traversals++; return realTraverse.call(this, cb); };
+  const discover = registered.get('social-action-body-plane-discovery').fn;
+  for (let i = 0; i < 60; i++) discover({ timestamp: 1000 + i * 16 }); // ~1 s of frames
+  assert.ok(traversals >= 1 && traversals <= 3, 'about 2 traversals per second, not 60: ' + traversals);
+  const before = traversals;
+  windowObject.PlayerBodyTransformComposer.getPlayerMesh = () => ({ ...player, traverse: player.traverse });
+  discover({ timestamp: 2100 });
+  assert.equal(traversals, before + 1, 'a new player root is scanned immediately');
+}
+
 console.log('social action body plane discovery/channel scheduler split passed');

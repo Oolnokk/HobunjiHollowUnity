@@ -19,14 +19,14 @@
   const INTERACTION_CONNECTORS = new Set(['to', 'or', 'at', 'on', 'in', 'for', 'of', 'the', 'a', 'an']); // Used to keep grammatical glue visibly subordinate to the actionable words.
   const DEFAULTS = {
     assignments: {
-      damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
+      damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow', usefulnessXp: 'floatPlus',
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow', rapport: 'centeredFiveRow', romance: 'centeredFiveRow', festivalFun: 'centeredFiveRow', livestockFavor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow', interaction: 'centeredFiveRow',
     },
     floatPlus: { worldHeight: 0.36, xOffsetPercent: 10, yOffsetPercent: 13, lifetimeMs: 1150 },
     centeredFiveRow: { worldHeight: 0.32, xOffsetPercent: 40, yOffsetPercent: -4, lifetimeMs: 3200, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
-      damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
+      damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff', usefulnessXp: '#9de7ff',
       masteryXp: '#78cfff', favor: '#ff9fd7', rapport: '#ffd84d', romance: '#ff3d73', festivalFun: '#b8f080', livestockFavor: '#ffb8d8', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff', conditionReady: '#fff4e2',
     },
   };
@@ -175,7 +175,106 @@
     material.dispose();
   }
 
-  function makePlane(text, kind, layout) {
+  // Icon materials differ from text materials (authored PNG cutoff and
+  // tone mapping); keep their leases separate. Only immutable canvases
+  // explicitly supplied by the reaction owner may survive an event.
+  const ICON_MATERIAL_POOL_MAX = 32;
+  const ICON_GEOMETRY_POOL_MAX = 8;
+  const ICON_TEXTURE_CACHE_MAX = 32;
+  const iconResourcesByThree = new WeakMap(); // Renderer namespace -> bounded session cache.
+  function iconResourcesFor(THREE) {
+    let resources = iconResourcesByThree.get(THREE);
+    if (!resources) {
+      resources = { materials: [], geometries: [], textures: new Map(),
+        stats: { materialCreated: 0, materialReused: 0, geometryCreated: 0, geometryReused: 0,
+          textureCreated: 0, textureReused: 0, textureDisposed: 0, materialDisposed: 0, geometryDisposed: 0 } };
+      iconResourcesByThree.set(THREE, resources);
+    }
+    return resources;
+  }
+  function acquireIconTexture(resources, THREE, pngSurface, canvas, name, immutable) {
+    const cached = immutable && resources.textures.get(canvas);
+    if (cached) {
+      cached.refs++;
+      resources.stats.textureReused++;
+      // Refresh LRU order only at acquisition, never during animation.
+      resources.textures.delete(canvas);
+      resources.textures.set(canvas, cached);
+      return cached;
+    }
+    if (immutable && resources.textures.size >= ICON_TEXTURE_CACHE_MAX) {
+      for (const [key, entry] of resources.textures) {
+        if (entry.refs) continue;
+        resources.textures.delete(key);
+        entry.texture.dispose();
+        resources.stats.textureDisposed++;
+        break;
+      }
+    }
+    const texture = pngSurface.makeCanvasTexture(THREE, canvas, name);
+    const shared = immutable && resources.textures.size < ICON_TEXTURE_CACHE_MAX;
+    const entry = { texture, refs: 1, shared }; // One reference per event, not per ray/coin.
+    resources.stats.textureCreated++;
+    if (shared) resources.textures.set(canvas, entry);
+    return entry;
+  }
+  function releaseIconTexture(resources, entry) {
+    if (!entry || entry.refs <= 0) return;
+    entry.refs--;
+    if (!entry.refs && !entry.shared) {
+      entry.texture.dispose();
+      resources.stats.textureDisposed++;
+    }
+  }
+  function acquireIconMaterial(resources, THREE, pngSurface, texture, name) {
+    const cutoff = pngSurface.alphaTest?.() ?? null; // Match the live authored sprite config.
+    const index = resources.materials.findIndex(entry => entry.cutoff === cutoff);
+    if (index >= 0) {
+      const { material } = resources.materials.splice(index, 1)[0];
+      material.map = texture;
+      material.name = name;
+      material.opacity = 0;
+      material.visible = true;
+      resources.stats.materialReused++;
+      return { material, cutoff };
+    }
+    const material = pngSurface.makeMaterial(THREE, texture, name, {
+      opacity: 0, depthTest: false, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
+    });
+    resources.stats.materialCreated++;
+    return { material, cutoff };
+  }
+  function releaseIconMaterial(resources, lease) {
+    const material = lease.material;
+    material.map = null; // A retired material must not pin a unique or evicted texture.
+    material.opacity = 0;
+    if (resources.materials.length < ICON_MATERIAL_POOL_MAX) resources.materials.push(lease);
+    else { material.dispose(); resources.stats.materialDisposed++; }
+  }
+  function acquireIconGeometry(resources, THREE) {
+    if (resources.geometries.length) {
+      resources.stats.geometryReused++;
+      return resources.geometries.pop();
+    }
+    resources.stats.geometryCreated++;
+    return new THREE.PlaneGeometry(1, 1);
+  }
+  function releaseIconGeometry(resources, geometry) {
+    if (!geometry) return;
+    if (resources.geometries.length < ICON_GEOMETRY_POOL_MAX) resources.geometries.push(geometry);
+    else { geometry.dispose(); resources.stats.geometryDisposed++; }
+  }
+  // Track row work without allocations; sampled only by the debug snapshot.
+  let rowLayoutBuilds = 0;
+  function iconResourceSnapshot() {
+    const resources = state.deps?.THREE && iconResourcesByThree.get(state.deps.THREE);
+    return resources ? { ...resources.stats, pooledMaterials: resources.materials.length,
+      pooledGeometries: resources.geometries.length, cachedTextures: resources.textures.size,
+      liveCachedTextures: [...resources.textures.values()].filter(entry => entry.refs > 0).length,
+      limits: { materials: ICON_MATERIAL_POOL_MAX, geometries: ICON_GEOMETRY_POOL_MAX, textures: ICON_TEXTURE_CACHE_MAX } } : null;
+  }
+
+  function makePlane(text, kind, layout, color) {
     const THREE = state.deps.THREE;
     const size = layout.worldHeight;
     const canvas = document.createElement('canvas');
@@ -194,7 +293,7 @@
     ctx.lineWidth = 9;
     ctx.strokeStyle = 'rgba(15,10,8,.9)';
     ctx.strokeText(text, textX, canvas.height / 2);
-    ctx.fillStyle = state.settings.colors[kind] || '#fff';
+    ctx.fillStyle = color || state.settings.colors[kind] || '#fff';
     ctx.fillText(text, textX, canvas.height / 2);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -376,10 +475,17 @@
   function dispose(event) {
     event.plane.parent?.remove(event.plane);
     if (event.mode === 'iconEffect') {
-      event.cancelled = true; // An image that resolves after clear/replacement cannot attach a popup.
-      for (const item of event.items) item.mesh.material.dispose();
-      for (const texture of event.textures.values()) texture.dispose();
-      event.geometry?.dispose();
+      if (event.cancelled) return;
+      event.cancelled = true; // Delayed loads cannot attach a retired popup or release its leases twice.
+      for (const item of event.items) {
+        event.plane.remove(item.mesh);
+        releaseIconMaterial(event.resources, item.lease);
+      }
+      for (const entry of event.textures.values()) releaseIconTexture(event.resources, entry);
+      releaseIconGeometry(event.resources, event.geometry);
+      event.items.length = 0;
+      event.textures.clear();
+      event.geometry = null;
       event.onDispose?.();
       return;
     }
@@ -392,7 +498,7 @@
   // irrespective of the world popup style selected in the authoring tool.
   // RewardReadout excludes damage, non-acquisitions, and negative values.
   function forwardToReadout(event) {
-    if (!event || event.interactionPrompt || !['centeredFiveRow', 'floatPlus'].includes(event.mode)) return;
+    if (!event || event.kind === 'usefulnessXp' || event.interactionPrompt || !['centeredFiveRow', 'floatPlus'].includes(event.mode)) return; // Family gains never enter the player's acquisition readout.
     window.RewardReadout?.enqueue(event.kind, event.text, { color: state.settings.colors[event.kind] });
   }
 
@@ -408,37 +514,60 @@
       .sort((a, b) => a.sequence - b.sequence);
   }
 
-  function claimFloatOffset(root, bounds) {
+  function claimFloatOffset(root, bounds, scatter = false, emphasis = false) {
     const worldHeight = state.settings.floatPlus.worldHeight;
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
-    const pathXClearance = worldHeight * 0.24;
-    const pathYClearance = 0.075;
-    const isFree = point => existing.every(event =>
-      Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
-      Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance
-    );
+    const pathXClearance = worldHeight * (scatter ? 0.7 : 0.24); // Allow scattered numbers to drift outward without crossing nearby text.
+    const pathYClearance = scatter ? Math.max(0.075, worldHeight * 0.55) : 0.075;
+    // Reserve the full animation envelope (including the first-frame pop),
+    // not just the resting text dimensions. Compute existing envelopes once
+    // per emitted burst number, never on the frame loop.
+    function envelope(x, y, width, height, scattered, peak) {
+      const travel = scattered ? 0.22 : 0;
+      const halfWidth = width * peak * 0.5, halfHeight = height * peak * 0.5;
+      return { left: Math.min(x, x * (1 + travel)) - halfWidth,
+        right: Math.max(x, x * (1 + travel)) + halfWidth + height * 0.12,
+        bottom: Math.min(y, y * (1 + travel)) - halfHeight,
+        top: Math.max(y, y * (1 + travel)) + halfHeight + 0.075 };
+    }
+    const peak = emphasis ? 1.4 : 1.1; // Same scale peak as the frame updater.
+    const reserved = scatter ? existing.map(event => envelope(event.offsetX, event.offsetY, event.width, event.height, event.scatter, event.emphasis ? 1.4 : event.kind === 'damage' ? 1.1 : 1)) : null;
+    const isFree = point => {
+      if (reserved) {
+        const candidate = envelope(point.x, point.y, bounds.width, bounds.height, true, peak);
+        return reserved.every(other => candidate.right + worldHeight * 0.1 < other.left || candidate.left > other.right + worldHeight * 0.1 ||
+          candidate.top + worldHeight * 0.1 < other.bottom || candidate.bottom > other.top + worldHeight * 0.1);
+      }
+      return existing.every(event =>
+        Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
+        Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance);
+    };
     const searchCount = Math.max(240, (existing.length + 1) * 240);
     for (let index = 0; index < searchCount; index++) {
-      const angle = index * 2.399963229728653;
-      const radius = Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
-      const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius * 0.62 };
+      const angle = index * 2.399963229728653 + (scatter ? 0.55 : 0);
+      const radius = scatter
+        ? Math.max(0.18, worldHeight * 1.8) * Math.sqrt(1 + index / 7) // Start off-center and distribute the burst in different directions.
+        : Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
+      const point = { x: Math.cos(angle) * radius * (scatter ? 1.35 : 1), y: Math.sin(angle) * radius * (scatter ? 0.85 : 0.62) };
       if (isFree(point)) return point;
     }
+    if (reserved) return { x: 0, y: reserved.reduce((top, item) => Math.max(top, item.top), 0) + bounds.height * peak * 0.5 + worldHeight * 0.1 }; // Safe fallback for an unusually crowded burst.
     const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0);
     return { x: 0, y: topEdge + bounds.height * 0.5 + pathYClearance };
   }
 
   function spawn(entry) {
-    const mode = entry.modeOverride || state.settings.assignments[entry.kind];
+    const mode = entry.scatter ? 'floatPlus' : entry.modeOverride || state.settings.assignments[entry.kind]; // Combat bursts never inherit list assignments.
     if (!state.deps || !entry.root || (mode !== 'floatPlus' && mode !== 'centeredFiveRow')) return null;
     const cfg = state.settings[mode];
     const scene = entry.scene || state.deps.getActiveScene?.(); // Resolved scene owner is retained so zone cleanup sees default-scene rewards.
     if (!scene?.add) return null;
+    const sizeMultiplier = entry.emphasis ? 1.65 : 1; // Impact callout uses the same Float+ renderer at a larger authored scale.
     const planeCfg = mode === 'centeredFiveRow'
       ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
-      : cfg;
-    const parts = makePlane(entry.text, entry.kind, planeCfg);
-    const event = { ...entry, scene, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
+      : sizeMultiplier !== 1 ? { ...cfg, worldHeight: cfg.worldHeight * sizeMultiplier } : cfg;
+    const parts = makePlane(entry.text, entry.kind, planeCfg, entry.color);
+    const event = { ...entry, scene, ...parts, mode, sizeMultiplier, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
     if (mode === 'centeredFiveRow') {
       const list = listFor(entry.root);
       if (list.length >= cfg.maxRows) {
@@ -450,7 +579,7 @@
       listFor(entry.root).forEach((item, index) => { item.listSlot = index; });
       event.listSlot = listFor(entry.root).length;
     } else {
-      const offset = claimFloatOffset(entry.root, parts);
+      const offset = claimFloatOffset(entry.root, parts, entry.scatter, entry.emphasis);
       event.offsetX = offset.x;
       event.offsetY = offset.y;
     }
@@ -466,7 +595,7 @@
     return null;
   }
 
-  function showIconEffect(root, { kind, duration, height, offsetX = 0, headOffset = null, getSide, size, loadParts, sample, onDispose }) {
+  function showIconEffect(root, { kind, duration, height, offsetX = 0, headOffset = null, getSide, size, loadParts, sample, onDispose, immutableCanvases = false }) {
     const THREE = state.deps?.THREE; // Uses the same scene and Three instance as text popups.
     const pngSurface = window.HobunjiSpritePngSurface; // Shared authored-PNG canvas and unlit material factories.
     const scene = iconAnchorScene(root); // Capture the real scene so zone eviction also cancels loading effects.
@@ -478,35 +607,40 @@
     const plane = new THREE.Group(); // One world-space billboard for all animated icon parts.
     plane.visible = false;
     const event = { mode: 'iconEffect', kind, root, scene, plane, items: [], textures: new Map(),
-      height, offsetX, headOffset, getSide, size, sample, onDispose, animalSide: -1, lifetimeMs: duration, startedAt: null };
+      resources: iconResourcesFor(THREE), height, offsetX, headOffset, getSide, size, sample, onDispose, animalSide: -1, lifetimeMs: duration, startedAt: null };
     state.active.push(event);
     Promise.resolve().then(loadParts).then(parts => {
       if (event.cancelled) return;
       if (iconAnchorScene(root) !== scene || !parts.some(part => part.canvas)) throw new Error('Icon popup has no visible anchor or artwork');
-      event.geometry = new THREE.PlaneGeometry(1, 1);
+      event.geometry = acquireIconGeometry(event.resources, THREE);
       for (const part of parts) {
         if (!part.canvas) continue;
-        let texture = event.textures.get(part.canvas); // Repeated particles share an upload within this popup.
-        if (!texture) {
-          texture = pngSurface.makeCanvasTexture(THREE, part.canvas, part.name);
-          event.textures.set(part.canvas, texture);
+        let entry = event.textures.get(part.canvas); // Coins share one reference/upload per artwork per event.
+        if (!entry) {
+          entry = acquireIconTexture(event.resources, THREE, pngSurface, part.canvas, part.name, immutableCanvases === true);
+          event.textures.set(part.canvas, entry);
         }
-        const material = pngSurface.makeMaterial(THREE, texture, part.name, {
-          opacity: 0, depthTest: false, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
-        });
-        const mesh = new THREE.Mesh(event.geometry, material); // Canvas-backed mesh qualifies for the popup overlay.
+        const lease = acquireIconMaterial(event.resources, THREE, pngSurface, entry.texture, part.name);
+        let mesh;
+        try {
+          mesh = new THREE.Mesh(event.geometry, lease.material); // Canvas-backed mesh qualifies for the popup overlay.
+        } catch (error) {
+          releaseIconMaterial(event.resources, lease);
+          throw error;
+        }
+        event.items.push({ ...part, mesh, lease }); // Register the lease before attaching, even if an add-time hook throws.
         mesh.name = part.name;
         mesh.renderOrder = POPUP_RENDER_ORDER;
         mesh.frustumCulled = false;
         mesh.visible = false;
         plane.add(mesh);
-        event.items.push({ ...part, mesh });
       }
       scene.add(plane);
       event.startedAt = performance.now();
     }).catch(() => {
       if (event.cancelled) return;
-      state.active.splice(state.active.indexOf(event), 1);
+      const index = state.active.indexOf(event);
+      if (index >= 0) state.active.splice(index, 1);
       dispose(event);
     });
     return true;
@@ -598,14 +732,57 @@
     });
   }
 
+  function showFamilyUsefulness(root, amount) {
+    const camera = state.deps?.camera, scene = state.deps?.getActiveScene?.();
+    if (!root || !camera || !scene || iconAnchorScene(root) !== scene || !Number.isFinite(amount) || amount <= 0) return false;
+    const point = avatarCentroidWorld(root); // Only project on actual awards, never scan family members each frame.
+    if (!point?.project) return false;
+    point.project(camera);
+    if (![point.x, point.y, point.z].every(Number.isFinite) || Math.abs(point.x) > 1 || Math.abs(point.y) > 1 || Math.abs(point.z) > 1) return false;
+    const rounded = Math.round(amount * 100) / 100;
+    return spawn({ kind: 'usefulnessXp', text: '+' + (rounded || '<0.01') + ' Usefulness XP', root, scene, modeOverride: 'floatPlus' }) != null;
+  }
   function showChange(kind, amount, options = {}) {
     const value = Math.round(Math.abs(Number(amount) || 0) * 10) / 10;
     if (!value) return null;
     const sign = Number(amount) >= 0 ? '+' : '-';
     const text = options.text || `${sign}${value}`;
-    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode });
+    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode, color: options.color, scatter: options.scatter === true, emphasis: options.emphasis === true });
     queueReward(kind, text, options);
     return state.sequence;
+  }
+
+  // Resolve ownership at the actual hit, never by proximity.
+  function isLocalCombatSource(attacker) {
+    const registry = window.ActorRegistry; // Shared player/companion ownership authority.
+    return !!attacker && !!registry && (registry.isLocalPlayer(attacker) ||
+      registry.isLocalPlayer(registry.ownerPlayerOf(attacker)));
+  }
+
+  let lastCombatEffect = null; // Existing debug snapshot exposes the last emitted combat number.
+  function showCombatEffect(entity, id, amount, credited, source = 'attack') {
+    if (!credited || !(amount > 0) || !Number.isFinite(amount) || window.ActorRegistry?.isPlayer(entity)) return null;
+    const root = entity?.avatarRef?.group || entity?.root; // Existing avatar anchor.
+    const scene = state.deps?.getActiveScene?.(); // Never draw another area's combat in the local scene.
+    if (!root || !scene || iconAnchorScene(root) !== scene) return null;
+    const value = Math.round(amount * 10) / 10; // Authored damage-number precision.
+    if (!value) return null;
+    const label = id === 'health' ? '' : id === 'footing' ? 'Footing' : (window.ResourceSystem?.AFFLICTIONS?.[id]?.name || id).replace(/\s+(Health|Stamina|Footing)$/i, ''); // Short popup labels omit only the trailing resource name.
+    const palette = window.HOBUNJI_CONFIG?.resourceRings; // Shared authored resource and affliction colors, resolved only on a real hit.
+    const color = id === 'footing' ? palette?.colors?.footing : palette?.afflictionColors?.[id]; // Health retains the popup editor's authored damage color.
+    const text = label ? `-${value} ${label}` : undefined;
+    const sequence = showChange('damage', -value, { root, scene, text, color, mode: 'floatPlus', scatter: true });
+    if (sequence != null) lastCombatEffect = { id, amount: value, sequence, source, color: color || null, at: Date.now() };
+    return sequence;
+  }
+
+  // One prominent callout per resolved collision, not one suffix per number.
+  function showImpactCallout(entity) {
+    if (window.ActorRegistry?.isPlayer(entity)) return null;
+    const root = entity?.avatarRef?.group || entity?.root; // Same target anchor as the applied numbers.
+    const scene = state.deps?.getActiveScene?.();
+    if (!root || !scene || iconAnchorScene(root) !== scene) return null;
+    return spawn({ kind: 'damage', text: 'IMPACT!!!', root, scene, scatter: true, emphasis: true, color: '#ffe181' });
   }
 
   function finishLevelUpAnnouncement() {
@@ -977,16 +1154,22 @@
     if (clamped !== x) plane.position.addScaledVector(right, clamped - x);
   }
   const INTERACTION_MAX_SCREEN_FRACTION = 0.035; // A prompt row never exceeds 3.5% of the viewport height.
-  const _updateScratch = { right: null, forward: null };
+  const _updateScratch = { right: null, forward: null, up: null };
   function update(now) {
     const camera = state.deps?.camera;
-    if (!camera) return;
+    if (!camera || (!state.active.length && !state.conditionCallout && !state.aimLabel && !state.infoLists.size)) return;
     camera.updateMatrixWorld?.(); // Apply this frame's camera turn before reading its screen-right axis.
     if (!_updateScratch.right) { _updateScratch.right = new state.deps.THREE.Vector3(); _updateScratch.forward = new state.deps.THREE.Vector3(); }
     const cameraRight = _updateScratch.right.setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // Reused per frame (was a new Vector3 every frame).
     const cameraBack = _updateScratch.forward.setFromMatrixColumn(camera.matrixWorld, 2).normalize(); // Camera looks down -Z, so view depth is minus the dot with this axis.
     const halfFovTan = Math.tan(((Number(camera.fov) || 42) * Math.PI / 180) / 2);
     const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
+    let rowLayouts = null; // Allocate only if a live row needs layout; damage numbers and emojis do not.
+    // Anchor transforms are identical for a root/mode within this update. Keep the cached base
+    // separate from the animated offset, and never carry it into the next frame.
+    const shareAnchors = state.active.length > 1; // Single popups need no cache.
+    let floatAnchors = null, rowAnchors = null; // Lazily allocate one map per text mode, never one map per actor.
+    let scatterUp = null; // Camera up is computed once, only on frames with a scattered popup.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       if (event.mode === 'iconEffect') {
@@ -994,14 +1177,28 @@
           state.active.splice(index, 1);
           dispose(event);
         }
+        // getSide/sample/onDispose are callbacks; any of them may change an actor's pose.
+        floatAnchors?.clear(); rowAnchors?.clear();
         continue;
       }
       const progress = event.interactionPrompt ? 0 : Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
-      const center = popupAnchorWorld(event.root, event.mode);
+      let center;
+      if (progress < 1 && shareAnchors && (event.mode === 'floatPlus' || event.mode === 'centeredFiveRow')) {
+        const anchors = event.mode === 'floatPlus' ? (floatAnchors ||= new Map()) : (rowAnchors ||= new Map()); // Mode-specific, current-frame cache.
+        if (!anchors.has(event.root)) anchors.set(event.root, popupAnchorWorld(event.root, event.mode));
+        const base = anchors.get(event.root);
+        if (base) {
+          const scratch = _updateScratch.popupCenter ||= new state.deps.THREE.Vector3(); // Mutable per-event offset, not the cached anchor.
+          scratch.copy(base);
+          center = scratch;
+        }
+      } else if (progress < 1) center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
         finishedRewards.push(event); // Also covers a player root lost during a scene change.
+        rowLayouts?.delete(event.root); // Remaining rows retain the original same-frame compaction behavior.
         dispose(event);
         state.active.splice(index, 1);
+        floatAnchors?.clear(); rowAnchors?.clear(); // Scene removal listeners can move any actor.
         continue;
       }
       // Interaction prompts are world-anchored, so a camera pushed against a
@@ -1016,11 +1213,27 @@
         if (baseHeight > maxHeight) screenClamp = maxHeight / baseHeight;
       }
       if (event.mode === 'floatPlus') {
-        center.addScaledVector(cameraRight, event.offsetX + Math.sin(progress * Math.PI) * event.height * 0.12);
-        center.y += event.offsetY + 0.075 * (1 - Math.pow(1 - progress, 2));
+        const drift = event.scatter ? 0.22 * (1 - Math.pow(1 - progress, 2)) : 0; // Each number drifts away along its own chosen scatter direction.
+        center.addScaledVector(cameraRight, event.offsetX * (1 + drift) + Math.sin(progress * Math.PI) * event.height * 0.12);
+        const verticalOffset = event.offsetY * (1 + drift) + 0.075 * (1 - Math.pow(1 - progress, 2));
+        if (event.scatter) {
+          if (!scatterUp) {
+            if (!_updateScratch.up) _updateScratch.up = new state.deps.THREE.Vector3();
+            scatterUp = _updateScratch.up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+          }
+          center.addScaledVector(scatterUp, verticalOffset); // True screen-space spacing survives a steep camera angle.
+        } else center.y += verticalOffset;
       } else {
-        const list = event.interactionPrompt ? interactionListFor(event.root) : listFor(event.root);
-        list.forEach((item, slot) => { item.listSlot = slot; });
+        if (!rowLayouts) rowLayouts = new Map();
+        let layouts = rowLayouts.get(event.root);
+        if (!layouts) { layouts = {}; rowLayouts.set(event.root, layouts); }
+        const key = event.interactionPrompt ? 'interaction' : 'reward';
+        let list = layouts[key];
+        if (!list) {
+          list = layouts[key] = event.interactionPrompt ? interactionListFor(event.root) : listFor(event.root);
+          rowLayoutBuilds++;
+          for (let slot = 0; slot < list.length; slot++) list[slot].listSlot = slot;
+        }
         const centerSlot = event.interactionPrompt
           ? (Math.max(1, list.length) - 1) * 0.5
           : (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
@@ -1030,9 +1243,9 @@
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = event.interactionPrompt ? 1 : progress < 0.72 ? 1 : (1 - progress) / 0.28;
-      const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
+      const pop = event.emphasis ? 1.4 - 0.4 * Math.min(1, progress / 0.24) : event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
       const listScale = event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1;
-      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop * screenClamp);
+      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * (event.sizeMultiplier || 1) * pop * screenClamp);
       if (event.interactionPrompt) keepPromptRowOnScreen(event.plane, camera, cameraRight, cameraBack, halfFovTan);
     }
     finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
@@ -1095,8 +1308,8 @@
 
   const api = {
     releaseScene,
-    init, update, showChange, queueReward, queueSocialGain, queueLevelUp,
-    showIconEffect, countIconEffects,
+    init, update, showChange, isLocalCombatSource, showCombatEffect, showImpactCallout, showFamilyUsefulness, queueReward, queueSocialGain, queueLevelUp,
+    showIconEffect, countIconEffects, iconResourceSnapshot,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
     setAimLabel, clearAimLabel,
@@ -1104,7 +1317,8 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Scratchbones reactions use the shared world-popup overlay and scene cleanup.',
+      latestChange: 'Combat numbers scatter in Float+ with one oversized IMPACT!!! per collision; simultaneous popups share actor anchors, not animation offsets.',
+      lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
       interactionSignature: state.interactionSignature,
@@ -1119,6 +1333,8 @@
       levelUpActive: state.levelUpActive ? { ...state.levelUpActive } : null,
       infoLists: [...state.infoLists.keys()],
       rewardReadout: window.RewardReadout?.debugSnapshot?.() || null, // Mobile debug surfaces can inspect the five visible and remaining queued gains.
+      rowLayoutBuilds, // Actual sorted row groups, not the number of rows drawn.
+      iconResources: iconResourceSnapshot(), // Mobile debug: allocation/reuse counters and cache bounds.
       popupMaterials: { ...popupMaterialStats, pooled: popupMaterialPool.length }, // Reuse keeps the shared shader program alive between popups.
     }),
   };

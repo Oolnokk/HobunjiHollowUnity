@@ -69,7 +69,7 @@ assert.equal(babyCommands.length, 1, 'newborn wheel offers just one family inter
 assert.equal(babyCommands[0].id, 'hold_baby');
 assert.equal(babyCommands[0].run(), true, 'newborn Hold Baby uses shared burden pickup');
 ctx.phaseOf = () => 'toddler';
-assert.deepEqual(Array.from(policy.commandOptionsFor(infantWalker)), [], 'toddlers use original family commands');
+assert.equal(policy.commandOptionsFor(infantWalker)[0].label, 'Hold Toddler', 'toddlers reuse the shared pickup command');
 assert.equal(policy.planFor(baby), null, 'care ends once baby is a toddler');
 ctx.phaseOf = () => 'basket'; baby.carryBy = null;
 ctx.romance.activeSpouseOuting = () => ({npcId:'spouse1'});

@@ -23,7 +23,7 @@
   const SLEEP_AREA_PREFIX = '__wilderness_lod_sleep__:'; // Used to make game.js's existing current-area hostile guard skip sleeping entities.
 
   let deps = null; // Captures BanditCamps' already-existing shared game dependencies without adding another game.js injection point.
-  let lodAccum = BANDIT_LOD_CHECK_INTERVAL_S; // Forces one sleep/wake pass immediately after BanditCamps begins updating.
+  const lodAccumByArea = new Map(); // Per-area cadence: a remote-area tick (js/remote-area-tick.js) and the local pass must not starve each other.
   let sleepTransitions = 0; // Used by the mobile-accessible snapshot diagnostics to verify that LOD is actually engaging.
   let wakeTransitions = 0; // Used by the mobile-accessible snapshot diagnostics to verify that sleepers wake again.
 
@@ -41,10 +41,12 @@
   }
 
   function distanceTilesToPlayer(c) {
-    if (!deps?.player || !deps?.TILE) return Infinity;
-    const dx = c.x - deps.player.x;
-    const dy = c.y - deps.player.y;
-    return Math.hypot(dx, dy) / deps.TILE;
+    if (!deps?.TILE) return Infinity;
+    // Nearest of ALL players in the bandit's area, so a camp beside a guest stays awake on the host.
+    const reg = window.ActorRegistry;
+    if (reg && reg.playerCount() > 0) return reg.distanceToNearestPlayer(c.x, c.y, { areaId: actualAreaId(c) }) / deps.TILE;
+    if (!deps.player) return Infinity;
+    return Math.hypot(c.x - deps.player.x, c.y - deps.player.y) / deps.TILE;
   }
 
   function isSleeping(c) {
@@ -110,9 +112,10 @@
 
   function updateBanditLod(dt) {
     if (!deps?.hostileObjects || !deps?.getCurrentArea) return;
-    lodAccum += Math.max(0, Number(dt) || 0);
-    if (lodAccum < BANDIT_LOD_CHECK_INTERVAL_S) return;
-    lodAccum = 0;
+    const areaKey = deps.getCurrentArea(); // The scoped area during a remote-area tick.
+    const accum = (lodAccumByArea.get(areaKey) ?? BANDIT_LOD_CHECK_INTERVAL_S) + Math.max(0, Number(dt) || 0); // First pass per area runs immediately.
+    if (accum < BANDIT_LOD_CHECK_INTERVAL_S) { lodAccumByArea.set(areaKey, accum); return; }
+    lodAccumByArea.set(areaKey, 0);
 
     const currentArea = deps.getCurrentArea();
     for (const c of deps.hostileObjects) {
@@ -193,6 +196,8 @@
     };
   }
 
-  window.WildernessSimulationLOD = { snapshot };
+  // tick: only the sleep/wake pass for the CURRENT (possibly scoped) area, without the camp-banner UI or the other
+  // updateCampBanners wrappers (Harlyao march, Porakaneki clutter), which are local-player/local-scene concerns.
+  window.WildernessSimulationLOD = { snapshot, tick: updateBanditLod };
   window.__wildernessLodDebug = snapshot;
 })();

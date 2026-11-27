@@ -135,6 +135,7 @@
   }
 
   function onPlayerReady() {
+    closeClothingNests(); // Never carry an expanded inventory path across character sessions.
     ensureStarterFlute();
     reconcileArchivedGear();
   }
@@ -173,6 +174,7 @@
     // click so the post-click presentation pass resolves the current detail item instead of reusing an old tool.
     document.addEventListener('click', (event) => {
       if (!event.target?.closest?.('#mpInventory')) return;
+      if (!event.target.closest('.clothing-nest') && event.target.closest('.inv-cat, #invTabPack, #invTabGear, .inv-item-box, .inv-equip-slot, [data-ctrl-group-open]')) closeClothingNests(); // Unrelated selection closes the previous clothing branch.
       const masteryPanel = document.getElementById('iiToolMastery');
       if (masteryPanel) delete masteryPanel.dataset.toolKey;
     }, true);
@@ -219,7 +221,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20261122invCatWheelEdge2';
+    script.src = 'js/inventory-ui.js?v=20261124patternNestAudit2';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -479,6 +481,131 @@
     return groups;
   }
 
+  // Display hierarchy only: never combine the actual UID, dye, quality or saved pattern records.
+  function clothingNameGroups(items) {
+    const groups = new Map(); // Stable first-occurrence order; item order within each group follows acquisition order.
+    for (const item of items || []) {
+      if (!item || !item.uid) continue;
+      const label = clothingArticleLabel(item);
+      const key = label.toLowerCase();
+      let group = groups.get(key);
+      if (!group) groups.set(key, group = { key, label, items: [], plain: [], patterned: [] });
+      group.items.push(item);
+      const patterned = hasIndividualClothingPattern(item);
+      (patterned ? group.patterned : group.plain).push(item);
+    }
+    return [...groups.values()];
+  }
+
+  let openClothingPath = []; // At most one name nest and its plain child stay open across grid rebuilds.
+  let packClothingRevision = 0; // Incremented by the existing Pack build; the visible UI uses it to avoid rerender loops.
+
+  function closeClothingNests() {
+    if (!openClothingPath.length) return;
+    openClothingPath = [];
+    if (typeof document !== 'undefined') for (const nest of document.querySelectorAll('.clothing-nest')) nest.refreshClothingNest?.();
+  }
+
+  function clothingPathOpen(path) {
+    return path.every((key, index) => openClothingPath[index] === key);
+  }
+
+  function renderClothingStackIcon(parent, items, limit, iconClass) {
+    const stack = document.createElement('span'); // Each thumbnail is independently tinted/composited by the existing icon renderer.
+    stack.className = 'clothing-stack-art';
+    const recent = items.slice(-limit); // Acquisition order is the owning inventory's append order; newest appears on top.
+    recent.forEach((item, index) => {
+      const icon = renderClothingIcon(stack, item, iconClass);
+      const offset = index - (recent.length - 1) / 2;
+      icon.style.setProperty('--clothing-stack-x', (offset * 8) + '%');
+      icon.style.setProperty('--clothing-stack-y', (offset * 5) + '%');
+    });
+    parent.appendChild(stack);
+  }
+
+  function buildClothingNest(path, label, items, limit, createChildren, gear = false) {
+    const node = document.createElement('div'); // A real controller group, with a compact opener and lazily rendered children.
+    node.className = 'clothing-nest' + (gear ? ' clothing-nest-gear' : ' clothing-nest-pack');
+    node.setAttribute('data-ctrl-group', '');
+    node.setAttribute('data-ctrl-collapse-on-back', '');
+    node.setAttribute('data-key', JSON.stringify(path));
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = gear ? 'inv-equip-slot occupied clothing-nest-toggle' : 'inv-item-box pack-clothing-tile clothing-nest-toggle';
+    button.setAttribute('data-ctrl-group-open', '');
+    button.setAttribute('aria-label', label + ', ' + items.length + ' articles');
+    button.title = label;
+    renderClothingStackIcon(button, items, limit, gear ? 'ies-cloth-sprite' : 'ipc-sprite');
+    const name = document.createElement('span');
+    name.className = 'clothing-stack-name';
+    name.textContent = label;
+    button.appendChild(name);
+    const count = document.createElement('span');
+    count.className = 'iib-count ipc-stack-count';
+    count.textContent = '×' + items.length;
+    button.appendChild(count);
+    const body = document.createElement('div'); // Transparent so the controller enters the actual child stack or individual article.
+    body.className = 'clothing-nest-body';
+    body.setAttribute('data-ctrl-transparent', '');
+    node.append(button, body);
+    let populated = false;
+    node.refreshClothingNest = () => {
+      const opened = clothingPathOpen(path);
+      node.classList.toggle('clothing-nest-open', opened);
+      button.setAttribute('aria-expanded', String(opened));
+      body.hidden = !opened;
+      if (opened && !populated) {
+        populated = true;
+        createChildren(body);
+      }
+    };
+    button.addEventListener('click', () => {
+      openClothingPath = clothingPathOpen(path) ? path.slice(0, -1) : path.slice();
+      deps?.clearInvSelection?.();
+      deps?.clearInventoryDetail?.();
+      // Ancestors remain open, all sibling and unrelated nests close. No item action fires on a stack.
+      for (const nest of document.querySelectorAll('.clothing-nest')) nest.refreshClothingNest?.();
+    });
+    node.refreshClothingNest();
+    return node;
+  }
+
+  function buildClothingNameNests(items, scope, renderLeaf, gear = false) {
+    const groups = clothingNameGroups(items); // Prune stale paths when the last article in an expanded stack is removed.
+    if (openClothingPath[0]?.startsWith(scope + ':')) {
+      const openGroup = groups.find(group => scope + ':' + group.key === openClothingPath[0]);
+      if (!openGroup) openClothingPath = [];
+      else if (!openGroup.plain.length && openClothingPath[1] === 'plain') openClothingPath = openClothingPath.slice(0, 1);
+    }
+    return groups.map(group => {
+      const path = [scope + ':' + group.key];
+      const root = buildClothingNest(path, group.label, group.items, 5, body => {
+        if (group.plain.length) body.appendChild(buildClothingNest([...path, 'plain'], 'Unpatterned', group.plain, 3, plainBody => {
+          for (const item of group.plain.slice().reverse()) plainBody.appendChild(renderLeaf(item));
+        }, gear));
+        for (const item of group.patterned.slice().reverse()) body.appendChild(renderLeaf(item));
+      }, gear);
+      root.clothingSearchLabels = [group.label, ...group.items.map(item => item.label || group.label)]; // Used by Pack search without expanding every nest.
+      return root;
+    });
+  }
+
+  function renderPackClothingLeaf(item) {
+    const tile = document.createElement('button'); // Only a concrete UID enters the existing detail/action panel.
+    tile.type = 'button';
+    tile.className = 'inv-item-box pack-clothing-tile';
+    tile.setAttribute('data-key', item.uid);
+    tile.setAttribute('data-ctrl-detail', 'invInfo');
+    tile.title = [packClothingStarText(item), item.label].filter(Boolean).join(' ');
+    renderClothingIcon(tile, item, 'ipc-sprite');
+    tile.addEventListener('click', () => {
+      selectPackClothingItem(item.uid, false, true);
+      for (const other of document.querySelectorAll('#invGrid .pack-clothing-tile.selected')) other.classList.remove('selected');
+      tile.classList.add('selected');
+    });
+    return tile;
+  }
+
   function ensureUniquePackClothingUids(items) {
     const seen = new Set(); // Protects single-item actions and manually held references in legacy saves with repeated shop UIDs.
     let changed = false; // Caller persists the repaired list only once when needed.
@@ -600,6 +727,7 @@
   // A patterned or decorated garment is a physical collectible, not just another dye swatch of its base clothing.
   // Plain dyed copies still intentionally merge and teach the owned garment additional dye colors.
   function hasIndividualClothingPattern(item) {
+    if (item?.smithTreatment?.mode === 'pattern' || item?.smithTreatment?.pattern) return true; // Smithy patterns are physical collectibles too, including library-backed snapshots.
     if (item?.furTrimColorName) return true; // Each naturally trimmed garment remains a distinct physical article across Pack → Gear.
     if (item?.furHood) return true; // A crafted hide is always a unique physical garment even with no optional dyed weaving.
     const weaving = item?.weaving; // Reads saved visual state without relying on when the renderer initializes.
@@ -1080,12 +1208,12 @@
     }
   }
 
-  function selectPackClothingItem(uid, previewOnly = false) {
+  function selectPackClothingItem(uid, previewOnly = false, individual = false) {
     const packClothing = deps.getPackClothing();
     const item = packClothing.find(c => c.uid === uid);
     if (!item) return;
-    const displayGroup = groupClothingForDisplay(packClothing).find(group => group.uids.includes(uid)); // Detail quantity reflects the same stack selected in the grid.
-    const stackCount = displayGroup?.count || 1; // Used for quantity labeling without changing single-item action targets.
+    const displayGroup = individual ? null : groupClothingForDisplay(packClothing).find(group => group.uids.includes(uid)); // Detail quantity reflects the same stack selected in the grid.
+    const stackCount = individual ? 1 : displayGroup?.count || 1; // Used for quantity labeling without changing single-item action targets.
     const starText = packClothingStarText(item); // Used to keep quality visible while this garment is still a Pack/inventory item.
     const salePrice = packClothingSalePrice(item); // Used by both the displayed value and the actual sale transaction.
     if (!previewOnly) deps.clearInvSelection(); // Controller highlight inspects clothing without clearing the active selected stack.
@@ -1375,6 +1503,12 @@
     if (!sec) return;
     const packClothing = deps.getPackClothing();
     if (ensureUniquePackClothingUids(packClothing)) deps.saveMemberWorldData?.(); // One-time save migration prevents one sale from deleting same-UID copies.
+    packClothingRevision++; // Existing hidden source is retained for compatibility; visible rendering uses the individual record list.
+    if (window.InventoryUI?.usesClothingNests) {
+      if (sec.innerHTML) sec.innerHTML = ''; // Modern grid renders directly from records, including when the last article is removed.
+      window.InventoryUI.refreshPackClothing?.();
+      return;
+    }
     if (!packClothing.length) {
       sec.innerHTML = '<div class="inv-pcloth-empty">No clothing in pack.</div>';
       return;
@@ -1555,7 +1689,7 @@
     const renderOwnedClothingRow = (items, archived) => {
       const ownedClothRow = document.createElement('div'); // Shared renderer preserves thumbnails, dyes and labels in both lists.
       ownedClothRow.className = 'inv-equip-row inv-owned-clothing-row';
-      for (const item of items) {
+      const renderLeaf = item => {
         const worn = !archived && gearInventory?.clothing?.[item.slot]?.uid === item.uid;
         const articleLabel = clothingArticleLabel(item);
         const cell = document.createElement('div');
@@ -1590,8 +1724,9 @@
         stowBtn.addEventListener('click', event => { event.stopPropagation(); setClothingArchived(item.uid, !archived); });
         cell.appendChild(stowBtn);
         cell.addEventListener('click', () => selectGearClothing(item.slot, item));
-        ownedClothRow.appendChild(cell);
-      }
+        return cell;
+      };
+      for (const nest of buildClothingNameNests(items, archived ? 'stowed-gear' : 'gear', renderLeaf, true)) ownedClothRow.appendChild(nest);
       return ownedClothRow;
     };
     if (ownedClothing.length) sec.appendChild(renderOwnedClothingRow(ownedClothing, false));
@@ -1775,14 +1910,18 @@
     grantPackClothing, // Quest clothing uses the canonical Pack-to-Gear lifecycle.
     beginFiveBlossomCrowning, awardFiveBlossomCrown, finishFiveBlossomCrowning, ownsFiveBlossomCrown, FIVE_BLOSSOM_CROWN_ART, FIVE_BLOSSOM_CROWN_ID,
     transferPackClothingToNpcWardrobe,
-    previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
+    getPackClothingRevision: () => packClothingRevision,
+    closeClothingNests, // The visible Pack filter closes any expanded path that becomes hidden.
+    buildPackClothingNests: () => buildClothingNameNests(deps?.getPackClothing?.() || [], 'pack', renderPackClothingLeaf),
+    previewPackClothingItem: (uid, individual = false) => selectPackClothingItem(uid, true, individual), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,
     getClothingStackDebug: () => { // Compact diagnostic usable on mobile without developer tools.
       const items = deps?.getPackClothing?.() || []; // Current saved pack entries are the authority.
       const groups = groupClothingForDisplay(items); // Reports only display counts, not private UID metadata.
       return { articles: items.length, visibleTiles: groups.length, stackedTiles: groups.filter(g => g.count > 1).length };
     },
-    __test: { clothingStackSignature,groupClothingForDisplay,ensureUniquePackClothingUids,hasIndividualClothingPattern,clothingGearCollectionKey,normalizeGearClothingItems,
+    getClothingNestDebug: () => ({ nameNests: clothingNameGroups(deps?.getPackClothing?.() || []).length, openClothingPath: openClothingPath.slice(), revision: packClothingRevision, latestChange: 'Name stacks with five recent icons; plain stacks with three; individual UID actions.' }),
+    __test: { clothingNameGroups, clothingStackSignature,groupClothingForDisplay,ensureUniquePackClothingUids,hasIndividualClothingPattern,clothingGearCollectionKey,normalizeGearClothingItems,
       setCrownTestDeps: value => { deps = value; } }, // Headless annual award tests use the actual equipment owner without installing a second UI runtime.
   };
 })();

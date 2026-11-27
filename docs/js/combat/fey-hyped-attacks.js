@@ -242,6 +242,7 @@
     const afflictions = window.CombatAttackEvents?.scaleAfflictions?.(rawAfflictions, afflictionRatio)
       || Object.fromEntries(Object.entries(rawAfflictions || {}).map(([id, amount]) => [id, numeric(amount) * afflictionRatio]));
     const applied = deps.damageCreature(target, damage, numeric(attack.actor.x), numeric(attack.actor.y), knockback, {
+      attacker: attack.actor, // Explicit replay owner for damage and collision attribution.
       abilityId: attack.context.abilityId,
       tag: deps.currentWeaponDamageType?.() || 'sharp',
       heavy: !!attack.context.fullCharge || !!attack.context.comboFinisher,

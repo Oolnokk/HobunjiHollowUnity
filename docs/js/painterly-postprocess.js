@@ -21,6 +21,8 @@
 
   let rendererRef = null; // Used by the multi-pass painterly pipeline when the final world composite is presented.
   let pipeline = null; // Reused low-resolution render targets/scenes; avoids per-frame GPU allocation.
+  let outlineFirst = true; // Nonpersistent A/B override; the shipped order paints finished ink.
+  let outlinedFrames = 0; // Mobile diagnostics: successful outline-before-paint submissions.
   let pipelineFrames = 0; // Reported by Pixel Probe to prove the screenshot-faithful stack is actually running.
   let lastPipelineSize = ''; // Reported by Pixel Probe so mobile can verify the internal preview-sized buffer.
   let lastPipelineMode = 'off'; // Reported by Pixel Probe to distinguish selected mode from the last completed paint pass.
@@ -94,8 +96,8 @@
     }
 
     vec3 hobunjiFinishReferenceStack(vec2 uv) {
-      vec3 c = hobunjiPaintRead(uv);
       if (uHobunjiPaintMode < 0.5) return texture2D(tColor, uv).rgb;
+      vec3 c = hobunjiPaintRead(uv);
 
       vec2 t = uHobunjiPaintTexel;
       vec3 tl = hobunjiPaintRead(uv + vec2(-t.x,  t.y));
@@ -357,7 +359,74 @@
     };
   }
 
-  function runReferencePipeline(renderer, compositeMaterial) {
+  // GPU timing for the three full-screen passes, so a Pixel Probe report shows their real GPU cost (CPU timers cannot).
+  // Uses EXT_disjoint_timer_query_webgl2 when the browser exposes it; sampled on every 4th frame; results are polled
+  // asynchronously so it never stalls the pipeline. Reported as an EMA and a max in snapshot().
+  const gpuTimer = { gl: null, ext: null, supported: null, pending: [], samples: 0, disjoint: 0, ema: { oil: 0, washH: 0, tone: 0 }, max: { oil: 0, washH: 0, tone: 0 } };
+  function gpuTimerInit(renderer) {
+    if (gpuTimer.supported !== null) return gpuTimer.supported;
+    try {
+      const gl = renderer.getContext?.();
+      const ext = gl?.getExtension?.('EXT_disjoint_timer_query_webgl2');
+      gpuTimer.supported = !!(gl && ext && typeof gl.createQuery === 'function');
+      if (gpuTimer.supported) { gpuTimer.gl = gl; gpuTimer.ext = ext; }
+    } catch (_) { gpuTimer.supported = false; }
+    return gpuTimer.supported;
+  }
+  function gpuTimerPoll() {
+    const { gl, ext, pending } = gpuTimer;
+    if (!gl || !pending.length) return;
+    let disjoint = false;
+    try { disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT); } catch (_) { gpuTimer.supported = false; return; }
+    while (pending.length) {
+      const entry = pending[0];
+      if (!gl.getQueryParameter(entry.query, gl.QUERY_RESULT_AVAILABLE)) break;
+      pending.shift();
+      if (disjoint) gpuTimer.disjoint++;
+      else {
+        const ms = gl.getQueryParameter(entry.query, gl.QUERY_RESULT) / 1e6;
+        gpuTimer.ema[entry.name] = gpuTimer.samples ? gpuTimer.ema[entry.name] * 0.8 + ms * 0.2 : ms;
+        gpuTimer.max[entry.name] = Math.max(gpuTimer.max[entry.name], ms);
+        if (entry.name === 'tone') gpuTimer.samples++;
+      }
+      gl.deleteQuery(entry.query);
+    }
+  }
+  function timedPass(name, sample, run) {
+    if (!sample) { run(); return; }
+    const { gl, ext } = gpuTimer;
+    let query = null;
+    try { query = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, query); }
+    catch (_) { gpuTimer.supported = false; query = null; } // Timing must never be able to break the painterly passes.
+    try { run(); }
+    finally {
+      if (query) {
+        try { gl.endQuery(ext.TIME_ELAPSED_EXT); gpuTimer.pending.push({ name, query }); }
+        catch (_) { gpuTimer.supported = false; }
+      }
+    }
+  }
+
+  // The tone target is dead until the final tone pass; oil consumes the
+  // outlined source before tone overwrites it. No extra target or world draw.
+  function renderOutlinedSource(renderer, p, material, scene, camera, sourceTexture) {
+    const u = material.uniforms;
+    const oldMode = u.uHobunjiPaintMode.value;
+    const oldPaint = u.tHobunjiPaint.value;
+    try {
+      u.uHobunjiPaintMode.value = 0;
+      // Even samplers in disabled GLSL branches must not alias the bound FBO.
+      u.tHobunjiPaint.value = sourceTexture;
+      renderer.setRenderTarget(p.toneRT);
+      p.rawRender.call(renderer, scene, camera);
+    } finally {
+      u.uHobunjiPaintMode.value = oldMode;
+      u.tHobunjiPaint.value = oldPaint;
+    }
+    return p.toneRT.texture;
+  }
+
+  function runReferencePipeline(renderer, compositeMaterial, scene, camera) {
     if (mode === 'off') return null;
     const p = ensurePipeline(renderer);
     if (!p?.rawRender) return null;
@@ -377,6 +446,10 @@
 
     const texelX = 1 / size.width;
     const texelY = 1 / size.height;
+    const u = compositeMaterial.uniforms;
+    // Shell outlines are already in tColor; none/off need no precomposite.
+    const precompose = outlineFirst && (Number(u.uDepthOutlinesOn?.value) > 0.5
+      || (Number(u.uSeamOutlinesOn.value) > 0.5 && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true));
     passes.oil.material.uniforms.tSource.value = sourceTexture;
     passes.oil.material.uniforms.uWorkTexel.value.set(texelX, texelY);
     passes.washH.material.uniforms.uWorkTexel.value.set(texelX, texelY);
@@ -384,19 +457,29 @@
 
     const previousTarget = renderer.getRenderTarget?.() || null;
     const previousAutoClear = renderer.autoClear;
+    const timing = gpuTimerInit(renderer);
+    if (timing) gpuTimerPoll();
+    // Render A/B owns elapsed-time queries during its frame/per-pass windows.
+    // Starting another query here would end or corrupt its active GL query.
+    const sample = timing && gpuTimer.supported && !window.RenderABBenchmark?.isRunning?.()
+      && pipelineFrames % 4 === 0 && gpuTimer.pending.length < 12; // Bounded outstanding queries.
     try {
       renderer.autoClear = true;
+      if (precompose) {
+        // Offscreen: the existing canvas-only world-text hook waits for presentation.
+        passes.oil.material.uniforms.tSource.value = renderOutlinedSource(renderer, p, compositeMaterial, scene, camera, sourceTexture);
+      }
       renderer.setRenderTarget(p.oilRT);
       renderer.clear?.(true, false, false);
-      p.rawRender.call(renderer, passes.oil.scene, passes.oil.camera);
+      timedPass('oil', sample, () => p.rawRender.call(renderer, passes.oil.scene, passes.oil.camera));
 
       renderer.setRenderTarget(p.washHRT);
       renderer.clear?.(true, false, false);
-      p.rawRender.call(renderer, passes.washH.scene, passes.washH.camera);
+      timedPass('washH', sample, () => p.rawRender.call(renderer, passes.washH.scene, passes.washH.camera));
 
       renderer.setRenderTarget(p.toneRT);
       renderer.clear?.(true, false, false);
-      p.rawRender.call(renderer, passes.tone.scene, passes.tone.camera);
+      timedPass('tone', sample, () => p.rawRender.call(renderer, passes.tone.scene, passes.tone.camera));
     } finally {
       renderer.autoClear = previousAutoClear;
       renderer.setRenderTarget(previousTarget);
@@ -405,9 +488,10 @@
     compositeMaterial.uniforms.tHobunjiPaint.value = p.toneRT.texture;
     compositeMaterial.uniforms.uHobunjiPaintTexel.value.set(texelX, texelY);
     pipelineFrames += 1;
+    if (precompose) outlinedFrames += 1;
     lastPipelineSize = `${size.width}x${size.height}`;
     lastPipelineMode = mode;
-    return p.toneRT.texture;
+    return precompose;
   }
 
   function patchCompositeMaterial(material) {
@@ -519,10 +603,32 @@
         material = cachedRenderSceneMaterial;
       }
       if (material) {
-        patchCompositeMaterial(material);
-        const p = ensurePipeline(this);
-        if (p) p.rawRender = originalRender;
-        if (mode !== 'off' && material.userData?.hobunjiPainterlyPatched) runReferencePipeline(this, material);
+        if (patchCompositeMaterial(material) && mode !== 'off') {
+          const p = ensurePipeline(this);
+          if (p) p.rawRender = originalRender;
+          const precomposed = p ? runReferencePipeline(this, material, scene, camera) : null;
+          if (precomposed == null) {
+            // Missing source/target support must present the unfiltered world,
+            // never sample an uninitialized or stale painterly target.
+            const uniform = material.uniforms.uHobunjiPaintMode;
+            const selected = uniform.value;
+            try { uniform.value = 0; return originalRender.call(this, scene, camera); }
+            finally { uniform.value = selected; }
+          }
+          if (precomposed) {
+            // Present the original painterly finish without doubling depth/seam ink.
+            const u = material.uniforms;
+            const depth = u.uDepthOutlinesOn?.value, seam = u.uSeamOutlinesOn.value;
+            try {
+              if (u.uDepthOutlinesOn) u.uDepthOutlinesOn.value = 0;
+              u.uSeamOutlinesOn.value = 0;
+              return originalRender.call(this, scene, camera);
+            } finally {
+              if (u.uDepthOutlinesOn) u.uDepthOutlinesOn.value = depth;
+              u.uSeamOutlinesOn.value = seam;
+            }
+          }
+        }
       }
       return originalRender.call(this, scene, camera);
     };
@@ -552,13 +658,19 @@
   window.PainterlyPostprocess = {
     setMode,
     getMode: () => mode,
+    getOutlineFirst: () => outlineFirst,
+    setOutlineFirst: enabled => { outlineFirst = enabled !== false; }, // Render A/B only; not a saved setting.
     snapshot: () => ({
-      latestChange: 'Latest full-res HTML-reference stack plus tan protection: yellow lift/blue suppression now target vivid yellow-green only, preserving muted tan/ochre while keeping weaving accents saturated.',
+      latestChange: 'Original painterly finish now processes authored ink and generated depth outlines together; toneRT is reused for the outline precomposite.',
+      outlineFirst,
+      outlinedFrames,
       mode,
       sampleCount: MODE_SAMPLE_COUNT[mode],
       internalSize: lastPipelineSize || null,
       pipelineFrames,
       pipelineMode: lastPipelineMode,
+      gpuTiming: { supported: gpuTimer.supported, samples: gpuTimer.samples, disjoint: gpuTimer.disjoint, pending: gpuTimer.pending.length,
+        emaMs: { ...gpuTimer.ema }, maxMs: { ...gpuTimer.max } }, // Real GPU milliseconds per painterly pass when the browser exposes timer queries.
       referenceSettings: `oil 10/3/.27 all tiers; watercolor ${MODE_PROFILE[mode]?.waterRadius || 0}/${MODE_PROFILE[mode]?.waterMix?.toFixed(2) || '0'}/1.00/0; gamma .81; crush .18; contrast .80; saturation .68; yellow .08 + blue .67 on vivid yellow-green gate only; tan protection .86; teal 0; deblur 1; debrown 0; revive .80; edge .76; detail 1.00; grain 0`,
       rendererAttached,
       compositePatched: patchedMaterials.size > 0,

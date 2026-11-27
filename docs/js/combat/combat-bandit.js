@@ -398,17 +398,26 @@
     return garmentId;
   }
 
+  function rootledootLegLayout(opaqueHeightFraction, kenkariProfile) {
+    const height = Math.max(0, Math.min(1, Number(opaqueHeightFraction) || 1)); // Cropped Heftroot art is bottom-aligned in the portrait canvas.
+    const gap = .06; // Only 6% of the portrait height is exposed below the body; keep the entire sprite above the floor.
+    const donor = Number(kenkariProfile?.posteriorRule?.heightPercentFromFloor);
+    const gaitReach = Number.isFinite(donor) && donor > 0 ? Math.min(.15, donor / 100) : .13; // Male Kenkari's authored short-leg reach; not its feet, shoulders or torso.
+    return { placementRatio: .5 + gap, posteriorFraction: gap + height / 2, gaitReach, gap };
+  }
+
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) throw new Error('Humanoid portrait modules are unavailable.');
     characterBuildStatus.stage = 'cosmetics';
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
-    characterBuildStatus.garmentId = ensureEnemyPants(roster); // Existing mobile build diagnostics show the selected leg garment.
+    characterBuildStatus.garmentId = roster.rootledoot ? null : ensureEnemyPants(roster); // Existing mobile build diagnostics show the selected leg garment.
     characterBuildStatus.stage = 'profile';
     await window.ProceduralMaskPatterns?.ready; // Mask pattern library (config/patterns) must be loaded before the profile is built.
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
     if (!profile) throw new Error('Humanoid portrait profile could not be built.');
     window.SpecialHarlyaoLiches?.decoratePortraitProfile?.(profile,roster); // Named eye-glow appearance uses the canonical two-pass mask pixel dye; Imlao explicitly clears all face/headwear slots.
+    if (roster.rootledoot) profile.bodyColors = roster.appearance.bodyColors; // Rootledoot hands and feet use the root's authored color.
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -424,14 +433,16 @@
       warmCanvas.width = warmCanvas.height = PORTRAIT_SIZE;
       await window.NpcAvatarPreview.renderProfileToCanvas(warmCanvas, profile, { forceEyesOpen: true });
     }
-    await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+    if (roster.rootledoot) await window.Rootledoots.paintPortrait(frontCanvas);
+    else await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
     const neutralFrontCanvas = document.createElement('canvas'); // Immutable neutral/resting source used to restore this enemy immediately when combat ends.
     neutralFrontCanvas.width = neutralFrontCanvas.height = PORTRAIT_SIZE;
     neutralFrontCanvas.getContext('2d').drawImage(frontCanvas, 0, 0);
     const combatFrownCanvas = document.createElement('canvas'); // Pre-baked frown source used for synchronous combat entry and therefore available before an afterimage snapshots the live texture.
     combatFrownCanvas.width = combatFrownCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'combat-portrait';
-    await window.NpcAvatarPreview.renderProfileToCanvas(combatFrownCanvas, profile, {
+    if (roster.rootledoot) combatFrownCanvas.getContext('2d').drawImage(frontCanvas,0,0);
+    else await window.NpcAvatarPreview.renderProfileToCanvas(combatFrownCanvas, profile, {
       forceEyesOpen: true,
       breathingComposer: COMBAT_FROWN_COMPOSER,
       seatId: 'bandit-combat-frown',
@@ -439,14 +450,22 @@
     const backCanvas = document.createElement('canvas');
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'back-portrait';
-    await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    if (roster.rootledoot) await window.Rootledoots.paintPortrait(backCanvas,true);
+    else await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    let ruinRearTorsoCanvas=null; // Unobstructed authored torso, including pixels hidden by skull/hair in the composite.
+    if(['hronal','tothal'].includes(roster.ruinSkeletonTheme)){
+      ruinRearTorsoCanvas=document.createElement('canvas');ruinRearTorsoCanvas.width=backCanvas.width;ruinRearTorsoCanvas.height=backCanvas.height;
+      await window.NpcAvatarPreview.renderProfileToCanvas(ruinRearTorsoCanvas,profile,{portraitView:'behind',forceEyesOpen:true,onlyTorsoSprite:true});
+    }
+    const themedPantsOverlay=roster.ruinSkeletonTheme?await window.PantsGarmentRenderer?.buildOverlayMask?.(frontCanvas,profile,{forceEyesOpen:true})?.catch(error=>{window.__farmLog?.('[ruin skeleton pants mask] '+error.message,'warn','combat');return null;}):null; // Compare ORIGINAL art; frost/char/oil are not clothing occluders.
+    if(roster.ruinSkeletonTheme)await window.MinionCombat?.paintRuinPortraits?.(roster,[frontCanvas,neutralFrontCanvas,combatFrownCanvas,backCanvas]);
     // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
     // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
     // The untouched renders below stay as the rig canvases, so head bones and weights still come from the real skull.
     const transparentLichSkull = roster.specialLichId === 'imlao'; // Limits the headless render to this named boss.
     const headCanvas = document.createElement('canvas'); // Shared front head-only portrait also locates every humanoid's neck pivot.
     headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
-    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { forceEyesOpen: true, onlyHeadSprite: true });
+    if (!roster.rootledoot) await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { forceEyesOpen: true, onlyHeadSprite: true });
     const originalHeadRigFront = transparentLichSkull ? document.createElement('canvas') : frontCanvas; // Skull-bearing pixels retain correct head-skin weights.
     const originalHeadRigBack = transparentLichSkull ? document.createElement('canvas') : backCanvas; // The rear neck shares the same true head proportions.
     if (transparentLichSkull) {
@@ -466,11 +485,14 @@
       await redraw(backCanvas, { portraitView: 'behind' });
     }
     characterBuildStatus.stage = 'portrait-model';
+    const rootLegLayout=roster.rootledoot?rootledootLegLayout(frontCanvas.rootledootOpaqueHeightFraction,window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['kenkari::male']):null; // Shared live/Workshop anatomy, computed only at build time.
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
         backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
+        ...(rootLegLayout?{portraitPlacementRatioOverride:rootLegLayout.placementRatio,posteriorAtOpaqueCenter:true}:{}),
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait', meshBudget: 'npc', // Enemies use the capped mesh budget.
+        hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; HatOverflowPlane.attachToPlanes is called on those instead.
         mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
       },
     );
@@ -528,16 +550,21 @@
       await window.NpcAvatarPreview.renderProfileToCanvas(headMaskCanvas, profile, { forceEyesOpen: true, headCosmeticsOnly: true });
     }
     const headGate = window.PNGPlaneAvatar.npcHeadGateFor?.(roster.appearance?.speciesId, roster.headGate) ?? roster.headGate; // All non-Harlyao humanoid enemies default to legacy; authored workshop overrides and skeleton defaults remain intact.
-    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
-      || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
+    const neckPivotPx = roster.rootledoot ? null : (window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
+      || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12)); // A Rootledoot is a single rigid root portrait, not an articulated head.
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
+    // The back mesh's geometry is a clone without PlaneGeometry parameters, so the
+    // skin upgrade falls back to these: they must include the species scale
+    // multiplier, or the back view is drawn smaller than the front.
+    const portraitPlaneW = portrait.userData?.portraitModelWidth || MODEL_W;
+    const portraitPlaneH = portrait.userData?.portraitModelHeight || MODEL_W;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: portraitPlaneW, height: portraitPlaneH, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: portraitPlaneW, height: portraitPlaneH, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -556,6 +583,16 @@
     frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
     group.add(frontPivot);
     group.add(backPivot);
+    // Big hats: brim/crown pixels past the portrait square ride each plane's head bone (js/hat-overflow-plane.js).
+    window.HatOverflowPlane?.attachToPlanes?.(THREE, {
+      profile, sourceCanvas: frontCanvas,
+      isCancelled:()=>!!(portrait.userData?.portraitDisposed||group.userData?.portraitDisposed), // Reject late bakes on retired bandits.
+      modelWidth: portraitPlaneW, modelHeight: portraitPlaneH,
+      planes: [
+        { view: 'front', mesh: renderedFrontMesh, headBone: frontNeckSkin?.headScaleBone || null },
+        { view: 'behind', mesh: renderedBackMesh, headBone: backNeckSkin?.headScaleBone || null },
+      ],
+    });
     // The normal PNG root becomes a hidden hand-driver identity below. Move
     // its authored mask light onto the visible hostile neck before discarding
     // that original hierarchy, so the real fake-light registry sees it.
@@ -575,6 +612,27 @@
     // itself assumes its parent's local Y=0 is the floor (see its own comment).
     const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
+    const rootPosteriorY=rootLegLayout?(portrait.userData.posteriorYOverride??modelHeight*rootLegLayout.posteriorFraction):null; // Exact alpha midpoint from the same scan as the portrait; crop fraction is a fallback.
+    if(rootLegLayout){
+      portrait.userData.posteriorYOverride=rootPosteriorY;
+      const rigProfile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+      const space=window.HobunjiCharacterPortraitAnchorSpace,metrics=space?.metricsForAvatarRoot?.(portrait,rigProfile);
+      const shoulders={}; // Resolve each authored shoulder exactly once; both wrapped and direct hand queries share it.
+      const reaches={};
+      const wristY=rootPosteriorY-modelHeight*(Number(rigProfile?.anatomy?.armLengthHeightPercentOffset)||0)/100;
+      for(const side of ['left','right']){
+        const key=side+'HandShoulder',p=metrics&&space.resolveAnchor(rigProfile,key,metrics);
+        if(!p||![p.x,p.y,p.z].every(Number.isFinite))continue;
+        shoulders[side]={x:p.x,y:p.y,z:p.z};reaches[side]=Math.max(.001,Math.hypot(p.y-wristY,p.z));
+      }
+      if(Object.keys(shoulders).length===2){
+        portrait.userData.instanceHandShoulders=shoulders;
+        portrait.userData.armLengthBySide=reaches;
+        portrait.userData.armLength=portrait.userData.scaledArmLength=(reaches.left+reaches.right)/2;
+        portrait.userData.armLengthSource='instance-shoulder-to-opaque-posterior';
+      }
+      group.userData.rootledootLegLayout={...rootLegLayout,posteriorY:rootPosteriorY};
+    }
     // Preserve the portrait box recipe on the converted animal-style root:
     // authored width/height plus vertical placement, with runtime world scale
     // applied later by ranged-weapons' shared player/NPC 3D hitbox resolver.
@@ -640,13 +698,14 @@
     characterBuildStatus.stage = 'leg-rig';
     const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, spine: roster.spine }) || null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
-      window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase }, spine, modelHeight);
+      window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase, blendHeight: frontNeckSkin.weightedGeometry?.userData?.blendHeight }, spine, modelHeight); // Hostile shoulder and attack orbit calculations sample the same short base-head neck band as the portrait.
     }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
+      ...(rootLegLayout?{posteriorYOverride:rootPosteriorY,gaitReachLimit:modelHeight*rootLegLayout.gaitReach,stanceDropMax:modelHeight*rootLegLayout.gap*.8,legLengthRatioOverride:1}:{}), // Keep the real hip at center and limit stride to short exposed legs.
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
       spine: spine || undefined, // Wider stance and stride for a hunched enemy.
       portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, splineNodes: frontNeckSkin.splineNodes, neckLocal: frontNeckSkin.neckLocal } : undefined, // "Show bones" also draws the portrait's spine and neck.
@@ -661,7 +720,8 @@
         spine, // The pants ride the portrait's spine curve like an extension of it (frontPivot is not the avatar root the profile is bound to).
         name: roster.name || 'enemy', garmentId: enemyPants, meshBudget: 'npc', // Enemies use the capped garment grid.
         appearance: pantsAppearanceWithForcedPattern(window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors), roster),
-        overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
+        overlayMask: roster.ruinSkeletonTheme?themedPantsOverlay:window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
+        transformCanvas:roster.ruinSkeletonTheme?canvas=>window.MinionCombat.paintRuinPants(roster,canvas):null, // Bakes themed art on every real garment appearance render, not the shared weaving cache.
       });
       characterBuildStatus.pantsAttached = !!pants && await pants.readyPromise;
     }
@@ -669,6 +729,7 @@
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       frontPortraitMesh: renderedFrontMesh, backPortraitMesh: renderedBackMesh, // Exact carriers used by frozen stance rendering.
+      ruinRearTorsoCanvas, // Original torso alpha, prior to skull/cosmetic compositing.
       handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
       handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes, spine,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
@@ -681,6 +742,7 @@
       // readable neck pivot could be detected (e.g. a fully transparent
       // portrait canvas), in which case that system just no-ops.
       neckJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.neckBone, back: backNeckSkin.neckBone } : null,
+      headOffsetJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.headOffsetBone, back: backNeckSkin.headOffsetBone } : null, // Independently positions front/back heads without extending the short rotational neck bend.
       headScaleJoint: (frontNeckSkin && backNeckSkin) ? {front:frontNeckSkin.headScaleBone,back:backNeckSkin.headScaleBone} : null,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
@@ -718,6 +780,7 @@
   // because the rider portrait already renders its own back face.
   function buildCompoundBanditAvatar(portrait, { roster, profile, resolvedRosterDyes, frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, MODEL_W }) {
     const upper = portrait.userData.proceduralBodyRoot; // Rider portrait root; owns the textures the combat frown refreshes.
+    if (upper?.userData?.sourceCanvas) window.HatOverflowPlane?.attach?.(THREE, upper, { profile, backCanvas }); // The rider keeps its own portrait hierarchy, so the ordinary overflow attach applies (the build itself opted out).
     const riderFrame = portrait.userData.proceduralHandParent; // Floor-relative rider frame the procedural hands already attach to.
     const modelWidth = upper.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = upper.userData?.portraitModelHeight || MODEL_W;
@@ -875,6 +938,17 @@
   const configuredWeaponMetalKey = cfg => typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers.
 
   function banditWeaponFor(cfg, rank, tier) {
+    if(cfg?._rootledootWeaponPool){
+      const metalKey=configuredWeaponMetalKey(cfg)||rollBanditWeaponMetalKey(cfg,rank,tier);
+      const api=window.BanditCaptainArmaments,modular=window.ModularWeapons;
+      const pairs=api?.rootledootPairs?.(modular)||[]; // Foundry compatibility, never a whole-weapon fallback.
+      const keys=pairs.map(p=>modular.itemKey(p.shaft,p.head,metalKey)).filter(k=>deps.TOOL_ITEM_DEFS[k]?.modular);
+      const saved=cfg._rootledootPreviewKey;
+      const weaponKey=saved&&api.isRootledootWeapon(saved)&&deps.TOOL_ITEM_DEFS[saved]?.modular?saved:keys[Math.floor(deps.rnd()*keys.length)];
+      const item=deps.TOOL_ITEM_DEFS[weaponKey];if(!item)throw Error('No compatible Rootledoot modular weapons for '+metalKey);
+      const dmgMultiplier=window.EnemyTierProgression?.weaponMultiplier(item.metalKey,tier,deps.METAL_DEFS,deps.VERDIGRIS_METAL_KEYS)??deps.metalDmgMultiplier(item.metalKey);
+      return {weaponKey,shapeKey:item.shapeKey,metalKey:item.metalKey,dmgType:item.dmgType||'sharp',dmgMultiplier,animStyle:item.animStyle};
+    }
     const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
     const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
     const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
@@ -1044,10 +1118,10 @@
     const healthStatMul = (Number.isFinite(healthRankMultiplier) && healthRankMultiplier > 0 ? healthRankMultiplier : weaken) * tierMul; // Used only for maxHealth so extra survivability never increases outgoing damage or Stamina.
     const weapon = banditWeaponFor(cfg, rank, tier);
     const isFlasker = rank === 'flasker'; // Used to reserve this rank's ranged role for its infinite two-flask loadout.
-    const rangedWeaponKey = isFlasker ? null : banditRangedWeaponFor(cfg, rank);
+    const rangedWeaponKey = isFlasker||cfg._rootledootWeaponPool ? null : banditRangedWeaponFor(cfg, rank);
     const banditFlaskLoadout = isFlasker ? rollBanditFlaskLoadout(cfg) : []; // Per-entity definition; uses never decrement it.
     const flaskerTuning = isFlasker ? banditFlaskerTuning(cfg) : null; // Shared AI/loot tuning stored with this spawned hostile.
-    const shapeStats = window.WeaponShapeStats?.forShape?.(weapon.shapeKey) || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs use the same physical shape stats as player weapons.
+    const shapeStats = (cfg._rootledootWeaponPool?window.WeaponShapeStats?.forKey?.(weapon.weaponKey,deps.TOOL_ITEM_DEFS[weapon.weaponKey]):window.WeaponShapeStats?.forShape?.(weapon.shapeKey)) || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs use the same physical shape stats as player weapons.
     const weaponEfficiency = Number(shapeStats.efficiency); // Validate the shape's stamina efficiency before using it for both attack cost and capacity.
     const attackStaminaCost = BANDIT_ATTACK_STAMINA_COST / (Number.isFinite(weaponEfficiency) && weaponEfficiency > 0 ? weaponEfficiency : 1); // The opening-attack gate and capacity floor must use the same final cost.
     const minimumAttacks = cfg?._preserveMineEnemyTiers ? 1 : 2; // Keep the original mine stamina curve wherever viable; new danger-tier bandits need two affordable openings.
@@ -1076,13 +1150,14 @@
       attackCooldownS: (rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER) / shapeStats.speed,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
+      ...(cfg._ruinCoffinWeapon||cfg._rootledootWeaponPool?{weaponShapeKey:weapon.shapeKey,weaponMetalKey:weapon.metalKey}:{}), // Preserve the exact rolled shape for bound relic loot even before generated item definitions settle.
       weaponMetalPowerMultiplier: weapon.dmgMultiplier, // Arena and combat diagnostics show the exact effective metal grade, not only the metal's name.
       weaponShapeStats: shapeStats, // Used below to keep NPC attack windups, lunges and affliction delivery in sync.
       rangedWeaponKey,
       banditFlaskLoadout,
       banditFlaskerTuning: flaskerTuning,
       banditFlaskPotencyTier: isFlasker ? (cfg?._preserveMineEnemyTiers ? Math.min(4, tier) : Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7))) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
-      banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
+      banditAbilityLoadout: { ...banditAbilityLoadout(weapon.shapeKey, held), ...(weapon.animStyle?{tap1:weapon.animStyle==='thrust'?'pokeCombo':'swingCombo'}:{}) },
       quickAttackChance: quickTuning && Number.isFinite(quickBase) && Number.isFinite(quickStep)
         ? Math.max(0, Math.min(1, quickBase + tier * quickStep)) : BANDIT_QUICK_ATTACK_CHANCE, // Fixed at spawn; no tier/config lookups per attack.
       backstabFlankMaxSeconds: Math.max(0, Number(quickTuning?.backstabFlankMaxSeconds) || 2),
@@ -1099,6 +1174,65 @@
       aimAngleOffset: Math.PI / 2,
       lootPool: 'bandit_' + rank,
     };
+  }
+
+
+  function applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts = {}, authoredRule = null) {
+    const perks = window.PerkSystem; // Live player tree also powers ordinary humanoid combat progression.
+    const extra = opts.extra || {}; // Bespoke boss/caster choreography retains its authored tuning.
+    if (!perks?.buildEnemyCombatProfile || def.combatPerkModifiers || opts.disableCombatClass || extra.combatTutorialTarget || extra.combatTutorialPreview || extra.isMaskboundTitan || extra.isHarlyaoDemolitionist || extra.lichType || opts.rosterOverride?.lichType || extra.maskboundTroop === 'headtaker' || extra.mineWyrmWitchType || !def.banditAbilityLoadout?.tap1) return def;
+    const random = perks.enemyCombatRandom(opts.combatBuildSeed, deps.rnd); // Persistent abstract actors get the same class and loadout when their rig is rebuilt.
+    const combatClass = perks.rollEnemyCombatClass(random); // Separate from enemyClass, which identifies faction/species elsewhere.
+    const level = perks.enemyCombatLevel(rank, tier, mineEnemy);
+    const loadout = { ...def.banditAbilityLoadout }; // Per-entity copy; never change a shared authored attack object.
+    if (loadout.tap2 && !authoredRule?.attacks?.tap2 && !Object.hasOwn(opts.defOverride?.banditAbilityLoadout || {}, 'tap2')) {
+      loadout.tap2 = perks.enemyQuickAttack(combatClass, random) || loadout.tap2;
+    }
+    // Keep the rank's held-ability count, but a one-hold fighter can specialize
+    // in a counter rather than a charge. Fixed Workshop and caller slots win.
+    const fixedSlots = opts.defOverride?.banditAbilityLoadout || {}; // Caller-authored abilities must never be overwritten.
+    if (loadout.hold1 === 'chargedBreaker' && !loadout.hold2
+        && !authoredRule?.attacks?.hold1 && !authoredRule?.attacks?.hold2
+        && !Object.hasOwn(fixedSlots, 'hold1') && !Object.hasOwn(fixedSlots, 'hold2')
+        && perks.enemyHeldAttack(combatClass, random) === 'counterShield') {
+      loadout.hold1 = null;
+      loadout.hold2 = 'counterShield';
+    }
+    def.banditAbilityLoadout = loadout;
+    def.combatPerkMinimumAttacks = mineEnemy ? 1 : 2; // Preserve the factory's original opening stamina budget when equipment changes.
+    return installEnemyCombatProfile(def, combatClass, level);
+  }
+
+  function installEnemyCombatProfile(def, combatClass, level) {
+    const previous = def.combatPerkModifiers; // Equipment wrappers may rebuild a profile; remove its old multipliers before installing the new ones.
+    const baseHealth = def.combatPerkBaseHealth ??= def.maxHealth; // Retain exact unscaled capacities across weapon swaps.
+    const baseStamina = def.combatPerkBaseStamina ??= def.maxStamina;
+    const baseCost = def.attackStaminaCost / (previous?.staminaCost ?? 1);
+    const profile = window.PerkSystem.buildEnemyCombatProfile(combatClass, level, def.banditAbilityLoadout, def.attackTag, def.rangedWeaponKey);
+    Object.assign(def, profile);
+    def.combatPerkWeaponSignature = JSON.stringify([def.attackTag, def.rangedWeaponKey || null]); // Used only by spawn-time equipment reconciliation.
+    const mods = profile.combatPerkModifiers; // Use the enemy's own existing lower base resources and stamina cost.
+    def.maxHealth = Math.max(1, Math.round(baseHealth * mods.health));
+    def.maxStamina = Math.max(1, Math.round(baseStamina * mods.stamina), Math.ceil(baseCost * mods.staminaCost * (def.combatPerkMinimumAttacks || 1)));
+    def.attackStaminaCost = baseCost * mods.staminaCost; // AI affordability checks and actual spend share the same value.
+    return def;
+  }
+
+  function refreshEnemyCombatBuild(entity) {
+    const def = entity?.def; // Cultural and modular equipment wrappers run after the ordinary factory.
+    if (!def?.combatPerkModifiers || def.combatPerkWeaponSignature === JSON.stringify([def.attackTag, def.rangedWeaponKey || null])) return entity;
+    const resources = window.ResourceSystem;
+    const fraction = key => {
+      const maximum = resources?.getEffectiveMax?.(entity, key) ?? entity[key === 'health' ? 'maxHealth' : 'maxStamina'];
+      return maximum > 0 ? Math.max(0, Math.min(1, entity[key] / maximum)) : 0;
+    }; // Reconciliation is spawn-time, but preserves missing-resource fractions rather than granting a heal.
+    const healthFraction = fraction('health'), staminaFraction = fraction('stamina');
+    installEnemyCombatProfile(def, def.combatClass, def.combatLevel);
+    entity.maxHealth = def.maxHealth;
+    entity.maxStamina = def.maxStamina;
+    entity.health = (resources?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth) * healthFraction;
+    entity.stamina = (resources?.getEffectiveMax?.(entity, 'stamina') ?? entity.maxStamina) * staminaFraction;
+    return entity;
   }
 
   // ── Bandit ability AI ────────────────────────────────────────────
@@ -1257,13 +1391,17 @@
         attacker: c,
       });
     } else {
-      outcome = deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
+      const struckPlayer = window.ActorRegistry?.isPlayer(target) ? target : null; // Hit the player actually targeted; no target keeps the legacy local-player behaviour.
+      outcome = struckPlayer && window.DamageAuthority
+        ? window.DamageAuthority.hit(struckPlayer, amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c })
+        : deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
     }
-    if (c?._banditCaptainArmament) {
+    if (c?._banditCaptainArmament || c?.ruinWallCoffin) {
       const afterHealth = Number(target?.health); // Uses the actual victim (player or NPC), so allied skirmishes can proc enchantments too.
       const actualDamage = Number.isFinite(beforeHealth) && Number.isFinite(afterHealth)
         ? Math.max(0, beforeHealth - afterHealth) : 0;
-      window.BanditCaptainArmaments?.emitHit?.(c, target, actualDamage, opts.enchantmentSlot || 'tap1', {
+      if(c.ruinWallCoffin)window.MinionCombat?.emitRuinEnchantedHit?.(c,target,actualDamage,opts.enchantmentSlot||'tap1');
+      if(c._banditCaptainArmament)window.BanditCaptainArmaments?.emitHit?.(c, target, actualDamage, opts.enchantmentSlot || 'tap1', {
         comboFinisher: opts.comboFinisher === true, quickBonusEffectProc: opts.quickBonusEffectProc === true,
       });
     }
@@ -1397,9 +1535,11 @@
       distancePx = Math.min(distancePx, Math.max(0, currentDist - haltDist));
       if (distancePx <= 0 && lungeProfile.hopUnits <= 0.01) return;
     }
+    if(c.ruinSkeletonTheme==='hronal')c._ruinTrailRemaining=0; // Each committed lunge starts its own trail.
     c._banditLunging = true;
     c._banditLungeT = durationS;
     c._banditLungeDur = durationS;
+    c._windBanditLungeIntegrated = false; // Preserve incremental wind displacement until the committed lunge finishes.
     c._banditLungeStartX = c.x;
     c._banditLungeStartY = c.y;
     c._banditLungeDirX = Math.cos(c.facing || 0);
@@ -1453,15 +1593,23 @@
       c._banditLungeDistancePx = 0;
     }
     // Facing and lunge direction stay fixed after windup begins, leaving a real backstab window.
-    c._banditLungeT = Math.max(0, c._banditLungeT - dt);
+    const priorProgress = 1 - Math.pow(c._banditLungeT / c._banditLungeDur, 3);
+    const travelDt = Math.min(Math.max(0, dt), Math.max(0, c._banditLungeT)); // Only charge the committed remainder, not excess frame time.
+    c._banditLungeT = Math.max(0, c._banditLungeT - travelDt);
     const t = 1 - c._banditLungeT / c._banditLungeDur;
     const eased = 1 - Math.pow(1 - t, 3);
-    const desiredX = c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
-    const desiredY = c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
+    const lungeStep = c._banditLungeDistancePx * Math.max(0, eased - priorProgress);
+    const motion = window.ResourceSystem?.composeMovement?.(c, c._banditLungeDirX * lungeStep, c._banditLungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep, dt: travelDt }); // Cone-halted attacks no longer regain horizontal motion from a fallback wind speed.
+    if (motion?.wind) c._windBanditLungeIntegrated = true;
+    const desiredX = c._windBanditLungeIntegrated ? c.x + (motion?.x ?? c._banditLungeDirX * lungeStep) : c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
+    const desiredY = c._windBanditLungeIntegrated ? c.y + (motion?.y ?? c._banditLungeDirY * lungeStep) : c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
     c._banditLungeHopCurrent = (c._banditLungeHopUnits || 0) * Math.sin(eased * Math.PI);
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
+    if(c.ruinSkeletonTheme==='hronal'||c.ruinSkeletonTheme==='kanthic')window.MinionCombat?.trailMovement?.(c,c.x,c.y,swept.x,swept.y,'lunge',deps.TILE);
     c.x = swept.x; c.y = swept.y;
+    if (motion?.wind) window.ResourceSystem?.commitMovement?.(c, motion, Math.min(1, stepPx / Math.max(.00001, Math.hypot(motion.x, motion.y))), window.Combat?.deps?.movementFootingDepleted);
+    if (c.prone) return true;
     if (swept.blockedAt && c._banditLungeAirborne && !c._banditLungeImpactResolved) {
       const state = {
         airborne: true, lungeMaxDistancePx: c._banditLungeDistancePx,
@@ -1507,6 +1655,12 @@
   // js/combat/npc-duel-staging.js). Same pose, lunge, trail and audio, but no
   // 3D aim solve, no per-frame lunge cone probe, a 2D strike test and no
   // afflictions -- and the defender may play a cosmetic dodge.
+  function payBanditAttack(c, def, tempoActionKind) {
+    const tempo = window.ResourceSystem?.attackTempoMultiplier?.(c, tempoActionKind) ?? 1; // Snapshot before expenditure; keep Fey's NPC sequence identity.
+    window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee', tempoActionKind });
+    return tempo;
+  }
+
   function fireBanditComboStep(c, def, loadout, targetPlayer, opts = null) {
     const staged = opts?.staged === true && !!window.NpcDuelStaging;
     const comboData = window.Combat?.comboData;
@@ -1518,7 +1672,8 @@
     // authority for bandit mirrors of either combo family too.
     const comboStep = c._banditComboIndex % steps.length;
     const step = steps[comboStep];
-    const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // Rolled shape drives humanoid combo animations.
+    const baseShape = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // Preserve authored reach/power; only the speed snapshot changes.
+    const shapeStats = { ...baseShape, speed: baseShape.speed * payBanditAttack(c, def, 'combatCombo') };
     const configuredPitch = comboData.sfxPitchByStep?.[comboStep];
     const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
     const isFinalStep = comboStep === steps.length - 1;
@@ -1534,7 +1689,7 @@
     // practice" for the player -- omitting it here would give bandits a
     // ~67% bigger hit cone than the identical player attack.
     const rangePx = base.rangePx * step.rangeMul * (comboData.RANGE_SCALE ?? 1);
-    const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range);
+    const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (def.combatPerkModifiers?.aoe ?? 1));
     const knockbackPxS = base.knockbackPxS * step.knockbackMul * shapeStats.power;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
@@ -1546,7 +1701,7 @@
     c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = stepPose ? 1 : (step.power || 1);
     c._banditSwingPoseScale = 1; c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = (step.holdS || 0) / shapeStats.speed; c._banditSwingReturnS = (step.returnS || 0) / shapeStats.speed; // Same pause / finisher tail combat-combo.js hands the player's swing visual.
-    const lungeBudgetPx = deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5);
+    const lungeBudgetPx = deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5) * (def.combatPerkModifiers?.lunge ?? 1);
     const lungeDurationS = (step.windupS + step.strikeS) / shapeStats.speed;
     if (staged) {
       // Pre-capped instead of halted by a per-frame meleeHit probe (null hitTest skips it).
@@ -1584,7 +1739,7 @@
         if (landed && staged) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
           comboStepHit = true;
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true, enchantmentSlot: 'tap1', comboFinisher: isFinalStep });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, perkHeavy: !!step.heavy });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         } else if (landed) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
@@ -1595,7 +1750,7 @@
           // player's own combat-combo.js fix, which no longer tags a
           // swing by combo family (sweep=blunt/thrust=sharp) regardless
           // of the equipped weapon's real material.
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, perkHeavy: !!step.heavy, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         }
       },
@@ -1621,6 +1776,7 @@
     const qa = window.Combat?.quickAttackData;
     const techDef = qa?.TECHNIQUES?.[loadout.tap2];
     if (!techDef) return false;
+    payBanditAttack(c, def, 'combatQuickAttack'); // Quick attacks generate either tempo reserve but do not spend them.
     const cond = banditQuickAttackConditions(c, targetPlayer);
     const tech = window.Combat.buildQuickAttack(techDef, cond);
     const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // Quick-attack timing follows the equipped bandit shape.
@@ -1629,7 +1785,7 @@
     // rangeMul-scaled cone -- see the matching comment in
     // fireBanditComboStep, same "read as oversized" fix applies here.
     const rangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
-    const halfConeRad = Math.min(Math.PI, tech.halfConeDeg * Math.PI / 180 * shapeStats.range);
+    const halfConeRad = Math.min(Math.PI, tech.halfConeDeg * Math.PI / 180 * shapeStats.range * (def.combatPerkModifiers?.aoe ?? 1));
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
@@ -1638,7 +1794,7 @@
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
     c._banditSwingPoseScale = 1; c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = (qa.HOLD_S || 0) / shapeStats.speed; c._banditSwingReturnS = 0; // Same post-strike pause the player's quick attack swing visual gets.
-    beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), (qa.WINDUP_S + qa.STRIKE_S) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
+    beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5) * (def.combatPerkModifiers?.lunge ?? 1), (qa.WINDUP_S + qa.STRIKE_S) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
     let techHit = false;
     c._banditAction = beginBanditMeleeStage(c, {
       windupS: qa.WINDUP_S / shapeStats.speed, strikeS: qa.STRIKE_S / shapeStats.speed, recoverS: 0,
@@ -1678,13 +1834,15 @@
   function fireBanditChargedBreaker(c, def, targetPlayer, prepared = null) {
     const cb = window.Combat?.chargedBreakerData;
     if (!cb) return false;
-    const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs scale charge windup and strike as one animation.
+    const baseShape = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 };
+    const paidTempo = payBanditAttack(c, def, 'offensiveHeldCharge'); // Actual release owns the payment; preparation only snapshots.
+    const shapeStats = { ...baseShape, speed: baseShape.speed * (prepared?.furiousTempo ?? paidTempo) };
     const chargeT = Number.isFinite(Number(prepared?.chargeT)) ? deps.clamp(Number(prepared.chargeT), 0.5, 1) : 0.5 + deps.rnd() * 0.5; // A precharged attack retains the exact strength displayed during preparation.
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
     const rangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
     const halfConeDeg = cb.HALF_CONE_DEG_MIN + (cb.HALF_CONE_DEG_MAX - cb.HALF_CONE_DEG_MIN) * chargeT;
-    const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range);
+    const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range * (def.combatPerkModifiers?.aoe ?? 1));
     const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT) * shapeStats.power;
     const lungeTileMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
     const pitchDistanceResistance = cb.LUNGE_GRAVITY_RESIST_MIN
@@ -1712,7 +1870,7 @@
     // derives how long the shared nonlinear windup would need to reach it.
     beginBanditLunge(
       c,
-      deps.TILE * lungeTileMul,
+      deps.TILE * lungeTileMul * (def.combatPerkModifiers?.lunge ?? 1),
       windupS + cb.STRIKE_S / shapeStats.speed,
       { rangePx, halfConeRad, pitchDistanceResistance },
       targetPlayer,
@@ -1752,7 +1910,7 @@
     return true;
   }
 
-  // Captain-only, hold2. Not a held button either -- a periodic timed
+  // Counter Shield, hold2. Not a held button either -- a periodic timed
   // window instead: while `_banditGuardUntil` is in the future, an
   // incoming hit (see damageCreature's isBandit branch) is reduced and
   // answered with a real Counter Shield riposte using the exact damage/
@@ -1770,7 +1928,7 @@
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * cs.COUNTER_DAMAGE_MUL));
     const rangePx = base.rangePx * cs.COUNTER_RANGE_MUL;
-    const halfConeRad = Math.min(Math.PI, cs.COUNTER_HALF_CONE_DEG * Math.PI / 180 * (def.weaponShapeStats?.range || 1));
+    const halfConeRad = Math.min(Math.PI, cs.COUNTER_HALF_CONE_DEG * Math.PI / 180 * (def.weaponShapeStats?.range || 1) * (def.combatPerkModifiers?.aoe ?? 1));
     const knockbackPxS = base.knockbackPxS * cs.COUNTER_KNOCKBACK_MUL * (def.weaponShapeStats?.power || 1);
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     const aimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by the counter's 3D cone and ribbon.
@@ -1870,7 +2028,7 @@
     if (!steps?.length) return base.rangePx;
     const step = steps[(c._banditComboIndex || 0) % steps.length];
     const comboRangePx = base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1);
-    const comboLungePx = deps.TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
+    const comboLungePx = deps.TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5) * (def.combatPerkModifiers?.lunge ?? 1);
     return banditAbilitySafeReachPx(comboRangePx, comboLungePx, step.windupS, step.strikeS);
   }
   function banditEngagementReachPx(c, def, loadout, targetPlayer) {
@@ -1885,7 +2043,7 @@
       const cond = banditQuickAttackConditions(c, targetPlayer);
       const tech = window.Combat.buildQuickAttack(techDef, cond);
       const qaRangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
-      const qaLungePx = deps.TILE * (qa.LUNGE_TILE_MUL || 5.5);
+      const qaLungePx = deps.TILE * (qa.LUNGE_TILE_MUL || 5.5) * (def.combatPerkModifiers?.lunge ?? 1);
       reach = Math.min(reach, banditAbilitySafeReachPx(qaRangePx, qaLungePx, qa.WINDUP_S, qa.STRIKE_S));
     }
     // Charged Breaker (hold1) only ever fires as a fresh opener
@@ -1900,7 +2058,7 @@
         const chargeT = 0.75;
         const cbRangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
         const cbLungeMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
-        const cbLungePx = deps.TILE * cbLungeMul;
+        const cbLungePx = deps.TILE * cbLungeMul * (def.combatPerkModifiers?.lunge ?? 1);
         const cbWindupS = (cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT)) / (def.weaponShapeStats?.speed || 1);
         reach = Math.min(reach, banditAbilitySafeReachPx(cbRangePx, cbLungePx, cbWindupS, cb.STRIKE_S));
       }
@@ -2010,12 +2168,13 @@
     const cb = window.Combat?.chargedBreakerData;
     if (!cb || c._banditPreparedCharge || c._banditAction) return false;
     const chargeT = 0.5 + deps.rnd() * 0.5; // Once per charge, matching the existing Charged Breaker roll (not a random draw every frame).
-    const speed = c.def?.weaponShapeStats?.speed || 1;
+    const furiousTempo = window.ResourceSystem?.attackTempoMultiplier?.(c, 'offensiveHeldCharge') ?? 1; // Preserve this snapshot through the actual release.
+    const speed = (c.def?.weaponShapeStats?.speed || 1) * furiousTempo;
     const rawWindup = cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT);
     const duration = Math.max(0.25, Number(rawWindup) / speed || 0.5); // The visible preparatory windup runs even while a second bandit attacks.
     const preview = { windupS: duration, strikeS: 0.01, t: 0, phase: 'windup' }; // Draw-only stage: Combat.beginStagedAction is not called until attack permission becomes free.
     const releaseRange = banditEngagementReachPx(c, c.def, c.def.banditAbilityLoadout, target); // The same existing safe attack-commit reach used by the real Charged Breaker release.
-    const charge = { target, t: 0, duration, chargeT, action: preview, reachPx: releaseRange }; // One immutable reach snapshot plus one advancing preview stage; no range recalculation in other fighters' hot loop.
+    const charge = { target, t: 0, duration, chargeT, action: preview, reachPx: releaseRange, furiousTempo }; // One immutable reach snapshot plus one advancing preview stage; no range recalculation in other fighters' hot loop.
     banditTurnState(target).charge = { actor: c, target };
     c._banditPreparedCharge = charge;
     c._rangedMode = false; // The held melee weapon, not a stowed crossbow, represents the charge.
@@ -2491,7 +2650,6 @@
         comboReachPx: actor => banditComboReachPx(actor, actor.def, actor.def.banditAbilityLoadout),
         fireStagedSwing: (actor, foe, stepDt) => {
           // Same stamina cost and same-frame lunge catch-up as the full path's swing.
-          window.ResourceSystem?.spendStamina(actor, actor.def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // NPC staged duels share the same Hyped transaction as visible melee.
           const fired = fireBanditComboStep(actor, actor.def, actor.def.banditAbilityLoadout, foe, { staged: true });
           if (!fired) window.FeyHypedAttacks?.clearCredit?.(actor, 'npcMelee'); // No stale Hyped charge after a rejected staged duel.
           if (fired) updateBanditLunge(actor, stepDt, foe);
@@ -2582,7 +2740,6 @@
       if (heldSlot && prep.t >= prep.duration && distToPlayer <= reach
         && banditPreparedChargeHasPriority(c, targetPlayer) && claimBanditAttackTurn(c, targetPlayer)) {
         releaseBanditCharge(c, targetPlayer, true); // Keep the pose when converting preparation to a real Charged Breaker.
-        window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit charged release', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' });
         const fired = fireBanditChargedBreaker(c, def, targetPlayer, prep);
         if (!fired) {
           releaseBanditAttackTurn(c, targetPlayer);
@@ -2656,7 +2813,7 @@
       && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && distToPlayer <= engageRangePx
       && committedOwner && committedOwner !== c && !preparer) {
       c._banditChargeDecisionCdS = 1.25; // Do not force a charge on every frame of a busy melee queue.
-      if (deps.rnd() < BANDIT_HOLD1_CHANCE && beginBanditPreparedCharge(c, targetPlayer)) {
+      if (deps.rnd() < (def.combatPerkModifiers?.chargeChance ?? BANDIT_HOLD1_CHANCE) && beginBanditPreparedCharge(c, targetPlayer)) {
         c._banditTactic = 'charging';
         return { aimAngle: towardAngle, moving: false };
       }
@@ -2769,11 +2926,10 @@
     }
     if (alignment?.aligned) c.facing = alignment.desiredFacing;
     if (!claimBanditAttackTurn(c, targetPlayer)) return { aimAngle: towardAngle, moving: false }; // Another actor (or ready charge) got the turn after this frame's eligibility check.
-    window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // Real NPC melee expenditure can fund exactly one two-strike Hyped sequence.
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;
     let attackChoice = 'combo'; // Mobile AI diagnostics distinguish the actual selected ability, not simply whether a swing fired.
-    if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && deps.rnd() < BANDIT_HOLD1_CHANCE) {
+    if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && deps.rnd() < (def.combatPerkModifiers?.chargeChance ?? BANDIT_HOLD1_CHANCE)) {
       fired = fireBanditChargedBreaker(c, def, targetPlayer);
       if (fired) attackChoice = 'charged-breaker';
     }
@@ -3009,7 +3165,7 @@
     const ref = c?.avatarRef;
     const sink = window.ActorBodySink;
     if (!sink?.enabled() || !ref?.legs || !ref.frontPlane || !ref.handsPivot || ref.riderMount) return 0; // Mounted riders and legless bodies keep standing.
-    ref.bodySinkActor ||= { legs: ref.legs, lower: [{ obj: ref.frontPlane }, { obj: ref.backPlane }, { obj: ref.handsPivot }] }; // All children of the group the legs also live under.
+    ref.bodySinkActor ||= { legs: ref.legs, lower: [{ obj: ref.frontPlane }, { obj: ref.backPlane }, { obj: ref.handsPivot }, { obj: ref.legsPivot }] }; // The leg handle raises its root by the sink; lower its parent too so soles remain planted and hips track the portrait.
     const standing = (Number(c.health) || 0) > 0 && !c.prone;
     let pct = 0;
     if (standing) pct = Number.isFinite(sampled.bodySink) ? sampled.bodySink : (c._enemyPreparedPose ? window.SharedAttackPose.idleBodySinkPct() : 0); // Legacy arcs author no sink: only a stance weapon rests at the idle sink.
@@ -3361,7 +3517,12 @@
       joint.scale.x *= head / x;
       joint.scale.y *= head / y;
       joint.scale.z = (Number(joint.scale.z) || 1) * head / x;
-      if (joint.position) joint.position.y += originalHeight * offsetY;
+      joint.updateMatrix?.();
+    }
+    for (const joint of [avatarRef.headOffsetJoint?.front || avatarRef.headScaleJoint?.front || avatarRef.neckJoint?.front,
+      avatarRef.headOffsetJoint?.back || avatarRef.headScaleJoint?.back || avatarRef.neckJoint?.back]) {
+      if (!joint?.position) continue;
+      joint.position.y += originalHeight * offsetY; // Hostile head placement lives on the nonrotating parent; huge offsets no longer invert the two-pixel neck strip.
       joint.updateMatrix?.();
     }
     avatarRef.group.scale.set(avatarRef.group.scale.x * x, avatarRef.group.scale.y * y, avatarRef.group.scale.z * x);
@@ -3383,8 +3544,18 @@
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    if(opts.extra?.ruinWallCoffin){
+      const permitted=window.MinionCombat.coffinWeaponShapes; // Only authored choices that actually encode to bound relic shapes are legal.
+      const authored=loadoutRules?.ruleFor(loadoutKind)?.weapons?cfg.weaponShapePool?.filter(shape=>permitted.includes(shape)):null;
+      cfg={...cfg,_ruinCoffinWeapon:true,weaponShapePool:authored?.length?authored:[...permitted]};
+    } // Match relic catalog.
+    if(opts.extra?.rootledoot){
+      const saved=opts.zoneId==='map_dev_arena'?opts.defOverride?.weaponKey:null;
+      if(saved&&!window.BanditCaptainArmaments?.isRootledootWeapon(saved))throw Error('Saved Rootledoot weapon is outside the current compatible pool; roll a new preview.');
+      cfg={...cfg,_rootledootWeaponPool:true,_rootledootPreviewKey:saved};
+    }
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
-    if (!loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
+    if (!opts.extra?.rootledoot && !loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
       cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
     const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
     if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
@@ -3410,6 +3581,7 @@
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
+    if (opts.extra?.rootledoot && opts.rosterOverride) roster = {...opts.rosterOverride, rootledoot:true}; // Keep the bare root and matching limb colors instead of Workshop clothing.
     const spineRule = loadoutRules?.spineFor?.(loadoutKind);
     if (spineRule && !roster.spine) roster = { ...roster, spine: { hunch: spineRule.hunch, ...(spineRule.sway ? { sway: spineRule.sway } : {}), ...(spineRule.kyphosis != null ? { kyphosis: spineRule.kyphosis } : {}) } }; // Authored hunchback (old, skeletal, Maskbound): read by the portrait's legs, shoulders, neck and weapon orbit.
     if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.
@@ -3450,7 +3622,8 @@
       if (shape) cfg = { ...cfg, weaponShapePool: [shape] };
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
-    const rolledDefinition = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+    let rolledDefinition;
+    try{rolledDefinition=makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);}catch(error){avatarRef.dispose();throw error;}
     const unarmedWitch = !!window.GhoulSpecialVariants?.isUnarmedWitch?.(opts.extra); // Shadow-wind Wyrm-witches cast bare-handed like liches: the lich casting pose weapon, no visible mesh.
     let def = Object.assign({ ...rolledDefinition }, unarmedWitch ? { weaponKey: window.GhoulSpecialVariants.castWeaponKey(), rangedWeaponKey: null } : {}, opts.defOverride || {});
     // Special enemies supply fixed weapons through defOverride. Explicit authored
@@ -3463,11 +3636,15 @@
     }
     if(authoredRule?.ranged || authoredRule?.rangedChance != null)def.rangedWeaponKey=rolledDefinition.rangedWeaponKey;
     def = loadoutRules?.applyDefinition(loadoutKind, def, deps.rnd) || def;
+    if(opts.extra?.rootledoot){def.weaponKey=rolledDefinition.weaponKey;def.rangedWeaponKey=null;if(def.banditAbilityLoadout)def.banditAbilityLoadout.tap1=rolledDefinition.banditAbilityLoadout.tap1;} // Workshop rules cannot substitute a forbidden weapon or ranged item.
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
-      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.();
+      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [def.rangedWeaponKey] });
     }
+    if(opts.extra?.ruinSkeletonHealthMultiplier)def.maxHealth=Math.round(def.maxHealth*opts.extra.ruinSkeletonHealthMultiplier); // Before perks and resource initialization.
+    if(opts.extra?.ruinWallCoffin)def.weaponShapeKey=deps.TOOL_ITEM_DEFS?.[def.weaponKey]?.shapeKey||def.weaponShapeKey;
+    applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts, authoredRule); // After authored weapon and projectile definitions exist; before resources initialize.
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();
     const gridCols = opts.cols || deps.getActiveCols();
@@ -3478,6 +3655,10 @@
     const surfY = targetGrid[row]?.[col] ? deps.tileSurfaceYInArea(targetGrid[row][col], deps.getCurrentArea()) : 0;
     avatarRef.group.position.set(x / deps.TILE, surfY + halfH, y / deps.TILE);
     deps.markPngPlane(avatarRef.group);
+    if(roster.ruinSkeletonTheme && avatarRef.backPlane) {
+      const disposeSpikes=window.MinionCombat?.attachRuinBackSpikes?.(THREE,avatarRef,roster); // Real geometry must not enter PNG depth replay.
+      if(disposeSpikes){const disposeAvatar=avatarRef.dispose;avatarRef.dispose=function(){disposeSpikes();return disposeAvatar.call(this);};}
+    }
     targetScene.add(avatarRef.group);
     // A lighting pass can prune a still-building avatar's off-scene light
     // while async portrait/limb work yields. Register again at scene adoption.
@@ -3633,6 +3814,7 @@
     availableFlaskRecipeIds: availableBanditFlaskRecipeIds,
     characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive, ...characterBuildStatus }), // Existing debug report reads queue pressure without retaining roster objects.
     discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
+    buildAvatar: buildBanditAvatar, // Debug/headless: builds one hostile humanoid avatar from a roster without spawning an entity.
     setCombatExpression, // Synchronously swaps the live humanoid hostile portrait between its pre-baked resting and combat-frown canvases.
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
     ensureEnemyPants, // Shared hostile wardrobe fallback, including explicit skeleton/ghoul/lich/ghost rosters.
@@ -3656,6 +3838,8 @@
     cancelLunge: cancelBanditLunge, // Stagger/death/leash cleanup: stops the lunge AND lowers its hop.
     finishAction: finishBanditAction, // Ends a staged action; a completed melee swing hands its hold/return to c._banditToolTail.
     engagementReachPx: banditEngagementReachPx,
+    applyEnemyCombatBuild, // Shared spawn and regression-test entry point.
+    refreshEnemyCombatBuild, // Reconcile actual equipment after the existing cultural/modular wrappers.
     RANK_LABEL: BANDIT_RANK_LABEL,
     TINT_SLOT_BY_SLOT: BANDIT_TINT_SLOT_BY_SLOT,
     GUARD_DAMAGE_ABSORB: BANDIT_GUARD_DAMAGE_ABSORB,

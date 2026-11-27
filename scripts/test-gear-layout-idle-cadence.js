@@ -215,4 +215,18 @@ assert.notEqual(rebuiltObserver, reopenedObserver, 'replacing only the inner sum
 assert(rebuiltObserver.targets.includes(summary), 'new summary is watched after the rebuild');
 assert(!rebuiltObserver.targets.includes(previousSummary), 'detached summary is no longer watched');
 assert.equal(window.InventoryGearCompactEffects.debugSnapshot().fitStats.detailFits, 5, 'inner Gear replacement does not refit the unchanged right panel');
+// Exercise a real font-floor release by the fitter and its asynchronous observer notification.
+const floor={nodeType:1,dataset:{menuFontFloor:'1'},style:{removeProperty(){}},closest:selector=>selector.includes('#invInfo')?info:null};
+info.querySelectorAll=()=>floor.dataset.menuFontFloor==='1'?[floor]:[];
+observer.notify([mutation(info,'characterData')]); flushFrames();
+assert.equal(floor.dataset.menuFontFloor,undefined);
+const afterRelease=styleWrites;
+observer.notify([mutation(floor,'attributes','data-menu-font-floor')]);
+flushFrames();
+assert.equal(styleWrites,afterRelease,'our own completed release must not start a second binary fit');
+assert(window.InventoryGearCompactEffects.debugSnapshot().fitStats.ownFloorSkips>0);
+floor.dataset.menuFontFloor='1';
+observer.notify([mutation(floor,'attributes','data-menu-font-floor')]);
+flushFrames();
+assert(styleWrites>afterRelease,'external floor reapplication still fits the real content');
 console.log('Gear layout idle-cadence tests passed');

@@ -57,11 +57,21 @@
         drunkenFooting: '#b66a2f',
         drunkenHealth: '#ff4f9a',
         kindlingHealth: '#ffb347',
+        unshackledStamina: '#a9dff7', // Ohthic combo tempo reserve.
+        weightlessStamina: '#b5f6db', // Bottom-anchored movement reserve.
         furiousStamina: '#ec2de8',
         moralizedStamina: '#ffe15a',
         resoluteFooting: '#f1d27a',
         resoluteHealth: '#8fd0ff',
         mirroredHealth: '#d9f0ff',
+        windblownStamina: '#237fbd', // Tothal recovery debt.
+        leadboundStamina: '#a29179',
+        soulweightedHealth: '#705480',
+        veilmarkedHealth: '#a1d8d5',
+        currentStamina: '#48e4ef',
+        temperedFooting: '#e59f48',
+        pactHealth: '#aa63c9',
+        guardianHealth: '#e0f7c7',
         dementedStamina: '#d977ff', // Purple vertigo segment: every spent Stamina point affects navigation.
         panickedStamina: '#ff557b', // Panic reserve segment: surged dodge draws this buildup as additional cost.
         hypedStamina: '#fa69b6' // Bright augmented Stamina that powers rapid echo attacks.
@@ -286,13 +296,14 @@
   let lastPlayerTownCorrectedY = null;
   let townHeightCorrectedThisFrame = false;
   const townGroundMeshes = new Set();
-  const raycaster = new THREE.Raycaster();
-  const rayOrigin = new THREE.Vector3();
-  const rayDown = new THREE.Vector3(0, -1, 0);
-  const matrix = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  const scale = new THREE.Vector3();
+  let floorRaycast = null; // Optional exact-floor diagnostic is initialized only when a real Three.js module exists.
+  function floorRaycastTools() {
+    if (floorRaycast) return floorRaycast;
+    const three = capturedDeps?.THREE || playerDeps?.THREE || root.THREE; // config.js loads before Three.js, so never construct it at module evaluation.
+    if (!three?.Raycaster || !three?.Vector3) return null;
+    floorRaycast = { caster: new three.Raycaster(), origin: new three.Vector3(), down: new three.Vector3(0, -1, 0) };
+    return floorRaycast;
+  }
 
   // Sampled once per grass instance on every town grass refilter and per actor
   // per frame by the town elevation bridges, so the "has any heights" check is
@@ -407,7 +418,7 @@
   }
 
   function isRoadChunk(group) {
-    return !!(group?.isGroup && group.name === 'WallBuilder_Instances' && group.userData?.cullSphere);
+    return !!(group?.isGroup && group.name === 'PathBrickSurfaceChunk' && group.userData?.cullSphere);
   }
 
   function elevateRoadChunk(group, map) {
@@ -419,12 +430,11 @@
         inst.userData.hobunjiTownRoadBaseMatrices = new Float32Array(inst.instanceMatrix.array);
       }
       const base = inst.userData.hobunjiTownRoadBaseMatrices;
+      const target = inst.instanceMatrix.array; // Three.js column-major instance transforms; only translation-Y changes.
+      target.set(base); // Restore original rotations/scales too, avoiding drift if the same chunk is refreshed repeatedly.
       for (let i = 0; i < inst.count; i++) {
-        matrix.fromArray(base, i * 16);
-        matrix.decompose(pos, quat, scale);
-        pos.y += sampleHeight(map, pos.x, pos.z);
-        matrix.compose(pos, quat, scale);
-        inst.setMatrixAt(i, matrix);
+        const offset = i * 16; // Translation occupies offsets 12..14 in a Matrix4; matches old decompose/compose exactly.
+        target[offset + 13] = base[offset + 13] + sampleHeight(map, base[offset + 12], base[offset + 14]);
         moved++;
       }
       inst.instanceMatrix.needsUpdate = true;
@@ -476,9 +486,11 @@
     if (!townGroundMeshes.size) deformTownFloor();
     const meshes = [...townGroundMeshes].filter(mesh => mesh?.parent && mesh.visible !== false);
     if (!meshes.length) return null;
-    rayOrigin.set(x, 50, z);
-    raycaster.set(rayOrigin, rayDown);
-    const hits = raycaster.intersectObjects(meshes, false);
+    const tools = floorRaycastTools(); // Exact raycasting is diagnostic-only, not necessary for loading or player grounding.
+    if (!tools) return null;
+    tools.origin.set(x, 50, z);
+    tools.caster.set(tools.origin, tools.down);
+    const hits = tools.caster.intersectObjects(meshes, false);
     return hits.length ? hits[0].point.y : null;
   }
 

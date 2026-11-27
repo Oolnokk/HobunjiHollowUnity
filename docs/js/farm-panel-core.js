@@ -97,6 +97,7 @@
     renderFarmDew();
     renderFarmFurniture();
     renderFarmLivestock();
+    renderFamilyProgress();
     renderFarmStoragePane();
     renderFarmhandsSection();
 
@@ -122,6 +123,41 @@
       window.__hobunjiAddFarmhand(id, {});
       renderFarmhandsSection();
     };
+  }
+
+  function renderFamilyProgress() {
+    if (typeof document === 'undefined') return;
+    const host = document.getElementById('farmFamilyProgress');
+    if (!host) return;
+    const family = window.RomanceFamily?.familyProgress?.() || [];
+    const chores = window.RomanceFamily?.familyChores?.() || {};
+    const fields = window.FarmPlotEditor?.plots?.() || [];
+    const stations = new Map((window.FarmProduction?.familyStations?.({ includeInputs: false }) || []).map(station => [station.id, station.label]));
+    const escape = deps?.esc || (value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])));
+    const xpText = value => String(Math.round((Number(value) || 0) * 100) / 100);
+    host.innerHTML = family.length ? family.map(member => {
+      const assigned = fields.filter(field => field.workers?.includes(member.id)).map(field => field.label || 'Field');
+      if (chores.livestock === member.id) assigned.push('Livestock');
+      for (const [id, assignment] of Object.entries(chores.processing || {})) if (assignment?.workerId === member.id && stations.has(id)) assigned.push(stations.get(id));
+      if (member.vatId) assigned.push('Squeezing vat');
+      const maxed = member.level >= member.maxLevel;
+      const progress = maxed ? 1 : Math.max(0, Math.min(1, member.xp / Math.max(1, member.nextLevelXp)));
+      const status = member.carrying ? 'Being carried' : member.following ? 'Following you' : member.role === 'Baby' ? 'Learning by observation' : 'Assignments: ' + (assigned.join(', ') || 'None');
+      return `<div class="farm-row" style="display:grid;gap:5px;align-items:start">
+        <strong>${escape(member.name)} · ${escape(member.role)}</strong>
+        <span>Usefulness level ${escape(member.level)} / ${escape(member.maxLevel)}</span>
+        <progress aria-label="Usefulness XP" max="1" value="${progress}" style="width:100%;accent-color:var(--accent,#d9ad65)"></progress>
+        <span class="farm-note">${maxed ? 'Maximum level' : xpText(member.xp) + ' / ' + xpText(member.nextLevelXp) + ' XP'}</span>
+        <span class="farm-note">${escape(status)}</span>
+      </div>`;
+    }).join('') : '<p class="farm-note">No spouse or children yet.</p>';
+    const refresh = document.getElementById('farmFamilyRefreshBtn');
+    if (refresh) refresh.onclick = renderFamilyProgress;
+  }
+  function refreshVisibleFamilyProgress() {
+    if (typeof document === 'undefined') return;
+    const pane = document.getElementById('mpFarm'), section = document.getElementById('farmSectionFamily');
+    if (pane?.classList.contains('active') && section?.getClientRects?.().length) renderFamilyProgress();
   }
 
   function showFarmMap() {
@@ -1154,7 +1190,7 @@
     const isAging = deps.AGING_METHODS.has(def.method);
     const job = obj.getJob ? obj.getJob() : null;
     const list = livestock || (def.method === 'squeezing' ? deps._loadWorldLivestock() : null);
-    const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id && window.DewVats.vatCanAccept(l.kind, l.genotype)) : null;
+    const worker = def.method === 'squeezing' && list ? window.DewVats.assignedWorkerForVat(obj.id, list) : null;
     if (job) {
       const currentHour = window.ItemProcessing?.gameHour?.(); // Used to report the same in-game deadline as the processor object.
       const baseHours = window.ItemProcessing?.baseProcessHours?.(def.method) || 1;
@@ -1190,7 +1226,7 @@
       tile.style.borderLeftColor = FARM_PROCESSOR_STATUS_COLORS[status];
       tile.innerHTML = `
         <div class="fp-top"><span class="fp-icon">${def.icon}</span><span class="fp-name">${def.name}</span></div>
-        <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${label}</div>
+        <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${deps.esc(label)}</div>
         <div class="fp-loc">at (${obj.col}, ${obj.row})</div>
       `;
       if (status === 'ready' && deps.hasFarmPermission('alterFarm')) {
@@ -1204,7 +1240,7 @@
         });
         tile.appendChild(btn);
       }
-      if (worker && deps.hasFarmPermission('livestock')) {
+      if (worker && !worker.external && deps.hasFarmPermission('livestock')) { // Family work is cancelled through the child's existing command wheel, not a livestock API.
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Unassign';
@@ -1219,7 +1255,7 @@
     });
     if (summary) {
       summary.textContent = processors.length
-        ? `${counts.working} working · ${counts.ready} ready to collect · ${counts.livestock} livestock-worked · ${counts.idle} idle`
+        ? `${counts.working} working · ${counts.ready} ready to collect · ${counts.livestock} worker-assigned · ${counts.idle} idle`
         : '';
     }
   }
@@ -1409,11 +1445,12 @@
           noneOpt.value = ''; noneOpt.textContent = '🚫 No vat (drops a pile)';
           vatSelect.appendChild(noneOpt);
           vats.forEach(v => {
-            const takenBy = livestock.find(l => l.assignedVatId === v.id && window.DewVats.vatCanAccept(l.kind, l.genotype));
+            const takenBy = window.DewVats.assignedWorkerForVat(v.id, livestock); // Children occupy the same exclusive worker slot as livestock.
             const opt = document.createElement('option');
             opt.value = v.id;
-            opt.textContent = v.label + (takenBy && takenBy.id !== entry.id ? ` (worked by ${takenBy.name})` : '');
-            opt.disabled = !!(takenBy && takenBy.id !== entry.id);
+            const occupied = !!(takenBy && (takenBy.external || takenBy.id !== entry.id)); // External workers never share the animal's assignment slot.
+            opt.textContent = v.label + (occupied ? ` (worked by ${takenBy.name})` : '');
+            opt.disabled = occupied;
             vatSelect.appendChild(opt);
           });
           vatSelect.value = entry.assignedVatId || '';
@@ -1974,7 +2011,7 @@
     render: renderFarmPanel,
     showMap: showFarmMap,
     renderStablePanel,
-    renderFarmProcessors,
+    renderFarmProcessors, renderFamilyProgress, refreshVisibleFamilyProgress,
     onAnimalSalesCollected, // Mirrors atomically collected animals out of the farm scene without re-saving.
     activeStableIdForRole,
     openLayoutEditor: openHouseLayoutModal,

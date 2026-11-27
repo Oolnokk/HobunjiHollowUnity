@@ -175,13 +175,9 @@ assert.doesNotMatch(source, /SHOULDER_PET_CURIOUS_BODY_LEAN_(?:MIN|MAX)_DEG/,
   'no randomized whole-body curiosity lean remains in gameplay');
 assert.match(source, /state\.currentLeanDeg = 0;[\s\S]{0,90}state\.targetLeanDeg = 0;/,
   'legacy saved curiosity lean is reset instead of animated');
-assert.match(source, /c\.avatarRef\.updateHeadYaw\(state\.currentYawDeg, dt\)/,
-  'head yaw still animates on the animal head rig');
-assert.match(source, /const SHOULDER_PET_AWAY_HEAD_YAW_SIGN = 1;/,
-  'shoulder head yaw uses one fixed pet-local-left sign in both body poses');
-assert.match(source,
-  /state\.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN \* \(SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG/,
-  'each sustained hold turns the head only in the fixed away-from-character direction');
+assert.doesNotMatch(applyCuriositySource, /updateHeadYaw\(/, 'only final attachment chooses passive yaw direction');
+assert.doesNotMatch(source, /SHOULDER_PET_AWAY_HEAD_YAW_SIGN/, 'fixed sign is retired');
+assert.match(attachmentSource, /passiveAwayLimit: passive && useRenderedGrip/, 'geometry solver receives pose-dependent outward limit');
 assert.doesNotMatch(source,
   /state\.targetYawDeg = (?:side|leanSide) \*/,
   'body-lean randomness can never choose the shoulder pet head-yaw direction');
@@ -192,8 +188,8 @@ assert.match(rigSource,
   /\['uumkaoii'[\s\S]{0,180}\[0,-0\.2057328849409156,-0\.004605298975405354\]/,
   'Uumkaoii uses the supplied shoulderGrip');
 assert.match(rigSource,
-  /\['kenkari::female'[\s\S]{0,100}\[-0\.16564616738866406,0\.25011972083640993,0,1\.093466\]/,
-  'Kenkari female keeps her authored shoulder position and Mao-ao-referenced 1.093466x scale');
+  /\['kenkari::female'[\s\S]{0,100}\[-0\.16564616738866406,0\.25011972083640993,0,1\.093433\]/,
+  'Kenkari female keeps her authored shoulder position and Mao-ao-referenced 1.093433x scale');
 assert.match(rigSource,
   /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)/,
   'Rakakoan still maps to Kenkari rather than owning independent perch transforms');
@@ -222,7 +218,6 @@ const curiosityRuntime = vm.runInNewContext('(() => { ' + curiositySlice
   SHOULDER_PET_CURIOUS_PITCH_DEG: 5,
   SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG: 14,
   SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG: 24,
-  SHOULDER_PET_AWAY_HEAD_YAW_SIGN: 1,
   SHOULDER_PET_CURIOUS_TURN_SPEED_DEG: 180,
   _companionHeadRestDeg: () => 0,
   _updateCompanionHeadRotation: (pet, angle) => headPitchSamples.push(angle),
@@ -239,13 +234,14 @@ curiosityRuntime.apply(curiosityPet, 0.2);
 assert.equal(curiosityPet.__hobunjiShoulderFacingInward, true, 'first authored observation pose is inward');
 assert.equal(curiosityPet.shoulderCuriosity.currentLeanDeg, 0, 'old body lean is neutralized on the first frame');
 assert.equal(curiosityPet.shoulderCuriosity.targetLeanDeg, 0, 'new lean targets are never generated');
-assert(headYawSamples[0] > 0 && headPitchSamples.length === 1, 'head yaw/pitch remain independently driven');
+assert(headYawSamples.length === 0 && headPitchSamples.length === 1 && curiosityPet.shoulderCuriosity.currentYawDeg > 0, 'curiosity advances an unsigned magnitude without writing yaw before the pin');
+const firstMagnitude=curiosityPet.shoulderCuriosity.currentYawDeg;
 assert.equal(JSON.stringify(curiosityPet.group), fixedBody, 'head curiosity cannot shift the pet body root');
 curiosityRandom.push(0.9, 0, 1, 0.5); // Force the second authored observation pose with a different head-yaw target.
 curiosityPet.shoulderCuriosity.timer = 0;
 curiosityRuntime.apply(curiosityPet, 0.2);
 assert.equal(curiosityPet.__hobunjiShoulderFacingInward, false, 'second authored observation pose is outward');
-assert(headYawSamples[1] > headYawSamples[0], 'the head turns farther without a whole-body rotation');
+assert(headYawSamples.length === 0 && curiosityPet.shoulderCuriosity.currentYawDeg > firstMagnitude, 'the next hold advances magnitude without applying a premature sign');
 assert.equal(JSON.stringify(curiosityPet.group), fixedBody, 'both observation selections leave the root for the attachment solver');
 
 console.log('Shoulder-pet curiosity regression checks passed.');

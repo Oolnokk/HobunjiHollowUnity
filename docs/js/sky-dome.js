@@ -33,7 +33,7 @@
   const CLEAR_CLOUD_COVER = 0.34;
   const OVERCAST_TRANSITION_SECONDS = 4.5;
   const OVERCAST_SKY_START = 0.08;
-  const OVERCAST_DARKNESS_EXPONENT = 1.4; // Used by overcastDarknessStrength to make rain and storms darken nonlinearly as cloud cover thickens.
+  const OVERCAST_DARKNESS_EXPONENT = 1.4; // Used by fullDayLightingState to make rain and storms darken nonlinearly as cloud cover thickens.
   const OVERCAST_TINT_EXPONENT = 0.5; // Used by fullDayLightingState so even light rain has a visibly cool, dim tint.
   const OVERCAST_MAX_DARKNESS_ALPHA = 0.78; // Used by fullDayLightingState to make a daytime storm approach nighttime darkness without changing the lantern or interior passes.
   const LANTERN_ACTIVATION_ALPHA = 0.24;
@@ -41,6 +41,13 @@
   const OVERCAST_AMBIENT_RGB = Object.freeze([48, 56, 68]); // Used by fullDayLightingState for the deep slate tint at peak daytime rain and storm cover.
   const OVERCAST_NIGHT_AMBIENT_RGB = Object.freeze([2, 4, 10]); // Used by fullDayLightingState to stop gray weather tint from making already-dark nights brighter.
   const OVERCAST_SKY_COLORS = Object.freeze({ top: 0xc5cbcc, mid: 0xd6d9d8, bottom: 0xe2e1dc });
+  const TIME_LIGHTING_STOPS = [
+    [6, 40, 30, 80, 0.55], [6.5, 220, 100, 40, 0.38], [7.5, 240, 160, 60, 0.22],
+    [9, 255, 230, 180, 0.08], [12, 255, 245, 210, 0.04], [15, 255, 225, 160, 0.10],
+    [17.5, 255, 160, 60, 0.28], [18.5, 220, 90, 30, 0.42], [19.5, 130, 50, 80, 0.52],
+    [20.5, 30, 30, 80, 0.62], [22, 10, 10, 40, 0.72], [24, 6, 9, 25, 0.78],
+    [26, 5, 8, 23, 0.80], [28, 8, 10, 30, 0.78], [29, 18, 16, 48, 0.70], [30, 40, 30, 80, 0.55],
+  ]; // Reused by the time-of-day lighting sampler on every lookup.
   const SCREEN_SKY_UV_GLSL = `
     uniform vec2 uSkyResolution;
     uniform vec2 uSkyProjectionScale;
@@ -172,14 +179,10 @@
       return;
     }
     const seconds = Math.max(0, Number(dt) || 0);
-    if (seconds <= 0) return;
+    if (seconds <= 0 || overcastLevel === target) return;
     const k = 1 - Math.exp(-seconds / OVERCAST_TRANSITION_SECONDS);
     overcastLevel += (target - overcastLevel) * k;
     if (Math.abs(target - overcastLevel) < 0.0005) overcastLevel = target;
-  }
-
-  function overcastDarknessStrength() {
-    return Math.pow(currentOvercastLevel(), OVERCAST_DARKNESS_EXPONENT);
   }
 
   function currentCloudBucket() {
@@ -187,25 +190,17 @@
     return cover >= 0.9 ? 3 : cover >= 0.7 ? 2 : cover >= 0.5 ? 1 : 0;
   }
 
-  function starVisibility() {
+  function starVisibility(night = nightFactor()) {
     const effectiveCover = lerp(CLEAR_CLOUD_COVER, 1, currentOvercastLevel());
     const coverSuppression = 1 - clamp(effectiveCover * 0.96, 0, 0.98);
-    return clamp(nightFactor() * coverSuppression, 0, 1);
+    return clamp(night * coverSuppression, 0, 1);
   }
 
-  function timeLightingState() {
-    const rawHour = getHour();
+  function timeLightingState(rawHour) {
     const h = rawHour < DAY_ROLLOVER_HOUR ? rawHour + 24 : rawHour; // Used to interpolate continuously across midnight toward the 06:00 rollover.
-    const stops = [
-      [6, 40, 30, 80, 0.55], [6.5, 220, 100, 40, 0.38], [7.5, 240, 160, 60, 0.22],
-      [9, 255, 230, 180, 0.08], [12, 255, 245, 210, 0.04], [15, 255, 225, 160, 0.10],
-      [17.5, 255, 160, 60, 0.28], [18.5, 220, 90, 30, 0.42], [19.5, 130, 50, 80, 0.52],
-      [20.5, 30, 30, 80, 0.62], [22, 10, 10, 40, 0.72], [24, 6, 9, 25, 0.78],
-      [26, 5, 8, 23, 0.80], [28, 8, 10, 30, 0.78], [29, 18, 16, 48, 0.70], [30, 40, 30, 80, 0.55],
-    ];
     let r = 10, g = 10, b = 40, a = 0.72;
-    for (let i = 0; i < stops.length - 1; i++) {
-      const p = stops[i], q = stops[i + 1];
+    for (let i = 0; i < TIME_LIGHTING_STOPS.length - 1; i++) {
+      const p = TIME_LIGHTING_STOPS[i], q = TIME_LIGHTING_STOPS[i + 1];
       if (h < p[0] || h > q[0]) continue;
       const t = (h - p[0]) / (q[0] - p[0]);
       r = lerp(p[1], q[1], t); g = lerp(p[2], q[2], t); b = lerp(p[3], q[3], t); a = lerp(p[4], q[4], t);
@@ -215,10 +210,11 @@
   }
 
   function fullDayLightingState() {
-    let { r, g, b, a } = timeLightingState();
-    const night = nightFactor();
+    const hour = getHour(); // One clock reading for the base color and night weighting.
+    let { r, g, b, a } = timeLightingState(hour);
+    const night = nightFactor(hour);
     const overcast = currentOvercastLevel();
-    const darkness = overcastDarknessStrength();
+    const darkness = Math.pow(overcast, OVERCAST_DARKNESS_EXPONENT);
     // Overcast makes the sky visually brighter/whiter while reducing scene illumination.
     // Scale the extra darkness down at night so storms do not double-stack a daytime
     // darkness penalty on top of the already-dark night curve.
@@ -677,11 +673,11 @@
     });
   }
 
-  function updateSkyColors() {
+  function updateSkyColors(hour) {
     if (!skyMaterial) return;
     const THREE = deps.THREE;
-    const light = timeLightingState();
-    const night = nightFactor();
+    const light = timeLightingState(hour);
+    const night = nightFactor(hour);
     const overcast = currentOvercastLevel();
     const skyLerp = smoothstep(OVERCAST_SKY_START, 1, overcast);
     const c = skyColorScratch || (skyColorScratch = { // Per-frame path: reuse colors instead of allocating ten each frame.
@@ -699,7 +695,7 @@
     skyMaterial.uniforms.uTop.value.copy(top);
     skyMaterial.uniforms.uMid.value.copy(mid);
     skyMaterial.uniforms.uBottom.value.copy(bottom);
-    skyMaterial.uniforms.uNight.value = night; skyMaterial.uniforms.uStars.value = starVisibility();
+    skyMaterial.uniforms.uNight.value = night; skyMaterial.uniforms.uStars.value = starVisibility(night);
   }
 
   function updateCelestialPack(pack, kind, uv, opacity, illumination = 1) {
@@ -742,8 +738,9 @@
     if (!deps || !root) return;
     const safeDt = Math.max(0, Number(dt) || 0);
     advanceOvercast(safeDt);
-    attachToScene(); root.position.copy(deps.camera.position); syncScreenSkyUniforms(); updateSkyColors();
-    const hour = getHour(), sunUv = sunUvForHour(hour), moonUv = moonUvForHour(hour), sunOpacity = celestialOpacity('sun', hour), moonOpacity = celestialOpacity('moon', hour), moonIllumination = lunarIllumination();
+    const hour = getHour(); // Keeps sky colors and celestial positioning on the same frame clock.
+    attachToScene(); root.position.copy(deps.camera.position); syncScreenSkyUniforms(); updateSkyColors(hour);
+    const sunUv = sunUvForHour(hour), moonUv = moonUvForHour(hour), sunOpacity = celestialOpacity('sun', hour), moonOpacity = celestialOpacity('moon', hour), moonIllumination = lunarIllumination();
     updateCelestialPack(sunPack, 'sun', sunUv, sunOpacity, 1); updateCelestialPack(moonPack, 'moon', moonUv, moonOpacity, moonIllumination); updateClouds(safeDt, sunUv, moonUv, sunOpacity, moonOpacity, moonIllumination);
     if (assetsReady && currentCloudBucket() !== lastCloudBucket) rebuildClouds(root.userData.cloudImages || []); if (assetsReady && lunarDay() !== lastMoonDay) rebuildMoon();
     const lanternActive = fullDayLightingState().a >= LANTERN_ACTIVATION_ALPHA;

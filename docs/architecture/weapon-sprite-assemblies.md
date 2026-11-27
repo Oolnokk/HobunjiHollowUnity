@@ -682,3 +682,12 @@ dispose because active flails have independent clones. The original
 
 Run `node scripts/test-weapon-sprite-assemblies.js` and
 `node scripts/test-flail-rope-picker-scale.js` for regression coverage.
+
+### Idle flail head facing
+The independent head retains its last real horizontal actor travel yaw, smoothly leans toward motion and returns exactly upright after stopping. Render yaw obeys the configured NPC portrait deadzone relative to the active camera; the logical heading is unchanged by camera movement. Attack/fishing orientation and fixed connector length remain unchanged. Maximum lean uses the NPC deadzone angle, and live floor clearance accounts for tilt using cached transformed bounds.
+
+On strike-to-neutral, the idle head additionally consumes the final real horizontal rope-attachment velocity (or last nonzero recovery sample if the final keyframe has already stopped). The actor's horizontal velocity is removed from the measured tip motion; locomotion overrides this fallback immediately. It is one-shot, ignores cancelled windup and teleport discontinuities, and each dual-wield head samples its own actual tip. The existing attack pose, rope length, and clearance remain authoritative.
+
+Audit: the tilted plane is solved from its retained yaw and desired up vector, rather than pitching a yawed quaternion (which can reintroduce edge-on yaw). Explicit paused timeline reconstruction resets head state; zero-time draws do not consume transitions. Multi-sprite preview shares the combined-view camera and pose with its inspection pane. Stationary upright heads skip exponential settling work.
+
+Both flexible dual-wield hafts also borrow the fitted source geometry, including adjusted rope attachment coordinates, and inherit the permanent fitted rope scale. Each visible head independently calculates live floor clearance from its own tip and tilt. While grounded, its world-space contact stays fixed until the haft exceeds maximum reach, then moves only the minimum distance needed. The head also retains its previous world orientation while slack, so a rotating haft cannot move an off-center head silhouette. The connector artwork shortens to span the actual distance; the fitted reach and airborne/attack pendulum remain unchanged. The hidden source retains the single pendulum simulation.

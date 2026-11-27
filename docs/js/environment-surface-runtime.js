@@ -46,7 +46,7 @@
   const modules = [
     { global: 'WesternSlopeMountainBackdrops', src: 'js/western-slope-mountain-backdrops.js?v=20261114farCull1' },
     { global: 'NorthernCliffsPlateauBackdrop', src: 'js/northern-cliffs-plateau-backdrop.js?v=20261115giantRockFog3' },
-    { global: 'DistantSceneryViewCull', src: 'js/distant-scenery-view-cull.js?v=20261114farCull1' },
+    { global: 'DistantSceneryViewCull', src: 'js/distant-scenery-view-cull.js?v=20261127boundedProbes1' },
   ]; // One ordered boot slot for both visual-only background scenery systems.
   for (const module of modules) {
     if (window[module.global]) continue;

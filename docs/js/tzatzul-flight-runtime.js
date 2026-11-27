@@ -576,8 +576,8 @@
     const damage = Math.max(1, n(bird.def?.attackDamage, 24));
     const opts = { attacker: bird, tag: 'sharp', aerialSwoop: true, impactCollider: 'body' };
     let applied = false;
-    if (target === deps.player && typeof combat?.damagePlayer === 'function') {
-      combat.damagePlayer(damage, bird.x, bird.y, bird._tzNestMother ? 250 : 75, opts); applied = true; // Cave boss blasts the player across the arena; the existing wall knockback path owns any secondary collision.
+    if ((target === deps.player || window.ActorRegistry?.isPlayer(target)) && typeof combat?.damagePlayer === 'function') {
+      if (window.DamageAuthority) window.DamageAuthority.hit(target, damage, bird.x, bird.y, bird._tzNestMother ? 250 : 75, opts); else combat.damagePlayer(damage, bird.x, bird.y, bird._tzNestMother ? 250 : 75, opts); applied = true; // Cave boss blasts the player across the arena; the existing wall knockback path owns any secondary collision.
     } else if (typeof combat?.damageCreature === 'function') {
       combat.damageCreature(target, damage, bird.x, bird.y, 75, opts); applied = true;
     } else if (target !== deps.player && window.WildlifeSpawn?.applyWildlifeSkirmishDamage) {

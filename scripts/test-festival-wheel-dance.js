@@ -211,10 +211,10 @@ assert(api.start(cancelWalker,cancelA.root));cancelB.root.parent=null;api.update
  assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims,0,'no residual absolute owner after normal cancel');
 }
 
-window.BedLiePose={isActive:()=>true}; // Paired dance cannot take the same root while a mattress approach/lie pose is active.
-assert.equal(api.start(cancelWalker,cancelA.root),false);
-assert.equal(api.diagnostics().lastStartFailure.code,'player-lying-down');
-delete window.BedLiePose;
+window.CharacterActionLocks.isLocked=(id,channel)=>id==='player'&&channel==='movement';
+assert.equal(api.start(cancelWalker,cancelA.root),false,'paired dance respects calendar/shared movement ownership');
+assert.equal(api.diagnostics().lastStartFailure.code,'player-busy');
+delete window.CharacterActionLocks.isLocked;
 window.SocialActionWheel={isDancing:()=>true};
 assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'solo-dance-active');
 window.SocialActionWheel={isDancing:()=>false};activeShot={camera:{id:'busy'}};
@@ -234,7 +234,7 @@ assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnos
  assert(game.includes('getPlayerMesh: () => playerMesh, // Passes the real player avatar root'),'festival injection supplies that same world root');
  assert(game.includes("window.CharacterActionLocks?.isLocked?.('player', 'pose') === true"),'ordinary player mesh update respects paired pose ownership');
  assert(game.includes('window.FestivalWheelDanceRuntime?.isPartner?.(w)'),'ordinary NPC walker update skips the paired partner');
- const choreographyUpdate='window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);'; // The sole paired pose commit point before rendering.
+ const choreographyUpdate='window.FestivalWheelDanceRuntime?.update?.(dt,worldPaused(),currentArea);'; // The sole paired pose commit point before rendering.
  const choreographyOffset=game.indexOf(choreographyUpdate); // Prevent an update-order regression that could hide only the player's dance.
  assert(choreographyOffset>game.indexOf('function updatePlayerMesh(dt)'), 'paired pose runs after the player mesh update function is defined');
  assert(game.lastIndexOf("window.RuntimeFrameScheduler.checkpoint('pre-render');",choreographyOffset)<choreographyOffset,'paired dance must run AFTER ordinary pre-render subscribers');

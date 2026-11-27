@@ -184,12 +184,19 @@
       if (options.length) base.push(pick(options));
     }
     const flourishes = {};
-    for (const slot of slotIds()) if (rnd() < TUNING.FLOURISH_SLOT_FILL_CHANCE && flourishIds.length) flourishes[slot] = pick(flourishIds);
+    const eligibleFlourishes = slot => flourishIds.filter(id => ES()?.allowsFlourishSlot?.(id, slot) !== false); // Loot never rolls an incompatible Flourish.
+    for (const slot of slotIds()) {
+      const eligible = eligibleFlourishes(slot);
+      if (rnd() < TUNING.FLOURISH_SLOT_FILL_CHANCE && eligible.length) flourishes[slot] = pick(eligible);
+    }
     // A relic is only worth unbinding if it teaches something: never roll an
     // empty one. Not every slot is filled, but at least one always is.
     if (!base.length && !Object.keys(flourishes).length) {
       if (rnd() < 0.5 && baseIds.length) base.push(pick(baseIds));
-      else if (flourishIds.length) flourishes[pick(slotIds())] = pick(flourishIds);
+      else if (flourishIds.length) {
+        const slot = pick(slotIds().filter(slot => eligibleFlourishes(slot).length));
+        if (slot) flourishes[slot] = pick(eligibleFlourishes(slot));
+      }
     }
     return { base, flourishes };
   }
@@ -206,6 +213,7 @@
 
   // ── World-inventory (bound) side ────────────────────────────────
   function ensureBoundItemDef(key) {
+    if (typeof key === 'string' && key.startsWith('captainBound_')) return window.BanditCaptainArmaments?.ensureBoundItemDef?.(key) || null;
     const relic = decodeBoundKey(key);
     if (!relic || !deps?.ITEM_DEFS) return null;
     const shape = SHAPES[relic.shape];
@@ -227,7 +235,7 @@
   }
 
   function ensureInventoryItemDefs(inventory = deps?.inventory) {
-    for (const key of Object.keys(inventory || {})) if (key.startsWith(BOUND_PREFIX) || key.startsWith(FEY_BOUND_PREFIX)) ensureBoundItemDef(key);
+    for (const key of Object.keys(inventory || {})) if (key.startsWith(BOUND_PREFIX) || key.startsWith(FEY_BOUND_PREFIX) || key.startsWith('captainBound_')) ensureBoundItemDef(key);
   }
 
   function grantBoundRelic(relic = makeRelic()) {
@@ -391,7 +399,7 @@
             if (!es.addBase(toolKey, id, { deferSave: true })) throw new Error('Invalid bound Base enchantment');
           }
           for (const [slot, id] of Object.entries(relic.enchantments.flourishes)) {
-            if (!es.setFlourish(toolKey, slot, id, { deferSave: true })) throw new Error('Invalid bound Flourish');
+            if (!es.setFlourish(toolKey, slot, id, { deferSave: true, importLegacySlot: true })) throw new Error('Invalid bound Flourish'); // A pre-restriction relic must unbind without discarding its saved enchantments.
           }
         }
         const learned = es?.unlockFromState?.(relic.enchantments, { deferSave: true }) || [];
@@ -444,7 +452,7 @@
     if (!requireService('flourish')) return { ok: false, reason: 'collection' };
     const es = ES();
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
-    if (!slotIds().includes(slotId)) return { ok: false, reason: 'slot' };
+    if (!slotIds().includes(slotId) || es.allowsFlourishSlot?.(id, slotId) === false) return { ok: false, reason: 'slot' };
     if (!es.isFlourishUnlocked(id, slotId)) return { ok: false, reason: 'locked' };
     if (isFeyEnchantment(id) && !requireFeyQuest()) return { ok: false, reason: 'quest' };
     if (es.flourishForSlot(slotId, weaponKey) === id) return { ok: false, reason: 'unchanged' };
@@ -562,6 +570,22 @@
 
     window.TownMagicCheckpoint?.renderCustody?.(list, { heading, note, row, button, esc }); // Confiscated items stay visible first on small screens; Garanki owns the legal registration UI.
     window.ArtifactCollection?.render?.(list, { heading, note, row, button });
+    // Captain registration uses Garanki's existing licensed services without requiring artifact donations.
+    const captains = window.BanditCaptainArmaments;
+    const captainWeapons = captains?.boundWeaponsInInventory?.() || [];
+    if (captainWeapons.length) {
+      list.appendChild(heading('Captain weapon registration'));
+      list.appendChild(note("A Delver's Guild license permits re-registration. Garanki learns the weapon's enchantments when its binding is transferred to you."));
+      for (const { boundKey, record } of captainWeapons) {
+        const price = captains.registrationPrice(record);
+        const feyBlocked = record.origin === 'Fey' && !feyServiceUnlocked();
+        const licensed = window.DelversGuild?.isMember?.() === true;
+        list.appendChild(row('🗡️', esc(captains.boundLabel(record)),
+          esc(describeEnchantments(record.enchantments).join(' · ')),
+          [button(feyBlocked ? 'Finish The Knotworked Armament' : !licensed ? 'Guild license required' : `Re-register (${price}g)`,
+            () => captains.registerBoundWeapon(boundKey), !licensed || feyBlocked || !Number.isFinite(price) || (deps.inventory.gold || 0) < price)]));
+      }
+    }
     // Bound relics
     list.appendChild(heading(feyServiceUnlocked() ? 'Bound relics · Harlyao and Fey' : 'Bound relics · Harlyao'));
     if (!window.ArtifactCollection?.unlocked?.('unbind')) list.appendChild(note('Donate your first artifact to unlock weapon unbinding.'));
@@ -589,7 +613,7 @@
     // Enchant a weapon
     list.appendChild(heading('Enchant a weapon'));
     if (window.DelversGuild && !window.DelversGuild.canEnchant()) list.appendChild(note('New enchanting is illegal. Bring Garanki four distinct artifacts and speak with him privately at his tent to earn his trust.'));
-    const weapons = ownedWeaponKeys().filter(key => feyServiceUnlocked() || gear()?.harlyaoRelics?.[key]?.origin !== 'Fey'); // Hidden Fey gear cannot enter the service panel before the dialogue unlock.
+    const weapons = ownedWeaponKeys().filter(key => feyServiceUnlocked() || (gear()?.harlyaoRelics?.[key]?.origin !== 'Fey' && gear()?.captainModularWeapons?.[key]?.origin !== 'Fey')); // Hidden Fey gear cannot enter the service panel before the dialogue unlock.
     if (!weapons.length) { list.appendChild(note('You own no weapons.')); return; }
     const equipped = window.Combat?.deps?.currentWeaponKey?.();
     if (!weapons.includes(selectedWeaponKey)) selectedWeaponKey = weapons.includes(equipped) ? equipped : weapons[0];
@@ -624,7 +648,7 @@
     for (const slotId of slotIds()) {
       const current = state.flourishes?.[slotId] || '';
       const options = [{ value: '', label: '— choose a learned Flourish —' }]
-        .concat(unlocked.flourish.filter(entry => entry.slotId === slotId).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
+        .concat(unlocked.flourish.filter(entry => entry.slotId === slotId && es?.allowsFlourishSlot?.(entry.id, slotId) !== false).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
       const pick = select(options, current);
       const any = options.length > 1;
       const apply = button('Apply', () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any); // Fey Flourishes use the same doubled fee and pretend label as Base magic.
@@ -650,6 +674,7 @@
   function debugSnapshot() {
     return {
       bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, origin: entry.origin, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments, entry.origin) })),
+      boundCaptains: window.BanditCaptainArmaments?.boundWeaponsInInventory?.() || [], // Mobile diagnostics include pending registrations.
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
       latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
       unlocks: ES()?.unlockedOptions?.() || null,

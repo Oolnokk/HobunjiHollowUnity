@@ -6,11 +6,11 @@
     "js/npc-activities.js?v=20261109lazyCaveNpc1",
     "js/npc-social-stimuli.js?v=20260902a",
     "js/npc-activity-planner.js?v=20261111communion1",
-    "js/npc-scheduling.js?v=20261122tothalNpc2",
-    "js/npc-farm-plots.js?v=20261121ginjuSoil1",
+    "js/npc-scheduling.js?v=20261118fiveBlossomsAudience1Tothal1127",
+    "js/npc-farm-plots.js?v=20261126familyWork2",
     "config/npcs/social-relations.js?v=20261111communion1",
     "js/npc-social-seating-bridge.js?v=20261111communion1",
-    "js/npc-pathfinding.js?v=20261122intentionalDescent1",
+    "js/npc-pathfinding.js?v=20261125childVatTeleport1",
     "js/nohuknuk-wilderness.js?v=20261110nohukWaterCache1",
     "js/npc-route-graph.js?v=20261009h41465f3"
 ]; // Independently versioned modules loaded before game.js.

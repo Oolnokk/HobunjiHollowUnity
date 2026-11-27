@@ -38,3 +38,9 @@ Confiscation writes the world-owned custody record **before** removing the chara
 - Existing regression: \`node scripts/test-delvers-guild-story.js\`.
 - On mobile: open Garanki's Artifacts, Custody & Enchanting panel, then **Custody diagnostics** for a readable state snapshot. Dev Companion state provider: \`townMagicCheckpoint\`.
 - Reusable integrations: \`TownMagicCheckpoint.pending()\`, \`hasCustody()\`, \`onTownEntered(...)\`, \`registerAndReturn(id)\`; catalog predicates can recognize additional bound/cursed item types without a second law-enforcement system.
+
+## Captain armaments
+
+New enchanted captain modular drops (including Big Rootledoot Fey rewards) use a portable `captainBound_` pack key carrying exact tool identity, stars, origin, enchantments and particle choices. They cannot enter equipment or unlock enchanting knowledge on pickup. Spearhead recognizes the key even before its inventory definition is reconstructed. A licensed player may reclaim the still-bound weapon from custody, which permits carrying it through town; Garanki's Captain weapon registration service then transfers the binding, charges the ordinary unbinding fee (Fey surcharge preserved), and atomically grants the weapon and teaches its Base and slot-specific Flourish enchantments. Fey registration still requires The Knotworked Armament. Already owned weapons remain unchanged, and donor recipes remain locked. No per-frame work is added.
+
+Regression: `node scripts/test-bandit-captain-armaments.js` exercises the real custody, registration, transaction, and enchantment-unlock modules, including save rejection and failed reclaim. `node scripts/test-rootledoot-encounters.js` verifies that the unique bound reward is included in the harvest rollback.

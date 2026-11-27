@@ -24,6 +24,7 @@
   let H = null; // RomanceSystem.helpers
   let fam = defaultFamily();
   const spawning = new Set(); // child ids whose walker build is in flight
+  const vatWorkerPoses = new Map(); // Active vat ID → live child pose; never serialized.
   let lastRawDay = null;
   let announceTimers = [];
   let doorstepRegistered = false;
@@ -34,7 +35,7 @@
   let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
 
   function defaultFamily() {
-    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null };
+    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null, farmChores: { livestock: '', processing: {} } };
   }
   const cfg = () => H?.cfg?.()?.family || {};
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -68,14 +69,60 @@
     const xp = num(stage === 'adult' ? record.xp : record.usefulnessXp, 0);
     return { level, xp, nextLevelXp: Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * level * level, stage, intelligenceMultiplier: multiplier };
   }
+  // One saved usefulness XP pool; infants accumulate experience but cannot perform jobs.
+  const BABY_OBSERVATION_XP_RATE = 0.01; // Share of actual player skill XP while back-stowed.
+  let unsubscribeObservationXp = null; // One subscription across family reinitialization.
+  let lastUsefulnessPopup = null; // Latest attempted award, exposed through the existing family mobile diagnostics.
+  function presentUsefulnessGain(id, gain) {
+    if (!(gain > 0)) return;
+    const walker = H?.findWalker?.(id);
+    const carried = window.FamilyBabyAmbientVoice?.anchorFor?.(id); // Use the real visible arms/back proxy rather than its hidden walker.
+    const root = carried?.group || walker?.root;
+    const shown = window.WorldPopupText?.showFamilyUsefulness?.(root, gain) === true;
+    lastUsefulnessPopup = { id, gain, shown };
+    window.FarmPanel?.refreshVisibleFamilyProgress?.(); // Event-driven only; no frame loop or closed-menu rendering.
+  }
+  function awardObservationXp(event) {
+    if (!H?.rawDay) return; // Progression can fire before the family system has initialized.
+    const gain = Number(event?.amount) * BABY_OBSERVATION_XP_RATE;
+    if (!Number.isFinite(gain) || gain <= 0) return;
+    const id = window.Shattercasks?.backCarriedInfo?.()?.id;
+    if (!id) return;
+    const child = fam.children.find(c => ['basket', 'toddler'].includes(phaseOf(c)) && id === 'family_baby_' + c.id);
+    if (!child) return;
+    const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    child.usefulnessLevel = clamp(Math.floor(num(child.usefulnessLevel, 1)), 1, maxLevel);
+    if (child.usefulnessLevel >= maxLevel) return; // Maxed babies need no repeated saves.
+    const previousLevel = child.usefulnessLevel, previousXp = Math.max(0, num(child.usefulnessXp, 0));
+    child.usefulnessXp = previousXp + gain;
+    while (child.usefulnessLevel < maxLevel) {
+      const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * child.usefulnessLevel ** 2;
+      if (child.usefulnessXp < threshold) break;
+      child.usefulnessXp -= threshold;
+      child.usefulnessLevel++;
+      H.toast(`⭐ ${child.name} reached usefulness level ${child.usefulnessLevel}!`, true);
+    }
+    if (child.usefulnessLevel >= maxLevel) child.usefulnessXp = 0;
+    presentUsefulnessGain(child.id, appliedUsefulnessGain(previousLevel, previousXp, child.usefulnessLevel, child.usefulnessXp));
+    // Family XP is world-member data, not character skill metadata; coalesce writes with the existing idle-save queue.
+    if (deps().scheduleMemberSave) deps().scheduleMemberSave(); else H.persist();
+  }
+  function appliedUsefulnessGain(beforeLevel, beforeXp, afterLevel, afterXp) {
+    let gain = afterXp - beforeXp;
+    const factor = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40));
+    for (let level = beforeLevel; level < afterLevel; level++) gain += factor * level * level;
+    return Math.max(0, gain); // Report actual accepted XP, including level-up carryover but excluding overflow at cap.
+  }
   function awardWork(workerId, action) {
     const profile = workProfileFor(workerId);
     if (!profile || !Object.prototype.hasOwnProperty.call(workActions(), action)) return null;
     const { record, stage, multiplier } = profile;
     const levelKey = stage === 'adult' ? 'level' : 'usefulnessLevel';
     const xpKey = stage === 'adult' ? 'xp' : 'usefulnessXp';
-    record[xpKey] = Math.max(0, num(record[xpKey], 0)) + Math.max(0, num(workActions()[action], 0)) * Math.max(0, multiplier);
     const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    if (record[levelKey] >= maxLevel) return usefulnessInfo(workerId);
+    const previousLevel = record[levelKey], previousXp = Math.max(0, num(record[xpKey], 0));
+    record[xpKey] = previousXp + Math.max(0, num(workActions()[action], 0)) * Math.max(0, multiplier);
     while (record[levelKey] < maxLevel) {
       const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * record[levelKey] * record[levelKey];
       if (record[xpKey] < threshold) break;
@@ -84,6 +131,7 @@
       H.toast(`⭐ ${stage === 'adult' ? H.npcName(workerId) : record.name} reached usefulness level ${record[levelKey]}!`, true);
     }
     if (record[levelKey] >= maxLevel) record[xpKey] = 0;
+    presentUsefulnessGain(workerId, appliedUsefulnessGain(previousLevel, previousXp, record[levelKey], record[xpKey]));
     H.persist();
     return usefulnessInfo(workerId);
   }
@@ -281,9 +329,68 @@
     if (age < Math.max(basketDays() + toddlingDays(), num(cfg().independentAfterDays, 168))) return 'toddler';
     return 'child';
   }
+  function voiceAgePhase(npcId) {
+    if (!H?.rawDay) return null; // Saved family ages are unavailable until the family system has initialized.
+    const child = fam.children.find(entry => entry.id === npcId); // Only a recognized family child can override a generic NPC's authored age band.
+    if (!child) return null;
+    const phase = phaseOf(child); // Share the existing day-accurate basket/toddler/child transition.
+    return phase === 'basket' ? 'baby' : phase;
+  }
   function isBasketBaby(npcId) {
     const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
     return !!child && phaseOf(child) === 'basket';
+  }
+  function isCarryFollowing(id) {
+    const child = fam.children.find(entry => entry.id === id); // Only active carry/follow ownership, not age or speech.
+    return !!child && (phaseOf(child) === 'basket' || phaseOf(child) === 'toddler') && !!(child.carryBy || child.followPlayer || window.FamilyBabyBurdens?.isProxyActive?.(id));
+  }
+  function isProtectedFamilyChild(id) {
+    const child = fam.children.find(entry => entry.id === id); // Carry protection does not change toddler speech or ordinary development.
+    if (!child) return false;
+    const phase = phaseOf(child);
+    return phase === 'basket' || window.FamilyBabyBurdens?.isProxyActive?.(id) === true
+      || (phase === 'toddler' && !!(child.carryBy || child.followPlayer));
+  }
+  function isFamilyWorkUnavailable(id) { return isProtectedFamilyChild(id); }
+  function familyProgress() {
+    const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    const spouse = R?.getSpouse?.(), rows = [];
+    if (spouse?.npcId) rows.push({ id: spouse.npcId, name: H?.npcName?.(spouse.npcId) || spouse.npcId, role: 'Spouse', ...usefulnessInfo(spouse.npcId), maxLevel });
+    for (const child of fam.children) {
+      const phase = phaseOf(child);
+      const info = usefulnessInfo(child.id) || { level: num(child.usefulnessLevel, 1), xp: num(child.usefulnessXp, 0),
+        nextLevelXp: Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * num(child.usefulnessLevel, 1) ** 2 };
+      rows.push({ id: child.id, name: child.name, role: phase === 'basket' ? 'Baby' : phase === 'toddler' ? 'Toddler' : 'Child',
+        ...info, maxLevel, vatId: child.vatId || null, carrying: child.carryBy || null, following: !!child.followPlayer });
+    }
+    return rows;
+  }
+  function retargetProcessingAssignment(oldId, newId) {
+    const assignments = fam.farmChores?.processing;
+    if (!assignments || !Object.prototype.hasOwnProperty.call(assignments, oldId) || oldId === newId) return false;
+    const assignment = assignments[oldId];
+    delete assignments[oldId];
+    if (newId) assignments[newId] = assignment;
+    window.NpcFarmPlots?.invalidateFamilyChores?.(); H?.persist?.(); return true;
+  }
+  function familyChores() { return fam.farmChores || null; } // Saved assignments belong to the family, not the map.
+  function setFamilyChore(kind, stationId, workerId, inputKey = '') {
+    if (workerId && !workProfileFor(workerId)) return false;
+    if (!fam.farmChores || typeof fam.farmChores !== 'object') fam.farmChores = { livestock: '', processing: {} };
+    if (kind === 'livestock') fam.farmChores.livestock = workerId || '';
+    else if (kind === 'processing') {
+      if (!window.FarmProduction?.isFamilyStation?.(stationId, inputKey)) return false;
+      if (!fam.farmChores.processing || typeof fam.farmChores.processing !== 'object') fam.farmChores.processing = {};
+      if (!workerId && !inputKey) delete fam.farmChores.processing[stationId];
+      else fam.farmChores.processing[stationId] = { workerId: workerId || '', inputKey: inputKey || '' };
+    } else return false;
+    window.NpcFarmPlots?.invalidateFamilyChores?.(); H.persist(); return true;
+  }
+  function releaseCarryFollow(id) {
+    const child = fam.children.find(entry => entry.id === id);
+    if (!child || phaseOf(child) !== 'toddler' || child.carryBy || !child.followPlayer) return false;
+    child.followPlayer = false; child.carrySpot = null;
+    window.FamilyBabyFollow?.clearWalker?.(walkerFor(child)); H.persist(); return true;
   }
   function babyAmbientSound(npcId, random = Math.random) {
     return window.FamilyBabyAmbientVoice?.sound?.(npcId, isBasketBaby(npcId), cfg(), random) || null; // Voice module owns phonetics, family owns saved age.
@@ -299,9 +406,15 @@
   }
   function phaseScaleFields(phase) {
     const scales = cfg().phaseScales?.[phase];
-    return scales ? { childBodyScale: scales.body, childHeadScale: scales.head } : {};
+    return scales ? { childBodyScale: scales.height ?? scales.body, childBodyHeightScale: scales.height ?? scales.body, childBodyWidthScale: scales.width ?? scales.body, childHeadScale: scales.head, childWidthConvergence: scales.widthConvergence ?? 0, childHeightConvergence: scales.heightConvergence ?? 0 } : {}; // Both independent axes travel with family baby/toddler records.
   }
   function childRecord(child) {
+    const phase = phaseOf(child); // Same stage identity for the portrait and any direct record consumer.
+    const stage = phase === 'basket' ? 'baby' : phase;
+    const api = window.HobunjiCharacterAgeRigConfig;
+    const individual = api?.profileFor?.(stage,child.speciesId,child.gender);
+    const adult = window.HobunjiCharacterRigScale?.scaleFor?.(child.speciesId,child.gender) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(child.speciesId,child.gender);
+    const resolved = individual ? api.relativeProfile(individual,adult) : null;
     return {
       id: child.id,
       name: child.name,
@@ -314,7 +427,9 @@
       role: 'child',
       homeId: 'farmhouse', // Keeps village children anchored to their farm household.
       tags: phaseOf(child) === 'child' ? ['child', 'family', 'villager'] : ['child', 'family'], // Join village activities only when old enough.
-      ...phaseScaleFields(phaseOf(child)),
+      childGrowthStage: stage, // Explicit phase for species/gender baked proportion lookup.
+      ...phaseScaleFields(phase),
+      ...(resolved ? {childBodyScale:resolved.height,childBodyHeightScale:resolved.height,childBodyWidthScale:resolved.width,childHeadScale:resolved.head,childWidthConvergence:0,childHeightConvergence:0} : {}),
       bio: `Your ${child.gender === 'female' ? 'daughter' : 'son'}.`,
       relationship: { canBefriend: true, canDate: false, canMarry: false, maxHearts: 10 },
       ambientGreetings: true, // Babies babble and toddlers have first words without a new speech loop.
@@ -364,7 +479,127 @@
     return bed ? { area: 'interior', c: bed.c, r: bed.r } : null;
   }
   function vatObject(child) {
-    return child.vatId ? (window.DewVats?.listSqueezingVats?.() || []).find(obj => obj.id === child.vatId) || null : null;
+    if (!child.vatId) return null;
+    const vats = window.DewVats; // Same current processor registry used by the full list API.
+    if (vats?.findSqueezingVatById) return vats.findSqueezingVatById(child.vatId);
+    return (vats?.listSqueezingVats?.() || []).find(obj => obj.id === child.vatId) || null; // Compatibility for isolated tools/test fixtures.
+  }
+
+  function vatJobActive(vat) {
+    const job = vat?.getJob?.(); // A pending real batch may start before the ordinary 08:00 shift.
+    if (job?.kind !== 'timed') return false;
+    const now = window.ItemProcessing?.gameHour?.(); // Offscreen processors may retain expired jobs until the farm is rendered again.
+    return job.readyAtGameHour == null || !Number.isFinite(now)
+      || !Number.isFinite(Number(job.readyAtGameHour)) || Number(job.readyAtGameHour) > now;
+  }
+
+  // The furniture timeline already resolves the animated sack surface, bounce,
+  // and placement yaw for livestock. Children have a floor-relative rig root
+  // rather than an animal shoulderGrip: put their feet on that same point.
+  function vatPoseBlocked(child, walker) {
+    const participant = 'npc:' + child.id; // Shared action-lock identity, including paired animations.
+    return walker?.combatTutorialSuspended || window.FestivalWheelDanceRuntime?.isPartner?.(walker)
+      || window.CharacterActionLocks?.isLocked?.(participant, 'pose')
+      || window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(child.id);
+  }
+
+  function canPoseVatWorker(child, walker, vatId) {
+    const target = walker?.currentScheduleTarget; // Only an arrived worker on the matching chore may enter the animation.
+    const root = walker?.root;
+    const hour = H?.clockHour?.();
+    return !!(child && child.vatId === vatId && !isFamilyWorkUnavailable(child.id)
+      && deps().getCurrentArea?.() === 'farm'
+      && walker?.area === 'farm' && root?.parent && root.visible !== false && !vatPoseBlocked(child, walker)
+      && target?.area === 'farm' && target.vatId === vatId
+      && Math.hypot(root.position.x - target.c - 0.5, root.position.z - target.r - 0.5) <= 0.35
+      && ((hour >= 8 && hour < 18) || vatJobActive(vatObject(child))));
+  }
+
+  function clearVatWorkerPose(vatId) {
+    const pose = vatWorkerPoses.get(vatId); // Owns the temporary render matrix, not the schedule position.
+    if (!pose) return;
+    vatWorkerPoses.delete(vatId);
+    const root = pose.root; // Release the originally captured rig even if the walker has since rebuilt its root.
+    root.removeEventListener?.('removed', pose.release);
+    root.matrixAutoUpdate = true;
+    root.updateMatrix();
+    root.matrixWorldNeedsUpdate = true;
+    pose.movementLock?.release?.(); // No held movement channel survives the batch or rig removal.
+    pose.walker._npcScheduleDecision = null;
+    if (pose.shadow) pose.shadow.visible = pose.shadowVisible;
+    window.__farmLog?.(`[squeezing-vat] child ${pose.childId} released from ${vatId}`, 'info');
+  }
+
+  function setVatWorkerPose(vatId, targetMatrix, worker) {
+    if (!worker?.familyWorker || !targetMatrix) { clearVatWorkerPose(vatId); return null; }
+    const child = fam.children.find(entry => entry.id === worker.id);
+    let pose = vatWorkerPoses.get(vatId); // Cached matrix/vector scratch for the active worker.
+    const walker = H?.findWalker?.(worker.id);
+    if (!canPoseVatWorker(child, walker, vatId)) {
+      clearVatWorkerPose(vatId); pose = null;
+      // The processor calls this only while a timed batch is running. Unlike
+      // ordinary schedules, a short squeeze must not finish while its worker
+      // is still walking out of the farmhouse or across the farm.
+      if (!child || child.vatId !== vatId || phaseOf(child) === 'basket'
+        || deps().getCurrentArea?.() !== 'farm' || !walker?.root || walker.root.visible === false
+        || walker.root.matrixAutoUpdate === false
+        || vatPoseBlocked(child, walker)) return null;
+      const target = childTarget(child); // Reuse the same validated approach tile and active-shift policy.
+      if (target?.vatId !== vatId || !window.NpcPathfinding?.teleportWalkerToTile?.(walker, 'farm', target)
+        || !canPoseVatWorker(child, walker, vatId)) return null;
+      window.__farmLog?.(`[squeezing-vat] child ${child.id} relocated to ${vatId}`, 'info');
+    }
+    const root = walker.root;
+    if (pose && (pose.walker !== walker || pose.root !== root)) { clearVatWorkerPose(vatId); pose = null; }
+    if (!pose) {
+      if (!root.matrixAutoUpdate) return null; // Never take over another presentation's manual matrix.
+      pose = { childId: child.id, walker, root, matrix: targetMatrix.clone(),
+        position: root.position.clone(), quaternion: root.quaternion.clone(), scale: root.scale.clone(),
+        shadow: walker.groundShadow, shadowVisible: walker.groundShadow?.visible,
+        movementLock: window.CharacterActionLocks?.acquire?.({
+          owner: 'child-vat', participants: ['npc:' + child.id], channels: ['movement'],
+        }), // Keep the logical feet on the safe tile; the shared animation owns the visible hop.
+        release: () => clearVatWorkerPose(vatId) };
+      vatWorkerPoses.set(vatId, pose);
+      root.addEventListener?.('removed', pose.release); // Despawn/area transfer releases the live rig before reparenting.
+      root.matrixAutoUpdate = false;
+      window.__farmLog?.(`[squeezing-vat] child ${child.id} stomping at ${vatId}`, 'info');
+    }
+    root.parent.updateWorldMatrix(true, false);
+    pose.matrix.copy(root.parent.matrixWorld).invert().multiply(targetMatrix);
+    pose.matrix.decompose(pose.position, pose.quaternion, pose.scale);
+    // Use the animated contact position and rotation, but never inherit the
+    // cloth/liquid mesh's squash scale. The child's own authored body scale
+    // lives inside this root and remains intact.
+    root.matrix.copy(pose.matrix.compose(pose.position, pose.quaternion, root.scale));
+    root.matrixWorldNeedsUpdate = true;
+    root.updateWorldMatrix?.(false, false); // Later NPC gaze and targeting systems see the current rendered root, not last frame's contact.
+    if (walker.groundShadow) walker.groundShadow.visible = false;
+    return worker;
+  }
+
+  function pruneVatWorkerPoses() {
+    for (const [vatId, pose] of vatWorkerPoses) {
+      const child = fam.children.find(entry => entry.id === pose.childId); // Only active jobs are examined.
+      if (!canPoseVatWorker(child, pose.walker, vatId)
+        || H.findWalker(pose.childId) !== pose.walker || pose.walker.root !== pose.root
+        || !vatJobActive(vatObject(child))) clearVatWorkerPose(vatId);
+    }
+  }
+
+  function retargetVatAssignments(oldVatId, newVatId) {
+    if (!oldVatId || oldVatId === newVatId) return 0;
+    clearVatWorkerPose(oldVatId);
+    let changed = 0; // Count saved family assignments moved or removed with the physical processor.
+    for (const child of fam.children) {
+      if (child.vatId !== oldVatId) continue;
+      child.vatId = newVatId || null;
+      const walker = H?.findWalker?.(child.id);
+      if (walker) walker._npcScheduleDecision = null; // Do not walk toward the previous tile for the rest of the schedule lease.
+      changed++;
+    }
+    if (changed) H?.persist?.();
+    return changed;
   }
 
   function childVisitDay(child) {
@@ -405,22 +640,33 @@
   function childTarget(child) {
     const phase = phaseOf(child);
     const hour = H.clockHour();
-    if (phase === 'basket') {
+    if (phase === 'basket' || isCarryFollowing(child.id) || window.FamilyBabyBurdens?.isProxyActive?.(child.id)) {
+      const following = window.FamilyBabyFollow?.scheduleTarget?.(child, phase);
+      if (following) return following;
       const carry = child.carrySpot; // Saved safe landing spot: a put-down or thrown baby does not teleport to the basket on reload.
       if (carry && window.FamilyBabyBurdens?.isAllowedArea?.(carry.area)
           && Number.isFinite(carry.c) && Number.isFinite(carry.r)) {
         return { area: carry.area, c: carry.c, r: carry.r, activity: 'resting after being carried' };
       }
+      if (phase !== 'basket') return null; // A carried child has no independent farm or vat schedule.
       const basket = basketObject(child);
       if (basket) return { area: 'interior', c: basket.col, r: basket.row, activity: 'napping in the basket' };
       const anchor = interiorAnchor();
       return anchor ? { ...anchor, activity: 'napping' } : null;
     }
+    const vat = vatObject(child);
+    // Daily squeezing starts at the 06:00 rollover. A real unfinished batch
+    // takes priority over sleep/free time so the child can actually reach it.
+    // Do not postpone production, alter output, or hold a child at an expired
+    // offscreen job that has not yet been collected by processor VFX.
+    if (vat && ((hour >= 8 && hour < 18) || vatJobActive(vat)) && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
+      const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
+      if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat', vatId: vat.id };
+    }
     if (hour >= 20 || hour < 7) {
       const anchor = interiorAnchor();
       return anchor ? { ...anchor, activity: 'sleeping' } : null;
     }
-    const vat = vatObject(child);
     if (!child.vatId) {
       const chore = window.NpcFarmPlots?.targetFor?.({ id: child.id }, { familyOnly: true }); // Toddlers may work on the farm, but never visit town.
       if (chore) return chore;
@@ -428,10 +674,6 @@
         const townTarget = childTownTarget(child);
         if (townTarget) return townTarget;
       }
-    }
-    if (vat && hour >= 8 && hour < 18 && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
-      const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
-      if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat' };
     }
     const door = H.farmhouseDoorAnchor();
     if (door) return { area: 'farm', c: door.c, r: door.r, activity: phase === 'toddler' ? 'toddling on the farm' : 'playing outside', stationId: `child_play_${child.id}`, wanderMode: 'radius', wanderRadiusTiles: phase === 'toddler' ? 3 : 7 };
@@ -444,13 +686,23 @@
     return child ? childTarget(child) : null;
   }
 
+  function activeVatScheduleOverride(rec) {
+    if (!rec?.isChild) return null;
+    const child = fam.children.find(entry => entry.id === rec.id);
+    if (!child?.vatId || isFamilyWorkUnavailable(child.id) || !vatJobActive(vatObject(child))) return null;
+    const target = childTarget(child); // Only real unfinished batches outrank follow/wait and other ordinary schedules.
+    return target?.vatId === child.vatId ? target : null;
+  }
+
   function updateChild(child) {
     ensureWalker(child);
     const walker = walkerFor(child);
     const phase = phaseOf(child);
     syncChildAmbientGreetings(child); // Sync only on phase changes; module caches the last stage.
+    if (phase === 'child' && !window.FamilyBabyBurdens?.isProxyActive?.(child.id)) { child.followPlayer = false; window.FamilyBabyFollow?.clearWalker?.(walker); }
     if (phase !== 'basket' && child.basketId) {
       const basket = basketObject(child);
+      if (child.carryBy === 'spouse') window.FamilyBabyBurdens?.returnToBasket?.(child, basket); // Finish newborn-only automatic care before removing the cradle.
       if (basket) deps().furniture?.removeInteriorFurniture?.(basket.id);
       child.basketId = null;
       H.toast(`🧸 ${child.name} has outgrown the baby basket and is toddling around!`, true);
@@ -469,12 +721,19 @@
     // scale + the rig scaler's head compensation), so a child who grows into
     // the next phase is rebuilt once with that phase's body/head scale.
     if (walker._childPhase && walker._childPhase !== phase && deps().despawnNpcWalker) {
+      if (window.FamilyBabyBurdens?.isProxyActive?.(child.id)) return; // Finish the active carry/throw before rebuilding the source avatar at its new age.
+      window.FamilyBabyBurdens?.discard?.(child.id, phase === 'toddler' && !!child.followPlayer); // Growth preserves a dropped baby's safe position/follow state.
       deps().despawnNpcWalker(walker);
       return;
     }
     walker._childPhase = phase;
-    if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker?.(walker, cfg().phaseScales?.basket); // Resize newborn-only visuals before the carried proxy copies their GLBs.
-    window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist()); // One real infant burden proxies the hidden walker; no alternate movement/throw system.
+    const individual = window.HobunjiCharacterAgeRigConfig?.profileFor?.(phase === 'basket' ? 'baby' : phase, child.speciesId, child.gender);
+    const limbScale = individual || (phase === 'child' ? cfg().childLimbModifiers : cfg().phaseScales?.[phase]); // Same age-global hand/foot fields exported by Full Character Scale.
+    if (phase === 'basket' || (limbScale && (Number(limbScale.hand) !== 1 || Number(limbScale.foot) !== 1))) {
+      window.FamilyBabyLimbs?.balanceWalker?.(walker, limbScale); // Preserve the baby's carried proxy, and support optional toddler/child limb modifiers without a permanent new frame loop.
+    }
+    window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist());
+    window.FamilyBabyFollow?.bind?.(child, walker, phase); // The normal walker tick owns the baby's movement.
     if (phase === 'toddler') {
       const footing = toddlingFooting(child) / 99;
       const now = performance.now();
@@ -495,6 +754,7 @@
     for (const child of fam.children) {
       const walker = walkerFor(child);
       if (!walker?.root) continue;
+      if (phaseOf(child) === 'basket' || child.carryBy || window.FamilyBabyBurdens?.isProxyActive?.(child.id)) continue; // Only carried/airborne children and crawling babies suppress the normal toddler wobble.
       const footing = num(walker._toddlingFooting, 0) / 99;
       const tumbling = walker._toddleTumbleUntil > now;
       const target = tumbling ? 1.15 : Math.sin(now / 160 + child.id.length) * 0.11 * footing;
@@ -516,7 +776,7 @@
   }
 
   function onNewDay() {
-    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId })); // Squeezing is a child/toddler chore; spouses retain ordinary plot work.
+    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket' && !isFamilyWorkUnavailable(child.id)).map(child => ({ id: child.id, name: child.name, vatId: child.vatId })); // Squeezing is a child/toddler chore; spouses retain ordinary plot work.
     for (const worker of workers) {
       const status = window.DewVats?.squeezePileWithExternalWorker?.(worker.vatId);
       if (status === 'started') {
@@ -563,8 +823,9 @@
   function commandOptionsFor(walker) {
     const child = fam.children.find(entry => entry.id === walker?.rec?.id);
     const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // Spouses retain baby handoffs, but never receive vat-work commands.
-    if (!child || phaseOf(child) === 'basket') return infantOptions;
+    if (!child || isFamilyWorkUnavailable(child.id)) return infantOptions;
     if (child.vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
+      clearVatWorkerPose(child.vatId);
       window.DewVats?.setExternalWorker?.(child.vatId, null);
       child.vatId = null;
       H.persist(); H.say(walker, 'Okay! Time to play!');
@@ -863,6 +1124,7 @@
     maybeAnnounce();
     if (fam.pendingBaby && !pendingBabyPromptScheduled && !uiOverlay && !deps().isDialogueOpen?.()) promptPendingBaby();
     syncChildFriendships();
+    pruneVatWorkerPoses();
     for (const child of fam.children) updateChild(child);
     window.FamilyBabyCare?.tick?.(); // One lightweight family update, not a new per-frame character behavior.
     syncFrameSubscriber();
@@ -871,22 +1133,51 @@
   function init(romanceApi) {
     R = romanceApi;
     H = romanceApi.helpers;
+    unsubscribeObservationXp?.();
+    unsubscribeObservationXp = window.SkillSystem?.onAward?.(awardObservationXp) || null;
+    window.NpcScheduling?.registerTargetOverride?.('romance-family-vat', activeVatScheduleOverride, 20); // Below festival ceremony priority (100).
     window.NpcScheduling?.registerTargetOverride?.('romance-family', scheduleOverride);
     window.addEventListener('hobunji-time-passage', onTimePassage);
     registerDoorstep();
     registerDevCompanionPanel();
     return api;
   }
-  function serialize() { return JSON.parse(JSON.stringify(fam)); }
+  function serialize() {
+    const saved = JSON.parse(JSON.stringify(fam));
+    // The shared Burden slots are not serialized. Save a safe nearby landing for
+    // a baby held in the wilderness so reloading never sends them back home.
+    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player') : [];
+    const spot = carried.length && window.FamilyBabyFollow?.savedCarrySpot?.();
+    for (const child of carried) {
+      child.carryBy = null; child.carryPose = null; // Physical burden slots are not persisted.
+      const canFollow = ['basket', 'toddler'].includes(phaseOf(child)) && !!spot;
+      child.carrySpot = canFollow ? { ...spot } : null;
+      child.followPlayer = canFollow;
+    }
+    return saved;
+  }
   function restore(saved) {
+    for (const vatId of vatWorkerPoses.keys()) clearVatWorkerPose(vatId);
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
+    window.FamilyBabyFollow?.clear?.();
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
+    lastUsefulnessPopup = null;
+    window.NpcFarmPlots?.invalidateFamilyChores?.(); // Old family claims cannot survive a world/character change.
     window.FamilyBabyAmbientVoice?.clear?.(); // Remove prior world child speech registrations.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
+    if (!fam.farmChores || typeof fam.farmChores !== 'object') fam.farmChores = { livestock: '', processing: {} }; // Legacy saves remain opt-in.
+    for (const child of fam.children) {
+      // Older saves may contain an unsaved hand/back slot; don't block ensureWalker on a nonexistent proxy.
+      if (child.carryBy) { child.carryBy = null; child.carryPose = null; child.followPlayer = !!child.carrySpot && !!child.followPlayer; }
+      if (!child.carrySpot || !window.FamilyBabyBurdens?.isAllowedArea?.(child.carrySpot.area)) {
+        child.carrySpot = null; child.followPlayer = false;
+      }
+      if (H?.rawDay && phaseOf(child) === 'child') child.followPlayer = false;
+    }
     delete fam.spouseVatId; // Retired adult vat jobs from older saves are discarded; clearFamilyWorkers above releases their runtime shifts.
     delete fam.spouseVatWorkerId; // No obsolete spouse vat ownership is written back on the next save.
     // Save migration: shorten an existing three-month gestation to one month. A pre-migration
@@ -908,17 +1199,19 @@
       pendingAdoption: !!fam.pendingAdoption,
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
+      lastUsefulnessPopup,
+      babyFollow: window.FamilyBabyFollow?.snapshot?.() || null,
       babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
       babyBurdens: window.FamilyBabyBurdens?.snapshot?.() || null, // Mobile shows proxy geometry, reverse-art policy and parent scene without devtools.
-      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
+      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, vatStomping: vatWorkerPoses.get(child.vatId)?.childId === child.id, usefulness: usefulnessInfo(child.id) || (phaseOf(child) === 'basket' ? { level: num(child.usefulnessLevel, 1), xp: num(child.usefulnessXp, 0), observationRate: BABY_OBSERVATION_XP_RATE } : null), spawned: !!walkerFor(child) })), 
     };
   }
 
   const api = {
-    init, tick, serialize, restore, snapshot,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound,
+    init, tick, serialize, restore, snapshot, setVatWorkerPose, clearVatWorkerPose, retargetVatAssignments,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, isCarryFollowing, isProtectedFamilyChild, isFamilyWorkUnavailable, releaseCarryFollow, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
-    usefulnessInfo, awardWork, rollWorkQuality,
+    usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp, familyChores, setFamilyChore, familyProgress, retargetProcessingAssignment,
     isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.
     openDreamPicker, openNamingPrompt, createChild,
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.

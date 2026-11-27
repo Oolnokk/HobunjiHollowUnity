@@ -31,7 +31,7 @@
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261115torchGripIdle2';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261127dualPommel1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   // The pose schema, the legacy rest poses and the stance-baking policy (power,
   // spacing, Neutral handedness) are window.SharedAttackPose's, shared with
@@ -60,7 +60,7 @@
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
     lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114, flailLengthScale: 0.6 }),
     dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114, flailLengthScale: 0.6 }),
-    dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
+    dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 37, yaw: 68, bodyYaw: -40, roll: 114 }),
   });
   const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
   const PREVIOUS_TORCH_HOLD_STANCES = Object.freeze([0.16, 0].map(y => Object.freeze({ x: 0.13, y, z: 0.03, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 })).concat([Object.freeze({ x: -0.03, y: 0.08, z: 0.17, pitch: 10, yaw: 0, bodyYaw: 0, roll: 0 })])); // The two previously shipped defaults; customized poses keep precedence.
@@ -479,6 +479,17 @@
     window.__farmLog?.(`[weapon-stance] ${signature}`, 'combat');
   }
 
+  // The stance owner decides whether a held object can be adjusted without
+  // stealing a work stroke, a ranged release, or a mouth-attached prop.
+  function groundPoseEligible(slot, itemKey, holder) {
+    if (!slot || !itemKey || !holder?.visible) return false;
+    if (slot === 'weapon') return true;
+    if (holder.userData?.headRelativeBackPlane) return false;
+    // Fitted tools retain their physical length through an authored stroke.
+    // The solver itself suppresses the idle pose correction during that stroke.
+    return true;
+  }
+
   function installHolderMatrixHook() {
     const holder = deps?.toolHolder;
     if (!holder || holderHookInstalled || holder.__weaponToolStanceMatrixHook) return;
@@ -537,6 +548,39 @@
         SAP.anchorScaleAtPoint?.(this, grip, targetPose.scale);
       }
 
+      const clearance = window.HeldGroundPose; // Use the very same raw grip basis as the hand driver, before transient child-plane twist.
+      const assembly=window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def);
+      const clearanceContext = clearance?.enabled?.() && groundPoseEligible(activeSlot,itemKey,this)
+        // The solver checks exact topology, including emitter-only children.
+        ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
+      if(clearanceContext) {
+        clearanceContext.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh)==='flail'||!!assembly?.flail; // Suspension is solved separately by its existing owner.
+        const scaleIdentity=clearanceContext.scaleIdentity; // Height readiness matters only for explicitly enabled species scaling.
+        const grips=window.HobunjiHandToolGrips;
+        clearanceContext.fitOnly=activeSlot!=='weapon'&&(attackInProgress||authoredToolActionActive||(activeSlot==='ranged'&&(!!window.RangedWeapons?.playerActionState?.()||!!window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()))); // Preserve established length, never rotate a working stroke.
+        clearanceContext.preserveOrientation=!!targetPose?.worldUpright||(activeSlot==='ranged'&&window.RangedWeapons?.isLoaded?.(itemKey)!==false); // Flame up and loaded reticle bearing are authored constraints.
+        clearanceContext.allowFit=activeSlot!=='ranged'&&!torchIdle&&(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
+        if(clearanceContext.allowFit&&mesh&&clearance.needsFit(clearanceContext,mesh))grips?.applyHeldItemPlacement?.(mesh,itemKey,clearanceContext.gripContext||'melee',scaleIdentity);
+        // Size every weapon from the authored LIGHT neutral, regardless of
+        // which stance actually owns this frame. Restore the live pose before baking.
+        if(clearanceContext.allowFit&&window.PlayerJump?.heldPoseGrounded?.()===true&&mesh&&clearance.needsFit(clearanceContext,mesh)){
+          const livePosition=this.position.clone(),liveQuaternion=this.quaternion.clone();
+          try{
+            if(savedPosition&&savedQuaternion){this.position.copy(savedPosition);this.quaternion.copy(savedQuaternion);}
+            const fitPose=weaponIdleClass(itemKey,def)||activeSlot==='weapon'?idleStances.lightWeapon:targetPose; // Dual-role tools keep one physical fit; dedicated tools use their own Neutral.
+            if(fitPose){
+              const lightFrame=applyRelativeHolderPose(this,sourcePose,fitPose);
+              if(weaponIdleClass(itemKey,def)||activeSlot==='weapon'||torchIdle)deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
+            }
+            this.updateMatrix();
+            clearanceContext.lightReference=this.matrix.clone(); // Local matrix; solver composes the same world/plane transforms.
+            clearanceContext.lightReferenceFlailScale=SAP.validFlailLength?.(idleStances.lightWeapon.flailLengthScale)??1;
+          }finally{
+            this.position.copy(livePosition);this.quaternion.copy(liveQuaternion);this.updateMatrix();
+          }
+        }
+      }
+
       // game.js writes a -90° local-Z twist into the child plane whenever the
       // active animation is sweep. That twist belongs to the sweep motion, not
       // to the shared Heavy/Light Neutral stance. Cancel it at Neutral itself
@@ -560,6 +604,20 @@
 
       let result;
       try {
+        if (clearanceContext) {
+          const beforePosition=this.position.clone(),beforeQuaternion=this.quaternion.clone();
+          let adjusted=clearance.constrainWeapon(this,mesh,clearanceContext);
+          // Crossed/rotated ranged art or other noncanonical rigid equipment
+          // still gets contact clearance, but never a fabricated shortening band.
+          if(!adjusted&&activeSlot!=='weapon'&&!clearanceContext.fitOnly&&!clearanceContext.flexibleHaft&&clearance.needsCarryFallback?.()){
+            adjusted=clearance.constrainCarry?.(this,mesh,{rig:clearanceContext.rig,itemKey,grip:clearanceContext.primary?.position,
+              preserveOrientation:true, // Unsupported sprite bases have no proven calibrated rotation pivot; translate both sockets instead.
+              otherGrips:clearanceContext.secondary?[clearanceContext.secondary.position]:null});
+          }
+          if(adjusted) {
+            savedPosition ||= beforePosition; savedQuaternion ||= beforeQuaternion;
+          }
+        } else clearance?.clear?.(); // Unequip, unsupported assemblies or A/B disable restore the original geometry.
         result = originalUpdateMatrixWorld.call(this, force);
         lastBakedHolderMatrixWorld = this.matrixWorld.clone();
       } finally {
@@ -740,6 +798,7 @@
     sweepTwistCancelWeight,
     idleBodyYawSnapshot,
     stanceEngaged,
+    groundPoseEligible, // Shared with the hand driver so the visible holder is baked before either grip.
     // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
     getRuntimeState,
     debugSnapshot,

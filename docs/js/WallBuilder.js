@@ -665,6 +665,9 @@
       inst.castShadow = true;
       inst.receiveShadow = true;
       inst.raycast = boundedInstancedRaycast;
+      // Publish the brick category before bounds enrollment, so the brick
+      // LOD pass never iterates unrelated forest/grass instance meshes.
+      if (name === WALL_DEFAULT_GLB_NAME) inst.userData.hobunjiBrickLod = true;
       root.InstancedMeshBounds?.tag(inst); // Camera-pass and depth-replay culls (js/instanced-mesh-view-cull.js).
       group.add(inst);
     }

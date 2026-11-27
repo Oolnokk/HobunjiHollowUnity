@@ -104,12 +104,12 @@ canvas{display:block;width:100%;height:100%}
   .compactGrid{grid-template-columns:1fr}
 }
 </style>
-<script src="../../js/panel-ui.js?v=20261123hcc4f9a1"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261117flailAssembly1"></script>
+<script src="../../js/panel-ui.js?v=20261127hff4edbf"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261127mirrorFlail2"></script>
 <script src="../../js/color-fill.js?v=20261117h93b0e83"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261115torchWick2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261117flailAssembly1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261127h7b0ee2059"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -160,8 +160,8 @@ canvas{display:block;width:100%;height:100%}
         <input id="neckStrength" type="range" min="0" max="2" step="0.05" value="1">
       </div>
       <div class="field">
-        <label>Neck weight radius <span id="neckRadiusVal">30.0% height</span></label>
-        <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.30">
+        <label>Neck weight radius <span id="neckRadiusVal">30% height</span></label>
+        <input id="neckRadius" type="range" min="0.005" max="0.30" step="0.001" value="0.30">
       </div>
       <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHeadSkinVertices" style="width:auto;margin-right:6px">Show head-skinned vertices</label>
       <div class="help">These controls affect only the preview rig and are never exported with the animation.</div>
@@ -305,36 +305,40 @@ canvas{display:block;width:100%;height:100%}
   <div id="debug" style="display:none"></div>
 </div>
 </div>
-<script src="../../js/local-db-overrides.js?v=20261122hsharedDatabaseAudit2"></script>
+<script src="../../js/local-db-overrides.js?v=20261124sharedBodyColors2"></script>
 <script src="../../config/scratchbones-config.js?v=20261122h5cf4b6d"></script>
-<script src="../../config/attachment-rig-profiles.js?v=20261122hRigAnimal28"></script>
-<script src="../../config/character-rig-scale-defaults.js?v=20261113longoranscales5"></script>
-<script src="../../js/character-rig-scale.js?v=20261031hb701fa8"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261127rootAnatomyRevert16"></script>
+<script src="../../config/character-rig-scale-defaults.js?v=20261126h1dd486d"></script>
+<script src="../../js/character-rig-scale.js?v=20261127followupPerf1"></script>
 <script src="../../js/color-fill.js?v=20261117h93b0e83"></script>
-<script src="../../js/beard-hood-cutout.js?v=20261122clockwiseWholeRim1"></script>
-<script src="../../js/portrait-utils.js?v=20261123beardHoodMerge1"></script>
+<script src="../../js/beard-hood-cutout.js?v=20261125pristineCloth1"></script>
+<script src="../../js/portrait-utils.js?v=20261126inkParity1"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20261122neckForwardCard1"></script>
+<script src="../../js/hat-overflow-plane.js?v=20261124hatOverflow1"></script>
+<script src="../../js/character-spine.js?v=20261126neckBlendConsolidate3"></script>
+<script src="../../js/png-plane-avatar.js?v=20261127rootRigAudit18"></script>
 <script src="../../js/species-pose-scaling.js?v=20261115shoulders3"></script>
-<script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
+<script src="../../js/character-dimensions.js?v=20261126neckAudit2"></script>
 <!-- Feet + pants for the preview: the SAME procedural leg handle and pants garment the game uses, so body sink bends the real legs. -->
 <script src="../../js/leg-bones.js?v=20261013hb53d07e"></script>
-<script src="../../js/procedural-leg-animation.js?v=20261119hf31697a"></script>
+<script src="../../js/procedural-leg-animation.js?v=20261127rootRigAudit19"></script>
 <script src="../../config/pants-rigs.js?v=20261015h74422e2"></script>
-<script src="../../js/pants-rig-core.js?v=20261117waistWidthSolve1"></script>
-<script src="../../js/pants-garment-renderer.js?v=20261122childWaist1"></script>
+<script src="../../js/pants-rig-core.js?v=20261126exactSeamsAudit1"></script>
+<script src="../../js/pants-garment-renderer.js?v=20261126exactSeamsAudit1"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-action-animations.js?v=20261123npcBabyCarry1"></script>
-<script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
+<script src="../../js/held-ground-pose.js?v=20261127carryClearFast1"></script>
+<script src="../../js/weapon-geometry-author.js?v=20261127h5626b5b"></script>
+<script src="../../js/held-action-animations.js?v=20261127idleMainMerge1"></script>
+<script src="../../js/kurraya-instrument.js?v=20261127idleMainMerge1"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
-<script src="../../js/combat/shared-attack-pose.js?v=20261111flailPose1"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261126flailHeadLean1"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261115h01bf772"></script>
 <script src="../../js/festival-ancestor-figures.js?v=20261111h74436ed"></script> <!-- Shared carved_smooth portrait recoloring; the Statue Author reuses the exact Tzizkhanash mask. -->
@@ -344,6 +348,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 // Statue Author freezes the already-assembled rig into reusable furniture geometry.
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+window.HeldGroundPose?.configurePreview?.(THREE); // Same solver as the game, with the editor's actual grid floor.
 
 const $ = id => document.getElementById(id);
 const logLines = [];
@@ -458,7 +463,9 @@ let lastScaledWorldPose = { x: 0, y: 0, z: 0 }; // Debug copy of the same final 
 let avatarModel = null;
 let handCalibrationPresentationActive = false; // Dedicated hand-calibration tab hides every animation/tool visual while the neutral GLB↔paper workflow is active.
 let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
-let neckPreviewRadiusFrac = 0.30; // Used by applyPreviewNeckWeights() as the broad default shoulder-to-head blend relative to avatar height.
+let neckPreviewRadiusFrac = 0.30; // Diagnostic slider follows the native painted-head band until the user changes its radius.
+let neckPreviewRadiusCustomized = false; // Only an explicit radius edit may override production skin weights.
+const neckPreviewOriginalSkin = new WeakMap(); // Keeps one original skinIndex/skinWeight copy per editor geometry for reversible diagnostics.
 let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
 let headSkinVertexOverlay = null; // Used to dispose and replace the optional head-weight marker cloud when the avatar or radius changes.
 let headSkinVertexCount = 0; // Used by refreshPreviewDebug() so mobile users can confirm that the overlay found weighted vertices.
@@ -500,17 +507,31 @@ function disposeHeadSkinVertexOverlay() {
 // The shared rig duplicates triangle and back-face vertices, so the position
 // key keeps the diagnostic readable while retaining a source index that can
 // be transformed by the actual live skeleton in updateHeadSkinVertexOverlay().
+// Both overlay visualization and diagnostics count the actual rotating head bones (8/9).
+// Slot 1 is now the nonrotating placement bone; treating it as head rotation would falsely
+// highlight shoulders and torso when an authored species has a large head-height offset.
+function neckTurnWeightAtVertex(indices, weights, index) {
+  let total = 0; // Sum of actual rotation and head-scale influences for this vertex.
+  for (let slot = 0; slot < 4; slot++) {
+    const offset = index * 4 + slot; // Same packed vertex offset in the skinIndex and skinWeight buffers.
+    const bone = indices.array[offset]; // Index 7 is placement only, so omit it from the head rotation heatmap.
+    if (bone === 8 || bone === 9) total += weights.array[offset];
+  }
+  return total;
+}
+
 function rebuildHeadSkinVertexOverlay() {
   disposeHeadSkinVertexOverlay();
   if (!$('showHeadSkinVertices').checked) return;
   const skinnedPlane = avatarModel?.userData?.neckRig?.skinnedPlane;
   const positions = skinnedPlane?.geometry?.getAttribute?.('position');
   const weights = skinnedPlane?.geometry?.getAttribute?.('skinWeight');
-  if (!skinnedPlane || !positions || !weights) return;
+  const indices = skinnedPlane?.geometry?.getAttribute?.('skinIndex'); // Needed to distinguish the nonrotating placement bone from actual head-turn influence.
+  if (!skinnedPlane || !positions || !weights || !indices) return;
 
   const uniqueVertices = new Map(); // Maps a plane-local position to one original geometry index and its head weight.
   for (let index = 0; index < positions.count; index++) {
-    const headWeight = weights.getY(index);
+    const headWeight = neckTurnWeightAtVertex(indices, weights, index);
     if (headWeight <= 0.01) continue;
     const key = `${positions.getX(index).toFixed(5)}|${positions.getY(index).toFixed(5)}|${positions.getZ(index).toFixed(5)}`;
     if (!uniqueVertices.has(key)) uniqueVertices.set(key, { index, headWeight });
@@ -578,39 +599,69 @@ function updateHeadSkinVertexOverlay() {
   markerPositions.needsUpdate = true;
 }
 
-// Rewrites only the preview mesh's two skin-weight channels. The default
-// radius reproduces png-plane-avatar.js's 30%-of-height full-body falloff;
-// changing it is diagnostic and never touches exported animation data.
+// Preserves the game's complete four-slot skin weights by default. An explicit
+// radius edit alone can rewrite preview-only weights, and it is reversible. It
+// matches the restored broad falloff around the species-specific neck joint; the radius slider is diagnostic
+// and never touches exported animation data.
 function applyPreviewNeckWeights() {
-  const neckRig = avatarModel?.userData?.neckRig; // Used to reach the current avatar's skinned preview plane and detected pivot.
+  const neckRig = avatarModel?.userData?.neckRig; // Current game-built avatar owns the actual per-species neck skin.
   const geometry = neckRig?.skinnedPlane?.geometry;
   const positions = geometry?.getAttribute?.('position');
+  const indices = geometry?.getAttribute?.('skinIndex');
   const weights = geometry?.getAttribute?.('skinWeight');
-  const modelHeight = Number(avatarModel?.userData?.portraitModelHeight) || MODEL_W; // Used to keep the radius visually consistent across species sizes.
-  if (!neckRig?.available || !positions || !weights || !neckRig.neckLocal) {
+  const modelHeight = Number(avatarModel?.userData?.portraitModelHeight) || MODEL_W; // Unit basis of the edit-only radius slider.
+  if (!neckRig?.available || !positions || !indices || !weights || !neckRig.neckLocal) {
     neckWeightSummary = 'neck rig unavailable';
     refreshPreviewDebug();
     return false;
   }
-
-  const radius = Math.max(modelHeight * 0.01, modelHeight * neckPreviewRadiusFrac); // Used as the vertical root-to-head weight transition band.
-  let influenced = 0;
-  let fullWeight = 0;
-  for (let index = 0; index < positions.count; index++) {
-    const y = positions.getY(index);
-    const headWeight = smoothstep01((y - (neckRig.neckLocal.y - radius * 0.55)) / radius);
-    weights.setXYZW(index, 1 - headWeight, headWeight, 0, 0);
-    if (headWeight > 0.01) influenced++;
-    if (headWeight > 0.99) fullWeight++;
+  const originalRadius = Number(geometry.userData?.blendHeight) || modelHeight * .30; // Source of truth: native head sprite's last pixel.
+  let baseline = neckPreviewOriginalSkin.get(geometry); // The original per-vertex indices and weights allow exact reset after dragging.
+  if (neckPreviewRadiusCustomized && !baseline) {
+    baseline = { indices: indices.array.slice(), weights: weights.array.slice() }; // Copy once only after intentional diagnostic editing.
+    neckPreviewOriginalSkin.set(geometry, baseline);
   }
-  weights.needsUpdate = true;
-  const centroid = neckRig.headCentroidPx; // Used in the mobile-visible diagnostic to verify the base-head alpha scan landed on the sprite.
+  if (baseline) {
+    indices.array.set(baseline.indices);
+    weights.array.set(baseline.weights);
+    indices.needsUpdate = true;
+    weights.needsUpdate = true;
+  }
+  const radius = neckPreviewRadiusCustomized
+    ? Math.max(modelHeight * .005, modelHeight * neckPreviewRadiusFrac)
+    : originalRadius;
+  if (!neckPreviewRadiusCustomized) {
+    neckPreviewRadiusFrac = originalRadius / modelHeight; // Reflect the detected species sprite, not a hardcoded 200-pixel assumption.
+    $('neckRadius').value = String(neckPreviewRadiusFrac);
+    $('neckRadiusVal').textContent = `${(neckPreviewRadiusFrac * 100).toFixed(2)}% height (native)`;
+  }
+  if (neckPreviewRadiusCustomized && neckRig.headOffsetJoint) {
+    const sourceWidth = Number(avatarModel?.userData?.sourceCanvas?.width) || 200; // Horizontal head scale gate uses the original sprite's pixel space.
+    const modelWidth = Number(avatarModel?.userData?.portraitModelWidth) || MODEL_W; // Maps the skinned vertex X back to source pixels.
+    const skin = {}; // Shared runtime skin scratch; diagnostic edits only replace the turn radius.
+    for (let index = 0; index < positions.count; index++) {
+      const y = positions.getY(index);
+      const pixelX = (positions.getX(index) / modelWidth + .5) * sourceWidth;
+      window.PNGPlaneAvatar.humanoidSpineSkinAt(y, neckRig.neckLocal.y, modelHeight, pixelX, neckRig.headBoundsPx, radius, originalRadius, neckRig.spineBase?.y, neckRig.spinePosteriorY, skin);
+      indices.setXYZW(index, skin.a, 8, 9, skin.b);
+      weights.setXYZW(index, skin.wa, skin.turn, skin.scale, skin.wb);
+    }
+    indices.needsUpdate = true;
+    weights.needsUpdate = true;
+  }
+  let influenced = 0, fullWeight = 0;
+  for (let index = 0; index < positions.count; index++) {
+    const turnWeight = neckTurnWeightAtVertex(indices, weights, index); // Reuse the mobile overlay's actual rotation-bone weighting without per-vertex array allocations.
+    if (turnWeight > .01) influenced++;
+    if (turnWeight > .99) fullWeight++;
+  }
+  const centroid = neckRig.headCentroidPx; // Mobile-visible diagnostic verifies the base-head scan stayed at this species' source pixels.
   const centroidSummary = centroid ? ` · head centroid ${centroid.x.toFixed(1)},${centroid.y.toFixed(1)} px` : '';
-  const planeCellCount = Number(geometry.userData?.planeCellCount) || 0; // Used to confirm that the mobile-visible preview is weighting the complete PNG plane.
-  const coverageMode = geometry.userData?.coverageMode || 'unknown coverage'; // Used in the visible diagnostic to catch a regression to alpha-cropped skinning.
-  const materials = Array.isArray(neckRig.skinnedPlane.material) ? neckRig.skinnedPlane.material : [neckRig.skinnedPlane.material]; // Used to expose the r128 skin-shader flag in the visible diagnostic.
+  const planeCellCount = Number(geometry.userData?.planeCellCount) || 0; // Original plane topology stays intact.
+  const coverageMode = geometry.userData?.coverageMode || 'unknown coverage';
+  const materials = Array.isArray(neckRig.skinnedPlane.material) ? neckRig.skinnedPlane.material : [neckRig.skinnedPlane.material];
   const skinShaderSummary = `${materials.filter(material => material?.skinning === true).length}/${materials.length} skin shaders`;
-  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · ${planeCellCount} whole-plane grid cells · ${coverageMode} · ${skinShaderSummary} · pivot y ${neckRig.neckLocal.y.toFixed(3)}${centroidSummary}`;
+  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% rotating · ${Math.round(fullWeight / positions.count * 100)}% full · ${planeCellCount} grid cells · ${coverageMode} · ${skinShaderSummary} · joint ${geometry.userData.neckPivotPx?.toFixed(1) ?? '?'} px · blend top ${geometry.userData.neckBandPx?.top?.toFixed(1) ?? '?'} px, bottom ${geometry.userData.neckBandPx?.bottom?.toFixed(1) ?? '?'} px · ${neckPreviewRadiusCustomized ? 'radius override' : 'native'}${centroidSummary}`;
   rebuildHeadSkinVertexOverlay();
   refreshPreviewDebug();
   return true;
@@ -619,7 +670,9 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
+    (()=>{const s=window.HeldGroundPose?.snapshot?.()||{};return 'Ground fit: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+'\n  Band shortening: '+(100*(s.shortening||0)).toFixed(1)+'% · rotation: '+(s.angleDeg||0).toFixed(2)+'° · haft Y: '+String(s.originalMinY??'—')+' → '+String(s.finalMinY??'—')+'\n  Light full-weapon Y: '+String(s.lightOriginalMinY??'—')+' → '+String(s.lightFittedMinY??'—')+(s.dual?'\n  Right: '+JSON.stringify(s.dual.right)+'\n  Left: '+JSON.stringify(s.dual.left):'');})(),
+    'Latest: flail heads use locomotion, or the last strike-return tip velocity when stationary; scrubbing replays from a clean head state.',
+    (()=>{const h=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().find(e=>e.attached&&e.idleHead)?.idleHead;return h?'Flail idle head: '+h.source+' · yaw '+((h.yaw||0)*180/Math.PI).toFixed(1)+'° · displayed '+((h.renderedYaw||0)*180/Math.PI).toFixed(1)+'° · lean '+(Math.hypot(h.leanX,h.leanZ)*180/Math.PI).toFixed(1)+'°':'Flail idle head: select a flail';})(),
     (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
@@ -643,14 +696,14 @@ function refreshPreviewDebug() {
 
 function syncNeckPreviewControls() {
   neckPreviewStrength = Math.max(0, Math.min(2, Number($('neckStrength').value) || 0));
-  neckPreviewRadiusFrac = Math.max(0.01, Math.min(0.30, Number($('neckRadius').value) || 0.30));
+  neckPreviewRadiusFrac = Math.max(0.005, Math.min(0.30, Number($('neckRadius').value) || 0.30));
   $('neckStrengthVal').textContent = `${Math.round(neckPreviewStrength * 100)}%`;
   $('neckRadiusVal').textContent = `${(neckPreviewRadiusFrac * 100).toFixed(1)}% height`;
   applyPreviewNeckWeights();
 }
 
 $('neckStrength').addEventListener('input', syncNeckPreviewControls);
-$('neckRadius').addEventListener('input', syncNeckPreviewControls);
+$('neckRadius').addEventListener('input', () => { neckPreviewRadiusCustomized = true; syncNeckPreviewControls(); }); // Native skin weights are never overwritten by initial editor controls.
 $('neckStrength').addEventListener('change', () => logDebug(`Neck preview strength: ${Math.round(neckPreviewStrength * 100)}%`));
 $('neckRadius').addEventListener('change', () => logDebug(`Neck preview weight radius: ${(neckPreviewRadiusFrac * 100).toFixed(1)}% of avatar height`));
 $('showHeadSkinVertices').addEventListener('change', () => {
@@ -774,6 +827,7 @@ const SPECIES_LIST = [
   { id: 'engh-sho', label: 'Engh-sho' },
   { id: 'kenkari', label: 'Kenkari' },
   { id: 'tletingan', label: 'Tletingan' },
+  { id: 'nuhongan', label: 'Nuhongan' }, // Preserve the smaller subspecies identity through the actual shared avatar builder.
   { id: 'rakakoan', label: "Rakako'an" },
   { id: 'mashtzarr', label: 'Mashtzarr' },
 ];
@@ -1094,7 +1148,7 @@ async function setToolSprite(toolKey) {
   const g = await buildToolPlaneMesh(toolKey);
   if (requestId !== toolSpriteRequestId) { if (g) disposeToolPlaneMesh(g); return; }
   window.HobunjiDualWieldWeaponVisuals?.teardown?.();
-  if (toolPlaneMesh) { window.HobunjiWeaponSpriteAssemblies?.drop(toolPlaneMesh); toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
+  if (toolPlaneMesh) { window.HeldGroundPose?.clear?.(); window.HobunjiWeaponSpriteAssemblies?.drop(toolPlaneMesh); toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
   toolPlaneMesh = g;
   currentToolKey = toolKey;
   if (g) { toolHolder.add(g); logDebug(`Weapon sprite set: ${toolKey}`); }
@@ -1878,6 +1932,88 @@ function applyBodySink(pct, bodyYawDeg = 0) {
   characterBodyScaleRoot.position.y = (characterBodyScaleRoot.userData.sinkBaseY || 0) - worldSink;
   toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
 }
+// Build the permanent fit from Light Neutral without changing the visible
+// pose or mutating the authored animation. Both paths use the same orbit map.
+const groundPreviewReferenceHolder=new THREE.Object3D(); // Scratch local holder for one-time physical fitting.
+const groundPreviewReferencePlane=new THREE.Matrix4();
+const groundPreviewPoint=new THREE.Vector3();
+const groundPreviewPlanePosition=new THREE.Vector3();
+const groundPreviewPlaneQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2);
+let groundPreviewStatusAt=0; // Throttle the mobile-readable status, not the actual clearance solve.
+function applyWeaponGroundPreview(){
+  const solver=window.HeldGroundPose,grips=window.HobunjiHandToolGrips,plane=toolPlaneMesh?.userData?.toolPlane;
+  if(!solver)return;
+  if(!solver.enabled())return solver.skip('raw-preview');
+  if(gizmoMode!=='off')return solver.skip('raw-gizmo-authoring');
+  if(handCalibrationPresentationActive||anim.headRelative)return solver.skip('attached-or-calibration-preview');
+  const gripContext=grips?.currentGripContext?.()||'melee'; // Nonweapon Neutral uses the same visible grip as gameplay.
+  const carryAction=['torch_idle','torch_swing','held_item_small','held_item_large','flask_throw','kurraya_play_note'].includes(currentActionId);
+  if(carryAction||!TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis||gripContext==='ranged'){
+    if(!toolPlaneMesh||!grips||!avatarModel||(previewT>0.00001&&previewT<0.99999))return solver.skip('authored-action-preview');
+    const identity={speciesId:currentSpeciesId,gender:currentGender};
+    const primary=grips.primaryGripForTool?.(currentToolKey,gripContext,identity);
+    const secondary=grips.secondaryGripForTool?.(currentToolKey,gripContext,identity);
+    solver.skip('carry-preview');
+    solver.constrainCarry(toolHolder,toolPlaneMesh,{itemKey:currentToolKey,preview:true,rig:{parent:characterBodyScaleRoot},posteriorLocalY:editorLegs?.standingPosteriorY,grip:primary?.position,otherGrips:secondary?[secondary.position]:null,preserveOrientation:!!anim.worldUpright||currentActionId==='torch_idle'||(gripContext==='ranged'&&!currentActionId.endsWith('_load'))||!!secondary||currentActionId==='held_item_large'||currentActionId==='kurraya_play_note'});
+    toolHolder.updateMatrix();
+    return;
+  }
+  if(!plane||!grips||!avatarModel)return solver.skip('waiting-for-preview');
+  const identity={speciesId:currentSpeciesId,gender:currentGender};
+  const height=grips.actualCharacterHeight?.(identity.speciesId,identity.gender);
+  const profile=grips.groundProfileForTool?.(currentToolKey);
+  const light=currentActionId==='light_idle'?anim.poses.neutral:
+    window.AttackIdleStanceEditor?.lightPoseForPreview?.()||TOOL_PRESETS.find(entry=>entry.id==='light_weapon_idle')?.neutral;
+  if(!light)return solver.skip('waiting-for-light-stance');
+  const context=window.ProceduralHandFrameDriver?.groundPoseContext?.(toolHolder,currentToolKey)||{
+    rig:{parent:characterBodyScaleRoot},itemKey:currentToolKey,preview:true,
+    authoredGripZ:grips.authoredPrimaryGripForTool(currentToolKey,'melee')?.position?.z,
+    primary:grips.primaryGripForTool(currentToolKey,'melee',identity),secondary:null,
+    basis:new THREE.Quaternion(),profile,
+  }; // Geometry still previews while the hand rig is loading.
+  context.preview=true;context.posteriorLocalY=editorLegs?.standingPosteriorY;context.profile=profile;context.scaleIdentity=identity;
+  context.dual=!!grips.dualWieldStateForTool?.(currentToolKey,'melee',identity);
+  if(context.dual)context.offhand=grips.offhandPrimaryGripForTool?.(currentToolKey,'melee',identity);
+  context.fitIdentity=[currentSpeciesId,currentGender,height||'',characterBodyScaleRoot.scale.y,
+    toolPlaneMesh.scale.z,toolBaseRestY,light.x,light.y,light.z,light.pitch,light.yaw,light.roll,light.bodyYaw,light.bodySink,light.scale,light.flailLengthScale].join(':');
+  context.allowFit=!grips.heightMultiplierForTool(currentToolKey)||grips.characterHeightReady?.(identity.speciesId,identity.gender)!==false;
+  context.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(toolPlaneMesh)==='flail'||!!window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(currentToolKey,TOOL_SPRITE_DEFS[currentToolKey])?.flail;
+  toolBase.updateWorldMatrix(true,false);
+  context.rig.parent.updateWorldMatrix?.(true,false);
+  if(context.allowFit&&solver.needsFit(context,toolPlaneMesh)){
+    grips.applyHeldItemPlacement(toolPlaneMesh,currentToolKey,'melee',identity); // First fit must see current whole-weapon size.
+    const sink=currentActionId==='light_idle'?appliedWorldSink:
+      Math.max(0,Number(light.bodySink??SharedAttackPose.idleBodySinkPct())||0)/100*currentAvatarModelHeight*characterBodyScaleRoot.scale.y;
+    const rawY=(toolBaseRestY-sink)/(characterBodyScaleRoot.scale.y||1);
+    groundPreviewPoint.set(toolBase.position.x+(Number(light.x)||0),rawY+(Number(light.y)||0),toolBase.position.z+(Number(light.z)||0));
+    window.HobunjiSpeciesPoseScale?.transformPosePoint?.(groundPreviewPoint,{
+      cx:0,cy:currentPoseCentroidY,cz:0,floorY:0,baseY:rawY,speciesId:currentSpeciesId,gender:currentGender,
+      modelHeight:currentAvatarModelHeight,armLength:currentArmLength,poseOrbitScale:currentPoseOrbitScale,
+    });
+    groundPreviewReferenceHolder.position.copy(groundPreviewPoint).sub(toolBase.position);
+    groundPreviewReferenceHolder.quaternion.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(light.pitch||0),THREE.MathUtils.degToRad(light.yaw||0),THREE.MathUtils.degToRad(light.roll||0),'YXZ'));
+    groundPreviewReferenceHolder.scale.setScalar(safeNum(light.scale,1));
+    SharedAttackPose.anchorScaleAtPoint(groundPreviewReferenceHolder,editorToolGrip(),groundPreviewReferenceHolder.scale.x);
+    groundPreviewReferenceHolder.updateMatrix();
+    context.lightReference=groundPreviewReferenceHolder.matrix;
+    context.lightPlaneReference=groundPreviewReferencePlane.compose(groundPreviewPlanePosition,groundPreviewPlaneQ,plane.scale);
+    context.lightReferenceFlailScale=SharedAttackPose.validFlailLength(light.flailLengthScale);
+  }
+  solver.constrainWeapon(toolHolder,toolPlaneMesh,context);
+  toolHolder.updateMatrix(); // The hand driver and renderer see the corrected transform, not merely the diagnostic.
+}
+function updateGroundPreviewStatus(now){
+  if(now<groundPreviewStatusAt)return;
+  groundPreviewStatusAt=now+200;
+  const node=$('weaponGeometryFitStatus'),s=window.HeldGroundPose?.snapshot?.();
+  if(!node||!s)return;
+  if(s.reason==='carry-preview'&&s.carry){const d=s.carry;node.textContent=`Ground preview: ${d.reason} · rotation ${d.angleDeg.toFixed(2)}° · lift ${d.lift.toFixed(3)} · lowest Y ${d.originalMinY??'—'} → ${d.finalMinY??'—'}`;return;}
+  const number=n=>Number.isFinite(n)?n.toFixed(3):'—';
+  const suspended=window.HobunjiWeaponSpriteAssemblies?.groundStatus?.(toolPlaneMesh);
+  const text='Ground preview: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+' · fit '+(s.fitted?(100*s.shortening).toFixed(1)+'% band shortening':'not fitted')+
+    ' · rotation '+number(s.angleDeg)+'° · grip drift '+number(s.gripPivotDrift??(s.dual?.right?.gripPivotDrift!=null||s.dual?.left?.gripPivotDrift!=null?Math.max(s.dual?.right?.gripPivotDrift??0,s.dual?.left?.gripPivotDrift??0):null))+' · lift '+number(s.gripLift)+' · '+(s.clearanceStrategy||'')+' · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'')+(suspended?' · rope '+(suspended.fittedScale*100).toFixed(1)+'% · '+(suspended.trailing?'trailing':suspended.reason)+' · head Y '+number(suspended.headMinY):'');
+  if(node.textContent!==text)node.textContent=text;
+}
 function applyPoseToRig(pose) {
   syncGripAxisMarkers(); // Keep Nut/Bridge markers visible while previewing, scrubbing and switching instruments, even with the gizmo off.
   window.HobunjiDualWieldWeaponVisuals?.setCarriedPose(pose); // The invisible idle-offhand tool peels the pose the holder carries right now.
@@ -1932,6 +2068,7 @@ function applyPoseToRig(pose) {
     toolHolder.getWorldPosition(poseWorldDebugScratch);
     lastScaledWorldPose.x = poseWorldDebugScratch.x; lastScaledWorldPose.y = poseWorldDebugScratch.y; lastScaledWorldPose.z = poseWorldDebugScratch.z;
     lastScaledRigPose.x = toolBase.position.x + toolHolder.position.x; lastScaledRigPose.y = toolBase.position.y + toolHolder.position.y; lastScaledRigPose.z = toolBase.position.z + toolHolder.position.z;
+    window.HeldGroundPose?.skip?.('head-relative-preview');
     return;
   }
   window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
@@ -1955,6 +2092,7 @@ function applyPoseToRig(pose) {
   if (anim.worldUpright && previewT <= .00001)
     window.ToolWorldUpright?.apply?.(toolHolder, toolPlane, THREE, currentToolKey === 'torch' ? -1 : 1); // Torch's -Y flame axis matches gameplay; other sprites retain +Y.
   SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
+  applyWeaponGroundPreview();
 }
 
 // ── Unified gameplay Action registry + practical effects ─────────────────
@@ -2460,6 +2598,10 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   focusNeutral() {
     selectEditPhase('neutral');
   },
+  previewAppliedGeometry() {
+    if(gizmoMode!=='off')setGizmoMode('off'); // Do not leave correction silently suppressed by an active authoring gizmo.
+    selectEditPhase('neutral');
+  },
   setHandCalibrationPresentation(active) {
     handCalibrationPresentationActive = !!active;
     if (handCalibrationPresentationActive) {
@@ -2950,9 +3092,11 @@ resize();
 
 let lastFlailPreviewT = -1; // Detect timeline seeks for deterministic physics reconstruction.
 document.addEventListener('input', () => { lastFlailPreviewT = -1; }); // Parameter edits also invalidate a paused physical preview.
-function updatePreviewFlail(sampleT, sampleDt) {
+function updatePreviewFlail(sampleT, sampleDt, resetHeadMotion=false) {
   window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
     attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
+    resetHeadMotion, cameraPosition: camera.position, // NPC deadzone uses the actual preview camera.
+    movementRoot: rig, // Whole-character turn contributes to idle flail drag in the preview.
     movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
     windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
     flailLengthScale: SharedAttackPose.flailLengthScaleAt(anim.poses, sampleT, anim.windupFrac, anim.strikeFrac, anim.holdFrac, anim.sequence), // Same keyframe interpolation as player and enemy swings.
@@ -2963,7 +3107,7 @@ function updatePreviewFlail(sampleT, sampleDt) {
 }
 function replayPreviewFlail(targetT) {
   applyPoseToRig(poseAt(0).pose);
-  updatePreviewFlail(0,0);
+  updatePreviewFlail(0,0,true);
   const steps=Math.ceil(targetT*Math.max(.05,anim.durationS)*120); // The same 120Hz deterministic replay as the existing paused-scrub preview.
   for(let step=1;step<=steps;step++){
     const t=targetT*step/steps;
@@ -2996,6 +3140,7 @@ function animate() {
     refreshPreviewDebug(); // Existing mobile debug panel shows the reconstructed physical state.
   } else updatePreviewFlail(previewT, playing ? dt : 0);
   lastFlailPreviewT = previewT;
+  updateGroundPreviewStatus(now);
   renderer.render(scene, camera); // Head-anchored and hand-anchored tools now share the normal preview draw.
 }
 animate();

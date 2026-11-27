@@ -26,7 +26,8 @@ ${wholeFunction('flipPose')}
 ${wholeFunction('sinkPctForPhase')}
 var anim;
 `, sandbox);
-vm.runInContext(slice('function poseAt(t) {', 'function applyPoseToRig'), sandbox);
+// Extract only the two pure timeline helpers, not the editor's unrelated Three.js ground-fit scratch objects.
+vm.runInContext(wholeFunction('poseAt') + '\n' + wholeFunction('poseChannelsAt'), sandbox);
 vm.runInContext('globalThis.__editor = { STYLE_NEUTRAL_POSE, poseAt, flipPose, setAnim(a) { anim = a; } };', sandbox);
 const editor = sandbox.__editor;
 

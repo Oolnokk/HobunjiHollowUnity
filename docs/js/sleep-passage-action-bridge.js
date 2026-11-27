@@ -1,13 +1,13 @@
 (() => {
   'use strict';
 
-  const VERSION = 3; // Used by the parser-time guard and mobile-visible diagnostics for this input-routing revision.
+  const VERSION = 4; // Used by the parser-time guard and mobile-visible diagnostics for this input-routing revision.
   if (Number(window.HobunjiSleepPassageActionBridge?.version) >= VERSION) return;
 
   const ACTION_BUTTON_IDS = Object.freeze(['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2']); // Existing action-bar slots searched for the live Sleep interaction.
   const KEY_CODE_BY_LABEL = Object.freeze({ E: 'KeyE', Q: 'KeyQ', F3: 'F3', F4: 'F4' }); // Mirrors game.js DESK_KEYS without assuming Sleep always occupies Action 1.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token consumed by the blessing core only after Sleep was initiated from the player's bed interaction.
-  const CHANGE_SUMMARY = 'Player-bed Sleep now owns pointer and keyboard press/release before legacy game input, preventing the starter farmhouse bed from jumping straight to 6 AM.'; // Mobile-visible diagnostics summary.
+  const CHANGE_SUMMARY = 'All bed inputs use the shared duration selector; failed opens restore the pending rest token and blocked prompts cannot initiate sleep.'; // Mobile-visible diagnostics summary.
   const BRIDGE_SCRIPT_URL = document.currentScript?.src || document.baseURI || ''; // Used to resolve the companion devotion/rest runtime beside this bridge regardless of deployment base path.
 
   let armedKeyCode = null; // Sleep key held until release so the shared passage opens on release rather than allowing legacy sleep to run on press.
@@ -25,7 +25,7 @@
   }
 
   function buttonShowsSleep(button) {
-    if (!button || button.classList?.contains?.('abt-hidden')) return false;
+    if (!button || button.classList?.contains?.('abt-hidden') || button.classList?.contains?.('blocked')) return false;
     if (button.dataset?.action !== 'obj_interact') return false;
     const label = button.querySelector?.('.abt-label')?.textContent || button.textContent || ''; // Prefer the authored action label over key/icon text.
     return /^\s*Sleep\s*$/i.test(String(label).trim()) || /\bSleep\b/i.test(String(label));
@@ -65,8 +65,13 @@
     if (passageIsOpen()) return true;
     const open = window.CalendarSystem?.openTimePassage; // CalendarSystem remains the single owner of selector, iris, hourly passage, and sleep restoration.
     if (typeof open !== 'function') return false;
+    const previousToken = window[OWNED_BED_SLEEP_PENDING_KEY]; // Restore provenance if CalendarSystem refuses the request.
     armOwnedBedSleep();
-    open.call(window.CalendarSystem, 'sleep');
+    if (open.call(window.CalendarSystem, 'sleep') === false) {
+      window[OWNED_BED_SLEEP_PENDING_KEY] = previousToken;
+      ownedBedSleepArmCount -= 1;
+      return false;
+    }
     return true;
   }
 
@@ -105,9 +110,7 @@
     const code = displayedKeyCode(button);
     if (!code || event.code !== code) return;
 
-    // This bridge loads before game.js specifically so Sleep wins the input race.
-    // Owning E here is intentional: delegating E to CalendarSystem allowed the
-    // legacy sleepInBed() listener to run first on some startup/input paths.
+    // Preserve the displayed Sleep binding and E/Q tap-versus-hold selection semantics.
     consumeEvent(event);
     clearArmedKey({ closeHeldArc: true });
     armedKeyCode = code;
@@ -170,9 +173,7 @@
     const button = actionButtonFromTarget(event.target);
     if (!buttonShowsSleep(button)) return;
 
-    // Always consume the trailing click, even when pointerup already opened the
-    // passage. Returning merely because the modal is open would let game.js's
-    // older click handler continue into sleepInBed() and jump to next morning.
+    // Consume the trailing click so pointer release and click cannot dispatch the same action twice.
     consumeEvent(event);
     if (!passageIsOpen() && openSharedSleepPassage()) interceptedClickCount += 1;
   }
@@ -181,7 +182,7 @@
     if (!document?.createElement || !document.head || document.querySelector?.('script[data-hobunji-devotion-rest="1"]')) return false;
     const script = document.createElement('script'); // Used to keep the prayer/rest feature modular while piggybacking on the existing guaranteed sleep bridge bootstrap.
     script.dataset.hobunjiDevotionRest = '1';
-    script.src = new URL('devotion-rest-buffs.js?v=20261117restPreviewClean2', BRIDGE_SCRIPT_URL || document.baseURI).href;
+    script.src = new URL('devotion-rest-buffs.js?v=20261126bedNpcOnly1', BRIDGE_SCRIPT_URL || document.baseURI).href;
     document.head.appendChild(script);
     return true;
   }

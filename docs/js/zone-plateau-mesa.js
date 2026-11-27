@@ -56,11 +56,21 @@
     // merging into one continuous top ("blending curtains together").
     // Ring cells of another, still-sloping mesa don't count: only an
     // already-flat raised top at >= this tier reads as a seamless match.
-    const inMask = (c, r) => {
+    // Pure in (c, r) for this call, and the seed pass below asks about each tile up to ~8 times (4 vertices share a tile, each
+    // vertex checks up to 4 tiles), so the answer -- and its `${c},${r}` string key -- is computed once per tile.
+    const inMaskCache = new Map();
+    const inMaskUncached = (c, r) => {
       if (!mask) return true;
       if (mask.has(`${c},${r}`)) return true;
       const t = zGrid?.[r]?.[c];
       return !!(t && !t.incline && (t.elevTier || 0) >= bb.toTier);
+    };
+    const inMask = (c, r) => {
+      if (!mask) return true;
+      const key = (r + 4) * 1048576 + (c + 4); // c/r may be a tile or two outside the grid (negative); offsets keep the key unique.
+      let value = inMaskCache.get(key);
+      if (value === undefined) { value = inMaskUncached(c, r); inMaskCache.set(key, value); }
+      return value;
     };
     // Which tile(s) a vertex index borders along one axis — even gi sit on a
     // tile boundary (shared by the tile each side), odd gi sit at a single
@@ -92,7 +102,7 @@
       return (t && typeof t.elevTier === 'number') ? deps.NORMAL_TOP + t.elevTier * deps.PLATEAU_UNIT : BASE;
     };
     const vertSeedY = new Float32Array(GW * GH).fill(BASE);
-    const queue = [];
+    const queue = []; // Vertex indices (k = gj * GW + gi); no per-vertex [gi, gj] arrays.
     for (let gj = 0; gj < GH; gj++) {
       const trs = axisTiles(gj, D);
       for (let gi = 0; gi < GW; gi++) {
@@ -107,19 +117,19 @@
         }
         if (seedY !== Infinity) {
           const k = vIdx(gi, gj);
-          vertHops[k] = 0; vertSeedY[k] = seedY; queue.push([gi, gj]);
+          vertHops[k] = 0; vertSeedY[k] = seedY; queue.push(k);
         }
       }
     }
     for (let qi = 0; qi < queue.length; qi++) {
-      const [gi, gj] = queue[qi], k0 = vIdx(gi, gj), d0 = vertHops[k0];
+      const k0 = queue[qi], d0 = vertHops[k0];
       if (d0 >= CAP) continue;
-      for (const [dgi, dgj] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-        const ngi = gi + dgi, ngj = gj + dgj;
-        if (ngi < 0 || ngi >= GW || ngj < 0 || ngj >= GH) continue;
-        const nk = vIdx(ngi, ngj);
-        if (d0 + 1 < vertHops[nk]) { vertHops[nk] = d0 + 1; vertSeedY[nk] = vertSeedY[k0]; queue.push([ngi, ngj]); }
-      }
+      const gi = k0 % GW, gj = (k0 - gi) / GW;
+      const relax = nk => { if (d0 + 1 < vertHops[nk]) { vertHops[nk] = d0 + 1; vertSeedY[nk] = vertSeedY[k0]; queue.push(nk); } };
+      if (gi + 1 < GW) relax(k0 + 1);       // +x
+      if (gi - 1 >= 0) relax(k0 - 1);       // -x
+      if (gj + 1 < GH) relax(k0 + GW);      // +z
+      if (gj - 1 >= 0) relax(k0 - GW);      // -z
     }
 
     const Y = new Float32Array(GW * GH);
@@ -187,7 +197,7 @@
     // Quads fully inside a ramp tile are left as holes — buildZoneRampMeshes
     // already renders that tile's own surface; doubling it here (even at a
     // matching height) just invites z-fighting.
-    const quadIsRamp = (gi, gj) => isRampTile(Math.floor(gi / 2), Math.floor(gj / 2));
+    const quadIsRamp = (gi, gj) => isRampTile(gi >> 1, gj >> 1);
     // The bbox is just this mesa's bounding rectangle, not its painted shape —
     // an irregular/concave brush stroke leaves bbox cells that were never
     // painted at all. Those still get a flat BFS-blended Y above (so the BFS
@@ -198,7 +208,14 @@
     // inMask() also accepts a tile a DIFFERENT mesa already raised to match,
     // which must still skip rendering here since that tile belongs to the
     // other mesa, not this one.
-    const quadInOwnMask = (gi, gj) => !mask || mask.has(`${bb.minC + Math.floor(gi/2)},${bb.minR + Math.floor(gj/2)}`);
+    const ownMaskByTile = mask ? new Uint8Array(W * D).fill(2) : null; // 2 = not looked up yet; one string key per tile, not per quad.
+    const quadInOwnMask = (gi, gj) => {
+      if (!mask) return true;
+      const slot = (gj >> 1) * W + (gi >> 1);
+      let value = ownMaskByTile[slot];
+      if (value === 2) { value = mask.has(`${bb.minC + (gi >> 1)},${bb.minR + (gj >> 1)}`) ? 1 : 0; ownMaskByTile[slot] = value; }
+      return value === 1;
+    };
     // A river/stream/waterfall/trench/raised cell carved INTO this mesa's own
     // footprint still gets a mask-passing, BFS-blended Y above (so neighboring
     // carved-tile geometry keeps blending against a sane height), but the flat

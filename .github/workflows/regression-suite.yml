@@ -53,6 +53,11 @@ jobs:
         if: steps.select.outputs.needs_deps == 'true'
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+      - name: Held weapon clearance and exact grip pivots against real Three.js r128
+        if: steps.select.outputs.needs_deps == 'true'
+        env:
+          REQUIRE_THREE: '1'
+        run: node scripts/test-held-ground-pose.js
       - name: Wilderness prop batching and distance culling against real Three.js r128
         # The fast suite has no optional Three dependency; audit P3/P4 must run
         # against the actual r128 geometry and transform APIs after install.

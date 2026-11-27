@@ -18,6 +18,8 @@
 
   const states = new Map(); // One cached world AABB, visibility history, and GPU query per static rock/plateau.
   const hidden = []; // Temporarily hidden scenery objects; restored after the synchronous world render.
+  const probeSlots = []; // Bounded reusable query meshes; pending query results stay on scenery state.
+  const eligible = []; // Reused per-submission candidate list.
   const candidates = []; // Visible-in-frustum rocks and plateau eligible for the async depth probe.
   const stats = {
     frames:0, candidates:0, submitted:0, frustumHidden:0, occludedHidden:0,
@@ -68,7 +70,7 @@
     let state = states.get(object);
     if (!state) {
       state = {object,revision:null,bounds:null,seen:0,occluded:false,misses:0,
-        pending:null,proxy:null,nextProbe:0}; // World bounds are immutable until the scenery author increments its layout revision.
+        pending:null,nextProbe:0}; // World bounds are immutable until the scenery author increments its layout revision.
       states.set(object,state);
     }
     if (!state.bounds || state.revision !== revision) {
@@ -198,10 +200,9 @@
     // Retire cached objects from unloaded zones without retaining removed meshes/materials.
     for (const [object,state] of states) if (state.seen!==frame) {
       retirePending(state);
-      if (state.proxy?.parent) state.proxy.parent.remove(state.proxy);
       states.delete(object);
     }
-    stats.pending=[...states.values()].filter(s=>s.pending).length;
+    stats.pending=countPending();
     return hidden.length ? restore : (candidates.length ? restore : null);
   }
 
@@ -232,6 +233,7 @@
     if (!T?.Scene || !T?.BoxGeometry || !T?.MeshBasicMaterial || !T?.Mesh) return false;
     if (typeof window.WesternSlopeMountainBackdrops?.keepInFrontOfSky!=='function') return false;
     queryScene=new T.Scene();
+    (queryScene.userData||={}).hobunjiOutlineSequenceNeutral=true; // Depth-query proxies never touch world matrices; do not end the outline matrix-reuse sequence.
     queryGeometry=new T.BoxGeometry(1,1,1); // All queries reuse twelve triangles; no additional world geometry is baked.
     queryMaterial=new T.MeshBasicMaterial({
       colorWrite:false,depthWrite:false,depthTest:true,transparent:false,
@@ -241,29 +243,30 @@
     return true;
   }
 
-  function makeProxy(state) {
-    if (state.proxy) return state.proxy;
-    const mesh=new window.THREE.Mesh(queryGeometry,queryMaterial);
+  function proxySlot(index) {
+    if (probeSlots[index]) return probeSlots[index];
+    const slot={state:null,proxy:new window.THREE.Mesh(queryGeometry,queryMaterial)}; // Slot is bound only during synchronous query rendering.
+    const mesh=slot.proxy;
     mesh.name='distant_scenery_occlusion_proxy';
     mesh.frustumCulled=false; // The usual far clip does not apply to backdrop depth shaders.
     mesh.visible=false;
     mesh.castShadow=false;mesh.receiveShadow=false;
     mesh.raycast=NEVER_RAYCAST;
     mesh.onBeforeRender=() => {
-      const pending=state.pending;
+      const pending=slot.state?.pending;
       if (!pending || pending.started) return;
       gl.beginQuery(queryTarget,pending.query);
       pending.started=true;
     };
     mesh.onAfterRender=() => {
-      const pending=state.pending;
+      const pending=slot.state?.pending;
       if (!pending?.started) return;
       gl.endQuery(queryTarget);
       pending.started=false;
     };
     queryScene.add(mesh);
-    state.proxy=mesh;
-    return mesh;
+    probeSlots[index]=slot;
+    return slot;
   }
 
   function probeAfterBase(renderer,camera,scene) {
@@ -273,7 +276,8 @@
     // and before the held/outline replays. Never run a GPU query from the game update.
     if (!enabled || !candidates.length || scene!==currentScene || camera!==currentCamera) return;
     if (!prepareGpu(renderer) || !ensureQueryResources()) return;
-    const eligible=candidates.filter(state=>!state.pending && frame>=state.nextProbe);
+    eligible.length=0;
+    for(const state of candidates) if(!state.pending && frame>=state.nextProbe) eligible.push(state);
     if (!eligible.length) return;
     const count=Math.min(PROBES_PER_FRAME,eligible.length);
     const previousAutoClear=renderer.autoClear;
@@ -282,24 +286,23 @@
     const chosen=[];
     try {
       const start=cursor%eligible.length;cursor+=count;
+      const position=camera.getWorldPosition?.(cameraEye)||camera.position; // One live viewpoint for all probes in this synchronous submission.
       for(let i=0;i<count;i++) {
         const state=eligible[(start+i)%eligible.length];
         // A camera inside a gigantic proxy cannot be safely tested by its back-facing faces.
-        const position=camera.getWorldPosition?.(cameraEye)||camera.position;
         if (position && state.bounds?.distanceToPoint?.(position)<=BOX_EXPANSION+0.5) {
           state.occluded=false;state.misses=0;state.nextProbe=frame+PROBE_INTERVAL;continue;
         }
+        const slot=proxySlot(chosen.length), proxy=slot.proxy, box=state.bounds;
+        box.getCenter(proxy.position); // The proxy's existing vectors hold the computed box center and size.
+        box.getSize(proxy.scale);
+        proxy.scale.set(proxy.scale.x+BOX_EXPANSION*2,proxy.scale.y+BOX_EXPANSION*2,proxy.scale.z+BOX_EXPANSION*2);
         const query=gl.createQuery();
         if (!query) throw Error('create-query-failed');
-        const proxy=makeProxy(state), box=state.bounds;
-        const center=box.getCenter(new window.THREE.Vector3()); // Box positions computed once per probe, never once per vertex.
-        const size=box.getSize(new window.THREE.Vector3());
-        proxy.position.copy(center);
-        proxy.scale.set(size.x+BOX_EXPANSION*2,size.y+BOX_EXPANSION*2,size.z+BOX_EXPANSION*2);
         state.pending={query,gl,started:false,generation:lastGeneration,revision:state.revision,scene};
         state.nextProbe=frame+PROBE_INTERVAL;
-        proxy.visible=true;
-        chosen.push(state);
+        slot.state=state; proxy.visible=true;
+        chosen.push(slot);
       }
       if (!chosen.length) return;
       renderer.autoClear=false;
@@ -307,15 +310,16 @@
       camera.layers?.enable?.(0);
       renderer.render(queryScene,camera);
       stats.probes=chosen.length;
-      stats.pending=[...states.values()].filter(state=>state.pending).length;
+      stats.pending=countPending();
     } catch(error) {
-      for(const state of chosen) if (state.pending?.started) {
+      for(const {state} of chosen) if (state.pending?.started) {
         try {gl.endQuery(queryTarget);} catch(_) {}
         state.pending.started=false;
       }
       disableGpu('proxy-render-failed:'+String(error?.message||error));
     } finally {
-      for(const state of chosen) if (state.proxy) state.proxy.visible=false;
+      for(const slot of chosen) {slot.proxy.visible=false;slot.state=null;}
+      eligible.length=0;
       renderer.autoClear=previousAutoClear;
       if (renderer.shadowMap) renderer.shadowMap.autoUpdate=previousShadows;
       if (camera.layers && previousMask!=null) camera.layers.mask=previousMask;
@@ -326,16 +330,17 @@
     restore();wakeAll();
     for(const state of states.values()) {
       retirePending(state);
-      if (state.proxy?.parent) state.proxy.parent.remove(state.proxy);
     }
     states.clear();lastCamera=null;lastScene=null;lastEye=null;lastRotation=null;lastProjection=null;
     stats.pending=0;
   }
 
+  function countPending() { let count=0;for(const state of states.values())if(state.pending)count++;return count; }
+
   function snapshot() {
     return {...stats,enabled,gpuEnabled,tracked:states.size,
       renderOnly:true,farPlaneExempt:true,consecutiveMisses:CONSECUTIVE_MISSES,
-      probeBudget:PROBES_PER_FRAME};
+      probeBudget:PROBES_PER_FRAME,proxySlots:probeSlots.length};
   }
 
   window.DistantSceneryViewCull=Object.freeze({

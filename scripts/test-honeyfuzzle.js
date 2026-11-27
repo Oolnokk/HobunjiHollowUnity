@@ -51,6 +51,9 @@ function fakeThree() {
   assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: true, copies: 1 } }).tailColor, '#abcdef', 'an expressed tail allele uses body color two');
   assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: false, copies: 2 } }).tailColor, '#123456', 'disabled tail allele shows the default primary tint');
   assert.equal(S.appearanceColors('#123456', { spectacles: { color: '#fedcba', enabled: true, copies: 1 } }).spectaclesColor, '#fedcba');
+  const shared = S.appearanceColors('#123456', {secondary:{color:'#abcdef'},tailfeathers:{enabled:true,copies:1},spectacles:{enabled:true,copies:1}});
+  assert.equal(shared.tailColor,'#abcdef','tail expression needs no independent color');
+  assert.equal(shared.spectaclesColor,'#abcdef','spectacles read the same shared B');
   for (let step = 0; step < 12; step++) {
     const frames = [0, 1, 2].map(member => S.memberFrame(member, step));
     assert.equal(new Set(frames).size >= 2, true, 'the three thirds are never all on the same frame');
@@ -163,7 +166,7 @@ function fakeThree() {
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
   tinted.setGenotype({ tailfeathers: { color: '#abcdef', enabled: true, copies: 1 }, spectacles: { color: '#123456', enabled: true, copies: 2 } });
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#abcdef');
-  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#123456');
+  assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#abcdef');
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 1);
   tinted.setGenotype(null);
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
@@ -663,7 +666,7 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(livestock[0].genotype.tailfeathers.color, '#804400', 'secondary tail allele survives hatching');
   const houseMesh = added[0].children[0].children[0]; // Inspect the real swarm material attached by House.syncVisual.
   assert.equal(houseMesh.material.userData.honeyfuzzle.uTailColor.value.value, '#804400', 'house swarm displays inherited secondary tail pigment');
-  assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#55aaee', 'house swarm displays inherited spectacles pigment');
+  assert.equal(houseMesh.material.userData.honeyfuzzle.uSpectaclesColor.value.value, '#804400', 'house swarm displays inherited spectacles pigment');
   assert.equal(house.placeQueen(a).ok, false, 'the swarm fills the house');
   // A brief failed roster read must not throw, erase the house ID or remove its visible swarm.
   rosterUnavailable = true;

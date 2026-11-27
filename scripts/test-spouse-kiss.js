@@ -369,11 +369,11 @@ assert.equal(visual.start(sceneWalker, () => contacts++), false, 'bow must refus
 assert.equal(visual.diagnostics().lastError, 'not-enough-clear-floor-for-deep-bow');
 assert.equal(activeTokens.size, 0, 'failed start must leave actors unlocked');
 delete visualWindow.NpcPathfinding;
-visualWindow.BedLiePose = { isActive: () => true }; // An active bed approach owns the player's tile/root and cannot coexist with a kiss.
-assert.equal(visual.start(sceneWalker, () => contacts++), false, 'kiss refuses to displace an ongoing bed pose');
-assert.equal(visual.diagnostics().lastError, 'player-lying-down', 'rejected kiss explains the conflicting pose owner');
+visualWindow.CharacterActionLocks.isLocked = (id, channel) => id === 'player' && channel === 'movement';
+assert.equal(visual.start(sceneWalker, () => contacts++), false, 'kiss respects calendar/shared movement ownership');
+assert.equal(visual.diagnostics().lastError, 'player-busy');
 assert.equal(activeTokens.size, 0, 'rejected kiss never acquires character locks');
-delete visualWindow.BedLiePose;
+visualWindow.CharacterActionLocks.isLocked = () => false;
 assert.equal(visual.start(sceneWalker, () => contacts++), true);
 assert.equal(partnerLegs.limit, .95, 'only the kiss may deepen the kneel');
 assert.equal(lastLockParticipants[0].channels.includes('pose'), true,

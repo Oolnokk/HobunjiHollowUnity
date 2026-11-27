@@ -123,13 +123,17 @@
     const genome = furHood.genotype || {}; // Source genotype determines whether each natural dye gene exists and is expressed.
     const ids = window.CreatureGenetics?.PATTERN_DEFS?.[normalizeKind(furHood.kind)] || []; // Official animal-gene order is the stable color priority.
     const appearance = Array.isArray(furHood.appearance?.patterns) ? furHood.appearance.patterns : [];
-    const known = [...new Set([...ids, ...appearance.map(g => g?.id), ...Object.keys(genome).filter(id => id !== 'base' && typeof genome[id]?.color === 'string'), ...Object.keys(entryForKind(furHood.kind)?.patterns || {})])].filter(Boolean); // Saved genotype works before genetics registry initialization.
+    const known = [...new Set([...ids, ...appearance.map(g => g?.id), ...Object.keys(genome).filter(id => id !== 'base' && id !== 'secondary' && typeof genome[id]?.color === 'string'), ...Object.keys(entryForKind(furHood.kind)?.patterns || {})])].filter(Boolean); // Saved genotype works before genetics registry initialization.
     return known.flatMap(id => {
+      if (id === 'base' || id === 'secondary') return []; // Pigment loci are not expressed markings.
       const gene = genome[id], trait = appearance.find(x => x?.id === id); // Old visual summaries are consulted only when genotype is missing.
       if (gene) {
         if (gene.enabled === false || (gene.copies != null && Number(gene.copies) <= 0)) return [];
       } else if (!trait?.enabled) return [];
-      const color = colorHex(gene?.color || trait?.color);
+      const kind = normalizeKind(furHood.kind); // The shared gene wins over obsolete per-mask mirrors in modern hides.
+      const primary = (kind === 'grehlr' && id === 'beard') || (kind === 'drenkirra' && id === 'bodystripes');
+      const shared = genome.secondary?.color ? (primary ? genome.base?.color : genome.secondary.color) : null;
+      const color = colorHex(shared || gene?.color || trait?.color);
       return color ? [{ geneId: id, colorHex: color }] : [];
     });
   }
@@ -259,8 +263,8 @@
   }
 
   const FUR_HOOD_LAYER_ORDER = Object.freeze({
-    front: Object.freeze(['animalBack','base','animalFront','trim']), // Front plane, back-to-front: animal back behind hood, face piece, trim.
-    behind: Object.freeze(['trim','animalFront','base','animalBack']), // Rear plane, back-to-front: trim, animal front, furhood-behind, animal back.
+    front: Object.freeze(['animalBack','base','animalFront','exposedUnderTrim','trim','exposed']), // Front plane, back-to-front: animal back behind hood, face piece, wearer ear, trim, wearer tusk/trunk.
+    behind: Object.freeze(['exposed','exposedUnderTrim','trim','animalFront','base','animalBack']), // Rear plane, back-to-front: wearer anatomy hidden first, then trim, animal front, furhood-behind, animal back.
   });
   function orderLayersForView(layers, view = 'front') {
     const order=FUR_HOOD_LAYER_ORDER[view === 'behind' ? 'behind' : 'front']; // One order for portrait, icons and the garment-space authoring preview.

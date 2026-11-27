@@ -107,11 +107,12 @@ same([...ES.stateFor('sword').base], ['burning', 'frostbitten'], '3. rejection l
 assert.equal(ES.equipBase('sword', 2, 'mirrored'), false, '3. no hidden third Base index');
 assert.equal(ES.addBase('sword', 'burning'), false, 'the same Base enchantment cannot occupy both slots');
 assert.equal(ES.setFlourish('sword', 'tap1', 'sicced'), true);
-assert.equal(ES.setFlourish('sword', 'hold1', 'fury'), true);
+assert.equal(ES.setFlourish('sword', 'hold1', 'fury'), false);
+assert.equal(ES.setFlourish('sword', 'tap2', 'fury'), true);
 assert.equal(ES.setFlourish('sword', 'tap1', 'burning'), false, 'Base enchantments cannot be Flourishes');
 assert.equal(ES.flourishForSlot('tap1', 'sword'), 'sicced');
-assert.equal(ES.flourishForSlot('hold1', 'sword'), 'fury', '3. each slot holds its own Flourish');
-assert.equal(ES.flourishForSlot('tap2', 'sword'), null);
+assert.equal(ES.flourishForSlot('tap2', 'sword'), 'fury', '3. each slot holds its own Flourish');
+assert.equal(ES.flourishForSlot('hold1', 'sword'), null);
 ES.setFlourish('sword', 'tap1', 'moralized');
 assert.equal(ES.flourishForSlot('tap1', 'sword'), 'moralized', 'one Flourish per slot: setting replaces');
 assert.ok(saves > 0, 'enchantment edits persist through saveGearInventory');
@@ -126,13 +127,22 @@ assert.ok(RS.getAffliction(enemy, 'frostbittenStamina') > 0, '1. Frostbitten app
 
 // ── 9-11: Immundanity ─────────────────────────────────────────────
 function immFor(state) { gear = { weaponEnchantments: { w: state } }; return ES.getWeaponImmundanity('w'); }
-// Planes: sicced=Tothal fury=Hronal moralized=Kanthic resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Ohthic livingFlame=Hronal
+// Planes: sicced=Kanthic fury=Hronal moralized=Tothal resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Tothal livingFlame=Hronal
 assert.equal(immFor({ base: ['frostbitten'], flourishes: {} }), 1, 'Tothal 1 → 1');
 assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: {} }), 0, '9. Tothal + Hronal cancel');
-assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'sicced', hold1: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
-assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'sicced', hold1: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
-assert.equal(immFor({ base: ['mirrored', 'livingGust'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
-assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 2, Kanthic 1 → 3');
+assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'moralized', tap2: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
+assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'moralized', tap2: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
+assert.equal(immFor({ base: ['burning'], flourishes: { tap1: 'moralized' } }), 0, 'Moralized cancels Hronal');
+assert.equal(ES.planarCounts('w').Tothal, 1, 'Moralized has Tothal presentation');
+assert.equal(immFor({ base: ['ancestralSight'], flourishes: { tap1: 'sicced' } }), 0, 'Sicced cancels Ohthic');
+assert.equal(ES.planarCounts('w').Kanthic, 1, 'Sicced has Kanthic presentation');
+assert.equal(immFor({ base: ['mirrored', 'ancestralSight'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
+assert.equal(immFor({ base: ['livingGust', 'burning'], flourishes: {} }), 0, 'Living Gust cancels Hronal');
+assert.equal(immFor({ base: ['livingGust', 'mirrored'], flourishes: {} }), 2, 'Living Gust does not cancel Kanthic');
+assert.equal(immFor({ base: ['livingGust', 'frostbitten'], flourishes: {} }), 2, 'Living Gust stacks with Tothal');
+assert.equal(ES.planarCounts('w').Tothal, 2, 'Living Gust is counted as Tothal for presentation');
+assert.equal(ES.planarCounts('w').Ohthic, 0, 'Living Gust is no longer Ohthic');
+assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 1, Kanthic 2 → 3');
 assert.equal(ES.getEnchantmentPowerMultiplier('w'), 1.3, '12. +10% enchantment power per Immundanity');
 assert.ok(Math.abs(ES.getMasteryPowerMultiplier('w') - 0.7) < 1e-9, '12. −10% mastery power per Immundanity');
 gear = { weaponEnchantments: { w: { base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced', tap2: 'moralized', hold1: 'sicced', hold2: 'moralized' } } } };
@@ -280,13 +290,13 @@ RS.addEnhancedResource(p2, 'resoluteHealth', 5);
 RS.applyDamage(p2, 15, {});
 assert.equal(p2.health, 100, '15. 5 Resolute Health absorb 15 Health loss');
 
-// ── 14: Furious Stamina tempo only for the funded portion ─────────
+// ── 14: Furious Stamina snapshots the amount before payment ────────
 const p3 = makeEntity();
 RS.addEnhancedResource(p3, 'furiousStamina', 6);
 RS.addEnhancedResource(p3, 'moralizedStamina', 10);
 const charge = RS.spendStamina(p3, 12, 'charge', { actionKind: 'offensiveHeldCharge' });
 assert.equal(charge.consumed[0].id, 'furiousStamina', 'Furious outranks Moralized only for an action it benefits (priority mechanism, not a one-off check)');
-assert.ok(Math.abs(charge.tempoMultiplier - (6 * 3 + 6 * 1) / 12) < 1e-9, '14. only the 6 Furious-funded points run at 3×');
+assert.ok(Math.abs(charge.tempoMultiplier - 1.12) < 1e-9, '14. pre-payment 6 Furious points give +12% tempo');
 const walk = makeEntity();
 RS.addEnhancedResource(walk, 'furiousStamina', 6);
 RS.addEnhancedResource(walk, 'moralizedStamina', 10);
@@ -302,6 +312,73 @@ CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 50 }), { target: enemy, a
 assert.equal(RS.getAffliction(player, 'mirroredHealth'), mirrorBefore, '16. zero actual damage grants nothing');
 CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 50 }), { target: enemy, actualDamage: 7 });
 assert.ok(Math.abs(RS.getAffliction(player, 'mirroredHealth') - mirrorBefore - 7 * ES.getEnchantmentPowerMultiplier('sword')) < 0.11, '16. Mirrored equals post-mitigation damage (× enchantment power)');
+
+// Spirit Heal: ordinary recovery, one full grant per nearby ally, actual damage only.
+{
+  reset();
+  load('docs/js/actor-registry.js');
+  const registry = context.ActorRegistry;
+  const savedHealth = player.health;
+  const savedArea = player.areaId; // Exercise the live local-area resolver rather than a stale avatar field.
+  const savedMirrored = RS.getAffliction(player, 'mirroredHealth'); // Ensure Spirit Heal does not create a shield.
+  const pet = makeEntity({ health: 50, x: 20, master: player, isCompanion: true, stableRole: 'companion' });
+  const guest = makeEntity({ health: 50, x: 30 });
+  const guestPet = makeEntity({ health: 50, x: 40, master: guest, isCompanion: true, stableRole: 'companion' });
+  const distant = makeEntity({ health: 50, x: 1000 });
+  const offArea = makeEntity({ health: 50, areaId: 'elsewhere' });
+  const hostilePet = makeEntity({ health: 50, banditCompanion: true, master: enemy });
+  const shoulder = makeEntity({ health: 50, master: player, stableRole: 'shoulderPet' });
+  const downed = makeEntity({ health: 50, master: player, _downed: true });
+  const hunter = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: true, _chunkCombatTarget: enemy });
+  const neutral = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: true });
+  const hostileHunter = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: false, _chunkCombatTarget: enemy });
+  registry.registerPlayer(player, { local: true });
+  for (const actor of [guest, distant, offArea]) registry.registerPlayer(actor);
+  companionObjects.push(pet, guestPet, hostilePet, shoulder, downed, pet); // Duplicate pet exercises recipient deduplication.
+  hostileObjects.push(hunter, neutral, hostileHunter);
+  player.health = 50;
+  player.areaId = 'old-map';
+  assert.equal(ES.addBase('sword', 'spiritHeal'), true);
+  assert.equal(ES.DEFINITIONS.spiritHeal.alignment, 'Ohthic');
+  const hit = actualDamage => CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 100 }), { target: enemy, actualDamage });
+  hit(0);
+  for (const actor of [player, pet, guest, guestPet, hunter]) assert.equal(actor.health, 50, 'Spirit Heal requires actual Health damage');
+  hit(20); // One Ohthic point: 1.1 multiplier, 1.1 self and 3.3 per ally.
+  assert.equal(player.health, 51.1);
+  for (const actor of [pet, guest, guestPet, hunter]) assert.equal(actor.health, 53.3, 'Each eligible ally gets the full 15% independently');
+  for (const actor of [distant, offArea, hostilePet, shoulder, downed, neutral, hostileHunter]) assert.equal(actor.health, 50, 'Ineligible actors receive no recovery');
+  assert.equal(RS.getAffliction(player, 'mirroredHealth'), savedMirrored, 'Spirit Heal grants no enhanced Health');
+  pet.health = 99;
+  hit(20);
+  assert.equal(pet.health, 100, 'Spirit Heal respects maximum Health');
+  // Exact projectile weapon identity, including a weapon swap before impact.
+  assert.equal(ES.addBase('throwingBlade', 'spiritHeal'), true);
+  weapon = 'unenchanted';
+  const beforeRanged = player.health; // Proves a non-enchanted source does not borrow the equipped or stored enchantment.
+  ES.applyRangedSpiritHeal(player, enemy, 'unenchanted', 20);
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 0);
+  assert.equal(player.health, beforeRanged);
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 20);
+  assert.ok(Math.abs(player.health - beforeRanged - 1.1) < 1e-9, 'Projectile hit uses the thrown weapon even after a swap');
+  // Healing respects the resource system's actual recovery penalties.
+  guest.health = 50;
+  RS.applyTimedDebuff(guest, 'inhibited', 12, { power: 2 });
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 20);
+  assert.equal(guest.health, 52.6, 'Inhibited reduces the ordinary ally recovery');
+  // Hostile wielders cannot heal the player party, even using the same enchantment definition.
+  const hostileWielder = makeEntity({ health: 50 });
+  const beforeHostileHit = player.health;
+  ES.applyRangedSpiritHeal(hostileWielder, player, 'throwingBlade', 20);
+  assert.equal(hostileWielder.health, 51.1);
+  assert.equal(player.health, beforeHostileHit, 'Victim and player party never receive hostile healing');
+  weapon = 'sword';
+  companionObjects.splice(companionObjects.length - 6, 6);
+  hostileObjects.splice(hostileObjects.length - 3, 3);
+  for (const actor of [player, guest, distant, offArea]) registry.unregisterPlayer(actor);
+  delete context.ActorRegistry;
+  player.health = savedHealth;
+  player.areaId = savedArea;
+}
 
 // ── 17: Kindling conversion ───────────────────────────────────────
 const k = makeEntity();
@@ -345,7 +422,7 @@ const hitSet = new Set([center]);
 const affected = ES.applyPeripheralGust(gustCtx, hitSet);
 assert.equal(affected, 1, '19. only the peripheral target gets the gust');
 assert.equal(knockbacks[0].target, periph);
-const gustPower = ES.getEnchantmentPowerMultiplier('sword'); // Living Gust alone: Ohthic 1 → Immundanity 1 → ×1.1.
+const gustPower = ES.getEnchantmentPowerMultiplier('sword'); // Living Gust alone: Tothal 1 → Immundanity 1 → ×1.1.
 assert.ok(Math.abs(knockbacks[0].speed - 200 * (1 + 0.25 * gustPower) * 0.5) < 1e-9, '19. peripheral target gets half of the (power-scaled) +25% knockback');
 assert.equal(periph.health, 100, '19. no damage outside the real hit cone');
 assert.ok(gustCtx.modifiers.lunge > 1.24, '21. lunge goes through the attack context modifier (+25%)');
@@ -394,8 +471,19 @@ const unmarked = CO.getModifiers(companion, makeEntity());
 assert.equal(unmarked.damage, 1.3, '25. Whistle alone off the Sicced target');
 const scaled = CO.scaleHit(companion, a, 10, { afflictionBonuses: { bleedingHealth: 1 } });
 assert.ok(Math.abs(scaled.amount - 10 * both.damage) < 1e-9);
-assert.ok(Math.abs(scaled.amount * scaled.opts.afflictionBonuses.bleedingHealth - 10 * both.affliction) < 1e-9, '25. affliction buildup scaled through the shared hit path');
+assert.ok(Math.abs(scaled.opts.afflictionBonuses.bleedingHealth - both.affliction) < 1e-9, '25. independent Attack Power uses the full stacked affliction multiplier');
+assert.ok(siccedOnly.knockback > 1, 'Sicced also empowers the defensive Guard Charge impulse');
 assert.equal(CO.getModifiers(makeEntity({ isCompanion: false }), a).damage, 1, 'wild attackers are never empowered');
+a.areaId = 'forest';
+b.health = 30; b.areaId = 'mine';
+CAE.hit(CAE.prepare({ abilityId: 'swingCombo', comboFinisher: true }), { target: b, actualDamage: 1 });
+assert.equal(ES.getCurrentSiccedTarget('forest'), a, 'newest mark elsewhere cannot hide a local mark');
+assert.equal(ES.getCurrentSiccedTarget('mine'), b, 'local mark is still available in its own area');
+b._denHidden = true;
+assert.equal(ES.getCurrentSiccedTarget('mine'), null, 'hidden mark cannot hijack targeting');
+a._downed = true;
+assert.equal(ES.getCurrentSiccedTarget('forest'), null, 'downed mark cannot hijack targeting');
+assert.equal(ES.getCompanionTargetPowerMultiplier(companion, a), 1, 'invalid mark cannot empower an attack');
 
 // ── 22-24: Attunement ─────────────────────────────────────────────
 reset();
@@ -545,6 +633,9 @@ assert.ok(TOOL_ITEM_DEFS[res.toolKey]?.slots.includes('weapon'));
 assert.ok(texturesRequested.includes(res.toolKey), 'relic weapon textures load through the shared tool path');
 same([...ES.stateFor(res.toolKey).base], ['burning', 'livingGust'], 'relic keeps its enchantments');
 assert.equal(ES.flourishForSlot('tap1', res.toolKey), 'sicced');
+assert.equal(ES.flourishForSlot('hold2', res.toolKey), 'fury', 'old bound relic retains its inactive Fury without failing the unbind transaction');
+assert.equal(ES.allowsFlourishSlot('fury', 'hold2'), false);
+assert.equal(ES.setFlourish(res.toolKey, 'hold2', 'fury'), false, 'new invalid slot assignments still fail');
 assert.equal(ES.isBaseUnlocked('burning'), true);
 assert.equal(ES.isFlourishUnlocked('sicced', 'tap1'), true, 'Flourish learned for its own slot');
 assert.equal(ES.isFlourishUnlocked('sicced', 'tap2'), false, 'slot permutations unlock separately');
@@ -737,7 +828,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   fey.update(.2,player);
   const gameFeyHooks=fs.readFileSync('docs/game.js','utf8'); // Uses real closure-owned gameplay seam, not a duplicate mock camera.
   assert(gameFeyHooks.includes('window.FeyIllusions?.cameraYawDeg?.(player)'), 'real gameplay camera azimuth consumes Fey yaw');
-  assert(gameFeyHooks.includes('window.FeyIllusions?.movementRotationRad?.(player)'), 'non-shoulder movement consumes the same yaw');
+  assert(gameFeyHooks.includes('window.ResourceSystem?.movementIntent?.(player, ix, iy)'), 'non-shoulder movement delegates yaw to the shared compositor');
   assert(gameFeyHooks.includes('window.FeyIllusions?.isPanickedRolling?.(player)'), 'ordinary dodge hot path skips Fey-only collision work');
 
   // A Hyped first swing that misses still makes its paid second swing, with its
@@ -912,7 +1003,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
     };
     const npcBanditSource=npcSlice('  function beginBanditMeleeStage(','  function resolvedBanditCombatTarget(')
       +npcSlice('  function damageBanditCombatTarget(','  // Mirrors combat-quickattacks.js')
-      +npcSlice('  function fireBanditComboStep(','  function fireBanditQuickAttack(');
+      +npcSlice('  function payBanditAttack(','  function fireBanditQuickAttack(');
     const liveStages=hypedStages; // Existing Combat.beginStagedAction test bridge records the real NPC stage options too.
     const liveLunges=[],liveNpcHits=[]; // Compare original and second real damage/lunge dispatch without reimplementing the bandit attack.
     const savedComboData=context.Combat.comboData,savedComboPose=context.Combat.comboStepPose;
@@ -951,7 +1042,6 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
       vm.createContext(npcCombatScope);
       vm.runInContext(npcBanditSource,npcCombatScope,{filename:'combat-bandit.js#hyped-npc-integration'});
       RS.addEnhancedResource(npcCombatant,'hypedStamina',8);
-      RS.spendStamina(npcCombatant,8,'bandit attack',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
       const firstIndex=liveStages.length;
       assert.equal(npcCombatScope.fireBanditComboStep(npcCombatant,npcDef,{tap1:'swingCombo'},npcOpponent),true);
       const firstStage=liveStages[firstIndex];
@@ -980,7 +1070,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
   ES.setFlourish('fey-testing-blade','hold2','feyDreadPulse');
   const feyDefensiveScope=fs.readFileSync('docs/js/combat/combat-enchantments.js','utf8');
-  assert(feyDefensiveScope.includes("def.alignment === 'Fey') return false"),'defensive Fey handlers explicitly fail closed');
+  assert(feyDefensiveScope.includes("def.alignment === 'Fey'"),'defensive Fey handlers explicitly fail closed');
 
   // The loaded Harlyao bound relic authority supports both origins, and
   // neither the ordinary boss chest nor Boney's Fey roll can borrow the other's shapes.
@@ -1004,3 +1094,425 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(HR.decodeBoundKey('feyBound_dagger_abcd_Bburning_F'),null,'Fey key cannot smuggle another origin');
 }
 console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrations and bound relics passed');
+
+ 
+// Planar lore: real event bus and resource transactions, no mastery statuses.
+{
+  reset();
+  const key = 'realm-test-blade'; // Private weapon and fresh NPC actors isolate resource arithmetic.
+  const attacker = makeEntity({ name: 'Realm wielder' });
+  const target = makeEntity({ name: 'Realm target' });
+  const hit = (patch = {}) => CAE.hit(null, {
+    attacker, target, weaponKey: key, slotId: 'tap1', attackCategory: 'combo',
+    comboFinisher: true, actualDamage: 4, ...patch,
+  });
+  const equip = (base = [], flourishes = {}) => ES.load({ [key]: { base, flourishes } });
+  const close = (value, expected) => assert(Math.abs(value - expected) < 0.0001, `${value} != ${expected}`);
+  const amount = (actor, id) => RS.getAffliction(actor, id);
+  const clear = (actor, id) => RS.removeAffliction(actor, id, 1000);
+  // Fury triggers only on attacks, and a hostile wielding Fury cannot
+  // accidentally buff the player's unassigned companions.
+  const pet = makeEntity({ name: 'Player pet', isCompanion: true });
+  const enemyAlly = makeEntity({ name: 'Hostile ally', master: attacker });
+  const roster = context.Combat.deps.companionObjects;
+  roster.push(pet, enemyAlly);
+  try {
+    equip([], { tap1: 'fury' });
+    hit({ comboFinisher: false });
+    close(amount(attacker, 'furiousStamina'), 0);
+    hit();
+    assert(amount(attacker, 'furiousStamina') > 0);
+    close(amount(enemyAlly, 'furiousStamina'), amount(attacker, 'furiousStamina'));
+    close(amount(pet, 'furiousStamina'), 0);
+    clear(attacker, 'furiousStamina');
+    equip([], { tap2: 'fury' });
+    hit({ slotId: 'tap2', attackCategory: 'quickAttack', quickBonusEffectProc: false });
+    close(amount(attacker, 'furiousStamina'), 0);
+    hit({ slotId: 'tap2', attackCategory: 'quickAttack', quickBonusEffectProc: true });
+    assert(amount(attacker, 'furiousStamina') > 0);
+    clear(attacker, 'furiousStamina');
+  } finally { roster.splice(roster.indexOf(pet), 2); }
+  const newBases = [
+    ['stormwake', 'Tothal', 'windblownStamina', 6.6],
+    ['stonebind', 'Hronal', 'leadboundStamina', 5.5],
+    ['soulweight', 'Kanthic', 'soulweightedHealth', 6.6],
+  ]; // One equipped planar enchantment gives +10% Immundanity.
+  for (const [id, alignment, status, expected] of newBases) {
+    equip([id]);
+    assert.equal(ES.DEFINITIONS[id].alignment, alignment);
+    assert.equal(ES.DEFINITIONS[id].type, 'Base');
+    assert(RS.AFFLICTIONS[status]);
+    CAE.prepare({ attacker, target, weaponKey: key });
+    assert.equal(amount(target, status), 0, 'preparation alone never inflicts a Base');
+    hit({ comboFinisher: false });
+    close(amount(target, status), expected);
+    assert.equal(RS.getTimedDebuffs(target).length, 0, 'realm effects never reuse mastery debuffs');
+    const dead = makeEntity({ health: 0 });
+    hit({ target: dead });
+    assert.equal(amount(dead, status), 0, 'no buildup on corpses');
+    for (let i = 0; i < 30; i++) hit();
+    close(amount(target, status), 100); // Canonical maximum-resource cap.
+    clear(target, status);
+  }
+  equip(['stormwake', 'stonebind']);
+  assert.equal(ES.getWeaponImmundanity(key), 0);
+  hit();
+  close(amount(target, 'windblownStamina'), 6);
+  close(amount(target, 'leadboundStamina'), 5);
+  clear(target, 'windblownStamina');
+  clear(target, 'leadboundStamina');
+  equip(['soulweight', 'ancestralSight']);
+  assert.equal(ES.getWeaponImmundanity(key), 0);
+  hit();
+  close(amount(target, 'soulweightedHealth'), 6);
+  close(amount(attacker, 'weightlessStamina'), 5);
+  clear(target, 'soulweightedHealth');
+  clear(attacker, 'weightlessStamina');
+
+  // Windblown: rotate direction on every application, preserve world-space drift,
+  // charge only assisted voluntary travel, and use the same scalar modifiers.
+  const originalRandom = context.GameRandom.random;
+  const oldFey = context.FeyIllusions;
+  try {
+    context.GameRandom.random = () => 0; // Eastward wind.
+    RS.addAffliction(target, 'windblownStamina', 100);
+    const opts = { mode: 'walk', reference: 100, dt: 1 };
+    const east = RS.composeMovement(target, 100, 0, opts);
+    close(east.x, 150); close(east.y, 0); close(east.footingCost, 10);
+    const west = RS.composeMovement(target, -100, 0, opts);
+    close(west.x, -50); close(west.footingCost, 0);
+    const north = RS.composeMovement(target, 0, 100, opts);
+    close(north.x, 50); close(north.y, 100); close(north.footingCost, 0);
+    const idle = RS.composeMovement(target, 0, 0, opts);
+    close(idle.x, 50); close(idle.footingCost, 0);
+    const airOpts = { ...opts, airborne: true }; // One tuning value governs every native airborne caller.
+    const airEast = RS.composeMovement(target, 100, 0, airOpts);
+    close(airEast.x, 175); close(airEast.footingCost, 15);
+    const airWest = RS.composeMovement(target, -100, 0, airOpts);
+    close(airWest.x, -25); close(airWest.footingCost, 0);
+    const airIdle = RS.composeMovement(target, 0, 0, airOpts);
+    close(airIdle.x, 75); close(airIdle.footingCost, 0);
+    target._freeJump = { phase: 'air' };
+    close(RS.composeMovement(target, 100, 0, opts).x, 175);
+    target._freeJump.phase = 'supported';
+    close(RS.composeMovement(target, 100, 0, opts).x, 150);
+    delete target._freeJump;
+    target.lunging = true; target.lungeHopUnits = .5;
+    close(RS.composeMovement(target, 100, 0, { ...opts, mode: 'lunge' }).x, 175);
+    delete target.lunging; delete target.lungeHopUnits;
+    const carrier = makeEntity();
+    RS.addAffliction(carrier, 'windblownStamina', 100);
+    const airPair = RS.composeMountedMovement(target, carrier, 100, 0, airOpts);
+    close(airPair.x, 250);
+    close(airPair.riderMotion.footingCost, 15); close(airPair.carrierMotion.footingCost, 15);
+    target.footing = 100;
+    RS.beginMovementFrame(target);
+    assert(!RS.windMovementHandled(target));
+    RS.commitMovement(target, idle, 1);
+    assert(RS.windMovementHandled(target));
+    close(target.footing, 100);
+    RS.commitMovement(target, east, 0); // Blocked collision does not spend Footing.
+    close(target.footing, 100);
+    RS.commitMovement(target, east, .5); // Only actual movement costs Footing.
+    close(target.footing, 95);
+    for (let i = 0; i < 10; i++) {
+      RS.commitMovement(target, RS.composeMovement(target, 1, 0, { reference: 1, dt: .01 }), 1);
+    }
+    close(target.footing, 94); // Fractional costs are accumulated, not rounded up per frame.
+    context.GameRandom.random = () => .25; // Northward wind, even at maximum stack.
+    RS.addAffliction(target, 'windblownStamina', 1);
+    const changed = RS.composeMovement(target, 100, 0, opts);
+    close(changed.x, 100); close(changed.y, 50);
+    context.FeyIllusions = { movementRotationRad: () => Math.PI / 2 };
+    const combined = RS.composeMovement(target, 100, 0, opts);
+    close(combined.x, 0); close(combined.y, 150); close(combined.footingCost, 10);
+    const alreadyRotated = RS.composeMovement(target, 0, 100, { ...opts, rotationApplied: true });
+    close(alreadyRotated.x, combined.x); close(alreadyRotated.y, combined.y);
+    const dodge = RS.composeMovement(target, 0, -100, { ...opts, mode: 'dodge', rotationApplied: true });
+    close(dodge.y, -50); close(dodge.footingCost, 0);
+    const lunge = RS.composeMovement(target, 0, 100, { ...opts, mode: 'lunge', rotationApplied: true });
+    close(lunge.y, 150); close(lunge.footingCost, 10);
+    RS.addAffliction(target, 'weightlessStamina', 25);
+    RS.addAffliction(target, 'leadboundStamina', 50);
+    RS.applyTimedDebuff(target, 'heavy', 12, { power: 2 });
+    const speed = 100 * 1.5 * .625 * .85;
+    const all = RS.composeMovement(target, 100, 0, { reference: speed, dt: 1 });
+    close(all.x, 0); close(all.y, speed * 1.5);
+    clear(target, 'weightlessStamina'); clear(target, 'leadboundStamina');
+    RS.clearTimedDebuff(target, 'heavy');
+    context.FeyIllusions = oldFey;
+    target.stamina = 30;
+    RS.restoreStamina(target, 4);
+    close(target.stamina, 34); // No legacy Undertow regeneration tax.
+    RS.tick(target, .5, { staminaRegenPerSec: 4, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+    assert(amount(target, 'windblownStamina') < 100, 'wind naturally fades');
+    assert(target.stamina > 34, 'wind never steals regeneration');
+    clear(target, 'windblownStamina');
+    close(RS.composeMovement(target, 100, 0, { ...opts, rotationApplied: true }).x, 100);
+    target.footing = 100;
+  } finally {
+    context.GameRandom.random = originalRandom;
+    context.FeyIllusions = oldFey;
+  }
+
+  // Passive Blink upkeep must not consume dodge-only enhanced or Panicked Stamina.
+  const blinkUser = makeEntity();
+  RS.addEnhancedResource(blinkUser, 'currentStamina', 8);
+  RS.addAffliction(blinkUser, 'panickedStamina', 5);
+  RS.spendStamina(blinkUser, 2, 'Blink Dodge (passive)', { actionKind: 'blinkPassive' });
+  close(amount(blinkUser, 'currentStamina'), 8);
+  close(amount(blinkUser, 'panickedStamina'), 5);
+  close(blinkUser.stamina, 98);
+  RS.spendStamina(blinkUser, 2, 'Blink Dodge hop', { actionKind: 'combatDodge' });
+  close(amount(blinkUser, 'currentStamina'), 7);
+  close(amount(blinkUser, 'panickedStamina'), 0);
+
+  // Leadbound occupies current ordinary Stamina and never charges enhanced payments.
+  target.stamina = 100;
+  RS.addAffliction(target, 'leadboundStamina', 50);
+  close(RS.movementMultiplier(target, 'walk'), .625);
+  close(RS.movementMultiplier(target, 'dodge'), .625);
+  close(RS.movementMultiplier(target, 'lunge'), .625);
+  close(RS.getSegmentBox(target, 'stamina', 'leadboundStamina').leftPoints, 50);
+  RS.addAffliction(target, 'weightlessStamina', 25);
+  close(RS.movementMultiplier(target, 'walk'), .9375);
+  close(RS.timedDebuffModifier(target, 'moveSpeed'), .9375);
+  close(RS.timedDebuffModifier(target, 'dodgeLungeDistance'), .9375);
+  close(RS.timedDebuffModifier(target, 'attackSpeed'), 1);
+  RS.applyTimedDebuff(target, 'heavy', 12, { power: 2 });
+  close(RS.movementMultiplier(target, 'walk'), .9375 * .85);
+  close(RS.movementMultiplier(target, 'dodge'), .9375 * .85);
+  close(RS.movementMultiplier(target, 'lunge'), .9375 * .85);
+  RS.clearTimedDebuff(target, 'heavy');
+  RS.addEnhancedResource(target, 'moralizedStamina', 2);
+  RS.spendStamina(target, 6, 'ordinary');
+  close(amount(target, 'leadboundStamina'), 50);
+  RS.spendStamina(target, 10, 'ordinary');
+  close(amount(target, 'leadboundStamina'), 40);
+  close(amount(target, 'weightlessStamina'), 25);
+  RS.tick(target, 2, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert(amount(target, 'leadboundStamina') < 40);
+  clear(target, 'leadboundStamina');
+  clear(target, 'weightlessStamina');
+  target.stamina = 10;
+  RS.addAffliction(target, 'leadboundStamina', 100);
+  close(amount(target, 'leadboundStamina'), 10);
+  RS.addAffliction(target, 'weightlessStamina', 10);
+  RS.spendStamina(target, 5, 'ordinary');
+  close(amount(target, 'leadboundStamina'), 5);
+  close(amount(target, 'weightlessStamina'), 10);
+  clear(target, 'leadboundStamina');
+  clear(target, 'weightlessStamina');
+  close(RS.movementMultiplier(target, 'walk'), 1);
+
+  // Soulweight: ordinary direct Health loss drains ordinary Stamina, no debt.
+  target.health = 100; target.stamina = 3;
+  RS.addAffliction(target, 'soulweightedHealth', 8);
+  RS.addEnhancedResource(target, 'mirroredHealth', 5);
+  close(RS.applyDamage(target, 5), 0);
+  close(target.stamina, 3);
+  close(RS.applyDamage(target, 5), 5);
+  close(target.stamina, 0);
+  close(amount(target, 'soulweightedHealth'), 5);
+  assert.equal(target.exhaustion.active, false);
+  clear(target, 'soulweightedHealth');
+
+  // Veilmark bypasses only a finite portion, without inflating incoming damage.
+  target.health = 100;
+  RS.addEnhancedResource(target, 'mirroredHealth', 20);
+  RS.addAffliction(target, 'veilmarkedHealth', 6);
+  close(RS.applyDamage(target, 10), 6);
+  close(amount(target, 'mirroredHealth'), 16);
+  close(amount(target, 'veilmarkedHealth'), 0);
+  clear(target, 'mirroredHealth');
+
+  const flourishes = [
+    ['stormRenewal', 'currentStamina', 8.8, 2.2],
+    ['bedrock', 'temperedFooting', 11, 2.8],
+    ['blackBargain', 'pactHealth', 8.8, 2.2],
+  ];
+  for (const [id, status, full, quarter] of flourishes) {
+    assert(RS.ENHANCED_RESOURCE_DEFS[status]);
+    equip([], { tap1: id });
+    hit({ comboFinisher: false });
+    close(amount(attacker, status), 0);
+    hit();
+    close(amount(attacker, status), full);
+    clear(attacker, status);
+    hit({ attackCategory: 'offensiveHold', isFlurry: true, comboFinisher: false });
+    close(amount(attacker, status), quarter);
+    clear(attacker, status);
+    equip([], { hold2: id });
+    CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'block' });
+    close(amount(attacker, status), full);
+    clear(attacker, status);
+  }
+
+  attacker.stamina = 40;
+  RS.addEnhancedResource(attacker, 'currentStamina', 8);
+  RS.spendStamina(attacker, 4, 'attack', { actionKind: 'combatCombo' });
+  close(attacker.stamina, 36);
+  close(amount(attacker, 'currentStamina'), 8);
+  RS.spendStamina(attacker, 6, 'roll dodge');
+  close(attacker.stamina, 36);
+  close(amount(attacker, 'currentStamina'), 5);
+  RS.spendStamina(attacker, 4, 'evade', { actionKind: 'combatDodge' });
+  close(amount(attacker, 'currentStamina'), 3);
+  clear(attacker, 'currentStamina');
+
+  attacker.footing = 50; attacker.stamina = 20;
+  RS.addEnhancedResource(attacker, 'temperedFooting', 50);
+  close(RS.attackPowerForAttack({ attacker, attackPower: 12 }), 24);
+  const victim = makeEntity();
+  close(RS.applyDamage(victim, 4, { attacker, attackPower: 10, afflictionBonuses: { bleedingHealth: .5 } }), 4);
+  close(amount(victim, 'bleedingHealth'), 10);
+  close(RS.spendFooting(attacker, 6), 0);
+  close(attacker.stamina, 20);
+  close(amount(attacker, 'temperedFooting'), 44);
+  RS.spendFooting(attacker, 48);
+  close(attacker.footing, 46);
+  close(amount(attacker, 'temperedFooting'), 0);
+  close(RS.attackPowerForAttack({ attacker, attackPower: 12 }), 12);
+
+  attacker.health = 100; attacker.stamina = 50;
+  RS.addEnhancedResource(attacker, 'pactHealth', 8);
+  close(RS.applyDamage(attacker, 10), 0);
+  close(amount(attacker, 'pactHealth'), 3);
+  close(amount(attacker, 'soulweightedHealth'), 5);
+  close(attacker.stamina, 50);
+  close(RS.applyHealthAfflictionDamage(attacker, 4), 4);
+  close(amount(attacker, 'pactHealth'), 3);
+  close(amount(attacker, 'soulweightedHealth'), 5);
+  close(RS.applyDamage(attacker, 8), 2);
+  close(attacker.stamina, 48);
+  close(amount(attacker, 'pactHealth'), 0);
+  close(amount(attacker, 'soulweightedHealth'), 6);
+
+  clear(attacker, 'soulweightedHealth');
+  RS.addEnhancedResource(attacker, 'guardianHealth', 8);
+  close(RS.applyDamage(attacker, 4), 4);
+  close(amount(attacker, 'guardianHealth'), 8);
+  close(RS.applyHealthAfflictionDamage(attacker, 10), 0);
+  close(amount(attacker, 'guardianHealth'), 3);
+  close(RS.applyHealthAfflictionDamage(attacker, 8), 2);
+
+  // Ohth's Base grants the wielder rather than the victim.
+  equip(['ancestralSight']);
+  clear(attacker, 'weightlessStamina');
+  hit({ comboFinisher: false });
+  close(amount(attacker, 'weightlessStamina'), 5.5);
+  close(amount(target, 'weightlessStamina'), 0);
+  clear(attacker, 'weightlessStamina');
+  RS.addAffliction(attacker, 'weightlessStamina', 100);
+  close(RS.timedDebuffModifier(attacker, 'moveSpeed'), 3);
+  close(RS.timedDebuffModifier(attacker, 'dodgeLungeDistance'), 3);
+  close(RS.timedDebuffModifier(attacker, 'attackSpeed'), 1);
+  clear(attacker, 'weightlessStamina');
+  attacker.stamina = 100;
+  RS.addAffliction(attacker, 'weightlessStamina', 20);
+  RS.addAffliction(attacker, 'woundedStamina', 10);
+  close(RS.getSegmentBox(attacker, 'stamina', 'woundedStamina').leftPoints, 20);
+  RS.spendStamina(attacker, 70, 'ordinary');
+  close(amount(attacker, 'weightlessStamina'), 20);
+  RS.spendStamina(attacker, 10, 'ordinary');
+  close(amount(attacker, 'woundedStamina'), 0);
+  close(amount(attacker, 'weightlessStamina'), 20);
+  RS.spendStamina(attacker, 5, 'ordinary');
+  close(amount(attacker, 'weightlessStamina'), 15);
+  RS.tick(attacker, 2, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert(amount(attacker, 'weightlessStamina') < 15, 'Weightless fades on the affliction tick');
+  clear(attacker, 'weightlessStamina');
+  equip([], { tap2: 'ancestralMercy', hold1: 'ancestralMercy', hold2: 'ancestralMercy' });
+  clear(attacker, 'unshackledStamina');
+  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'block' });
+  close(amount(attacker, 'unshackledStamina'), 0); // A block is not a Held attack.
+  equip([], { tap2: 'ancestralMercy', hold1: 'ancestralMercy' });
+  hit({ slotId: 'tap2', attackCategory: 'quickAttack', quickBonusEffectProc: true });
+  close(amount(attacker, 'unshackledStamina'), 9.6);
+  clear(attacker, 'unshackledStamina');
+  hit({ slotId: 'hold1', attackCategory: 'offensiveHold', isFlurry: true });
+  close(amount(attacker, 'unshackledStamina'), 2.4);
+  clear(attacker, 'unshackledStamina');
+  RS.addEnhancedResource(attacker, 'unshackledStamina', 100);
+  close(RS.attackTempoMultiplier(attacker, 'combatCombo'), 3);
+  close(RS.attackTempoMultiplier(attacker, 'combatQuickAttack'), 1);
+  const combo = RS.spendStamina(attacker, 12, 'combo', { actionKind: 'combatCombo' });
+  close(combo.tempoMultiplier, 3);
+  close(amount(attacker, 'unshackledStamina'), 88);
+  close(RS.attackTempoMultiplier(attacker, 'combatCombo'), 2.76);
+  assert(!ES.allowsFlourishSlot('fury', 'hold1'));
+  assert(!ES.allowsFlourishSlot('ancestralMercy', 'tap1'));
+  assert(ES.allowsFlourishSlot('ancestralMercy', 'hold2'));
+  assert(!ES.setFlourish(key, 'tap1', 'ancestralMercy'));
+  assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.weightlessStamina);
+  assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.unshackledStamina);
+
+  const savedState = { base: ['stormwake', 'ancestralSight'], flourishes: { tap1: 'blackBargain', hold2: 'ancestralMercy' } };
+  equip(savedState.base, savedState.flourishes);
+  ES.load(ES.serialize());
+  same(ES.stateFor(key), savedState);
+  const relic = { shape: 'longsword', uid: 'realmtest123', enchantments: savedState };
+  const decoded = HR.decodeBoundKey(HR.encodeBoundKey(relic));
+  assert(decoded);
+  same(decoded.enchantments, savedState);
+  for (const [, , id] of newBases) assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors[id]);
+  for (const [, id] of flourishes) assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors[id]);
+}
+console.log('Planar enchantments: unique buildup, transactions, defensive/flurry triggers and persistence passed');
+
+// The live game's Drunken Health compatibility adapter replaces applyDamage.
+// Exercise its actual script (the preceding core animation IIFE is unrelated to this test).
+{
+  const source = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8');
+  const start = source.indexOf('(() => {\n  "use strict";\n\n  const RS = window.ResourceSystem;');
+  assert(start >= 0, 'live damage adapter must be present');
+  vm.runInContext(source.slice(start), context, { filename: 'combat-core.js (Drunken Health adapter)' });
+  assert(RS.__drunkenAfflictionsInstalled);
+  const actor = makeEntity();
+  RS.addEnhancedResource(actor, 'pactHealth', 8);
+  assert.equal(RS.applyDamage(actor, 10), 0);
+  assert.equal(RS.getAffliction(actor, 'soulweightedHealth'), 5);
+  RS.addAffliction(actor, 'veilmarkedHealth', 4);
+  assert.equal(RS.applyDamage(actor, 8), 4);
+  assert.equal(actor.stamina, 96);
+  assert.equal(RS.getAffliction(actor, 'pactHealth'), 1);
+  assert.equal(RS.getAffliction(actor, 'soulweightedHealth'), 3, 'only old pact debt discharges');
+  RS.addEnhancedResource(actor, 'guardianHealth', 5);
+  RS.addAffliction(actor, 'woundedStamina', 10);
+  actor.stamina = 10;
+  RS.spendStamina(actor, 5, 'attack');
+  assert.equal(actor.health, 96, 'Guardian absorbs Wounded expenditure damage');
+  assert.equal(RS.getAffliction(actor, 'guardianHealth'), 2.5);
+  assert.equal(RS.getAffliction(actor, 'pactHealth'), 1, 'Pact is reserved for direct damage');
+  const drunk = makeEntity();
+  RS.addAffliction(drunk, 'drunkenHealth', 6);
+  RS.addAffliction(drunk, 'veilmarkedHealth', 5);
+  assert.equal(RS.applyDamage(drunk, 10), 4);
+  assert.equal(RS.getAffliction(drunk, 'bleedingHealth'), 6, 'Drunken conversion still precedes planar protection');
+  assert.equal(RS.getAffliction(drunk, 'veilmarkedHealth'), 1);
+}
+console.log('Planar enchantments through live Drunken Health adapter passed');
+
+// Performance regression: unrelated capacity providers must not run for one resource query.
+{
+  const actor=makeEntity(), calls=[]; // Record only the actual registered stat provider visits.
+  const stop=RS.registerStatModifierProvider((entity,key)=>{if(entity===actor)calls.push(key);return 1;});
+  for(const [resource,stat] of [['health','maxHealth'],['stamina','maxStamina'],['footing','maxFooting']]){
+    calls.length=0;
+    assert.equal(RS.getEffectiveMax(actor,resource),100);
+    same(calls,[stat]);
+  }
+  stop();
+  const definitions=RS.ENHANCED_RESOURCE_DEFS;
+  for(const id of Object.keys(definitions)) RS.addEnhancedResource(actor,id,5);
+  for(const resource of ['health','stamina','footing','missing']) for(const tx of [{},{source:'directDamage'},{source:'afflictionTick'},{actionKind:'combatCombo'},{actionKind:'offensiveHeldCharge'},{actionKind:'dodge'}]){
+    const expected=Object.entries(definitions).filter(([id,def])=>def.resource===resource&&RS.getAffliction(actor,id)>0).map(([id,def])=>{
+      const benefitsTransaction=typeof def.benefitsTransaction==='function'&&def.benefitsTransaction(tx);
+      return {id,amount:RS.getAffliction(actor,id),benefitsTransaction,priority:benefitsTransaction?Number(def.beneficialPriority??def.normalPriority)||0:Number(def.normalPriority)||0,rate:def.conversionRate};
+    }).sort((a,b)=>b.priority-a.priority||b.rate-a.rate);
+    same(RS.getEnhancedResources(actor,resource,tx).map(({id,amount,benefitsTransaction,priority,def})=>({id,amount,benefitsTransaction,priority,rate:def.conversionRate})),expected);
+  }
+  const cleaned=ES.cleanWeaponState({base:['invalid','stormwake','stormwake','ancestralSight','burning'],flourishes:{tap1:'blackBargain',hold2:'ancestralMercy',bogus:'fury'}});
+  same(cleaned,{base:['stormwake','ancestralSight'],flourishes:{tap1:'blackBargain',hold2:'ancestralMercy'}});
+  console.log('Resource-specific provider dispatch, enhanced pool order and canonical enchantment normalization passed');
+}

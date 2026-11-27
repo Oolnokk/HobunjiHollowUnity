@@ -29,9 +29,9 @@
       lateLoad('js/grehlr-head-rig-correction.js?v=20261118GrehlrCorr10', 'grehlr-head-rig-correction');
     }
   }
-  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-18-nine-authored-rigs2') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored');
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-26-ten-authored-rigs1') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261126pingdortHead1', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261126pingdortHead1', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
@@ -40,8 +40,8 @@
     }
   }
   if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
-    if (!parserLoad('js/animal-shoulder-spline.js?v=20261119h401d940', 'animal-shoulder-spline')) {
-      lateLoad('js/animal-shoulder-spline.js?v=20261119h401d940', 'animal-shoulder-spline');
+    if (!parserLoad('js/animal-shoulder-spline.js?v=20261126hc84ce7c', 'animal-shoulder-spline')) {
+      lateLoad('js/animal-shoulder-spline.js?v=20261126hc84ce7c', 'animal-shoulder-spline');
     }
   }
   if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 3) {
@@ -97,18 +97,23 @@
   }
 
   function authoredShoulderRestFor(companion, combatDeps) {
+    if (companion?.def?.isFlyingSpecies && companion.creatureKey !== window.PingdortRegistration?.KIND) return null;
     const kind = genotypeKindFor(companion, combatDeps);
     const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null;
     return rawRig?.shoulderRest || null;
   }
 
   function effectiveShoulderRest(companion, combatDeps) {
+    if (companion?.def?.isFlyingSpecies && companion.creatureKey !== window.PingdortRegistration?.KIND) return null;
     const runtime = companion?.avatarRef?.shoulderRest;
     const authored = authoredShoulderRestFor(companion, combatDeps);
     return runtime || authored ? { ...(runtime || {}), ...(authored || {}) } : null;
   }
 
   function splineAllowedFor(companion, combatDeps) {
+    if (companion?.creatureKey && companion.creatureKey === window.PingdortRegistration?.KIND)
+      return !!companion.avatarRef?.shoulderRest?.authored; // Only the native shoulder avatar gets the registered Pingdort curl.
+    if (companion?.def?.isFlyingSpecies) return false;
     const kind = genotypeKindFor(companion, combatDeps);
     return !!window.HobunjiShoulderSplineProfiles?.allows?.(kind);
   }
@@ -305,7 +310,7 @@
         if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No opaque head pixels in the idle frame');
       }
       let composed = null;
-      try { composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false); }
+      try { composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false, { priority: 'pet' }); }
       catch (error) {
         if (renderer?.SPECIES?.[kind]) throw error; // A supported species must retry its own eyes/coat, never cache a plain fallback.
         smallPetHeadDebug.lastError = 'Unsupported genotype, using raw sprite: ' + String(error?.message || error);
@@ -356,8 +361,8 @@
 
     if (kind && typeof renderer?.composeFrame === 'function') {
       try {
-        idleSource = await renderer.composeFrame(kind, 'idle', companion.genotype, false);
-        rightSource = rightUsesIdle ? idleSource : await renderer.composeFrame(kind, 'run1', companion.genotype, false);
+        idleSource = await renderer.composeFrame(kind, 'idle', companion.genotype, false, { priority: 'pet' });
+        rightSource = rightUsesIdle ? idleSource : await renderer.composeFrame(kind, 'run1', companion.genotype, false, { priority: 'pet' });
       } catch (error) {
         if (renderer?.SPECIES?.[kind]) throw error; // Preserve painted split layers; retry temporary compositor failures.
         idleSource = null;
@@ -566,7 +571,7 @@
       && companion._shoulderPresentedBackMap === (currentBackMap || null);
     if (companion.currentFrameUrl === frameUrl && composedReady && mapsUnchanged) return true;
     if (expectsGenotype && Date.now() < (companion._shoulderGenotypeRetryAt || 0)) return true; // Retry cold genotypes at a bounded cadence, not every render frame.
-    const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype);
+    const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype, false, 'pet');
     const actualMap = shoulderFrameMap(companion.avatarRef?.frontPlane); // Refresh after the authoritative game texture swap.
     const fullAppearance = !expectsGenotype || (applied !== false && actualMap?.isCanvasTexture === true); // A declined swap may leave an older tinted canvas bound; it is not proof the requested genotype arrived.
     companion._shoulderGenotypeRetryAt = expectsGenotype && !fullAppearance ? Date.now() + 150 : 0; // Plain fallbacks are temporary even when setCreatureFrame returned success.
@@ -585,7 +590,7 @@
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     const idle = shoulderIdleFrame(companion, combatDeps);
     if (idle.url && typeof combatDeps?.setCreatureFrame === 'function' && companion.avatarRef && companion.currentFrameUrl !== idle.url) {
-      const applied = combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype);
+      const applied = combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype, false, 'pet');
       if (applied !== false) companion.currentFrameUrl = idle.url; // Never mark a failed post-shoulder restore as complete.
     }
     companion.__hobunjiShoulderFrame = null;
@@ -631,7 +636,7 @@
   let cachedShoulderPetsFrameId = -1;
   let cachedShoulderPetsRoots = [];
 
-  composer.registerExternalRootProvider('shoulderPets', () => {
+  function shoulderPetsForFrame() {
     const frameId = window.RuntimeFrameScheduler?.frameId?.();
     if (frameId != null && frameId === cachedShoulderPetsFrameId) return cachedShoulderPetsRoots;
 
@@ -660,6 +665,15 @@
     if (frameId != null) cachedShoulderPetsFrameId = frameId;
     cachedShoulderPetsRoots = roots;
     return roots;
+  }
+  composer.registerExternalRootProvider('shoulderPets', shoulderPetsForFrame);
+  // The ordinary simulation pin precedes render-only stance/deadzone/head
+  // composition. Reuse the existing frame transaction, after the final neck
+  // pose, and the existing memoized active roots; no new scheduler or pass.
+  composer.addPostHeadAimHook?.((undo,renderDebug) => {
+    const repin=window.ShoulderPetAttachmentRuntime?.repinForRender;
+    if(!repin)return;
+    for(const root of shoulderPetsForFrame())repin(root,undo,renderDebug);
   });
 
   window.PlayerBodyAttachmentBridge = {

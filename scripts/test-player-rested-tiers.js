@@ -11,9 +11,8 @@ const root = path.resolve(__dirname, '..'); // All assertions evaluate the shipp
 const read = file => fs.readFileSync(path.join(root, file), 'utf8'); // Source loader for isolated browser VMs.
 const coreSource = read('docs/js/temple-prayer-rest-blessings.js'); // Existing saved buff and time-passage event authority.
 const movementSource = read('docs/js/devotion-rest-buffs.js'); // Existing native combat-speed multiplier wrapper.
-const legacySource = read('docs/js/bed-lie-pose.js'); // The older animated bed path also reports actual sleep hours.
-assert.match(legacySource, /beforeSleepHour[\s\S]*?deps\.sleep\(\)[\s\S]*?afterSleepHour[\s\S]*?source: 'legacy-bed'/,
-  'legacy bed uses actual elapsed hours and dispatches the same sleep-completed event');
+const bedSource = read('docs/js/bed-lie-pose.js');
+assert.doesNotMatch(bedSource, /deps\.sleep|hobunji-time-passage/, 'NPC bed poses never advance time or emit player sleep events');
 
 let hour = 100; // Continuous represented game hour; test all deadlines and expirations with this clock.
 let walkingYawn = 1; // Simulates the player yawn runtime's native movement multiplier.
@@ -50,7 +49,7 @@ vm.runInNewContext(coreSource, context, { filename: 'temple-prayer-rest-blessing
 const rest = window.TemplePrayerRestBlessings;
 assert.equal(rest.version, 4);
 const send = (kind, hours, extra = {}) => {
-  const handler = handlers.get('hobunji-time-passage'); // Production CalendarSystem and legacy BedLiePose both emit this event.
+  const handler = handlers.get('hobunji-time-passage'); // Production CalendarSystem emits this event.
   assert.equal(typeof handler, 'function');
   handler({ detail: { kind, hours, ...extra } });
 };
@@ -90,6 +89,10 @@ assert.equal(buff('rested')?.durationS, 3 * 3600, 'Rested occupies a real three-
 assert.equal(buff('well-rested'), undefined);
 assert.equal(rest.movementSpeedMultiplier(), 1, 'Rested does not copy Well Rested speed bonuses');
 assert.equal(JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.rested.expiresAtGameHour, 103);
+// Modern gameplay takes the same clock origin directly. No calendar debug
+// formatting should happen for stat reads, buffs or expiration checks.
+window.CalendarSystem.getRawClock = () => ({rawDay:Math.floor(hour/24),time01:(hour%24)/24});
+window.CalendarSystem.timeDebugSnapshot = () => ({seatedWaitReady:false});
 hour = 102.95;
 assert.equal(rest.isRested(), true);
 hour = 103.01;
@@ -144,14 +147,17 @@ assert.equal(rest.isWellRested(), false, 'Well Rested expires at exactly 24 elap
 assert.equal(rest.isRested(), false);
 assert.ok(Math.abs(window.Combat.getMovementSpeedMul() - .8) < 1e-9, 'full movement speed returns after yawning and Well Rested expire');
 
-send('sleep', 0, { source: 'legacy-bed' });
-assert.equal(rest.isRested(), false, 'zero-hour legacy sleep never grants Rested');
-send('sleep', 2, { source: 'legacy-bed' });
-assert.equal(rest.isRested(), true, 'legacy animated beds also grant three-hour Rested');
+window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
+send('sleep', 0);
+assert.equal(rest.isRested(), false, 'zero-hour bed sleep never grants Rested');
+assert.equal(window.__hobunjiOwnedBedSleepPending, null, 'zero-hour sleep consumes its provenance');
+send('sleep', 2);
+assert.equal(rest.isRested(), true, 'positive Sleep grants three-hour Rested');
 assert.equal(rest.isWellRested(), false);
 hour = wellRestedExpiresAt + 3.5;
-send('sleep', 8, { source: 'legacy-bed' });
-assert.equal(rest.isWellRested(), true, 'legacy beds require the same eight hours for Well Rested');
+window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
+send('sleep', 8);
+assert.equal(rest.isWellRested(), true, 'eight-hour owned-bed Sleep grants Well Rested');
 assert.equal(rest.isRested(), true);
 
 window.__hobunjiPlayerProfile.characterId = 'farmer-b';

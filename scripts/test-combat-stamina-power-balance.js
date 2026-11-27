@@ -68,7 +68,7 @@ const maxMarkedBluntHealth = fullBreakerDamage * deathMarks[2] * bluntType.healt
 assert(maxMarkedBluntHealth < tier0GruntHealth, 'Blunt three-mark Charged Breaker should not erase tier-0 grunts before knockback/Footing can matter');
 assert.equal(bluntType.footing, 1.25, 'Blunt Footing is increased to 125% of the baseline');
 assert.equal(bluntType.knockback, 1.25, 'Blunt knockback is increased to 125% of the baseline');
-assert.match(gameSource, /applyKnockback\(c, fromX, fromY, knockbackPxS \* impactMultiplier \* \(resourceDamage.knockbackMultiplier \?\? 1\)\)/, 'Creatures must receive the new configured impulse multiplier once');
+assert.match(gameSource, /applyKnockback\(c, fromX, fromY, knockbackPxS \* impactMultiplier \* \(resourceDamage.knockbackMultiplier \?\? 1\), popupCredit\)/, 'Creatures must receive the new configured impulse multiplier once');
 assert.match(gameSource, /applyKnockback\(player, fromX, fromY, knockbackPxS \* \(resourceDamage.knockbackMultiplier \?\? 1\)\)/, 'The player must receive the same configured impulse multiplier once');
 assert.match(gameSource, /environmentalImpact \? \{ health: amount, footing: 0 \} : hitResourceDamage\(amount, dmgOpts\)/, 'Environmental collisions and falls must bypass the direct-blunt Health reduction');
 

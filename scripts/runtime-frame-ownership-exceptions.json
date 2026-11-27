@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "Defers loading-label rendering to the next paints before worker-backed den carving, mine generation or their synchronous fallbacks; each deferral runs once per scene-load request.",
     "migrationStage": "not-planned",
-    "line": 14747
+    "line": 15103
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 34643
+    "line": 35114
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 34799
+    "line": 35255
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 34818
+    "line": 35274
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 34904
+    "line": 35360
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -150,7 +150,7 @@
     "function": "frame (active ring-tumbler re-arm)",
     "reason": "The dial physics and pin indicators advance via RAF only while a player has an active chest-lock minigame session. The frame callback stops immediately when session becomes null, and close() cancels its pending request; no session-lifetime idle loop remains after a chest is picked or cancelled.",
     "migrationStage": "not-planned",
-    "line": 494
+    "line": 368
   },
   {
     "file": "docs/js/chest-lockpicking.js",
@@ -159,7 +159,7 @@
     "function": "open (start ring-tumbler session)",
     "reason": "A single requestAnimationFrame starts the ring-dial animation when the overlay opens. All later frames are owned by frame(), and the registered animation is canceled on close, cancellation, invalid chest or completed lock. It is not an independent perpetual gameplay ticker.",
     "migrationStage": "not-planned",
-    "line": 616
+    "line": 480
   },
   {
     "file": "docs/js/combat/combat-input.js",
@@ -238,9 +238,9 @@
     "owner": "FishCatalog",
     "classification": "bounded-animation",
     "function": "presentationLoop",
-    "reason": "Started (line 480) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
+    "reason": "Started (line 642) only when a fishing cast begins and stops itself once window.Fishing.state clears at the end of that catch attempt - a finite per-session effect rather than a permanent runtime.",
     "migrationStage": "not-planned",
-    "line": 474
+    "line": 613
   },
   {
     "file": "docs/js/folder-save-debug-ui.js",
@@ -276,7 +276,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "Gameplay uses RuntimeFrameScheduler: installMaintenance() stays scheduler-owned and applyPrimaryGripVisuals() maintains intrinsic held-item scale only. Authored grip targets now move hands and never translate/rotate the weapon. The standalone Attack Animation Editor/Animation Author do not load RuntimeFrameScheduler, so this two-line fallback RAF loop remains isolated to those tool contexts.",
     "migrationStage": "migrated",
-    "line": 1752
+    "line": 4835
   },
   {
     "file": "docs/js/harlyao-night-march-runtime.js",
@@ -321,7 +321,7 @@
     "function": "scheduleMenuReadability",
     "reason": "Guarded single RAF re-enforces menu text readability (font floor/color) after a click/input/mutation; does not reschedule itself.",
     "migrationStage": "not-planned",
-    "line": 213
+    "line": 299
   },
   {
     "file": "docs/js/inventory-ui.js",
@@ -330,7 +330,7 @@
     "function": "scheduleDecorate",
     "reason": "Separate guarded single RAF that redecorates inventory mode tabs/pack slots after a change; independent debounce flow from scheduleMenuReadability, also not a loop.",
     "migrationStage": "not-planned",
-    "line": 298
+    "line": 436
   },
   {
     "file": "docs/js/item-arch-category-colors.js",
@@ -483,7 +483,7 @@
     "function": "nextTick (inside flicker diagnostic loop)",
     "reason": "A single requestAnimationFrame races a 200ms setTimeout purely to await the next paint inside a bounded 45-sample flicker diagnostic; it never reschedules itself and the outer sampling loop is a plain for-loop, not a RAF recursion.",
     "migrationStage": "not-planned",
-    "line": 1628
+    "line": 1755
   },
   {
     "file": "docs/js/procedural-hand-frame-driver.js",
@@ -492,7 +492,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all — attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
     "migrationStage": "not-planned",
-    "line": 1123
+    "line": 1190
   },
   {
     "file": "docs/js/quick-potion-arc-ui.js",
@@ -664,5 +664,23 @@
     "reason": "Developer-triggered diagnostic: awaits at most three animation frames so its read-only render hook can record the next main pass's draw list, then removes the hook and returns; it never reschedules itself or runs without an explicit Settings/console request.",
     "migrationStage": "not-planned",
     "line": 298
+  },
+  {
+    "file": "docs/js/character-scale-comparison.js",
+    "owner": "FullCharacterScaleComparison",
+    "classification": "one-shot",
+    "function": "scheduleSelectedLayout",
+    "reason": "Guarded one-shot callback batches selected-character layout changes; checks active/building and never reschedules itself.",
+    "migrationStage": "not-planned",
+    "line": 933
+  },
+  {
+    "file": "docs/js/character-scale-comparison.js",
+    "owner": "FullCharacterScaleComparison",
+    "classification": "one-shot",
+    "function": "queueAgeRender",
+    "reason": "Guarded one-shot callback coalesces multiple age inputs; flushAgeRender clears the pending handle and does not recurse.",
+    "migrationStage": "not-planned",
+    "line": 964
   }
 ]

@@ -7,6 +7,7 @@
   const PICK_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.pickShovelForgeable.v1'; // One-time editor-only lift for saved local drafts; later explicit authoring is respected.
   const WAR_CLEAVER_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.warCleaverForgeable.v1'; // Enable the shipped War-cleaver haft in old browser drafts without repeatedly overriding editor choices.
   const COMPANION_TANG_DIRECTION_MIGRATION_KEY = 'hobunji.modularWeapons.companionTangDirection.v1'; // Prevents replaying the one-time arrow repair over subsequent author edits.
+  const SPIKED_SWEEP_MIGRATION_KEY = 'hobunji.modularWeapons.spikedHeadSweep.v1'; // Correct stale local thrust settings once without locking future intentional edits.
   const PAIR_FIT_MIGRATION_KEY = 'hobunji.modularWeapons.authoredPerpendicularPairFits.v1'; // Adopt the new neutral-angle pair fits only once for preexisting browser drafts.
   const CORRECTED_COMPANION_TANG_SHAFTS = new Set(['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']); // Only the six shipped automatically generated sideways tangs require reversed arrow direction.
   const PAIR_VISUAL_FIELDS = Object.freeze(["scaleX","scaleY","flipX","flipY","x","y","rotation","layerOrder"]); // Source-to-head corrections only; weapon behavior, bridges and authored art remain independent.
@@ -128,8 +129,52 @@
   const alphaBounds = new WeakMap(); // Each source bitmap is scanned once when finding visible composition bounds.
   const canvases = new Map(); // Bounded composed sprites, created only when requested.
   const boredCanvases = new Map(); // One regenerated source-art image per edited shaft and revision, shared by all head/metal combinations.
+  // The donor and haft PNG headers were verified to be 450 × 1204 for these pairs.
+  // Convert donor item-local bands at authoring time (900 px per world unit, origin 225/602).
+  // Only bands and minimum strain are copied; assembled-head contact is traced independently.
+  const DONOR_BAND_PRESET='same-canvas-donor-bands-20261126-v1'; // One-time upgrade of pre-band Foundry drafts.
+  const DONOR_BANDS={
+    "bshuakauitl":{"shorteningBands":[{"x0":123.489,"x1":231.273,"y0":365.651,"y1":824.201}],"minShorteningScale":0.65},
+    "dagger-sword":{"shorteningBands":[{"x0":139.662,"x1":249.237,"y0":660.563,"y1":879.947}],"minShorteningScale":0.65},
+    "dagger":{"shorteningBands":[{"x0":161.217,"x1":247.437,"y0":424.997,"y1":595.826}],"minShorteningScale":0.65},
+    "fishing-mace":{"shorteningBands":[{"x0":146.844,"x1":249.237,"y0":532.889,"y1":840.392}],"minShorteningScale":0.65},
+    "fishing-spear":{"shorteningBands":[{"x0":155.826,"x1":252.828,"y0":245.168,"y1":714.509}],"minShorteningScale":0.65},
+    "harlyao-broadsword":{"shorteningBands":[{"x0":161.217,"x1":234.864,"y0":509.507,"y1":662.363}],"minShorteningScale":0.65},
+    "harlyao-longsword":{"shorteningBands":[{"x0":152.235,"x1":238.455,"y0":495.125,"y1":683.945}],"minShorteningScale":0.65},
+    "war-cleaver":{"shorteningBands":[{"x0":145.044,"x1":276.183,"y0":487.934,"y1":834.992}],"minShorteningScale":0.65},
+    "warhammer":{"shorteningBands":[{"x0":139.662,"x1":256.419,"y0":457.361,"y1":887.147}],"minShorteningScale":0.75},
+    "hatchet":{"shorteningBands":[{"x0":130.68,"x1":261.81,"y0":418.976,"y1":967.445}],"minShorteningScale":0.65},
+    "hoe":{"shorteningBands":[{"x0":132.471,"x1":254.628,"y0":462.752,"y1":869.165}],"minShorteningScale":0.65},
+    "kylie":{"shorteningBands":[{"x0":87.561,"x1":401.931,"y0":430.388,"y1":921.311}],"minShorteningScale":0.65},
+    "pick-shovel":{"shorteningBands":[{"x0":155.826,"x1":238.455,"y0":349.469,"y1":836.792}],"minShorteningScale":0.65},
+    "plains-sword":{"shorteningBands":[{"x0":127.08,"x1":249.237,"y0":110.303,"y1":403.415}],"minShorteningScale":0.65},
+    "grapple-flail":{"shorteningBands":[{"x0":112.716,"x1":276.183,"y0":259.55,"y1":959.075}],"minShorteningScale":0.65}
+  };
+  function seedDonorBands(catalog){
+    if(catalog.donorBandPreset===DONOR_BAND_PRESET)return;
+    for(const [key,entry] of Object.entries(DONOR_BANDS)){
+      const shaft=catalog.shafts?.[key];
+      if(shaft&&!shaft.shorteningBands?.length){shaft.shorteningBands=entry.shorteningBands.map(b=>({...b}));shaft.minShorteningScale=entry.minShorteningScale;}
+    }
+    catalog.donorBandPreset=DONOR_BAND_PRESET;
+  }
   let config = global.MODULAR_WEAPON_CONFIG; // Current authored attachment data.
+  seedDonorBands(config);
+  let headKeys = new WeakMap(Object.entries(config.heads).map(([key,head])=>[head,key])); // Resolve pair-only mount mode for object-based matching calls.
   let revision = 0; // Discards stale preview renders after edits.
+  let draftPersistence = {ok:null,error:null}; // Last attempted browser save; independent of the live validated rig.
+  function persistDraft() {
+    try {
+      const storage=global.localStorage; // Access itself can throw when storage is disabled.
+      if(!storage)throw new Error('Browser storage is unavailable.');
+      storage.setItem(DRAFT_KEY,JSON.stringify(config));
+      draftPersistence={ok:true,error:null};
+    } catch(error) {
+      draftPersistence={ok:false,error:error?.message || String(error)};
+      global.__farmLog?.('[Foundry] Draft applied in memory, browser save failed: '+draftPersistence.error,'warn');
+    }
+    return {...draftPersistence}; // Report durable persistence separately from successful validation and rendering.
+  }
   let migratedPairFits = 0; // Counts upgraded old presets for the existing in-game diagnostic surface.
 
   function finite(value, fallback, min, max) {
@@ -149,11 +194,110 @@
       rotation: finite(raw.rotation, 0, -360, 360), scale: finite(raw.scale, 1, 0.1, 8),
       ...(raw.behind === true ? { behind: true } : {}) };
   }
-  function drawJunction(ctx, image, piece) { // ctx already maps source pixels; draws the piece centred and rotated.
+  // Inward ink preserves alpha, frame, grip, contact and collision hull. Each component
+  // is inked before compositing, so a foreground primitive also outlines its seam.
+  const COMPONENT_OUTLINE_WIDTH = 8; // Inward bitmap pixels, substantially thicker than the original one-pixel ink.
+  function outlineComponentPixels(rgba, width, height, thickness = COMPONENT_OUTLINE_WIDTH) {
+    const limit = Math.max(1, Math.min(32, Math.round(thickness) || COMPONENT_OUTLINE_WIDTH));
+    const distance = new Uint8Array(width * height); // Saturated chessboard distance to transparency or bitmap edge.
+    const far = limit + 1; // Distances beyond the requested band need not be tracked.
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (rgba[i * 4 + 3] < 128) continue;
+      let d = x === 0 || y === 0 || x === width-1 || y === height-1 ? 1 : far;
+      if (x) d = Math.min(d, distance[i-1]+1);
+      if (y) {
+        d = Math.min(d, distance[i-width]+1);
+        if (x) d = Math.min(d, distance[i-width-1]+1);
+        if (x+1<width) d = Math.min(d, distance[i-width+1]+1);
+      }
+      distance[i] = d;
+    }
+    let changed = 0; // Skip GPU/canvas uploads if the source is already inked.
+    for (let y = height-1; y >= 0; y--) for (let x = width-1; x >= 0; x--) {
+      const i = y * width + x;
+      let d = distance[i];
+      if (!d) continue; // Alpha and transparent RGB remain exactly as authored.
+      if (x+1<width) d = Math.min(d, distance[i+1]+1);
+      if (y+1<height) {
+        d = Math.min(d, distance[i+width]+1);
+        if (x) d = Math.min(d, distance[i+width-1]+1);
+        if (x+1<width) d = Math.min(d, distance[i+width+1]+1);
+      }
+      distance[i] = d;
+      const j = i * 4; // Inward-only ink, including diagonal boundaries, with no geometry changes.
+      if (d <= limit && (rgba[j] || rgba[j+1] || rgba[j+2])) {
+        rgba[j] = rgba[j+1] = rgba[j+2] = 0;
+        changed++;
+      }
+    }
+    return changed;
+  }
+  const outlinedSources = new WeakMap(); // Separate moving-head variants, never mutate the original PNG.
+  function outlinedImage(source) {
+    if (!source) return source;
+    if (outlinedSources.has(source)) return outlinedSources.get(source);
+    try {
+      const canvas = document.createElement('canvas'); // Native dimensions keep all layer-local anchors unchanged.
+      canvas.width = source.naturalWidth || source.width;
+      canvas.height = source.naturalHeight || source.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(source, 0, 0);
+      const raster = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = outlineComponentPixels(raster.data, canvas.width, canvas.height) ? canvas : source;
+      if (result === canvas) ctx.putImageData(raster, 0, 0);
+      outlinedSources.set(source, result);
+      return result;
+    } catch (error) {
+      global.__farmLog?.('[Foundry] Component outline unavailable: ' + error.message, 'warn');
+      global.console?.warn?.('Modular weapon component outline unavailable:', error);
+      return source;
+    }
+  }
+  function componentPainter(canvas) {
+    let scratch = null, rasterCtx = null; // One temporary bitmap per composition, released after the cached result is built.
+    return function paint(context, bounds, draw) {
+      const t = context.getTransform(); // Include every authored transform before measuring or inking.
+      const corners = [[bounds.left,bounds.top],[bounds.right,bounds.top],
+        [bounds.left,bounds.bottom],[bounds.right,bounds.bottom]].map(([x,y]) =>
+        [t.a*x+t.c*y+t.e,t.b*x+t.d*y+t.f]);
+      const x = Math.max(0, Math.floor(Math.min(...corners.map(p=>p[0]))) - 2);
+      const y = Math.max(0, Math.floor(Math.min(...corners.map(p=>p[1]))) - 2);
+      const right = Math.min(canvas.width, Math.ceil(Math.max(...corners.map(p=>p[0]))) + 2);
+      const bottom = Math.min(canvas.height, Math.ceil(Math.max(...corners.map(p=>p[1]))) + 2);
+      const width = right - x, height = bottom - y; // Read only the transformed artwork's padded rectangle.
+      if (width <= 0 || height <= 0) return;
+      if (!scratch) {
+        scratch = document.createElement('canvas');
+        scratch.width = canvas.width; scratch.height = canvas.height;
+        rasterCtx = scratch.getContext('2d', { willReadFrequently: true });
+      }
+      rasterCtx.setTransform(1,0,0,1,0,0);
+      rasterCtx.clearRect(x,y,width,height);
+      rasterCtx.save();
+      try {
+        rasterCtx.setTransform(t.a,t.b,t.c,t.d,t.e,t.f);
+        rasterCtx.imageSmoothingEnabled = context.imageSmoothingEnabled;
+        rasterCtx.imageSmoothingQuality = context.imageSmoothingQuality;
+        draw(rasterCtx);
+      } finally { rasterCtx.restore(); }
+      const pixels = rasterCtx.getImageData(x,y,width,height); // Immutable alpha is also the per-component ownership mask.
+      if (outlineComponentPixels(pixels.data,width,height)) rasterCtx.putImageData(pixels,x,y);
+      context.save();
+      try {
+        context.setTransform(1,0,0,1,0,0);
+        context.drawImage(scratch,x,y,width,height,x,y,width,height); // Preserve caller's foreground/behind composite operation.
+      } finally { context.restore(); }
+    };
+  }
+
+  function drawJunction(ctx, image, piece, paint = null) { // ctx already maps source pixels; draws the piece centred and rotated.
     ctx.save();
     if (piece.behind) ctx.globalCompositeOperation = 'destination-over'; // Slips under existing pixels.
     ctx.translate(piece.x, piece.y); ctx.rotate(piece.rotation * Math.PI / 180); ctx.scale(piece.scale, piece.scale);
-    ctx.drawImage(image, -image.width / 2, -image.height / 2);
+    const x = -image.width / 2, y = -image.height / 2; // Junction source coordinates.
+    if (paint) paint(ctx, {left:x,top:y,right:-x,bottom:-y}, target => target.drawImage(image,x,y));
+    else ctx.drawImage(image,x,y);
     ctx.restore();
   }
   function cleanBox(raw) {
@@ -249,7 +393,7 @@
       };
     }); // Saved operations and shared recipes stay unchanged when their area is transformed.
   }
-  function applyBridges(canvas, frame, bridges, junctionImages = {}, shaft = null) {
+  function applyBridges(canvas, frame, bridges, junctionImages = {}, shaft = null, paint = null) {
     // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
     const fill = global.ModularWeaponBridgeFill;
     if (!fill || !bridges?.strokes?.length) return;
@@ -305,7 +449,7 @@
           const area=(shaft.rigRegions||[]).find(region=>region.id===stroke._rigRegionId);
           if (area) {const t=regionAffine(area);ctx.transform(t.a,t.b,t.c,t.d,t.e,t.f);}
         }
-        drawJunction(ctx, piece, stroke); ctx.restore();
+        drawJunction(ctx, piece, stroke, paint); ctx.restore();
         image = ctx.getImageData(0, 0, canvas.width, canvas.height);
         continue;
       }
@@ -316,6 +460,7 @@
     }
     flush();
     if (global.ModularWeaponsKeepReference) canvas.modularReference = reference; // Editor only: live revert previews.
+    outlineComponentPixels(image.data, canvas.width, canvas.height); // Finish exposed brush-generated edges without undoing intentionally blended seams.
     ctx.putImageData(image, 0, 0);
   }
   function cleanTransform(raw, partial = false, fallbackAnimation = 'sweep') {
@@ -325,6 +470,7 @@
       result[key] = key.startsWith('flip') ? raw?.[key] === true
         : finite(raw?.[key], key.startsWith('scale') ? 1 : 0, key.startsWith('scale') ? 0.05 : -2400, key.startsWith('scale') ? 8 : 2400);
     }
+    if (['auto','tang','eye','both','normal','opposite'].includes(raw?.mountTypeMode)) result.mountTypeMode = raw.mountTypeMode; // Pair-specific compatibility, not a new head mounting arrow.
     if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
     if (raw?.flailHeadAnchor && Number.isFinite(raw.flailHeadAnchor.x) && Number.isFinite(raw.flailHeadAnchor.y)) {
       result.flailHeadAnchor = point(raw.flailHeadAnchor); // Pair-local contact on a hanging rigid head, never the original rigid mounting line.
@@ -367,6 +513,15 @@
   function shaftArtTransform(shaft) {
     const raw = shaft?.shaftArtTransform;
     return { ...duplicateTransform(raw), enabled: raw?.enabled === true }; // Independent, opt-in sprite transform; flame source inherits it.
+  }
+  function cleanShorteningBands(raw) {
+    if(!Array.isArray(raw))return [];
+    const out=[]; // Disjoint longitudinal bands, each with its own horizontal extent.
+    const sorted=raw.slice(0,16).filter(v=>v&&[v.x0,v.x1,v.y0,v.y1].every(Number.isFinite))
+      .map(v=>({x0:Math.max(0,v.x0),x1:Math.min(450,v.x1),y0:Math.max(0,v.y0),y1:Math.min(1204,v.y1)}))
+      .sort((a,b)=>a.y0-b.y0);
+    for(const v of sorted)if(v.x1-v.x0>=1&&v.y1-v.y0>=1&&(!out.length||v.y0>=out[out.length-1].y1))out.push(v);
+    return out;
   }
   function cleanRigRegions(raw) {
     if (!Array.isArray(raw)) return [];
@@ -440,7 +595,38 @@
     return { start, end, length: Math.hypot(end.x - start.x, end.y - start.y),
       explicitMount: !!rope, recipeId: head.flailAssembly || shaft.flailAssembly };
   }
-  function matchingMounts(shaft, head) {
+  function defaultRigidMountType(head) {
+    return head?.mount?.type==='blade'?'tang':head?.mount?.type==='weight'?'eye':'';
+  }
+  function normalizeMountTypeMode(mode,head) {
+    if (['auto','tang','eye','both'].includes(mode)) return mode;
+    if (mode==='normal') return 'auto';
+    if (mode==='opposite') {
+      const type=defaultRigidMountType(head); // Migrate old relative choices to their literal destination.
+      return type==='tang'?'eye':type==='eye'?'tang':'auto';
+    }
+    return undefined;
+  }
+  function rigidMountMode(shaft,head,values) {
+    return normalizeMountTypeMode(values?.mountTypeMode ?? shaft?.overrides?.[headKeys.get(head)]?.mountTypeMode,head);
+  }
+  function matchesRigidMount(shaft,head,mount,values) {
+    const required=defaultRigidMountType(head); // Original source arrow remains authoritative.
+    if(!required || (mount?.type!=='tang' && mount?.type!=='eye'))return false;
+    const mode=rigidMountMode(shaft,head,values);
+    return mode==='both' || mount.type===(mode==='tang'||mode==='eye'?mode:required);
+  }
+  function rigidMountAssignments(shaft,head,values) {
+    const seen=new Set(); // Same directed local geometry means the same region, parent and fitted head.
+    return (shaft?.mounts || []).flatMap((mount,index)=>{
+      if(!matchesRigidMount(shaft,head,mount,values))return [];
+      const key=[mount.start.x,mount.start.y,mount.end.x,mount.end.y].join(':');
+      if(seen.has(key))return [];
+      seen.add(key);
+      return [{mount,index}]; // Preserve authored index for editor guides.
+    });
+  }
+  function matchingMounts(shaft, head, values) {
     const mounts = shaftMounts(shaft); // Rig-adjusted geometry for ordinary head/haft fitting.
     if (head?.flailAssembly || shaft?.flailAssembly) {
       const rope = mounts.filter(mount => mount.type === 'rope');
@@ -455,8 +641,7 @@
         * (Number(template?.flail?.chain?.scaleY ?? template?.flail?.chain?.scale) || 1);
       return [{ type: 'rope', start, end: { x: start.x, y: start.y + length }, authored: true }];
     }
-    const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
-    return mounts.filter(mount => mount.type === kind); // Nonflail heads continue to use authored tang/eye fitting.
+    return rigidMountAssignments(shaft,head,values).map(entry=>mounts[entry.index]); // Same predicate used by the actual fitting rig.
   }
   function renderingMounts(shaft, head) {
     const compatible = matchingMounts(shaft, head); // Only same-kind arrows are valid for newly crafted combinations.
@@ -666,6 +851,7 @@
         layers: [{ id: 'modular-head', sprite: head.sprite, material: 'metal' }],
       };
     } // Head-owned flails retain their entire original Tool Hub head and untouched authored contact.
+    recipe.flail.head.modularOutline = true; // Separate moving layers use cached inward ink in both runtime and rest-pose previews.
     const shaftArt = shaftArtTransform(shaft); // A moved/scaled shaft PNG moves its physical rope contact with it, not the separate attachment rig.
     if (shaftArt.enabled && Number.isFinite(recipe.flail.haftAnchor?.x) && Number.isFinite(recipe.flail.haftAnchor?.y)) {
       recipe.flail.haftAnchor = duplicatePoint(recipe.flail.haftAnchor, shaftArt);
@@ -730,6 +916,9 @@
         if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = cleanFlailReference(raw.flailAssembly); // Unlinking restores ordinary rigid assembly.
         if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
       }
+      const oldEmpty=incoming.donorBandPreset!==DONOR_BAND_PRESET&&!!DONOR_BANDS[key]&&!raw.shorteningBands?.length; // Old empty drafts predate donor-band defaults; later explicit clears survive.
+      shaft.shorteningBands=cleanShorteningBands(oldEmpty?shaft.shorteningBands:raw.shorteningBands??shaft.shorteningBands); // Original 450×1204 haft coordinates, independent of head/metal.
+      shaft.minShorteningScale=finite(oldEmpty?shaft.minShorteningScale:raw.minShorteningScale,shaft.minShorteningScale??.65,.1,1);
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
       shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
         enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
@@ -748,12 +937,17 @@
       shaft.overrides = {};
       for (const [head, pair] of Object.entries(raw.overrides || {})) if (Object.hasOwn(next.heads, head)) {
         shaft.overrides[head] = cleanTransform(pair, true);
+        const mode=normalizeMountTypeMode(pair?.mountTypeMode,next.heads[head]); // Preserve previous pair choices through import.
+        if(mode)shaft.overrides[head].mountTypeMode=mode;
         if (typeof pair?.disallow === 'boolean') shaft.overrides[head].disallow = pair.disallow;
       }
       for (const [head, pair] of Object.entries(shipped || {})) {
         if (typeof pair.disallow === 'boolean' && typeof shaft.overrides[head]?.disallow !== 'boolean') {
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
           shaft.overrides[head].disallow = pair.disallow;
+        }
+        if (pair.mountTypeMode && !Object.hasOwn(raw.overrides?.[head] || {},'mountTypeMode')) {
+          (shaft.overrides[head] ||= {}).mountTypeMode = normalizeMountTypeMode(pair.mountTypeMode,next.heads[head]); // Older imports inherit explicitly shipped pair settings.
         }
         if (pair.layerOrder && !shaft.overrides[head]?.layerOrder) {
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
@@ -769,12 +963,14 @@
         }
       }
     }
+    next.donorBandPreset=DONOR_BAND_PRESET;
     next.recipes = cleanRecipes(Object.hasOwn(incoming, 'recipes') ? incoming.recipes : reference.recipes);
     config = next;
+    headKeys = new WeakMap(Object.entries(config.heads).map(([key,head])=>[head,key]));
     revision++;
     canvases.clear();
     boredCanvases.clear(); // Any renamed/moved/reshaped bore recomposes from the original source art.
-    if (persist) global.localStorage?.setItem(DRAFT_KEY, JSON.stringify(config));
+    if (persist) persistDraft(); // A full/disabled store must never prevent returning the validated in-memory configuration.
     return config;
   }
   function decode(key) {
@@ -865,10 +1061,9 @@
           worldMount:{type:'rope',start:rigPoint(shaft,mount.start),end:rigPoint(shaft,mount.end)}
         })) }; // The Tool Hub attachment replaces ANY modular-head mount, even for old flails without a rope line.
     }
-    const required = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
-    const compatible = (shaft?.mounts || []).map((mount, index) => ({ mount, index }))
-      .filter(entry => entry.mount.type === required);
-    const selected = compatible.length ? compatible : (shaft?.mounts || []).filter(mount => mount.type !== 'rope').slice(0, 1).map((mount, index) => ({ mount, index }));
+    const compatible = rigidMountAssignments(shaft,head,values); // Same deduplicated selection as Foundry.
+    const mode=rigidMountMode(shaft,head,values); // Explicit choices never silently fall back.
+    const selected = compatible.length || mode ? compatible : (shaft?.mounts || []).map((mount,index)=>({mount,index})).filter(entry=>entry.mount.type!=='rope').slice(0,1); // Retain legacy saved-weapon fallback for untouched pairs only.
     const children = selected.map(({ mount, index }) => {
       const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
       const regionMatrix=regionAffine(region); // Mount and fitted primitive are descendants of this local area.
@@ -884,14 +1079,14 @@
     }); // Rig owns every fitted head primitive and tang/eye fitting as descendants, not just transformed coordinates.
     return { kind: 'attachmentRig', parent, children, shaftOutsideRig: true };
   }
-  function compositionFrame(shaft, head, bounds, values, bridgeOps = [], junctionImages = {}) {
+  function compositionFrame(shaft, head, bounds, values, bridgeOps = [], junctionImages = {}, rig = attachmentRig(shaft,head,values)) {
     let left = 0, top = 0, right = 450, bottom = 1204; // Neutral shaft footprint is preserved for existing held poses.
     const shaftArt=shaftArtTransform(shaft);
     if (shaftArt.enabled) for(const x of [0,450]) for(const y of [0,1204]){
       const p=duplicatePoint({x,y},shaftArt);
       left=Math.min(left,p.x);top=Math.min(top,p.y);right=Math.max(right,p.x);bottom=Math.max(bottom,p.y);
     } // Opt-in shaft artwork may extend outside its fixed, original 450x1204 footprint.
-    for (const mount of attachmentRig(shaft, head, values).children) {
+    for (const mount of rig.children) {
       for (const primitive of mount.children) {
         const matrix = primitive.worldMatrix; // Same parent*child transform that the canvas renderer uses.
         for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
@@ -951,7 +1146,10 @@
   }
   function fitPlaneGeometry(geometry, canvas, referenceWidth = 0.5) {
     const layout = planeLayout(canvas, referenceWidth); // Updates a shared quad, preserving its identity for dual-wield/NPC copies.
+    const fittedGeometry=geometry; // Async composition/recolor must never overwrite the first four vertices of the private fitted mesh.
+    geometry=global.HeldGroundPose?.originalGeometryFor?.(geometry)||geometry;
     if (geometry.userData?.modularLayout && Object.keys(layout).every(key => geometry.userData.modularLayout[key] === layout[key])) return false;
+    global.HeldGroundPose?.prepareGeometryUpdate?.(fittedGeometry);
     const position = geometry.attributes.position; // A one-segment PlaneGeometry has these four corners and unchanged UVs.
     position.setXYZ(0, layout.x - layout.width / 2, layout.y + layout.height / 2, 0);
     position.setXYZ(1, layout.x + layout.width / 2, layout.y + layout.height / 2, 0);
@@ -969,15 +1167,16 @@
     if (canvases.has(cacheKey)) return canvases.get(cacheKey);
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Validated manifest entries.
     if (!shaft || !head) throw new Error('Unknown weapon parts.');
+    const values = settings(shaftKey,headKey); // Snapshot pair settings with the source parts before async image loads.
     const flail = flailRecipe(shaftKey, headKey); // Animated assemblies must not receive a baked rigid head in their base PNG.
-    const pieces = flail ? [] : [...new Set(expandOps(settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
+    const pieces = flail ? [] : [...new Set(expandOps(values.bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
     const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
     const task = Promise.all([loadImage(shaft.sprite, base), flail ? Promise.resolve(null) : loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
-      const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
+      const rig=flail?null:attachmentRig(shaft,head,values); // Compute once for bounds, painting and preview provenance.
       const frame = flail ? { left: 0, top: 0, width: 450, height: 1204 }
         : compositionFrame(shaft, head, visibleBounds(headImage), values,
-          rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList)); // Animated heads are separate Three.js planes; the base keeps its 450×1204 authored socket coordinates.
+          rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList),rig); // Animated heads are separate Three.js planes; the base keeps its 450×1204 authored socket coordinates.
       let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
       if (pixelScale < 1) {
         const padding = Math.ceil(4 / pixelScale); // Retain several bitmap pixels of outline clearance even after extreme downsampling.
@@ -987,7 +1186,12 @@
       const canvas = document.createElement('canvas'); // Bitmap resolution may shrink for extreme authoring; the donor frame and world scale never change.
       canvas.width = Math.max(1, Math.ceil(frame.width * pixelScale)); canvas.height = Math.max(1, Math.ceil(frame.height * pixelScale));
       canvas.modularFrame = frame;
+      if(global.ModularWeaponsKeepReference && rig){
+        canvas.modularAttachmentRig=rig; // Editor-only diagnostics identify the exact painted rig.
+        canvas.modularMountTypeMode=rigidMountMode(shaft,head,values)||'auto';
+      }
       const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
+      const paint = componentPainter(canvas); // Rasterize and outline each independent primitive at final bitmap resolution.
       ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
       ctx.translate(-frame.left, -frame.top);
       const protectedCanvas = shaft.fireAssembly ? document.createElement('canvas') : null; // Preserve nonmetal living-shaft pixels when the forged HEAD receives metal/verdigris.
@@ -1010,15 +1214,18 @@
             context.translate(225+art.x,602+art.y);
             context.scale(art.scaleX,art.scaleY);context.translate(-225,-602);
           }
-          if (shaft.crop) {
-            context.beginPath(); context.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); context.clip();
-          }
-          context.drawImage(image, 0, 0, 450, 1204);
+          const draw = target => { // Crop inside the isolated component so its cut edge receives ink too.
+            if (shaft.crop) {
+              target.beginPath(); target.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); target.clip();
+            }
+            target.drawImage(image, 0, 0, 450, 1204);
+          };
+          if (context === ctx) paint(context, visibleBounds(image), draw);
+          else draw(context); // The original alpha-only nonmetal protection mask needs no RGB processing.
           context.restore(); // Shaft-art transform also applies to the nonmetal mask; forged heads stay independent.
         }
       }
       function paintHeads() {
-        const rig = attachmentRig(shaft, head, values); // Explicit parent -> mounting lines -> head primitives hierarchy.
         const needsParent = rig.parent.a !== 1 || rig.parent.d !== 1 || rig.parent.e !== 0 || rig.parent.f !== 0;
         const drawChildren = (context, eraseShaft = false) => {
           context.save(); // Parent is active ONLY around rig children, never around paintHaft().
@@ -1032,7 +1239,8 @@
             context.save();
             if (mounting.regionId) context.transform(area.a, area.b, area.c, area.d, area.e, area.f);
             context.transform(t.a, t.b, t.c, t.d, t.e, t.f);
-            context.drawImage(headImage, 0, 0, 450, 1204);
+            if (eraseShaft) context.drawImage(headImage, 0, 0, 450, 1204);
+            else paint(context, visibleBounds(headImage), target => target.drawImage(headImage, 0, 0, 450, 1204));
             context.restore();
           }
           context.restore();
@@ -1046,7 +1254,7 @@
       else {
         if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
         else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
-        applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft); // All strokes and expanded recipes follow the same parent rig as head primitives.
+        applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft, paint); // All strokes and expanded recipes follow the same parent rig as head primitives.
       }
       if (protectedCtx) {
         const rgba = protectedCtx.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -1119,6 +1327,7 @@
     const needsWarCleaverUpgrade = storage?.getItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY) !== '1'; // Old local imports otherwise hide the now-authorized War-cleaver grip.
     const needsTangDirectionUpgrade = storage?.getItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY) !== '1'; // Existing v5 drafts may contain the old reversed automatic arrows.
     const needsPairFitUpgrade = storage?.getItem(PAIR_FIT_MIGRATION_KEY) !== '1'; // Authored neutral-angle presets must supersede only their matching old copies.
+    const needsSpikedSweepUpgrade=storage?.getItem(SPIKED_SWEEP_MIGRATION_KEY)!=='1'; // A browser draft may predate the authored sweep correction.
     if (recent || prior || oldest) {
       const draft = recent ? JSON.parse(recent) : prior ? addCompanionsToPreviousDraft(JSON.parse(prior)) : JSON.parse(oldest); // Preserve every other authored setting.
       if (needsKylieUpgrade && draft.shafts?.kylie) draft.shafts.kylie.toolWorthy = true; // Old drafts must not mask the new shipped Kylie capability.
@@ -1126,16 +1335,25 @@
       if (needsWarCleaverUpgrade && draft.shafts?.['war-cleaver']) draft.shafts['war-cleaver'].editorOnly = false; // One-time migration; pair exclusions and authored transforms stay untouched.
       const repairedTangDirection = needsTangDirectionUpgrade && repairLegacyCompanionTangDirections(draft); // Only repair unchanged backwards companion arrows.
       migratedPairFits = needsPairFitUpgrade ? migrateOldPairFits(draft) : 0; // Keep deliberately edited pair corrections intact.
-      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || needsWarCleaverUpgrade || repairedTangDirection || migratedPairFits > 0);
+      let repairedSpikedSweep=false; // Only the Spiked Wooden Head's accidental thrust settings are migrated.
+      if(needsSpikedSweepUpgrade)for(const shaft of Object.values(draft.shafts||{})){
+        const pair=shaft.overrides?.['porakaneki-greatclub'];
+        if(pair?.animation==='thrust'){pair.animation='sweep';repairedSpikedSweep=true;}
+      }
+      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || needsWarCleaverUpgrade || repairedTangDirection || migratedPairFits > 0 || repairedSpikedSweep);
     }
-    if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
-    if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
-    if (needsWarCleaverUpgrade) storage?.setItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY, '1');
-    if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
-    if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
+    // Never mark a draft migration complete if its updated configuration could not be stored.
+    if(draftPersistence.ok!==false) {
+      if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
+      if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
+      if (needsWarCleaverUpgrade) storage?.setItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY, '1');
+      if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
+      if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
+      if (needsSpikedSweepUpgrade) storage?.setItem(SPIKED_SWEEP_MIGRATION_KEY, '1');
+    }
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
+  global.ModularWeapons = { getConfig: () => config, replace, persistDraft, draftPersistence:()=>({...draftPersistence}), settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, matchesRigidMount, rigidMountAssignments, rigidMountMode,
+    duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanShorteningBands, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
       flailOwner: decode(key) ? (config.heads[decode(key).head].flailAssembly ? 'head' : config.shafts[decode(key).shaft].flailAssembly ? 'haft' : null) : null,

@@ -761,7 +761,7 @@
   }
   function heldHandTarget(){
     return held?.group?.parent&&held.group.parent===carryDeps()?.playerMesh
-      ?{holder:held.group,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{}}:null;
+      ?{holder:held.group,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{},itemKey:held.kind,groundPoseIdle:!aimingThrow&&held.kind!=='familyBaby'}:null; // Static burdens can lift with both grips; the living infant and committed throw own their own pose.
   }
   function updateEmitters(dt,mapId,targetScene){
     const rec=records.get(mapId);
@@ -1060,6 +1060,7 @@
     if(!burden||burden.exploded)return false;
     if(held===burden){held=null;cancelShatterAim();setHeldRearXray(null);if(backCarried)setHeldRearXray(backCarried);prompt();deps()?.refreshActionBar?.();}
     if(backCarried===burden){backCarried=null;setHeldRearXray(null);if(held)setHeldRearXray(held);deps()?.refreshActionBar?.();}
+    if(flight?.vase===burden)flight=null; // Growing/restored infants cannot leave a disposed proxy in the live flight integrator.
     downwardFalls.delete(burden.id);fallingFruits.delete(burden.id);
     const rec=records.get(burden.mapId);
     if(rec?.vases.get(burden.id)===burden)rec.vases.delete(burden.id);
@@ -2584,12 +2585,12 @@
   }
   function tick(dt=0) {
     const mapId=area();
-    // The family-baby burden is confined to the settlement. Other carried items keep their original zone rules.
+    // Babies can visit the four wilderness zones; unsupported maps retain the safe basket fallback.
     for(const baby of [held,backCarried]){
       if(baby?.kind==='familyBaby' && baby.mapId!==mapId
           && !window.FamilyBabyBurdens?.isAllowedArea?.(mapId)){
         discardBurden(baby); // onLost returns the real family child safely to their basket.
-        deps()?.showToast?.('The baby must stay near home. You leave them safely in their basket.',false);
+        deps()?.showToast?.('The baby cannot enter this area. You leave them safely in their basket.',false);
       }
     }
     if(held && held.mapId!==mapId){
@@ -2598,7 +2599,14 @@
     }
     if(backCarried&&backCarried.mapId!==mapId)transferBackToArea(mapId);
     if(backCarried)alignHeldVase(backCarried); // Reattach after avatar and area rebuilds.
-    if(flight&&flight.vase.mapId!==mapId){flight.vase.flying=false;flight=null;}
+    if(flight&&flight.vase.mapId!==mapId){
+      const interrupted=flight;flight=null;interrupted.vase.flying=false;
+      if(interrupted.vase.kind==='familyBaby'){
+        // Resolve the infant's original-map landing even when the player crosses a portal mid-throw.
+        interrupted.vase.group.position.copy(interrupted.origin);
+        detonate(interrupted.vase,'throw-area-exit'); // Use the registered impactHandler, not the constructor option name.
+      }
+    }
     updateShatterThrow(dt);
     updateFruitFalls(Math.min(.1,Math.max(0,Number(dt)||0)));
     updateBurdenFalls(dt); // Net/icicle payloads share the same timed tick and live collision helpers as player-thrown Burdens.

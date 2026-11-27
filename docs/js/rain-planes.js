@@ -597,10 +597,10 @@
 // rain-planes.js is already parser-blocking in index.html immediately before game boot, so this
 // synchronous include keeps that ordering without adding another bootstrap path to the huge game.js.
 if (!window.HobunjiSkyDome) {
-  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261122tothalSky1"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261123h534415eTothal1127"></scr' + 'ipt>');
   else {
     const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
-    skyScript.src = 'js/sky-dome.js?v=20261122tothalSky1';
+    skyScript.src = 'js/sky-dome.js?v=20261123h534415eTothal1127';
     skyScript.async = false;
     document.head.appendChild(skyScript);
   }
@@ -645,10 +645,10 @@ if (window.HobunjiSkyDome && window.RainPlanes) {
 // blocking avoids another game.js integration point while still giving snow/slush the
 // live scene, current-area, season, and outdoor-state getters it needs.
 if (!window.EnvironmentSurfaceRuntime) {
-  if (document.readyState === 'loading') document.write('<script src="js/environment-surface-runtime.js?v=20261115flatRockReviewFog3"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/environment-surface-runtime.js?v=20261127boundedProbes1"></scr' + 'ipt>');
   else {
     const surfaceScript = document.createElement('script'); // Late-load fallback used only when rain-planes.js is evaluated after initial parsing.
-    surfaceScript.src = 'js/environment-surface-runtime.js?v=20261115flatRockReviewFog3';
+    surfaceScript.src = 'js/environment-surface-runtime.js?v=20261127boundedProbes1';
     surfaceScript.async = false;
     document.head.appendChild(surfaceScript);
   }

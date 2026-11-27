@@ -111,7 +111,13 @@
     return null;
   }
 
+  // A scene that opts in with userData.hobunjiOutlineSequenceNeutral is an isolated proxy scene (the actor and
+  // distant-scenery occlusion probes) that is never added to the world and never touches its matrices. It is not a
+  // base frame and must not end the world scene's matrix-reuse sequence, or every later pass re-walks the whole scene.
+  const isSequenceNeutralScene = scene => scene?.userData?.hobunjiOutlineSequenceNeutral === true;
+
   function classifyPass(renderer, scene, camera) {
+    if (isSequenceNeutralScene(scene)) return 'other';
     const mask = Number(camera?.layers?.mask ?? 0) >>> 0;
     const override = scene?.overrideMaterial || null;
     const target = renderer.getRenderTarget?.() || null;
@@ -122,6 +128,7 @@
       && override.side === THREE.BackSide
       && override.uniforms?.uThickness
     ) return 'shell';
+    if (mask === MASK_SHELL && override?.userData?.hobunjiScreenOutlineMask === true) return 'screenOutlineMask';
 
     if (
       mask === MASK_TARGET
@@ -143,16 +150,15 @@
     // The final outline composite is a fullscreen post scene. Its camera normally
     // uses only the default layer, so camera.layers === MASK_ALL is not a valid
     // requirement for recognizing the presentation pass.
-    if (!target && !override && findOutlineCompositeMaterial(scene)) return 'postOrDirect';
-
     if (mask === MASK_ALL && !override) {
-      return target ? 'base' : 'postOrDirect';
+      return target ? 'base' : 'postOrDirect'; // Ordinary direct gameplay never needs a composite-material scan.
     }
+    if (!target && !override && findOutlineCompositeMaterial(scene)) return 'postOrDirect';
     return 'other';
   }
 
   function isSecondaryOutlinePass(pass) {
-    return pass === 'shell' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth' || pass === 'mist';
+    return pass === 'shell' || pass === 'screenOutlineMask' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth' || pass === 'mist';
   }
 
   function materialForGroup(mesh, group) {
@@ -308,7 +314,8 @@
 
     let prepared = 0;
     const fillEntries = [];
-    scene?.traverse?.(object => {
+    const traverse = scene?.traverseVisible || scene?.traverse; // Match native renderer visibility; older isolated tools fall back to ordinary traversal.
+    traverse?.call(scene, object => {
       if (!object?.isMesh || !object.layers?.test?.(camera.layers)) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       if (!materials.some(isAlphaCutoutMaterial)) return;
@@ -430,6 +437,10 @@
           const result = previous.apply(this, args);
           if (scene) {
             sceneStructureEpochs.set(scene, sceneStructureEpoch(scene) + 1);
+            // The static wall owner retires an enrolled root/leaf on structural edits.
+            window.DenseForestWallBatches?.noteStaticTopologyChange?.(this);
+            // Share the existing topology notification with instanced bounds; no second Object3D.add wrapper.
+            if (method === 'add' && typeof window !== 'undefined') window.InstancedMeshBounds?.noteSceneAttachment?.(scene, args);
             if (method === 'add' && worldTextCandidates.has(scene)) {
               let pending = pendingWorldTextRoots.get(scene);
               if (!pending) {
@@ -449,7 +460,7 @@
   }
   installStructureEpoch();
 
-  function collectWorldTextOverlayEntries(scene) {
+  function collectWorldTextOverlayEntries(scene, activeScoreMeshes) {
     if (!scene?.traverse) return [];
     const now = performance.now();
     let cached = worldTextCandidates.get(scene);
@@ -480,6 +491,11 @@
         }
         pending.clear();
       } else worldTextCacheHits++;
+    }
+    // The puzzle owner knows which plates are active right now. Seed the
+    // existing candidate set directly instead of depending on its periodic scan.
+    if (activeScoreMeshes) for (const mesh of activeScoreMeshes) {
+      if (mesh?.userData?.puzzleCaveScoreOverlay === true && isWorldTextOverlayMesh(mesh)) cached.meshes.add(mesh);
     }
     const entries = [];
     for (const object of cached.meshes) {
@@ -525,7 +541,7 @@
     if (pending) {
       restoreWorldTextBaseVisibility(pending.entries);
       restoreWorldTextOverlayLayers(pending);
-      abandonedWorldTextOverlays++;
+      if (pending.entries.length) abandonedWorldTextOverlays++;
     }
     pendingWorldTextOverlayByRenderer.delete(renderer);
   }
@@ -581,7 +597,7 @@
           // Transparent overlays without an actual alpha cutout, including additive
           // creature eye/glow planes, would stamp their full rectangle into depth.
           if (!materials.length || materials.some(material => !material
-              || material.visible === false || material.depthTest === false
+              || material.visible === false || material.colorWrite === false || Number(material.opacity) <= 0 || material.depthTest === false
               || (THREE.AdditiveBlending !== undefined && material.blending === THREE.AdditiveBlending)
               || (material.transparent && material.map && !(Number(material.alphaTest) > 0)))) continue;
           seenMeshes.add(node);
@@ -642,7 +658,8 @@
       if (shadowMap?.enabled) shadowMap.autoUpdate = false;
       const scoreNotes = pending.entries.filter(entry => entry.object.userData?.puzzleCaveScoreOverlay === true); // Only plate-revealed Scratchbone ink and halos need character silhouettes.
       let mask = null;
-      const scoreMaterialStates = []; // Restore normal depth-independent score materials even if the actor-depth pass throws.
+      const scoreMaterialStates = new Map(); // Shared note materials must restore their original depth test exactly once.
+      const scoreOrderStates = []; // Keep ordinary text above note ink/glow without a second overlay draw.
       const temporarilyHiddenNotes = []; // Fail closed when the game cannot provide a trustworthy character mask.
       try {
         if (scoreNotes.length) {
@@ -673,11 +690,24 @@
               mask.restore(); // Do not leave rig material colorWrite/depthWrite or layer membership changed during final note draw.
               mask = null;
             }
+            let minTextOrder = Infinity, maxScoreOrder = -Infinity; // Compare only the meshes actually reserved for this frame.
+            for (const entry of pending.entries) {
+              if (entry.object.userData?.puzzleCaveScoreOverlay === true) maxScoreOrder = Math.max(maxScoreOrder, entry.object.renderOrder);
+              else minTextOrder = Math.min(minTextOrder, entry.object.renderOrder);
+            }
+            const orderShift = Number.isFinite(minTextOrder) ? Math.max(0, maxScoreOrder - minTextOrder + 1) : 0;
             for (const entry of scoreNotes) {
-              const material = entry.object.material;
-              if (!material) continue;
-              scoreMaterialStates.push([material, material.depthTest]);
-              material.depthTest = true; // The score ignores the cliff but obeys the just-written foreground character depth.
+              const object = entry.object;
+              const materials = Array.isArray(object.material) ? object.material : [object.material];
+              for (const material of materials) {
+                if (!material || scoreMaterialStates.has(material)) continue;
+                scoreMaterialStates.set(material, material.depthTest);
+                material.depthTest = true; // The score ignores the cliff but obeys foreground character depth.
+              }
+              if (orderShift) {
+                scoreOrderStates.push([object, object.renderOrder]);
+                object.renderOrder -= orderShift; // Preserve halo/ink relative ordering below damage text/dialogue.
+              }
             }
             camera.layers.set(WORLD_TEXT_OVERLAY_LAYER);
           }
@@ -686,6 +716,7 @@
       } finally {
         mask?.restore();
         for (const [material, depthTest] of scoreMaterialStates) material.depthTest = depthTest;
+        for (const [object, order] of scoreOrderStates) object.renderOrder = order;
         for (const note of temporarilyHiddenNotes) note.visible = true;
       }
       finalWorldTextOverlayPasses++;
@@ -760,8 +791,8 @@
     if (now - lastLogAt < LOG_INTERVAL_MS) return;
     lastLogAt = now;
 
-    if (windowStats.shell?.renders) {
-      const order = ['base', 'pngDepth', 'shell', 'target', 'mist', 'materialId', 'postOrDirect'];
+    if (windowStats.shell?.renders || windowStats.screenOutlineMask?.renders) {
+      const order = ['base', 'pngDepth', 'shell', 'screenOutlineMask', 'target', 'mist', 'materialId', 'postOrDirect'];
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
@@ -802,6 +833,7 @@
   function updateSequence(renderer, scene, pass, endedAt, reused) {
     // The isolated mist pass reuses world depth without modifying world matrices.
     if (pass === 'mist' && scene?.userData?.cloudForestMistRedraw) return;
+    if (isSequenceNeutralScene(scene)) return; // Isolated probe scenes leave the world scene's reuse sequence intact.
     if (pass === 'base') {
       reuseSequenceByRenderer.set(renderer, { scene, baseAt: endedAt });
       return;
@@ -858,7 +890,7 @@
           // Without a camera authority, prefer accepting a new world camera rather than
           // indefinitely presenting glyphs from a stale camera after a scene transition.
         }
-        if (auxiliaryScene || auxiliaryCamera) {
+        if (pending.explicit || auxiliaryScene || auxiliaryCamera) {
           auxiliaryWorldBasePassesPreserved++;
           if (auxiliaryCamera) {
             // The auxiliary camera traverses this same scene with every layer
@@ -925,7 +957,17 @@
     const startedAt = performance.now();
     let result;
     try {
-      if (pass === 'base') {
+      const explicit = pendingWorldTextOverlayByRenderer.get(renderer);
+      if (explicit?.explicit && explicit.scene === scene && explicit.camera === camera
+          && (pass === 'base' || pass === 'postOrDirect')) {
+        // The world pipeline already reserved and hid these meshes. Never let
+        // a nested composite, replay or direct render consume the reservation.
+        result = originalRender.call(renderer, scene, camera);
+        if (pass === 'base' || !renderer.getRenderTarget?.()) {
+          explicit.matrixEpoch = matrixEpochOf(scene);
+          explicit.baseAt = performance.now();
+        }
+      } else if (pass === 'base') {
         // A still-pending overlay means the prior frame never reached the known
         // presentation pass. Restore those layers before collecting this frame so
         // a bad/alternate render sequence cannot strand popup meshes indefinitely.
@@ -959,7 +1001,7 @@
       }
 
       const pending = pendingWorldTextOverlayByRenderer.get(renderer);
-      if (pass === 'postOrDirect' && pending && !renderer.getRenderTarget?.()) {
+      if (pass === 'postOrDirect' && pending && !pending.explicit && !renderer.getRenderTarget?.()) {
         const isOutlineComposite = !!findOutlineCompositeMaterial(scene);
         const isDirectGameplayPresentation = pending.scene === scene && pending.camera === camera;
         if (isOutlineComposite || isDirectGameplayPresentation) {
@@ -989,10 +1031,32 @@
 
   const api = {
     installed: true,
+    sceneAttachmentNotifications: THREE.Object3D?.prototype?.add?.__hobunjiStructureEpochWrapped === true, // Old editor hosts fall back to global instance membership.
+    staticWallTopologyNotifications: THREE.Object3D?.prototype?.add?.__hobunjiStructureEpochWrapped === true
+      && THREE.Object3D?.prototype?.remove?.__hobunjiStructureEpochWrapped === true,
     nonShellOutlinesSuppressed: true,
     worldTextAboveShell: true,
     setScoreCharacterRootsProvider(provider) {
       scoreActorRootProvider = typeof provider === 'function' ? provider : null; // Injected once from the game, executed only for a plate-revealed exterior melody.
+    },
+    // The gameplay pipeline owns presentation timing; keep text out of every
+    // world/paint/perception pass, then draw exactly once on the finished canvas.
+    // The older render-wrapper detection remains only for standalone hosts.
+    prepareWorldTextOverlay(renderer, scene, camera, activeScoreMeshes) {
+      invalidatePendingWorldTextOverlay(renderer);
+      const entries = collectWorldTextOverlayEntries(scene, activeScoreMeshes);
+      const pending = { scene, camera, entries, explicit: true, matrixEpoch: -1, baseAt: NaN }; // Epoch becomes valid only after the base draw.
+      reserveWorldTextOverlayLayer(entries);
+      hideWorldTextDuringBase(entries);
+      pendingWorldTextOverlayByRenderer.set(renderer, pending);
+      if (entries.length) withheldWorldTextBasePasses++;
+      return function finishWorldTextOverlay(present) {
+        if (pendingWorldTextOverlayByRenderer.get(renderer) !== pending) return false;
+        restoreWorldTextBaseVisibility(entries);
+        if (present) return finalizeWorldTextOverlay(renderer, pending);
+        invalidatePendingWorldTextOverlay(renderer);
+        return false;
+      };
     },
     prepareDirectScoreOverlay(renderer, scene, camera, scoreMeshes) {
       if (!scoreMeshes) return null;
@@ -1030,7 +1094,7 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
-        latestScoreChange: 'Timed Scratchbone glyphs survive depth replays and respect character silhouettes with Outlines on or off.',
+        latestScoreChange: 'Final world text follows painterly/perception; active Scratchbone ink and halos respect actor silhouettes, with ordinary text above them.',
         scoreActorDepthPasses,
         scoreActorDepthMeshes,
         scoreActorDepthReady: typeof scoreActorRootProvider === 'function',

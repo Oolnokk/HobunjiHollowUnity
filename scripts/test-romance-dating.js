@@ -413,11 +413,12 @@ townRules.visitPercent = 0; // Restore farm behavior for the rest of the test.
 
 // ── Spouses cannot work the vat; toddlers/children still can ──────────
 const vatAssignments = new Map(); // Records real assignment writes for the child's single available vat.
+let childVatJob = null; // Controlled timed batch for the pre-shift and offscreen expiry tests.
 W.DewVats = {
-  listSqueezingVats: () => [{ id: 'child_vat' }],
+  listSqueezingVats: () => [{ id: 'child_vat', col: 10, row: 9, getJob: () => childVatJob }],
   assignedWorkerForVat: id => vatAssignments.get(id) || null,
   setExternalWorker(id, worker) {
-    if (worker) vatAssignments.set(id, worker);
+    if (worker) vatAssignments.set(id, { ...worker, external: true });
     else vatAssignments.delete(id);
     return true;
   },
@@ -434,7 +435,114 @@ assert.equal(vatAssignments.get('child_vat')?.id, child.id, 'child occupies the 
 assert.equal(W.RomanceFamily.isAssignedToVat(child.id), true, 'child vat work still takes priority over assigned plots');
 assert.equal(socialReplies.at(-1).line, "I'll work at the squeezing vat!", 'child acceptance keeps the normal child speech');
 assert.equal(vatCommand(tooth, 'vat'), undefined, 'spouse remains ineligible while a child vat is occupied');
+// The real processor delegates to FarmAnimals; verify the actual child pose,
+// logical pathing coordinates, and the shared cleanup route without a browser.
+run('docs/js/creature-texture-cache.js');
+run('docs/js/farm-animals.js');
+run('docs/js/character-action-locks.js');
+W.FarmAnimals.init({ animalObjects: new Set(), loadWorldLivestock: () => [] });
+class VatMatrix {
+  constructor(x = 0, y = 0, z = 0, sy = 1) { Object.assign(this, { x, y, z, sy }); }
+  clone() { return new VatMatrix(this.x, this.y, this.z, this.sy); }
+  copy(m) { Object.assign(this, m); return this; }
+  invert() { this.x = -this.x; this.y = -this.y; this.z = -this.z; return this; }
+  multiply(m) { this.x += m.x; this.y += m.y; this.z += m.z; this.sy *= m.sy; return this; }
+  decompose(p, q, s) { Object.assign(p, { x: this.x, y: this.y, z: this.z }); s.y = this.sy; return this; }
+  compose(p, q, s) { Object.assign(this, { x: p.x, y: p.y, z: p.z, sy: s.y }); return this; }
+}
+const liveChild = npcWalkers.find(w => w.rec.id === child.id) || childWalker;
+const addedChild = !npcWalkers.includes(liveChild);
+if (addedChild) npcWalkers.push(liveChild);
+const savedRoot = liveChild.root, savedArea = liveChild.area, savedTarget = liveChild.currentScheduleTarget, savedPlayerArea = player.area;
+const savedShadow = liveChild.groundShadow;
+const vatTarget = fam.childTarget(child);
+const savedPathfinding = W.NpcPathfinding; // Restore the normal romance stub after exercising real relocation.
+run('docs/js/npc-pathfinding.js');
+const vatGrid = Array.from({ length: 20 }, () => Array.from({ length: 20 }, () => ({ type: 'grass' }))); // Clear farm tiles for same-area and cross-area teleport regressions.
+W.NpcPathfinding.init({
+  npcGridForArea: () => vatGrid, isBuildingArea: () => false, isZoneArea: () => false,
+  isSolid: () => false, TileType: { RIVER: 'river', STREAM: 'stream', TRENCH: 'trench' },
+  worldObjects: new Map(), isHouseFootprint: () => false, furnitureBlocksMovementAt: () => false,
+  npcMovementConfig: () => ({}), npcSurfaceY: () => 0,
+});
+liveChild.area = player.area = 'farm';
+liveChild.currentScheduleTarget = vatTarget;
+liveChild.groundShadow = { visible: true };
+const logicalPosition = { x: vatTarget.c + 0.5, y: 0, z: vatTarget.r + 0.5, set(x,y,z) { Object.assign(this,{x,y,z}); }, clone() { return { x: this.x, y: this.y, z: this.z }; } };
+liveChild.root = {
+  position: logicalPosition, quaternion: { clone: () => ({}) },
+  scale: { x: 1, y: 1, z: 1, clone() { return { x: this.x, y: this.y, z: this.z }; } },
+  matrix: new VatMatrix(), matrixAutoUpdate: true, visible: true,
+  parent: { matrixWorld: new VatMatrix(), updateWorldMatrix() {} },
+  updateMatrix() { this.matrix = new VatMatrix(this.position.x, this.position.y, this.position.z); },
+};
+const vatAnchor = new VatMatrix(10.5, 1.2, 9.5, 0.2);
+assert.equal(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor)?.id, child.id);
+assert.equal(liveChild.root.matrixAutoUpdate, false, 'child render matrix follows the stomp point');
+const childParticipant = 'npc:' + child.id; // Shared movement channel is released at the end of the animation.
+assert.equal(W.CharacterActionLocks.isLocked(childParticipant, 'movement'), true);
+assert.equal(W.CharacterActionLocks.isLocked(childParticipant, 'actions'), false, 'the Stop Vat Work command remains available');
+assert.equal(liveChild.root.matrix.y, 1.2, 'feet follow the authored animated surface height');
+assert.equal(liveChild.root.matrix.sy, 1, 'cloth squash must not shrink the child');
+assert.equal(liveChild.root.position.y, 0, 'logical pathing location remains on the approach tile');
+assert.equal(liveChild.groundShadow.visible, false);
+assert.equal(W.RomanceFamily.snapshot().children.find(c => c.id === child.id).vatStomping, true);
+W.FarmAnimals.setVatWorkerPose('child_vat', new VatMatrix(10.5, 1.4, 9.5, 0.2));
+assert.equal(liveChild.root.matrix.y, 1.4, 'subsequent frames animate the same worker');
+assert.equal(W.CharacterActionLocks.getDebug().filter(lock => lock.owner === 'child-vat').length, 1, 'successive frames reuse the same movement lock');
+const otherPose = W.CharacterActionLocks.acquire({ owner: 'other-pose', participants: [childParticipant], channels: ['pose'] });
+assert.equal(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor), null, 'a competing pose releases even an already attached child');
+assert.equal(W.CharacterActionLocks.isLocked(childParticipant, 'movement'), false);
+assert.equal(W.CharacterActionLocks.isLocked(childParticipant, 'pose'), true, 'the competing pose is not released by vat cleanup');
+otherPose.release();
+assert.ok(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor));
+W.FarmAnimals.clearVatWorkerPose('child_vat');
+assert.equal(liveChild.root.matrixAutoUpdate, true);
+assert.equal(liveChild.root.matrix.y, 0);
+assert.equal(liveChild.groundShadow.visible, true);
+assert.equal(W.CharacterActionLocks.isLocked(childParticipant, 'movement'), false);
+liveChild.root.position.x += 2;
+liveChild._npcCliffClimb = { old: true };
+assert.ok(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor), 'a distant farm child joins the active animation immediately');
+assert.equal(liveChild.root.position.x, vatTarget.c + 0.5, 'the logical root lands on the safe approach tile');
+assert.equal(liveChild._legsPrevX, liveChild.root.position.x, 'teleport is not mistaken for a running stride');
+assert.equal(liveChild._npcCliffClimb, null);
+W.FarmAnimals.clearVatWorkerPose('child_vat');
+liveChild.area = 'interior';
+liveChild.currentScheduleTarget = { area: 'interior', c: 4, r: 4, activity: 'sleeping' };
+assert.ok(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor), 'the same child transfers from inside the farmhouse');
+assert.equal(liveChild.area, 'farm');
+assert.equal(liveChild.currentScheduleTarget.vatId, 'child_vat');
+clock.hour = 18;
+assert.equal(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor), null, 'the child is released when their shift ends');
+assert.equal(liveChild.root.matrixAutoUpdate, true);
+clock.hour = 6;
+childVatJob = { kind: 'timed', readyAtGameHour: 7 };
+const savedItemProcessing = W.ItemProcessing; // Temporary clock adapter for testing an uncollected offscreen batch.
+W.ItemProcessing = { gameHour: () => clock.hour };
+assert.equal(fam.childTarget(child).vatId, 'child_vat', 'a rollover batch sends the assigned child to the vat before their usual shift');
+assert.ok(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor), 'an arrived child animates during a pre-shift batch');
+clock.hour = 7;
+assert.notEqual(fam.childTarget(child).vatId, 'child_vat', 'expired offscreen jobs do not keep the child at the vat');
+assert.equal(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor), null, 'expired pre-shift batch releases the render pose');
+assert.equal(liveChild.root.matrixAutoUpdate, true);
+W.ItemProcessing = savedItemProcessing;
+childVatJob = null;
+clock.hour = 12;
+assert.ok(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor));
+assert.equal(W.RomanceFamily.retargetVatAssignments('child_vat', 'moved_vat'), 1, 'moving the vat changes the saved child assignment');
+assert.equal(child.vatId, 'moved_vat');
+assert.equal(liveChild.root.matrixAutoUpdate, true, 'moving the vat releases its old pose immediately');
+assert.equal(liveChild._npcScheduleDecision, null, 'the old tile schedule lease is invalidated');
+assert.equal(W.RomanceFamily.retargetVatAssignments('moved_vat', 'child_vat'), 1);
+assert.ok(W.FarmAnimals.setVatWorkerPose('child_vat', vatAnchor));
 vatCommand(childWalker, 'unvat').run();
+assert.equal(liveChild.root.matrixAutoUpdate, true, 'cancelling assignment releases an active pose immediately');
+assert.equal(W.CharacterActionLocks.getDebug().filter(lock => lock.owner === 'child-vat').length, 0, 'cancelling leaves no movement lock behind');
+liveChild.root = savedRoot; liveChild.area = savedArea; liveChild.currentScheduleTarget = savedTarget;
+liveChild.groundShadow = savedShadow; player.area = savedPlayerArea;
+W.NpcPathfinding = savedPathfinding;
+if (addedChild) npcWalkers.splice(npcWalkers.indexOf(liveChild), 1);
 assert.equal(socialReplies.at(-1).line, 'Okay! Time to play!', 'child work cancellation retains child speech');
 assert.equal(child.vatId, null, 'stopping child work clears its saved assignment');
 assert.equal(vatAssignments.size, 0, 'child vat becomes available again');

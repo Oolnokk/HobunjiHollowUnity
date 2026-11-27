@@ -164,4 +164,33 @@ assert.match(source, /if \(companion\.treasureCue\) clearTreasureCue\?\.\(compan
   'the response module clears a stale treasure detour before escape');
 assert.match(game, /!target && !c\._followOwnerDownCliff && !c\.treasureCue/,
   'watch-player idle cannot start during the follow descent');
+// Exercise the actual final target seam used by Sicced and downed-focus overrides.
+const orderedPet = { id: 'ordered-pet', x: 0, y: 0, attackCooldownT: 1.25 };
+const ordinaryEnemy = { id: 'ordinary', x: 30, y: 0, health: 20, areaId: 'forest' };
+const markedEnemy = { id: 'marked', x: 50, y: 0, health: 20, areaId: 'forest' };
+context.window.ResourceSystem = { getAffliction: (entity, id) => entity === markedEnemy && id === 'scentMarkedHealth' ? 5 : 0 };
+assert.equal(R.chooseTarget(orderedPet, master, [ordinaryEnemy, markedEnemy], 'forest', 150), markedEnemy, 'friendly companion prioritizes scent within normal leash');
+R.syncEffectiveTarget(orderedPet, ordinaryEnemy);
+orderedPet._stage = { mode: 'backingUp', t: 1 };
+orderedPet._travelPath = [{ col: 1, row: 1 }];
+R.syncEffectiveTarget(orderedPet, markedEnemy);
+assert.equal(orderedPet._stage, null, 'new explicit target abandons old backup');
+assert.equal(orderedPet._travelPath, null, 'new explicit target abandons old route');
+assert.equal(orderedPet.attackCooldownT, 1.25, 'retargeting never grants a free attack');
+assert.equal(R.debugSnapshot(orderedPet).effectiveTarget, 'marked');
+assert.equal(R.debugSnapshot(orderedPet).scentMarked, true);
+assert.equal(R.validFocus({ ...markedEnemy, _denHidden: true }, 'forest'), false);
+assert.equal(R.validFocus({ ...markedEnemy, x: NaN }, 'forest'), false);
+assert.equal(R.validFocus({ ...markedEnemy, areaId: 'mine' }, 'forest'), false);
+assert.match(game, /CompanionCombatResponse\.syncEffectiveTarget\(c, target\)/);
+assert.match(game, /const biteTarget = biteBusy \? c\._companionBiteTarget : null/);
+// LOS is checked only on readiness and reused for the same target in the short decision lease.
+let geometryChecks = 0;
+context.window.RangedWeapons = { hasLineOfSight() { geometryChecks++; return false; } };
+assert.equal(R.canAttackThroughTerrain(orderedPet, markedEnemy), false);
+assert.equal(R.canAttackThroughTerrain(orderedPet, markedEnemy), false);
+assert.equal(geometryChecks, 1, 'repeated readiness probes reuse terrain geometry');
+R.syncEffectiveTarget(orderedPet, ordinaryEnemy);
+assert.equal(R.canAttackThroughTerrain(orderedPet, ordinaryEnemy), false);
+assert.equal(geometryChecks, 2, 'new effective target receives a fresh terrain check');
 console.log('Companion combat responsiveness tests passed.');

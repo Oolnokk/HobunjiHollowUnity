@@ -20,6 +20,8 @@
 
   const states = new Map(); // Actor root -> short-lived occlusion history and its own GPU query lifecycle.
   const active = []; // Scratch list of roots belonging to the current rendered area.
+  const probeSlots = []; // At most MAX_QUERY_PER_FRAME scene-owned reusable meshes; GPU results live on actor state.
+  const eligible = []; // Scratch fair-scheduling candidates, cleared after each query submission.
   const hidden = []; // Roots temporarily hidden from rendering, restored before gameplay resumes.
   const stats = { frames:0, candidates:0, frustumHidden:0, occludedHidden:0,
     corpseCandidates:0, corpseFrustumHidden:0, corpseOccludedHidden:0, // Mobile counters distinguish corpse savings from living actors.
@@ -28,6 +30,7 @@
   const frustum = THREE ? new THREE.Frustum() : null; // Shared frustum for all actors in a frame.
   const viewMatrix = THREE ? new THREE.Matrix4() : null; // Camera projection * inverse-world matrix.
   const scene = THREE ? new THREE.Scene() : null; // Tiny isolated proxy scene, never added to gameplay world.
+  if (scene) (scene.userData ||= {}).hobunjiOutlineSequenceNeutral = true; // Its render must not end the world scene's matrix-reuse sequence (outline-render-performance.js).
   const geometry = THREE ? new THREE.BoxGeometry(1, 1, 1) : null; // A single shared conservative query cuboid.
   const eye = THREE ? new THREE.Vector3() : null; // World-space eye for parented cutscene cameras and immediate occlusion wakeups.
   const eyeRotation = THREE?.Quaternion ? new THREE.Quaternion() : null; // Cached world-space camera orientation.
@@ -64,12 +67,7 @@
       try { gl.deleteQuery(state.pending.query); } catch (_) { /* Context may already be gone. */ }
     }
     state.pending = null;
-    if (state.proxy) {
-      scene?.remove(state.proxy); // Disposal only retires this actor; shared geometry/material stay alive.
-      state.proxy.onBeforeRender = null;
-      state.proxy.onAfterRender = null;
-      state.proxy = null;
-    }
+
   }
 
   function clearHistory() {
@@ -80,7 +78,7 @@
   function getState(root) {
     let state = states.get(root);
     if (!state) {
-      state = { root, pending:null, proxy:null, occluded:false, misses:0,
+      state = { root, pending:null, occluded:false, misses:0,
         x:root.position.x, y:root.position.y, z:root.position.z,
         radius:FRUSTUM_RADIUS_TILES, nextProbeFrame:0, seen:stats.frames };
       states.set(root, state);
@@ -139,26 +137,28 @@
     for (const state of states.values()) { release(state); state.occluded = false; state.misses = 0; }
   } // Any WebGL failure restores full rendering automatically, never a blank town.
 
-  function makeProxy(state) {
-    const proxy = new THREE.Mesh(geometry, material); // Created at most once per actor, not per frame.
+  function proxySlot(index) {
+    if (probeSlots[index]) return probeSlots[index];
+    const slot = { state: null, proxy: new THREE.Mesh(geometry, material) }; // Each submission borrows a fixed slot only until render returns.
+    const proxy = slot.proxy;
     proxy.name = 'actor_occlusion_query_proxy';
     proxy.frustumCulled = false; // Our conservative character frustum has already chosen candidates.
     proxy.visible = false;
     proxy.onBeforeRender = function () {
-      const pending = state.pending;
+      const pending = slot.state?.pending;
       if (!pending || !gl || queryDisabled) return;
       gl.beginQuery(target, pending.query);
       pending.started = true;
     };
     proxy.onAfterRender = function () {
-      const pending = state.pending;
+      const pending = slot.state?.pending;
       if (!pending?.started || !gl) return;
       gl.endQuery(target);
       pending.started = false;
     };
     scene.add(proxy);
-    state.proxy = proxy;
-    return proxy;
+    probeSlots[index] = slot;
+    return slot;
   }
 
   function addActor(root, area, activeScene, playerPosition, cameraPosition, canOcclude, requestedRadius, kind) {
@@ -301,9 +301,10 @@
     try { window.DistantSceneryViewCull?.probeAfterBase?.(currentRenderer || window.__hobunjiGameRenderer,currentCamera,currentScene); }
     catch (_) { window.DistantSceneryViewCull?.reset?.(); } // Optional queries fail open.
     if (!enabled || !stats.gpuAvailable || !currentRenderer || !currentCamera || !currentScene || !active.length) return;
-    const candidates=active.filter(x=>x.queryAllowed && !x.state.pending && stats.frames >= x.state.nextProbeFrame);
-    if (!candidates.length) return;
-    const count=Math.min(MAX_QUERY_PER_FRAME,candidates.length);
+    eligible.length=0;
+    for(const entry of active) if(entry.queryAllowed && !entry.state.pending && stats.frames >= entry.state.nextProbeFrame) eligible.push(entry.state);
+    if (!eligible.length) return;
+    const count=Math.min(MAX_QUERY_PER_FRAME,eligible.length);
     const previousAutoClear=currentRenderer.autoClear;
     const previousShadows=currentRenderer.shadowMap?.autoUpdate;
     const previousMask=currentCamera.layers.mask;
@@ -311,18 +312,18 @@
     let started = false;
     try {
       // Fairly rotate which NPCs are tested first across low-FPS frames.
-      const start=cursor%candidates.length;cursor+=count;
+      const start=cursor%eligible.length;cursor+=count;
       for(let i=0;i<count;i++) {
-        const state=candidates[(start+i)%candidates.length].state;
+        const state=eligible[(start+i)%eligible.length];
+        const slot=proxySlot(i), proxy=slot.proxy;
         const q=gl.createQuery();
         if (!q) throw Error('create-query-failed');
-        const proxy=state.proxy || makeProxy(state);
         const p=state.root.position;
         proxy.position.set(p.x,p.y+Math.min(1.5,state.radius*.3),p.z);
         const side=state.radius*2; // Must enclose the complete character/frustum sphere, not just the PNG torso.
         proxy.scale.set(side,side,side); // Smaller boxes can self-occlude in the already-drawn depth and produce false negatives.
-        proxy.visible=true; chosen.push(state);
         state.pending={query:q,started:false,generation,x:p.x,y:p.y,z:p.z,radius:state.radius};
+        slot.state=state; chosen.push(slot); proxy.visible=true;
         state.nextProbeFrame=stats.frames+PROBE_INTERVAL_FRAMES;
       }
       currentRenderer.autoClear=false; // Preserve the main scene's opaque depth and color.
@@ -336,13 +337,14 @@
       // close the still-active query before the next world pass. Otherwise
       // the WebGL2 context can remain in a broken query state despite the
       // render-only culler falling back to full actor visibility.
-      for (const state of chosen) if (state.pending?.started) {
+      for (const {state} of chosen) if (state.pending?.started) {
         try { gl.endQuery(target); } catch (_) { /* Context may be lost. */ }
         state.pending.started = false;
       }
       disableGpu('query-pass-failed'); // Fail open and keep the scene fully visible.
     } finally {
-      for(const state of chosen) if (state.proxy) state.proxy.visible=false;
+      for(const slot of chosen) {slot.proxy.visible=false;slot.state=null;}
+      eligible.length=0;
       currentCamera.layers.mask=previousMask;
       currentRenderer.autoClear=previousAutoClear;
       if (currentRenderer.shadowMap) currentRenderer.shadowMap.autoUpdate=previousShadows;
@@ -363,9 +365,11 @@
     states.clear(); lastCamPos=null; lastCamQuat=null; lastArea=''; lastScene=null; lastCamera=null; lastProjection=null; clearHistory();
   }
 
+  function countPending() { let count=0;for(const state of states.values())if(state.pending)count++;return count; }
+
   function snapshot() {
     return { ...stats, tracked:states.size, enabled, gpuEnabled, gpuError:queryDisabled,
-      queriesPending:[...states.values()].filter(s=>s.pending).length };
+      proxySlots:probeSlots.length, queriesPending:countPending() };
   }
 
   function safeBeginFrame(args) {

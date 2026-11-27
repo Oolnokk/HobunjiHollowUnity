@@ -553,7 +553,7 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
   function loadIdleStanceEditor() {
     if (window.AttackIdleStanceEditor || pendingIdleStanceScript) return;
     const script = document.createElement('script'); // Same existing editor module, now with a recoverable load lifecycle.
-    script.src = '../../js/attack-idle-stance-editor.js?v=20261115torchGripIdle2';
+    script.src = '../../js/attack-idle-stance-editor.js?v=20261127h3bc0042';
     script.defer = true;
     pendingIdleStanceScript = script;
     function endAttempt() {
@@ -606,7 +606,7 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
 // layout rewrites, so load its isolated Impact workspace adapter separately.
 if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
   const impactTabsScript = document.createElement('script');
-  impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20261009h6c8af83';
+  impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20261126exactSeamsAudit1';
   impactTabsScript.defer = true;
   document.head.appendChild(impactTabsScript);
 }
@@ -632,7 +632,7 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   document.head.appendChild(localeTerrainScript);
 
   const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.
-  localePreview3dScript.src = 'locale-preview3d.js?v=20261123ha8edf2c';
+  localePreview3dScript.src = 'locale-preview3d.js?v=20261126inkAudit3';
   localePreview3dScript.defer = true;
   document.head.appendChild(localePreview3dScript);
 

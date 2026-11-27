@@ -53,6 +53,28 @@ assert.equal(router.isAttackBlocked(), false);
 assert.equal(router.resolve('action1').kind, 'default');
 let claimsFired = 0; // Ensures a claimed input does not run both the interaction and fallback.
 let releases = 0; // Ensures releases go to the owner that received the original press.
+let torchHeld = false; // Flips the real reservation predicate without rebuilding provider claims.
+window.AdventuringTools = {isHoldingTorch:()=>torchHeld};
+let blockedClaimFires = 0; // Neither high-priority claim may execute while torch is drawn.
+router.setClaims('torch-reservation-test', ['action1','action2','action3'].map(actionId=>({actionId,priority:9999,showInArch:true,onPress(){blockedClaimFires++;}})));
+const normalArchRevision = router.getArchRevision();
+torchHeld = true;
+assert(router.getArchRevision() > normalArchRevision,'equip invalidates cached arch claims');
+for(const id of ['action1','action2']){
+  assert.equal(router.claimFor(id),null);
+  assert.equal(router.dispatch(id,'press'),false);
+  assert.equal(router.route(id,'press',{source:'torch-test'},()=>true),true,'ordinary torch fallback remains reachable');
+}
+assert.equal(blockedClaimFires,0);
+assert.equal(router.claimFor('action3').ownerId,'torch-reservation-test','unreserved actions still work');
+const heldArchRevision = router.getArchRevision();
+assert.equal(router.getArchRevision(),heldArchRevision,'no per-frame arch revision churn');
+torchHeld = false;
+assert(router.getArchRevision() > heldArchRevision,'stowing exposes the retained claims');
+assert.equal(router.dispatch('action2','press'),true);
+router.dispatch('action2','release');
+assert.equal(blockedClaimFires,1);
+router.clearClaims('torch-reservation-test');
 router.setClaims('other-action', [{ actionId: 'action3', priority: 5, onPress() { claimsFired++; } }]);
 assert.equal(router.isAttackBlocked(), false, 'Action 3 never disables attacks');
 assert.equal(router.route('action3', 'press', { source: 'test' }, () => { throw Error('fallback leaked'); }), true);

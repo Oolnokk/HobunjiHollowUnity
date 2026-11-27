@@ -47,8 +47,9 @@ frame never see render-only state. Keep it that way.
 | 5 | `target` | reticle target highlight (only with a target) | `TARGET_HIGHLIGHT` | `mainRT` | world-render-pipeline.js |
 | 6 | `mist` | Cloud Forest / blizzard mist redraw (when active) | `MIST_REDRAW` | `mainRT` | cloud-forest-fog.js |
 | 7 | `seamId` | material-ID buffer (off by default) | `MATERIAL_SEAM_ID` | `seamIdRT` | world-render-pipeline.js |
-| 8 | `composite` | `mainRT` → canvas, then world text | `WORLD_TEXT_OVERLAY` | canvas | outline-composite-material.js, outline-render-performance.js |
+| 8 | `composite` | `mainRT` → canvas, with painterly if enabled | — | canvas | outline-composite-material.js, painterly-postprocess.js |
 | 9 | `perception` | Perception Mode silhouettes | `PERCEPTION_MODE` | canvas | perception-mode.js |
+| 10 | `worldText` | popup/dialogue + active Scratchbone ink and halos; only notes use actor depth | `WORLD_TEXT_OVERLAY`, `SCORE_ACTOR_DEPTH` | canvas | outline-render-performance.js |
 
 Outlines off: `main` straight to the canvas, `actorProbes`, `target`,
 `perception`. A quiet Western Slope frame is **17 native renders, ~160 draws**
@@ -124,7 +125,7 @@ Registered hooks, in order (lower runs first, its restore runs last):
 
 | Order | id | Scope | Owner | What it does |
 |---|---|---|---|---|
-| 50 | `animal-subtle-elevation` | frame | animal-subtle-elevation-bridge.js | creatures, companions, mounts, corpses, farm animals lifted onto terrain/supports (game renderer only) |
+| 50 | `animal-subtle-elevation` | frame | animal-subtle-elevation-bridge.js | animal terrain/support placement and ground-following shadows, plus the separate visual hop for companions (game renderer only) |
 | 100 | `death-mark-billboards` | frame | combat/combat-death-mark.js | Death-mark billboards face the camera |
 | 150 | `town-body-elevation` | frame | town-player-body-elevation-bridge.js | clears the retired composer lift channel; town support diagnostics (game renderer only) |
 | 200 | `drunk-prone-composition` | frame | drunk-prone-composition-bridge.js | publishes the drunk channel to the composer; bandit sway |
@@ -138,6 +139,7 @@ Registered hooks, in order (lower runs first, its restore runs last):
 | 950 | `family-baby-limbs` | frame | family-baby-limbs.js | carried baby's cloned 3D hands/feet wave and kick; rest pose restored |
 | 1000 | `npc-social-inhibition` | frame | npc-social-inhibition-runtime.js | NPC social facing / dance sway |
 | 5000 | `geometry-auto-lod` | render | geometry-auto-lod.js | Opt-in geometry substitutions, restored after every draw |
+| 900000000 | `dense-wall-static-matrices` | render | dense-forest-wall-batches.js | opt-in r128 owner-specific static branch matrix reuse; installs/restores only the active scene instance method during native rendering |
 
 **`frame` scope** = applied once, on the first render of the world scene in a
 frame, undone once at `endWorldFrame`. Every pass (main, PNG depth, shell,
@@ -165,6 +167,16 @@ replay render (`unwrapRendererRender`) stops at the onboarding wrapper (no
 marker), so replays go through the full lower chain, hooks included. Migrate
 these into `RenderHooks` when you next touch them for another reason.
 
+The static dense-wall matrix experiment is an explicit producer contract, not a
+visibility rule. BorderTerrain enrolls only flat wall groups after attaching
+them to the scene. Their placements live in instance buffers; before any new
+leaf local-transform, manual-matrix or custom-update writer, call
+`DenseForestWallBatches.invalidateStaticMatrixBranch(leafOrRoot)` to retire it permanently. The existing
+attachment observer retires modified hierarchies. Explicit subtree matrix
+updates outside native scene recursion retain normal behavior. Pixel Probe
+audits cached branches on demand; no continuous child scan. Keep this off by
+default until a device comparison shows a gain.
+
 Every hook module keeps a small legacy prototype wrapper used **only** when
 `js/render-hooks.js` is absent (isolated tool pages and unit-test VMs).
 
@@ -185,12 +197,13 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 
 | Order | id | Owner | Effect |
 |---|---|---|---|
-| 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
+| 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches; outside wilderness zones also children tagged `hobunjiStaticBatchable` of scene-level groups tagged `hobunjiStaticBatchGroup` (town NPC farm plots, authored house faces) → merged per 8×8 cell + render state, as render proxies with no terrain tags |
 | 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props (tents, camp furniture, berries, herbs, totems, nests, ore-rock stones) → merged per 8×8 cell + material |
-| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
-| 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay) |
+| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** pending device A/B. Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part per 8×8 cell; tracked by camera and replay bounds |
+| 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay); trees ≥ 12 tiles from the camera draw their roots, branches and vines with `FoliageGenerator.liteTreeGeometry` twins (same spines, fewer rings/sides; a fading part is never merged: swapped in place when all its trees are far) |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
+| 450 | `instanced-brick-lod` | instanced-brick-lod.js | WallBuilder default-brick (`Roughbrick1.glb`) meshes whose nearest brick is ≥ 14 tiles away swap to a 12-triangle octant hull of the brick (same bounds, flat-shaded, uv copied), restored after the frame |
 | 500 | `instanced-view-cull` | instanced-mesh-view-cull.js | off-camera instanced walls/grass hidden |
 | 600 | `wilderness-distance-cull` | wilderness-distance-cull.js | far static wilderness geometry hidden |
 
@@ -233,6 +246,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 | System | Covers | Gap |
 |---|---|---|
 | held tool/weapon planes (`character-held-tools.js`) | player, NPC, enemy | holder's own mastery/metal; metal variants per appearance |
+| hat overflow plane (`hat-overflow-plane.js`) | player, NPC, enemy (split planes: `attachToPlanes`) | — |
 | held bag-item plane (game.js) | player | NPCs never hold bag items |
 | held-item x-ray through grass/ground (`held-object-render-order.js`) | player, short species (porakaneki) | other NPCs/enemies: hands ordinary depth, feet within 6 tiles only, weapons/tools in the base pass by default (user decision, ~11 ms on a GTX 1060; Settings → Render optimizations restores weapon x-ray) |
 | procedural hands, pants, ground shadow, outline occlusion, rig layers | all humanoids (shadow/occlusion/rig: every kind) | — |
@@ -269,7 +283,7 @@ Rules:
 | Pose/offset something only while drawing | `RenderHooks.register({ scope: 'frame', … })` |
 | Hide or merge things only while drawing | `WorldRenderPipeline.registerRenderScope(...)` |
 | Add a pass | Add it in `renderOutlinedPasses`/`renderDirectPasses` with a `pass('name')` label and a PerfProfiler bucket; add a layer to the registry; update §1 |
-| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. `js/wilderness-tree-instancer.js` can draw opaque trees as instanced batches per shared variant part, but it is off by default (net loss on device; needs chunk-local batches first): `WildernessTreeInstancer.setEnabled(true)`, benchmark variant `treeInstancingOn` |
+| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. `js/wilderness-tree-instancer.js` can draw opaque trees as instanced batches per shared variant part, within spatial 8×8 cells, but it remains off by default pending verification against the old corridor-wide net loss: `WildernessTreeInstancer.setEnabled(true)`, benchmark variant `treeInstancingOn` |
 | Draw held items in front of grass/water | `js/held-object-render-order.js` + `js/xray-hierarchy.js` rules |
 | Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
 | Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
@@ -280,7 +294,9 @@ Rules:
 
 ```js
 WorldRenderPipeline.captureFrame();          // next frame: every native render
-WorldRenderPipeline.lastCapture().passes     // [{ pass, layers:[names], override, target, draws, triangles, ms }]
+WorldRenderPipeline.lastCapture().passes     // [{ pass, worldScene, sceneAutoUpdate, layers:[names], override, target, draws, triangles, ms }]
+WorldRenderPipeline.lastCapture().mainMatrixCensus // Draw-state graph after scopes/hooks, including hidden descendants.
+WorldRenderPipeline.lastCapture().scopeTimings // One-shot scope preparation elapsed ms.
 WorldRenderPipeline.snapshot()               // last frame: native renders, scopes, errors
 WorldRenderPipeline.setScopeEnabled('zone-prop-batches', false) // A/B one scope
 RenderHooks.getDebug()                       // hooks in order: calls/applies/skips/errors
@@ -323,6 +339,15 @@ HobunjiRenderLayers.describe(mask)           // bits → names
 PerfProfiler.setEnabled(true)                // 'render: main scene', 'render: shell outline', …
 ```
 
+Pixel Probe arms the existing one-shot world frame capture and copies it alongside
+the logical outside-scope census. The capture marks failed world frames incomplete
+and rejects old captures from before arming or another area. Each native pass records
+the r128 scene.autoUpdate flag before native rendering, not a measured matrix time.
+The draw-state census runs once before the first main-camera submission, excluded
+from the pass timer; its counts describe candidates, not actual visited nodes under
+custom matrix updaters. Scope timing covers preparation only. Ordinary frames never
+run these diagnostic walks or timing calls.
+
 If a visual is wrong only in one pass (e.g. its outline is offset from the
 sprite), capture a frame and compare which passes draw it and with which layers
 before touching materials.
@@ -349,3 +374,90 @@ the held colour overlay. If its material writes no depth and no stencil it is
 skipped in the colourless depth submissions (`hideColorOnlyHeldVfx`). Keep VFX
 that way (`depthWrite: false`, no stencil) unless it must occlude. Every
 separate sprite is a draw call in each colour pass that includes it.
+
+### Kanthic engraving presentation
+
+Kanthic only: after the main scene and (when enabled) mist/shell depth restores, `CloudForestFog` applies the existing lighting canvas as a fullscreen texture without clearing depth, then renders the occupied room/shaft's original additive glyph geometry against the same depth buffer. The DOM lighting canvas is hidden only when already applied on the GPU and restored outside the effect. Other traditions retain their existing Canvas2D radial illumination. The original scene's glow visibility is restored in the world frame's finally block. No scene-wide depth raycasts, CPU atlas triangle projection or platform silhouette clipping are used for Kanthic.
+
+The two auxiliary draws use the named `KANTHIC_GLYPH_DEPTH` camera layer, so neither is classified as a main world draw by the held-object X-ray replay. The camera layer mask and renderer clear flag are restored even when a depth draw throws.
+
+The Kanthic redraw selects meshes by cached world-space bounds, then clips their fragments against the occupied region's world-space planes. A wide wall may span multiple rooms; a tall shaft panel is not rejected on its center height. Source material clipping state and renderer flags are restored transactionally. Lighting uploads are bounded to 524,288 pixels with a reusable downsample canvas and tracked by paint revision rather than timestamp. The GPU darkness pass sits below the DOM gameplay overlay; during unowned corridors or transition fades the existing DOM darkness path is retained.
+
+Before world rendering, the Kanthic owner prepares the ordinary lighting canvas; its resize-recovery path is not allowed to execute while mainRT's depth is bound. The glyph pass disables all autoClear flags (Color backgrounds otherwise force a clear) and restores them after direct PNG depth replay and glyph drawing. Camera-frustum rejection prevents empty glyph frames from invoking the GPU darkness pass.
+
+
+### Generated outline modes
+
+Settings → Render optimizations → Generated outlines selects
+`screen` (default), `shell` or `none`. The ordinary Outlines
+setting remains the master offscreen/composite switch. The A/B benchmark
+compares `shellOutlines`, `screenDepthOutlines` and
+`generatedOutlinesOff` while preserving painterly and the master setting.
+
+Screen mode replaces the expanded-shell pass and its selective shell X-ray
+replay with one unexpanded front-facing depth draw on the existing
+SHELL_OUTLINE layer. The mask target is allocated only when used, resized
+with the main target, and disposed when leaving screen mode. Existing
+outline pass classification allows base-matrix reuse. The composite accepts
+only pixels whose mask depth matches the world depth, then samples four
+neighbors twelve render-target pixels away to detect an inward silhouette or
+substantial depth discontinuity. Opposing raw-depth samples cancel planar slopes;
+world-scaled residual thresholds reject gentle curvature. Overlapping opposite
+strokes are attenuated (55% ink at full overlap) to preserve narrow-object color.
+No extra neighbor reads or geometry passes are introduced. Authored PNGs and
+hard-faced textured meshes are excluded by the existing shell-layer policy;
+an unrestricted world-depth Sobel filter would violate that policy. Standard
+scene fog fades the generated ink. With painterly active, the existing composite
+first writes the outlined world into the reusable tone target, then the original
+oil/wash/tone/finish stack processes both authored and generated ink together.
+Oil consumes that source before tone overwrites it; no additional render target
+or world draw is needed. Shell/none and painterly-off frames skip the extra
+composite. The final canvas draw disables already-applied outlines temporarily,
+so Perception Mode and then world text still appear after the filter. The world
+pipeline explicitly reserves popup/dialogue and active score meshes in both
+render modes, presents them after perception, and restores their original state
+on failure. Active Scratchbone ink/halos ignore cliff depth but test against a
+colorless foreground character mask; ordinary text stays above the notes. Render A/B's
+`paintBeforeDepthOutlines` variant compares the previous order; the painterly
+snapshot reports `outlineFirst` and `outlinedFrames`. Reticle highlights, actor probes, PNG occlusion depth, water/color
+X-ray and perception overlays remain independent.
+
+This is deliberately a selective-mask experiment, NOT a zero-geometry-pass
+implementation: sampling the current depth alone cannot identify authorized
+outline surfaces, and the r128 world materials have no common eligibility
+channel. Depthless transparent foreground effects, restored ground depth
+over X-rayed limbs, and custom mist can differ from the original shell
+appearance.
+Recording-renderer fixtures exercise all three modes, resize, disposal,
+error restoration and persistence; real WebGL visual parity and FPS are not
+yet established.
+
+
+## Pixel Probe bounded gameplay timing
+
+Arm Pixel Probe, allow 10–20 seconds of normal gameplay, then tap and copy
+its report. The bounded session ends automatically at 20 seconds or 1,200
+sampled frames; the tap ends it before diagnostic rerenders. A temporary
+late RenderHooks hook times outer native submissions and, where enabled,
+the actual scene-instance matrix walk (preserving the static-wall hook
+and original property descriptor in reverse-order cleanup). It records
+pass/layer/stage and matrix-walk versus matrix-reuse separately. The
+one-shot main-frame static-wall audit now runs after native rendering
+inside the live scopes, not after Pixel Probe rerenders. Render timings
+are inclusive CPU wall time, not GPU timing, and nested native submissions
+are not separately attributed. Explicit between-frame timing brackets
+are reported separately. No continuous scene census is introduced.
+
+
+### Gameplay window v2: stalls
+
+Pixel Probe also records bounded worst scheduler frames and RAF
+intervals, their preceding callback duration and actual gap between
+callbacks, and the terminal interval if expiration occurs at the next
+scheduler boundary. Browser long-task and long-animation-frame entries
+are observed only during the window where supported. The worst entries
+include bounded script attribution and forced layout time; page focus
+and visibility transitions help distinguish background throttling.
+Observer reports cover completed entries wholly inside the capture,
+not necessarily every browser task. They are overlapping evidence,
+not an exclusive CPU breakdown or GPU timer.

@@ -35,6 +35,7 @@
     PNG_OCCLUDER: Object.freeze({ bit: 4, owner: 'png-plane-outline-occluder.js', purpose: 'PNG avatars/held items replayed depth-only before the outline passes so outlines behind them are hidden.' }),
     MIST_REDRAW: Object.freeze({ bit: 5, owner: 'cloud-forest-fog.js', purpose: 'Mist cylinders redrawn over the outline passes.' }),
     WORLD_TEXT_OVERLAY: Object.freeze({ bit: 6, owner: 'outline-render-performance.js', purpose: 'Depth-disabled world text (popups, chatheads) drawn after the composite.' }),
+    KANTHIC_GLYPH_DEPTH: Object.freeze({ bit: 7, owner: 'cloud-forest-fog.js', purpose: 'Dedicated lighting quad and occupied-room emissive glyph redraw; never a base-world or held-object replay.' }),
     FRONT_PORTRAIT_MASK: Object.freeze({ bit: 24, owner: 'held-object-render-order.js', transient: true, purpose: 'Stencil stamp of an actor\'s front art so its own held gear can be masked. Shares the bit with SCORE_ACTOR_DEPTH (both transient).' }),
     SCORE_ACTOR_DEPTH: Object.freeze({ bit: 24, owner: 'outline-render-performance.js', transient: true, purpose: 'Colourless actor silhouettes for the puzzle-score overlay (outlines-off path only).' }),
     PORTRAIT_WATER_MASK: Object.freeze({ bit: 25, owner: 'held-object-render-order.js', transient: true, purpose: 'Colourless actor silhouettes for water tint. Shares the bit with PERCEPTION_MODE.' }),

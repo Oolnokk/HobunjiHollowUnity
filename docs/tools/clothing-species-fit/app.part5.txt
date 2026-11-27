@@ -1,10 +1,10 @@
 }
 function routedPatchIsBody(){return R.patchWorkflow.active&&R.patchWorkflow.descriptor?.kind==='body'}
 function routedPatchIsClothing(){return R.patchWorkflow.active&&R.patchWorkflow.descriptor?.kind==='clothing'}
-function currentWarp(sourceOverride=null){
+function currentWarp(sourceOverride=null,view='front'){
   const source=sourceOverride||mainClothSource();
   if(!source)return null;
-  return warpClothing(source,warpGridForMode(),R.body.width,R.body.height); // Routed clothing and body patches share the same live Base Transform / 6×6 fit path before their different avatar-assembly stages.
+  return warpClothing(source,warpGridForMode(),R.body.width,R.body.height,null,{view}); // Routed clothing and body patches share the same live Base Transform / 6×6 fit path before their different avatar-assembly stages.
 }
 function currentExtendedWarp(finalFit=false){
   if(!R.extendedSource)return null;
@@ -23,12 +23,53 @@ function headwearWarpForView(view,finalFit=false,fitState=null){
   }
   const source=view==='back'?(R.cloth._behindView||R.cloth._back||R.cloth._front):view==='under'?R.cloth._back:R.cloth._front;
   if(!source)return null;
-  return warpClothing(source,finalFit?targetGridFromFitState(fitState||captureFitState()):warpGridForMode(),R.body.width,R.body.height,fitState?.headband||null);
+  const grid=finalFit?targetGridFromFitState(fitState||captureFitState()):warpGridForMode();
+  const options={view:view==='back'?'behind':view,...(fitState?{hole:fitState.hole,pins:fitState.pins}:{})};
+  const hole=options.hole!==undefined?options.hole:currentHoleRecord();
+  const layers=(R.cloth._layers||[]).filter(layer=>layer.view===view&&layer.canvas);
+  if(view!=='back'&&hole?.enabled&&layers.some(layer=>holeFollowForRole(hole,layer.role)>0)){
+    // A trim rides along with the opening differently from its base, so the
+    // composite is rebuilt from individually warped materials, in order.
+    const out=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
+    const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+    for(const layer of layers)ctx.drawImage(warpClothing(fittedSourceCanvasForLayer(layer),grid,R.body.width,R.body.height,fitState?.headband||null,{...options,role:layer.role}),0,0);
+    return out;
+  }
+  return warpClothing(source,grid,R.body.width,R.body.height,fitState?.headband||null,options);
 } // Back and front sprites use the same saved 6×6 fit, but remain separate for compositing and exports.
 function clothOut(fitState=captureFitState()){
   const source=mainClothSource();
   if(!source||!R.body)return null;
-  return warpClothing(source,targetGridFromFitState(fitState),R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
+  return warpClothing(source,targetGridFromFitState(fitState),R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{hole:fitState.hole,pins:fitState.pins}); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
+}
+// Headwear whose fit pushes pixels past the standard layer canvas (a kasa
+// brim scaled up for a bigger head) would be clipped at the PNG edge. Re-warp
+// it into a canvas padded by half the layer size per side and, if anything
+// lands outside the standard canvas, return the crop of everything plus the
+// frame locating the standard canvas inside it. Only the plain grid warp can
+// be padded: headband splines and hood-hole deforms work in the fixed canvas.
+function paddedHeadwearOutput(source,targetNorm,width,height,fitState,view){
+  if(fitRegion()!=='headwear'||!source||fitState?.headband?.enabled)return null;
+  const Hole=window.ClothingHoodHoleDeform;
+  if(view!=='behind'&&fitState?.hole?.enabled&&Hole&&!Hole.isIdentity(fitState.hole.corners))return null;
+  if(view!=='behind'&&fitState?.pins?.points?.length)return null; // Pinned outlines work in the fixed canvas too.
+  if(view==='behind'&&fitState?.pins?.rearPoints?.length)return null;
+  const px=Math.round(width/2),py=Math.round(height/2),W=width+2*px,H=height+2*py;
+  const grid=targetNorm.map(point=>({x:(px+point.x*width)/W,y:(py+point.y*height)/H}));
+  const big=warpGarment(source,grid,W,H);
+  const data=big.getContext('2d').getImageData(0,0,W,H).data;
+  let x0=px,y0=py,x1=px+width,y1=py+height,spill=false;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    if(data[(y*W+x)*4+3]<8)continue;
+    if(x<px||y<py||x>=px+width||y>=py+height){
+      spill=true;x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x+1);y1=Math.max(y1,y+1);
+    }
+  }
+  if(!spill)return null;
+  const canvas=Object.assign(document.createElement('canvas'),{width:x1-x0,height:y1-y0});
+  const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(big,-x0,-y0);
+  return{canvas,frame:{x:px-x0,y:py-y0,width,height}};
 }
 function fittedClothingFilename(){
   if(R.patchWorkflow.active&&R.patchWorkflow.filename)return R.patchWorkflow.filename;
@@ -40,7 +81,9 @@ function fittedLayerOutputs(fitState=captureFitState()){
   const layers=(R.cloth._layers||[]).map(layer=>{
     const isPatched=layerMatchesRoutedClothingPatch(layer);
     const source=fittedSourceCanvasForLayer(layer);
-    return {...layer,patched:!!isPatched,canvas:warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour)};
+    const canvas=warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{view:layer.view,hole:fitState.hole,pins:fitState.pins,role:layer.role});
+    const padded=paddedHeadwearOutput(source,targetNorm,R.body.width,R.body.height,fitState,layer.view);
+    return padded?{...layer,patched:!!isPatched,canvas:padded.canvas,frame:padded.frame}:{...layer,patched:!!isPatched,canvas,frame:null};
   });
   const rear=fitRegion()==='headwear'&&fitState.headband?.rearCanvas?headbandRearDisplay(fitState.headband):null;
   if(!rear)return layers;
@@ -65,9 +108,11 @@ function fittedFallbackAssetPath(layer,selection){
   const source=archiveAssetPath(layer.url);
   const directory=source?.slice(0,source.lastIndexOf('/')+1)||'assets/cosmetics/clothes/';
   const original=(source?.split('/').pop()||safeName(layer.name)+'.png').replace(/\.png$/i,'');
-  const noSourceGender=original.replace(/[_-](male|female|m|f)$/i,'');
+  const rearClass=/(_behind(?:_metal)?)$/i.exec(original)?.[1]||''; // Rear headwear art keeps its *_behind / *_behind_metal class suffix last.
+  const stem=rearClass?original.slice(0,-rearClass.length):original;
+  const noSourceGender=stem.replace(/[_-](male|female|m|f)$/i,'');
   const suffix=selection.targetGender==='female'?'f':'m';
-  return directory+noSourceGender+'_'+safeName(selection.targetSpecies)+'_'+suffix+'.png';
+  return directory+noSourceGender+'_'+safeName(selection.targetSpecies)+'_'+suffix+rearClass+'.png';
 }
 function archiveVariantLeaf(variant,path,originalLeaf){
   let cursor=variant,created=false;
@@ -173,7 +218,7 @@ function buildFittedLayerArchivePlan(layers,selection){
     // If front and rear originally use the same image, updating a front file must
     // update its matching rear alias even when the target layer ALREADY exists.
     // A distinct authored behindImage is handled by its own exported layer instead.
-    if(!behind&&changedUrl&&installed.leaf.behindImage?.url===targetUrl){
+    if(!behind&&changedUrl&&targetUrl&&installed.leaf.behindImage?.url===targetUrl){ // A brand-new target variant has no targetUrl; undefined===undefined must not match a missing behindImage.
       const explicitRear=layers.some(other=>other.path.length===layer.path.length+1&&
         other.path.at(-1)==='behindImage'&&
         JSON.stringify(other.path.slice(0,-1))===JSON.stringify(layer.path));
@@ -183,11 +228,20 @@ function buildFittedLayerArchivePlan(layers,selection){
       installed.leaf.behindImage.url='./'+outputName;
       modified=true;
     }
+    // Big hats: a padded PNG records where the standard layer canvas sits in it (portrait-utils _portraitLayerDrawRect).
+    const imageNode=behind?installed.leaf:(installed.leaf.image ||= {});
+    const nextFrame=layer.frame?{...layer.frame}:null;
+    if(JSON.stringify(imageNode.frame||null)!==JSON.stringify(nextFrame)){
+      if(nextFrame)imageNode.frame=nextFrame;else delete imageNode.frame;
+      modified=true;
+    }
+    if(!behind&&nextFrame&&installed.leaf.behindImage?.url==='./'+outputName&&!layers.some(other=>other.path.at(-1)==='behindImage'&&
+        JSON.stringify(other.path.slice(0,-1))===JSON.stringify(layer.path)))installed.leaf.behindImage.frame={...nextFrame}; // Shared front/rear PNG shares its frame.
     files.push({
       outputName,originalLayerName:layer.name,sourceConfigPath:layer.path,sourceUrl:layer.url,
       targetUrl:'./'+outputName,existingTargetFilename:!!existing&&!changedUrl,
       sharedTargetAssetAvoided:!!shared,
-      layerRole:layer.role,view:layer.view,patched:layer.patched
+      layerRole:layer.role,view:layer.view,patched:layer.patched,...(layer.frame?{frame:layer.frame}:{})
     });
   }
   return{files,configPath:modified?garment.configPath:null,originalConfigPath:garment.configPath,
@@ -198,7 +252,7 @@ async function exportFittedGarment(){
   const fit=captureFitState();
   if(!R.cloth)return;
   const exportLayers=fittedLayerOutputs(fit); // A newly painted behindImage converts a one-layer headband into a two-layer ZIP.
-  if(exportLayers.length<=1||routedPatchIsBody()){
+  if((exportLayers.length<=1&&!exportLayers.some(layer=>layer.frame))||routedPatchIsBody()){ // A padded big-hat PNG needs its config frame, so it always ships as a ZIP.
     const output=clothOut(fit); // Don't spend another 800-triangle warp on a single-layer PNG.
     if(output){downloadCanvas(output,fittedClothingFilename());log(`Exported single fitted PNG (${fit.key}).`)}
     return;
@@ -209,38 +263,10 @@ async function exportFittedGarment(){
   const selection={garmentId:E.garment.value,fitRegion:fitRegion(),sourceSpecies:E.sourceSpecies.value,
     sourceGender:E.sourceGender.value,targetSpecies:E.species.value,targetGender:E.gender.value}; // Pinned before asynchronous mobile PNG encoding.
   const stem=`${safeName(selection.garmentId)}_${safeName(selection.targetSpecies)}_${selection.targetGender}`;
-  const entries=[];
   E.clothPng.disabled=true;
   try{
-    const plan=buildFittedLayerArchivePlan(layers,selection);
-    for(let index=0;index<layers.length;index++){
-      const mapped=plan.files[index];
-      E.sourceLayerStatus.textContent='Baking '+(index+1)+'/'+layers.length+': '+mapped.outputName;
-      entries.push({name:mapped.outputName,bytes:await zipTools.canvasToPngBytes(layers[index].canvas)});
-    }
-    if(plan.configPath)
-      entries.push({name:plan.configPath,bytes:new TextEncoder().encode(JSON.stringify(plan.config,null,2)+'\n')});
-    const manifest={
-      format:'hobunji-clothing-fit-layered-v2',...selection,
-      installRoot:'docs/',targetConfigUpdated:!!plan.configPath,
-      configPath:plan.originalConfigPath, // Pin garment metadata before asynchronous image encoding.
-      fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets,contour:{enabled:!!fit.contour?.enabled,strength:fit.contour?.strength??1,feather:fit.contour?.feather??14,protectedPixels:fit.contour?.maskPixels?.reduce((n,v)=>n+v,0)||0},headband:fit.headband?{enabled:fit.headband.enabled,source:fit.headband.source,target:fit.headband.target,
-         whole:fit.headband.whole||null,back:fit.headband.back,authoredBack:!!fit.headband.rearCanvas}:null},
-      files:plan.files
-    };
-    entries.push({name:'fitted-layers-manifest.json',bytes:new TextEncoder().encode(JSON.stringify(manifest,null,2))});
-    const readme=[
-      'HOBUNJI HOLLOW — FITTED CLOTHING LAYERS',
-      '',
-      'Extract this ZIP into the repository docs/ directory, preserving its subfolders.',
-      'PNG filenames and folders match the target cosmetic config image URLs.',
-      plan.configPath
-        ?'The included '+plan.configPath+' adds/updates target layer references. Merge the JSON with newer repository edits if the repository changed since export.'
-        :'All image URLs already exist in the target cosmetic config; no config update is needed.',
-      'Existing PNGs with the same names will be overwritten. Back them up first.',
-      'See fitted-layers-manifest.json for every original layer name and source/target path.'
-    ].join('\n');
-    entries.push({name:'README-FITTED-LAYERS.txt',bytes:new TextEncoder().encode(readme)});
+    const {entries,plan}=await buildFittedArchiveEntries(fit,layers,selection,zipTools);
+    entries.push({name:'README-FITTED-LAYERS.txt',bytes:new TextEncoder().encode(fittedArchiveReadme(plan.configPath))});
     const archiveName=`${stem}_fitted_layers.zip`;
     zipTools.downloadBlob(zipTools.buildStoredZip(entries),archiveName);
     log(`Exported ${plan.files.length} ready-to-install layers in ${archiveName} for ${selection.targetSpecies} ${selection.targetGender}.`);
@@ -249,6 +275,42 @@ async function exportFittedGarment(){
     log('ERROR Fitted layer ZIP export: '+error.message);
     E.sourceLayerStatus.textContent='Layer export failed: '+error.message;
   }finally{E.clothPng.disabled=!R.cloth}
+}
+// PNG entries, the updated cosmetic config and a manifest for one garment's
+// fitted layers. Shared by the single-garment export and recipe batch export.
+async function buildFittedArchiveEntries(fit,layers,selection,zipTools,manifestName='fitted-layers-manifest.json'){
+  const plan=buildFittedLayerArchivePlan(layers,selection);
+  const entries=[];
+  for(let index=0;index<layers.length;index++){
+    const mapped=plan.files[index];
+    E.sourceLayerStatus.textContent='Baking '+(index+1)+'/'+layers.length+': '+mapped.outputName;
+    entries.push({name:mapped.outputName,bytes:await zipTools.canvasToPngBytes(layers[index].canvas)});
+  }
+  if(plan.configPath)
+    entries.push({name:plan.configPath,bytes:new TextEncoder().encode(JSON.stringify(plan.config,null,2)+'\n')});
+  const manifest={
+    format:'hobunji-clothing-fit-layered-v2',...selection,
+    installRoot:'docs/',targetConfigUpdated:!!plan.configPath,
+    configPath:plan.originalConfigPath, // Pin garment metadata before asynchronous image encoding.
+    fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets,contour:{enabled:!!fit.contour?.enabled,strength:fit.contour?.strength??1,feather:fit.contour?.feather??14,protectedPixels:fit.contour?.maskPixels?.reduce((n,v)=>n+v,0)||0},headband:fit.headband?{enabled:fit.headband.enabled,source:fit.headband.source,target:fit.headband.target,
+       whole:fit.headband.whole||null,back:fit.headband.back,authoredBack:!!fit.headband.rearCanvas}:null},
+    files:plan.files
+  };
+  entries.push({name:manifestName,bytes:new TextEncoder().encode(JSON.stringify(manifest,null,2))});
+  return{entries,plan};
+}
+function fittedArchiveReadme(configUpdated){
+  return [
+    'HOBUNJI HOLLOW — FITTED CLOTHING LAYERS',
+    '',
+    'Extract this ZIP into the repository docs/ directory, preserving its subfolders.',
+    'PNG filenames and folders match the target cosmetic config image URLs.',
+    configUpdated
+      ?'The included cosmetic config(s) add/update target layer references. Merge the JSON with newer repository edits if the repository changed since export.'
+      :'All image URLs already exist in the target cosmetic config; no config update is needed.',
+    'Existing PNGs with the same names will be overwritten. Back them up first.',
+    'See the fitted-layers manifest(s) for every original layer name and source/target path.'
+  ].join('\n');
 }
 function overlayOut(){
   const clothing=clothOut();if(!R.body||!clothing)return null;

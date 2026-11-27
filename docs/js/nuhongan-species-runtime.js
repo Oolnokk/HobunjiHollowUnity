@@ -5,9 +5,10 @@
 
   const ID = 'nuhongan'; // Distinct saved/runtime species id so Nuhongan retain their own whole-rig scale.
   const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Nuhongan system.
-  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.741763, female: 0.787502 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 0.74174, female: 0.787478 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const PART_SCALE_AXES = window.HobunjiCharacterRigScaleDefaults?.nuhonganPartScaleAxes; // Reads fixed authored axes; this bridge never calculates a donor/body scale ratio.
+  const HAND_SCALE_AXES = window.HobunjiCharacterRigScaleDefaults?.nuhonganHandScaleAxes || PART_SCALE_AXES; // Hands are authored a little smaller than the feet.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Prevents Nuhongan edits from mutating Tletingan source records.
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const config = window.SCRATCHBONES_CONFIG?.game; // Shared gameplay/editor configuration extended by this bridge.
@@ -73,9 +74,9 @@
       profile.anatomy ||= {};
       // Retain donor size controls; fixed per-axis authoring cancels only the
       // extremities' inherited body shrink, without moving their anchors.
-      for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'headScale', 'headOffsetY']) delete profile.anatomy[key];
-      profile.anatomy.handScaleAxes = clone(PART_SCALE_AXES);
-      profile.anatomy.footScaleAxes = clone(PART_SCALE_AXES);
+      for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'legLengthScale', 'headScale', 'headOffsetY']) delete profile.anatomy[key]; // legLengthScale too: never inherit the Tletingan's seeded leg length.
+      delete profile.anatomy.handScaleAxes; // Limb defaults belong to this species rather than its donor.
+      delete profile.anatomy.footScaleAxes;
       characters[`${ID}::${gender}`] = profile;
       installed += 1;
     }

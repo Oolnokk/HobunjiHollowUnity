@@ -284,7 +284,47 @@ async function main(){
             throw Error('Real cave-site builder failed to migrate a saved legacy melody to a solved pressure plate');
           if(!fireInterior.disposed)throw Error('Legacy scene rebuild retained its previous fire challenge');
           if(!adapted.rockSurround?.geometry?.getAttribute?.('position'))
-            throw Error('Migrated interior lost the permanent stone gate surround'); // The fixture is deliberately inactive: physical blocking is tested above with the active-area composer.
+            throw Error('Migrated interior lost the permanent stone gate surround');
+
+          // Enter through the real game loader with a deterministic carved-floor sample.
+          const floorY=.28, plateRow=legacyPlan.puzzleCave.row-2;
+          const floor=[]; // Clear tiles around the plate, including an adjacent bare tile.
+          for(let row=room.z;row<room.z+room.d;row++)
+            for(let col=room.x;col<room.x+room.w;col++)floor.push([col,row]);
+          const generator=window.CavernGenerator;
+          const originalGenerate=generator.generateCavernFloorAsync;
+          const originalSynthesize=generator.synthesizeCavernMapData;
+          try{
+            generator.generateCavernFloorAsync=(id,...args)=>id===legacyId?Promise.resolve(null):originalGenerate(id,...args);
+            generator.synthesizeCavernMapData=(id,...args)=>id===legacyId?{
+              ...legacyMap,schema:'hobunji_building_interior.v1',wallStyle:'cavern',cols:15,rows:17,floor,exits:[],
+              floorSurfaceY:.24,floorSurfaceByTile:{[legacyPlan.puzzleCave.col+','+plateRow]:floorY},
+              mesh:{...legacyMap.mesh,positions:[3,.24,5,3,.24,14,12,.24,5,12,.24,14],indices:[0,1,2,2,1,3]},
+            }:originalSynthesize(id,...args);
+            const debug=window.__hobunjiFurnitureDebug;
+            await debug.loadBuildingScene(legacyId);
+            debug.enterBuilding(legacyId,legacyPlan.puzzleCave.col-1,plateRow);
+            const live=registry.puzzleChallengesByMapId.get(legacyId)?.challenge;
+            const actor=window.ActorRegistry.getLocalPlayer();
+            const avatar=window.PlayerBodyTransformComposer.getPlayerMesh();
+            if(!live?.plate||live===adapted||!actor||!avatar)throw Error('Live cave or local player did not mount');
+            const tileSize=actor.x/(legacyPlan.puzzleCave.col-.5); // Use the live game's actor coordinates to derive its grid scale.
+            await waitFor(()=>Math.abs(actor.physicalFeetY-.24)<.002,'bare cave floor footing');
+            actor.x=live.plate.position.x*tileSize;
+            actor.y=live.plate.position.z*tileSize;
+            const center=live.plate.position;
+            const expectedTop=floorY+.155;
+            const support=window.DynamicSurfaces.samplePressurePlate(legacyId,center.x,center.z,floorY,floorY+.25);
+            if(!support||Math.abs(support.y-expectedTop)>1e-5)
+              throw Error('Live plate support must rise above its sampled cave floor: floor='+floorY+' support='+support?.y);
+            await waitFor(()=>Math.abs(actor.physicalFeetY-expectedTop)<.002
+              &&Math.abs(avatar.position.y-expectedTop)<.025,'live feet and avatar on the plate');
+            actor.x=(legacyPlan.puzzleCave.col-.5)*tileSize;
+            await waitFor(()=>Math.abs(actor.physicalFeetY-.24)<.002,'stepping back down onto the bare cave floor');
+          }finally{
+            generator.generateCavernFloorAsync=originalGenerate;
+            generator.synthesizeCavernMapData=originalSynthesize;
+          }
         }finally{
           registry.puzzleChallengesByMapId.get(legacyId)?.challenge?.dispose?.();
           registry.puzzleChallengesByMapId.delete(legacyId);

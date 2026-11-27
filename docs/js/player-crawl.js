@@ -82,6 +82,7 @@
     deps = injected;
     const registry = (window.HobunjiFreeHandPose ||= { providers: new Map() });
     registry.providers.set('crawl', leftHandPose);
+    registry.providers.set('npc-crawl', npcHandPose); // The same reach/grab/pull sampler, with independent infant state.
   }
 
   function setActive(on) {
@@ -139,6 +140,9 @@
   // ── Left arm ──────────────────────────────────────────────────────
   function leftHandPose(parent, side, modelHeight, record) {
     if (side !== 'left' || blend <= 0.001 || !deps || parent !== deps.getPlayerMesh?.()) return null;
+    return sampleHandPose(modelHeight, record, phase, activity, blend, handPose);
+  }
+  function sampleHandPose(modelHeight, record, phase, activity, blend, handPose) {
     const h = modelHeight || 0.9;
     const L = record?.rig?.armLengthForSide?.('left') || h * 0.29; // Same cached reach the dance uses.
     const { grabEnd, pullEnd } = CFG;
@@ -206,6 +210,69 @@
     return true;
   }
 
+  // NPCs have their own floor-anchored character rig instead of the player's
+  // global body compositor. Reuse the authored crawl curve and joint angles,
+  // but never touch the player's active/blend/phase or weapon channels.
+  const npcCrawlers = new Map(); // Only active crawling infants, keyed by their own hand parent.
+  function npcHandPose(parent, side, modelHeight, record) {
+    if (side !== 'left' || !npcCrawlers.size) return null;
+    const entry = npcCrawlers.get(parent);
+    if (!entry) return null;
+    return sampleHandPose(modelHeight, record, entry.phase, entry.activity, 1, entry.handPose);
+  }
+  function clearNpc(walker) {
+    const parent = walker?.avatarGroup;
+    const entry = npcCrawlers.get(parent);
+    if (!entry) return;
+    entry.rig.rotation.copy(entry.originalRotation);
+    entry.rig.position.copy(entry.originalPosition);
+    if (walker.legs?.group) walker.legs.group.rotation.y = entry.originalLegYaw;
+    npcCrawlers.delete(parent);
+  }
+  function poseNpc(walker, dt, moving, heading) {
+    const parent = walker?.avatarGroup, rig = walker?._npcCharacterRigRoot;
+    if (!parent || !rig?.rotation || !rig.position || !walker.root) return false;
+    let entry = npcCrawlers.get(parent);
+    if (!entry) {
+      entry = { rig, originalRotation: rig.rotation.clone(), originalPosition: rig.position.clone(),
+        originalLegYaw: walker.legs?.group?.rotation?.y || 0, phase: 0, activity: 0,
+        anatomy: walker.legs?.motionAnatomy?.() || [], // Capture real segment lengths once, never run expensive geometry diagnostics each frame.
+        heading: Number.isFinite(heading) ? heading : -walker.root.rotation.y,
+        handPose: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 }, overridden: true },
+        legRecord: { thighQuaternion: { x: 0, y: 0, z: 0, w: 1 }, calfLocalQuaternion: { x: 0, y: 0, z: 0, w: 1 }, upperLength: 0, lowerLength: 0, roll: 0 }
+      };
+      npcCrawlers.set(parent, entry);
+    }
+    if (Number.isFinite(heading)) entry.heading += wrap(heading - entry.heading) * Math.min(1, dt * 8);
+    entry.activity += ((moving ? 1 : 0) - entry.activity) * Math.min(1, dt * 8);
+    if (entry.activity > 0.01) entry.phase = (entry.phase + dt * entry.activity / CFG.cycleSeconds) % 1;
+    const bob = Math.sin(entry.phase * TAU * 2) * 0.012 * entry.activity;
+    const sway = Math.sin(entry.phase * TAU) * 3 * DEG * entry.activity;
+    // The infant rig is floor-relative; rotate about that floor anchor and scale
+    // the subtle vertical motion by the rig's actual age-scaled height.
+    rig.rotation.set(sway, wrap(-entry.heading - walker.root.rotation.y), -CFG.rollDeg * DEG, 'YXZ');
+    const heightRatio = Math.max(0.05, (Number(walker.avatarHeight) || 0.9) / 0.9) * Math.max(0.1, Math.abs(rig.scale?.y || 1)); // Age- and species-scaled version of the player's authored lowering.
+    rig.position.y = entry.originalPosition.y + (CFG.lowerY + bob) * heightRatio;
+    const legs = walker.legs;
+    if (legs?.applyRecordedLegPose) {
+      const amp = clamp01(entry.activity * 1.4);
+      const top = legAngles(CFG.topLeg, entry.phase, amp);
+      const bottom = legAngles(CFG.bottomLeg, (entry.phase + CFG.bottomLegPhaseOffset) % 1, amp);
+      const record = entry.legRecord;
+      // Use the infant's actual anatomy rather than the adult impact clip.
+      if (legs.group) legs.group.rotation.y = 0;
+      for (const [side, angles] of [['right', top], ['left', bottom]]) {
+        const fullLength = entry.anatomy.find(a => a.side === side)?.length || (Number(walker.avatarHeight) || 0.9) * 0.42;
+        record.upperLength = fullLength * 0.5; record.lowerLength = fullLength * 0.5;
+        quaternionAboutX(record.thighQuaternion, angles.thigh * DEG);
+        quaternionAboutX(record.calfLocalQuaternion, angles.calf * DEG);
+        legs.applyRecordedLegPose(side, record);
+      }
+      legs.pants?.update?.();
+    }
+    return moving ? pullSpeedUnit(entry.phase) : 0; // Same normalized grab/pull-only propulsion as the player.
+  }
+
   // ── Body + weapon channels ────────────────────────────────────────
   function publishChannels(dt) {
     const composer = window.PlayerBodyTransformComposer;
@@ -268,7 +335,7 @@
     isCrawling,
     step,
     update,
-    applyLegs,
+    applyLegs, poseNpc, clearNpc,
     heading: () => heading,
     // Test/diagnostic hook: freezes the animation at a cycle phase (0..1) so poses can be inspected as stills.
     debugHoldPhase: (p, act = 1) => {

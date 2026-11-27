@@ -19,7 +19,7 @@ const sandbox = {
   console, Math, window: {
     Combat: {
       deps: { TILE, player: { x: -100, y: 0 }, canOccupyAt: () => true, requestThreatGrowl() {} },
-      meleeHit: () => true,
+      meleeHit: (_source, _target, options) => { assert.equal(options.debug, false, 'lunge substep must use scratch collision probes'); return true; },
     },
     ResourceSystem: { spendStamina(c, cost) { c.stamina -= cost; } },
     StableAnimalTrainingRefinements: { chooseAttack: () => ({ id: 'testBite' }) },

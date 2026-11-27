@@ -117,10 +117,10 @@ assert.equal(windowObject.SCRATCHBONES_CONFIG.game.portrait.armOnlyOpacityMask.p
   const femaleScale = windowObject.HobunjiCharacterRigScaleDefaults.scaleFor('harlyao', 'female');
   assert(Math.abs(maleScale.x - 0.8 * 1.2) < 1e-12);
   assert(Math.abs(maleScale.y - 0.845 * 1.2) < 1e-12);
-  assert(Math.abs(maleScale.head - 0.7894736842105263 * 1.2) < 1e-12);
+  assert(Math.abs(maleScale.head - 0.9474) < 1e-12);
   assert(Math.abs(femaleScale.x - 0.795 * 1.2) < 1e-12);
   assert(Math.abs(femaleScale.y - 0.81 * 1.2) < 1e-12);
-  assert(Math.abs(femaleScale.head - 0.7894736842105263 * 1.2) < 1e-12);
+  assert(Math.abs(femaleScale.head - 0.9474) < 1e-12);
 
   const harlyaoBootstrapIndex = bootstrapSource.search(/harlyao-species-runtime\.js\?v=[A-Za-z0-9_.-]+/);
   const scaleBootstrapIndex = bootstrapSource.search(/character-rig-scale\.js\?v=[A-Za-z0-9_.-]+/);

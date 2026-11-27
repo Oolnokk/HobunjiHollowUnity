@@ -7,13 +7,14 @@ const source = fs.readFileSync('docs/js/portrait-utils.js', 'utf8');
 const renderSource = source.slice(source.indexOf('async function renderProfile(')); // Exercises the actual image-selection expression in the renderer, not a copied mock rule.
 const assetSelectionMatch = renderSource.match(/const _allUrls = ([^\n]+);/); // Extracts the live head-only switch before asynchronous loading.
 assert(assetSelectionMatch, 'renderer must expose the head-only asset selection');
-const portraitAssetsFor = new Function('onlyHeadSprite', 'headUrl', 'neededUrls', `return ${assetSelectionMatch[1]};`); // Calls the same expression against synthetic, intentionally missing cosmetics.
+const portraitAssetsFor = (onlyHeadSprite, headUrl, neededUrls, onlyTorsoSprite=false, baseTorsoLayers=[]) => new Function('onlyHeadSprite', 'headUrl', 'neededUrls', 'hatOnly', 'hatOnlyUrls','onlyTorsoSprite','baseTorsoLayers', `return ${assetSelectionMatch[1]};`)(onlyHeadSprite, headUrl, neededUrls, false, null,onlyTorsoSprite,baseTorsoLayers); // hatOnly: hat-overflow bakes, off for ordinary portraits. // Calls the same expression against synthetic, intentionally missing cosmetics.
 const allPortraitImages = new Set(['head.png', 'torso.png', 'furhood.png', 'missing-blink.png']); // The head mask must not fetch three non-head resources.
 assert.deepEqual(portraitAssetsFor(true, 'head.png', allPortraitImages), ['head.png'], 'head-only render fetches only its visible head source');
 assert.deepEqual(portraitAssetsFor(true, null, allPortraitImages), [], 'headless head-only render makes no image requests');
+assert.deepEqual(portraitAssetsFor(false,'head.png',allPortraitImages,true,[{layer:{url:'torso.png'}},{layer:{url:'torso.png'}}]),['torso.png'],'torso mask fetches just the original torso art');
 assert.deepEqual(portraitAssetsFor(false, 'head.png', allPortraitImages), [...allPortraitImages], 'normal portraits still fetch every required visible image');
 assert.match(renderSource, /renderBehindView \|\| forceEyesOpen \|\| onlyHeadSprite/, 'static and head-only portraits must skip blink overlays');
-assert.match(renderSource, /if \(!onlyHeadSprite && mouthSpriteUrl && renderHeadSprite\)/, 'head-only render must not block on expression-mouth art');
+assert.match(renderSource, /if \(!onlyHeadSprite && (?:!hatOnly && )?mouthSpriteUrl && renderHeadSprite\)/, 'head-only render must not block on expression-mouth art');
 const scaleAuthorSource = fs.readFileSync('docs/js/character-scale-comparison.js', 'utf8'); // Ensures the animation-author lineup invokes the optimized static portrait path.
 assert.match(scaleAuthorSource, /renderPortrait\(front, profile, \{[^\n]+forceEyesOpen: true/, 'lineup front textures never request blink sprites');
 assert.match(scaleAuthorSource, /renderPortrait\(back, profile, \{[^\n]+forceEyesOpen: true/, 'lineup rear textures never request blink sprites');

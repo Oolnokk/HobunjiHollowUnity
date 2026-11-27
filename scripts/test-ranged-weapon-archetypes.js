@@ -513,8 +513,35 @@ windowObject.RangedWeapons.update(0.016);
 assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownChargeItemKey(), null, 'a released press must not start a windup on Neutral.');
 
 
+// NPC registration must not reset an unrelated player's loaded state or repaint their UI.
+{
+  const archetypes = windowObject.HobunjiRangedWeaponArchetypes;
+  const oldConfig = windowObject.RangedWeapons.config.bshuakauitl_copper;
+  const oldRefresh = windowObject.Combat.deps.refreshActionBar;
+  let refreshes = 0;
+  windowObject.Combat.deps.refreshActionBar = () => { refreshes++; };
+  loaded.set('bshuakauitl_copper', false);
+  loaded.set('kylie_copper', true);
+  const before = archetypes.debugSnapshot().reusedNpcRegistrations;
+  for (let i=0;i<5;i++) archetypes.patchGeneratedDefinitions({npcOnly:true, keys:['bshuakauitl_copper']});
+  assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper,oldConfig);
+  assert.strictEqual(loaded.get('bshuakauitl_copper'),false);
+  assert.strictEqual(loaded.get('kylie_copper'),true);
+  assert.strictEqual(refreshes,0);
+  assert.ok(archetypes.debugSnapshot().reusedNpcRegistrations >= before+5);
+  const oldDef=toolDefs.bshuakauitl_copper;
+  toolDefs.bshuakauitl_copper={...oldDef,label:'Replacement Blowgun'};
+  archetypes.patchGeneratedDefinitions({npcOnly:true,keys:['bshuakauitl_copper']});
+  assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.label,'Replacement Blowgun');
+  assert.strictEqual(loaded.get('bshuakauitl_copper'),false);
+  toolDefs.bshuakauitl_copper=oldDef;
+  archetypes.patchGeneratedDefinitions();
+  assert.strictEqual(loaded.get('bshuakauitl_copper'),false,'explicit authored rebuild also preserves player state');
+  windowObject.Combat.deps.refreshActionBar=oldRefresh;
+}
+
 // Missing user-authored animation must NOT fall back to Drink's angled pose.
-// Run last because rebuilding ranged definitions changes the test's mock loaded states.
+// Run after the NPC idempotence checks; explicit rebuilds honor authored pose changes.
 {
   const original = windowObject.HeldActionAnimations.blowgunReady; // Restored below for any subsequent shared test initialization.
   windowObject.HeldActionAnimations.blowgunReady = null;

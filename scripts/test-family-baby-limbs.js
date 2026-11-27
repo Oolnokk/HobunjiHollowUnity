@@ -185,9 +185,19 @@ assert.match(burdens, /function disposeVisual\(group\) \{\n    window\.FamilyBab
 assert.match(burdens, /familyBabyFlying = true/, 'thrown baby flails');
 assert(burdens.includes('window.FamilyBabyLimbs?.attach?.(group, walker); // Shared refresh checks late-loaded GLBs'), 'existing proxy refresh checks late GLB and size changes once per family update');
 const family = fs.readFileSync('docs/js/romance-family.js', 'utf8');
-assert(family.includes("if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker"), 'only newborns are rebalanced');
+assert(family.includes("phase === 'child' ? cfg().childLimbModifiers : cfg().phaseScales?.[phase]"),
+  'each family growth stage uses its shared, configurable limb proportions');
+assert(family.includes("if (phase === 'basket' || (limbScale && (Number(limbScale.hand) !== 1 || Number(limbScale.foot) !== 1)))"),
+  'babies always receive their tuned limbs, while toddlers/children only need rebalance when a global non-default multiplier is authored');
 const romanceConfig = fs.readFileSync('docs/config/romance-config.js', 'utf8');
-assert(romanceConfig.includes('basket: { body: 0.32, head: 0.50, hand: 1.20, foot: 1.20 }'), 'head ratio is smaller while both GLB extremities are larger');
+const configWindow = {};
+vm.runInNewContext(romanceConfig, { window: configWindow });
+const { phaseScales, childLimbModifiers } = configWindow.HobunjiRomanceConfig.family;
+assert.deepEqual({ ...phaseScales.basket }, { body: .28, width: .59, height: .28, head: .65, hand: 1.66, foot: 1.62 },
+  'fallback newborn keeps its body and limbs and uses the 65% adult head');
+assert.deepEqual({ ...phaseScales.toddler }, { body: .48, width: .59, height: .48, head: .65, hand: 1.66, foot: 1.62 },
+  'toddler fallback retains its taller body and uses the same head ratio');
+assert.deepEqual({ ...childLimbModifiers }, { hand: 1, foot: 1 }, 'older child limb defaults stay unchanged');
 const html = fs.readFileSync('docs/index.html', 'utf8');
 assert(html.indexOf('js/family-baby-limbs.js?v=') > 0 && html.indexOf('js/family-baby-limbs.js?v=') < html.indexOf('js/family-baby-burdens.js?v='),
   'limbs module loads before family-baby-burdens.js');

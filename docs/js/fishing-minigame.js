@@ -151,7 +151,7 @@
         const bounds = document.createElement('canvas'); // A one-time multi-layer composite, not a per-frame render.
         bounds.width = Math.ceil(maxX - minX); bounds.height = Math.ceil(maxY - minY);
         const ctx = bounds.getContext('2d', { willReadFrequently: true });
-        for (const part of parts) ctx.drawImage(part.img, (Number(part.offset.x) || 0) - minX, (Number(part.offset.y) || 0) - minY);
+        for (const part of parts) ctx.drawImage(head.modularOutline ? window.ModularWeapons?.outlinedImage?.(part.img) || part.img : part.img, (Number(part.offset.x) || 0) - minX, (Number(part.offset.y) || 0) - minY);
         const rgba = ctx.getImageData(0, 0, bounds.width, bounds.height).data;
         let left = bounds.width, top = bounds.height, right = -1, bottom = -1; // Opaque alpha bounds remove transparent part-sheet margins.
         for (let y = 0; y < bounds.height; y++) for (let x = 0; x < bounds.width; x++) {

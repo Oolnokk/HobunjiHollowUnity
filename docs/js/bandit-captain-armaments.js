@@ -3,9 +3,10 @@
 (() => {
   'use strict';
   const PREFIX = 'banditModular:'; // Unique per-captain keys prevent two drops from sharing enchantments or replacing a forged weapon.
+  const BOUND_PREFIX = 'captainBound_'; // Self-contained pack identity preserving the weapon and its magic through custody.
   const MIN_STARS = 5; // Camp tier is zero-based; only five-to-eight-star ordinary captains qualify.
-  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame']); // Effects supported by the NPC hit event; omit player-only Living Gust.
-  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve']); // Never choose Sicced (player companion target lock) or Fey magic.
+  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight']); // Effects supported by the NPC hit event; omit player-only Living Gust.
+  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy']); // Never choose Sicced (player companion target lock) or Fey magic.
   const FLOURISH_SLOTS = Object.freeze(['tap1', 'tap2', 'hold1']); // These are the NPC's real offensive Combo/Quick/Charged slots.
   const unlooted = new Map(); // Spawned captains' enchantments stay outside player gear until the corpse is searched.
   let deps = null; // HarlyaoRelics.init supplies the ordinary saved-gear, tool definition and texture services.
@@ -29,10 +30,29 @@
     const available = flourishes.slice(), slots = FLOURISH_SLOTS.slice(), result = {};
     for (let i = 2; i < enchantmentCount(stars); i++) {
       const slot = slots.splice(Math.min(slots.length - 1, Math.floor(rng() * slots.length)), 1)[0];
-      const id = available.splice(Math.min(available.length - 1, Math.floor(rng() * available.length)), 1)[0];
+      const eligible = available.filter(id => window.EnchantmentSystem?.allowsFlourishSlot?.(id, slot) !== false); // No Fury on Held or Unshackled on Combo.
+      if (!eligible.length) return null;
+      const id = choose(eligible, rng);
+      available.splice(available.indexOf(id), 1);
       result[slot] = id;
     }
     return { base, flourishes: result };
+  }
+
+  function rollFeyEnchantments(stars, rng = random) {
+    const defs = Object.values(window.EnchantmentSystem?.DEFINITIONS || {}).filter(d=>d.alignment==='Fey');
+    const bases = defs.filter(d=>d.type==='Base').map(d=>d.id); // NPC hit bridge supports the same real Fey effects as player weapons.
+    const flourishes = defs.filter(d=>d.type==='Flourish').map(d=>d.id);
+    const base=[], result={};
+    const take = list => list.splice(Math.min(list.length-1,Math.floor(rng()*list.length)),1)[0];
+    const count = Math.max(1, enchantmentCount(stars));
+    while(base.length<Math.min(count,2)&&bases.length)base.push(take(bases));
+    const slots=FLOURISH_SLOTS.slice();
+    for(let i=base.length;i<count&&flourishes.length&&slots.length;i++){
+      const slot=take(slots),eligible=flourishes.filter(id=>window.EnchantmentSystem?.allowsFlourishSlot?.(id,slot)!==false);
+      if(!eligible.length)continue;const id=take(eligible);flourishes.splice(flourishes.indexOf(id),1);result[slot]=id;
+    }
+    return base.length||Object.keys(result).length?{base,flourishes:result}:null;
   }
 
   function eligiblePairs(sources, catalog = window.ModularWeapons) {
@@ -51,6 +71,26 @@
     return pairs;
   }
 
+  function isRootledootPair(shaftKey,headKey,catalog,config){
+    const shaft=config?.shafts?.[shaftKey],head=config?.heads?.[headKey]; // Single eligibility predicate for normal rolls, enchanted rolls and Workshop history.
+    const hachutu=/hachutu/i.test(shaftKey)||/hachutu/i.test(shaft?.sourceShape||'');
+    return !!(shaft&&head&&!shaft.editorOnly&&!hachutu&&!head.editorOnly&&!head.craftDisabled&&(shaftKey==='dagger'||headKey==='porakaneki-greatclub')&&!catalog.isDisallowed(shaftKey,headKey));
+  }
+  function rootledootPairs(catalog=window.ModularWeapons){
+    const config=catalog?.getConfig?.();if(!config)return [];
+    const pairs=[];
+    for(const [shaftKey,shaft] of Object.entries(config.shafts||{})){
+      for(const [headKey,head] of Object.entries(config.heads||{})){
+        if(!isRootledootPair(shaftKey,headKey,catalog,config))continue;
+        pairs.push({shaft:shaftKey,head:headKey,donors:[shaft.sourceShape,head.sourceShape]});
+      }
+    }
+    return pairs;
+  }
+  function isRootledootWeapon(key,catalog=window.ModularWeapons){
+    const p=catalog?.decode?.(key);
+    return !!(p&&isRootledootPair(p.shaft,p.head,catalog,catalog.getConfig?.()));
+  }
   function permittedDonors(entity) {
     const fromCulturalRoll = entity?._weaponTrustCulturalLoadout?.melee?.allowed; // Exact pool chosen when the cultural wrapper ran first.
     if (Array.isArray(fromCulturalRoll) && fromCulturalRoll.length) return fromCulturalRoll;
@@ -71,7 +111,7 @@
     if (!source?.modular || !source.slots?.includes('weapon')) return false;
     if (!deps.TOOL_ITEM_DEFS[key]) deps.TOOL_ITEM_DEFS[key] = {
       ...source, itemKey: key, sprite: source.sprite || baseKey,
-      label: 'Captain\'s ' + String(source.label || 'Modular Weapon'),
+      label: (record.origin === 'Fey' ? 'Fey-touched ' : 'Captain\'s ') + String(source.label || 'Modular Weapon'),
       captainModular: true, // Looted special gear must never be confused with a newly discovered full weapon donor.
     };
     deps.ensureToolTexture?.(key);
@@ -109,7 +149,14 @@
     holder.userData.hobunjiHeldPortraitOwner = entity.avatarRef?.group || null; // Preserve owner masking when changing a live holder.
     holder.visible = !entity._rangedMode;
     entity.scene.add(holder);
-    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
+    const old=entity._banditToolHolder; // Replacing the original weapon must release its sprite assembly and private GPU materials.
+    old?.parent?.remove?.(old);
+    for(const child of old?.children||[]) window.HobunjiWeaponSpriteAssemblies?.drop?.(child);
+    old?.traverse?.(object=>{
+      if(!object.userData?.sharedToolGeometry)object.geometry?.dispose?.();
+      if(Array.isArray(object.material))for(const material of object.material)material?.dispose?.();
+      else object.material?.dispose?.();
+    });
     entity._banditToolHolder = holder;
     entity.banditWeaponMeshAttached = true;
     const root = entity.avatarRef?.handRigAvatarRoot;
@@ -156,7 +203,8 @@
     const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0 };
     for (const id of [...state.base, ...Object.values(state.flourishes)]) {
       const alignment = es?.DEFINITIONS?.[id]?.alignment;
-      if (Object.hasOwn(counts, alignment)) counts[alignment]++;
+      if (alignment === 'Fey') counts.Fey = (counts.Fey || 0) + 1;
+      else if (Object.hasOwn(counts, alignment)) counts[alignment]++;
     }
     const alignments = Object.keys(counts).filter(plane => counts[plane] > 0 && window.WeaponEnchantmentVFX?.ALIGNMENTS?.[plane]);
     const alignment = choose(alignments, rng), catalog = window.WeaponEnchantmentVFX?.ALIGNMENTS?.[alignment];
@@ -165,24 +213,36 @@
   }
 
   function equip(entity, cfg, rank, tier, opts = {}, d = deps) {
-    if (!entity || entity._banditCaptainArmament || rank !== 'captain' || capStars(tier) < MIN_STARS
+    if(entity&&opts.zoneId==='map_dev_arena'&&opts.previewCaptainArmament){
+      entity._banditCaptainArmament=opts.previewCaptainArmament; // Workshop history retains the saved weapon and its fixed enchantment VFX instead of rerolling.
+      if(entity.rootledoot)unlooted.set(opts.previewCaptainArmament.key,opts.previewCaptainArmament.enchantments);
+      return entity;
+    }
+    const fey = entity?.rootledoot===true||entity?.rootledootBig===true; // Small/medium may be Fey-enchanted; boss always is.
+    if (!entity || entity._banditCaptainArmament || (!fey&&rank !== 'captain') || (!fey && (capStars(tier) < MIN_STARS
       || entity.enemyClass !== 'bandit' || entity.isMinion || cfg?._preserveMineEnemyTiers || opts?.extra?.isMineGhoul
-      || opts?.defOverride?.weaponKey || window.EnemyLoadoutRules?.ruleFor?.(entity.enemyLoadoutKind)?.weapons) return entity;
+      || opts?.defOverride?.weaponKey || window.EnemyLoadoutRules?.ruleFor?.(entity.enemyLoadoutKind)?.weapons))) return entity;
     const metal = metalOf(entity, d);
     if (!metal || !window.ModularWeapons || !d?.TOOL_ITEM_DEFS) return entity;
-    const donors = permittedDonors(entity).filter(shape => !Array.isArray(cfg?.weaponShapePool) || !cfg.weaponShapePool.length || cfg.weaponShapePool.includes(shape)); // A caller's narrower complete-weapon pool also narrows both donor pieces.
-    const all = eligiblePairs(donors).filter(pair => !!d.TOOL_ITEM_DEFS[window.ModularWeapons.itemKey(pair.shaft, pair.head, metal)]);
+    if(fey&&!entity.rootledootBig){
+      if(opts.zoneId==='map_dev_arena'&&opts.defOverride?.weaponKey)return entity; // A saved ordinary modular roll remains unenchanted.
+      if((d.rnd||random)()>=(rank==='lieutenant'?.5:.25))return entity; // Tuning default: 25% small, 50% medium; guaranteed boss.
+    }
+    const donors = fey?[]:permittedDonors(entity).filter(shape => !Array.isArray(cfg?.weaponShapePool) || !cfg.weaponShapePool.length || cfg.weaponShapePool.includes(shape)); // A caller's narrower complete-weapon pool also narrows both donor pieces.
+    const all = (fey?rootledootPairs():eligiblePairs(donors)).filter(pair => !!d.TOOL_ITEM_DEFS[window.ModularWeapons.itemKey(pair.shaft, pair.head, metal)]);
     const mixed = all.filter(pair => pair.donors[0] !== pair.donors[1]); // A true mixed found weapon when two legal donors are available.
-    const choice = choose(mixed.length ? mixed : all, d.rnd || random);
+    const existing=fey?window.ModularWeapons.decode(entity.def.weaponKey):null;
+    const choice = (existing&&all.find(pair=>pair.shaft===existing.shaft&&pair.head===existing.head))||choose(fey?all:(mixed.length?mixed:all),d.rnd||random);
     if (!choice) return entity;
-    const state = rollEnchantments(capStars(tier), d.rnd || random);
+    const state = fey ? rollFeyEnchantments(capStars(tier), d.rnd || random) : rollEnchantments(capStars(tier), d.rnd || random);
     if (!state) return entity;
     const uid = Date.now().toString(36) + '-' + (++serial).toString(36) + '-' + Math.floor((d.rnd || random)() * 0x10000).toString(36);
     const key = PREFIX + [choice.shaft, choice.head, metal, uid].join(':');
-    const record = { ...choice, metal, uid, stars: capStars(tier), enchantments: state };
+    const record = { ...choice, metal, uid, stars: capStars(tier), enchantments: state, ...(fey ? {origin:'Fey'} : {}) };
     if (!registerDefinition(key, record)) return entity;
-    if (!replaceHolder(entity, key, d)) { delete d.TOOL_ITEM_DEFS[key]; return entity; }
+    if (!replaceHolder(entity, key, d)) { releaseUnownedDefinition(key,d); return entity; }
     applyWeaponStats(entity, key, metal, d);
+    window.BanditCombat?.refreshEnemyCombatBuild?.(entity); // The modular head can change which combat perks the captain can actually use.
     const { visual, counts } = visualFor(state, d.rnd || random);
     entity._banditCaptainArmament = { ...record, key, visual, counts }; // The living NPC and its eventual corpse share the exact same roll.
     unlooted.set(key, state); // Only EnchantmentSystem's NPC lookup may see this until the loot transaction.
@@ -206,7 +266,7 @@
   function tick(entity, toolDefs = deps?.TOOL_ITEM_DEFS) {
     const armament = entity?._banditCaptainArmament;
     if (!armament?.visual) return;
-    if (!entity.avatarRef?.group?.parent || Number(entity.health) <= 0) {
+    if (!entity.avatarRef?.group?.parent || Number(entity.health) <= 0 || window.Combat?.shouldPresentCombatVfx?.(entity, entity.scene) === false) {
       entity._captainEnchantmentFx?.dispose?.();
       entity._captainEnchantmentFx = null;
       return;
@@ -224,28 +284,143 @@
     entity._captainEnchantmentFx?.update(dt);
   }
 
-  function grantCorpseWeapon(entity) {
-    const record = entity?._banditCaptainArmament, inventory = gear();
-    if (!record || !inventory || !deps?.TOOL_ITEM_DEFS || !window.EnchantmentSystem?.cleanWeaponState) return null;
-    if (!registerDefinition(record.key, record)) return null;
-    inventory.tools ||= {}; inventory.toolMastery ||= {}; inventory.captainModularWeapons ||= {};
-    inventory.weaponEnchantments ||= {}; inventory.weaponEnchantmentVisuals ||= {};
-    const newlyOwned = !inventory.tools[record.key]; // The corpse can be searched once but repeated calls must not repeat writes.
-    if (newlyOwned) {
-      inventory.captainModularWeapons[record.key] = { shaft: record.shaft, head: record.head, metal: record.metal, uid: record.uid, stars: record.stars, donors: record.donors };
-      inventory.tools[record.key] = true;
-      inventory.toolMastery[record.key] = { xp: 0 };
-      inventory.weaponEnchantments[record.key] = window.EnchantmentSystem.cleanWeaponState(record.enchantments);
-      if (record.visual) inventory.weaponEnchantmentVisuals[record.key] = { ...record.visual };
+  // The pack key is the portable save/custody authority until ownership is transferred.
+  function boundKeyFor(entity) {
+    const r = entity?._banditCaptainArmament;
+    if (!r?.key || !r.enchantments) return null;
+    return BOUND_PREFIX + encodeURIComponent(JSON.stringify([r.key, r.stars, r.origin || 'Captain', r.enchantments, r.visual || null]));
+  }
+
+  function decodeBoundKey(key) {
+    if (typeof key !== 'string' || !key.startsWith(BOUND_PREFIX)) return null;
+    try {
+      const payload = JSON.parse(decodeURIComponent(key.slice(BOUND_PREFIX.length)));
+      if (!Array.isArray(payload) || payload.length !== 5) return null;
+      const [toolKey, stars, origin, raw, visual] = payload;
+      if (typeof toolKey !== 'string' || !toolKey.startsWith(PREFIX) || !Number.isInteger(stars) || stars < 1 || stars > 8 ||
+          !['Captain', 'Fey'].includes(origin)) return null;
+      const parts = window.ModularWeapons?.decode?.(toolKey);
+      const config = window.ModularWeapons?.getConfig?.();
+      const es = window.EnchantmentSystem;
+      if (!parts || !config || !es?.cleanWeaponState) return null;
+      const enchantments = es.cleanWeaponState(raw); // Same legacy-ID migration as equipped weapons.
+      const ids = [...enchantments.base, ...Object.values(enchantments.flourishes)];
+      if (!ids.length || ids.some(id => !es.DEFINITIONS?.[id] || (es.DEFINITIONS[id].alignment === 'Fey') !== (origin === 'Fey'))) return null;
+      const donors = [config.shafts[parts.shaft].sourceShape, config.heads[parts.head].sourceShape]; // Derive donor identity from the catalog.
+      return { ...parts, key: toolKey, uid: toolKey.split(':').pop(), stars, origin, donors, enchantments,
+        ...(visual && typeof visual === 'object' && ['alignment','colorAlignment','dyeId','effectId'].every(k => typeof visual[k] === 'string')
+          ? { visual: { alignment: visual.alignment, colorAlignment: visual.colorAlignment, dyeId: visual.dyeId, effectId: visual.effectId } } : {}) };
+    } catch (_) { return null; }
+  }
+
+  function boundLabel(record) {
+    const baseKey = window.ModularWeapons.itemKey(record.shaft, record.head, record.metal);
+    return 'Bound ' + (record.origin === 'Fey' ? 'Fey-touched ' : "Captain's ") + (deps?.TOOL_ITEM_DEFS?.[baseKey]?.label || 'Modular Weapon');
+  }
+
+  function ensureBoundItemDef(key) {
+    const record = decodeBoundKey(key);
+    if (!record || !deps?.ITEM_DEFS) return null;
+    const label = boundLabel(record);
+    const defs = window.EnchantmentSystem.DEFINITIONS; // Pack detail shows the actual recovered magic before registration.
+    const enchantmentLabels = [...record.enchantments.base.map(id => defs[id].displayName + ' (Base)'),
+      ...Object.entries(record.enchantments.flourishes).map(([slot, id]) => defs[id].displayName + ' (' + slot.toUpperCase() + ' Flourish)')];
+    const def = { label, icon: '🗡️', cat: 'material', sellPrice: 90 + 30 * (record.enchantments.base.length + Object.keys(record.enchantments.flourishes).length),
+      tags: [record.origin, 'Bound'], magicalStatus: 'bound', uniqueInventoryKey: true,
+      desc: 'Still bound to its former owner. It cannot be equipped until Garanki Gabu re-registers it. Registration teaches him its enchantments: ' + enchantmentLabels.join('; ') + '.' };
+    deps.ITEM_DEFS[key] = def;
+    if (Array.isArray(deps.inventoryItems) && !deps.inventoryItems.some(entry => entry.key === key))
+      deps.inventoryItems.push({ key, icon: def.icon, label: label.toUpperCase(), max: 1 });
+    return def;
+  }
+
+  function boundWeaponsInInventory() {
+    return Object.keys(deps?.inventory || {}).filter(key => deps.inventory[key] > 0 && key.startsWith(BOUND_PREFIX))
+      .map(boundKey => ({ boundKey, record: decodeBoundKey(boundKey) })).filter(entry => entry.record);
+  }
+
+  function grantCorpseWeapon(entity, options = {}) {
+    const boundKey = boundKeyFor(entity), record = decodeBoundKey(boundKey);
+    if (!record || !deps?.inventory || !ensureBoundItemDef(boundKey)) return null;
+    const label = boundLabel(record);
+    if (entity._captainWeaponLooted || gear()?.tools?.[record.key]) return label;
+    const before = deps.inventory[boundKey];
+    deps.inventory[boundKey] = 1; // No equippable weapon or learned magic exists yet.
+    if (options.deferSave === true) return label; // Rootledoot caller snapshots this key in the atomic reward transaction.
+    let saved = true; // A thrown storage failure must leave the loot retryable just like an explicit rejection.
+    if (before !== 1) {
+      try { saved = typeof deps.saveMemberWorldData === 'function' && deps.saveMemberWorldData() !== false; }
+      catch (error) { saved = false; window.__farmLog?.('[captain-armaments] Bound weapon save failed: ' + String(error), 'warn'); }
     }
-    unlooted.delete(record.key); // Player gear is the enchantment authority from this point forward.
-    entity._captainEnchantmentFx?.dispose?.();
-    entity._captainEnchantmentFx = null;
-    if (newlyOwned) {
-      deps.saveGearInventory?.(); // Persist the new character-owned tool before the caller's deferred member/world loot save.
-      deps.buildEquipmentSlots?.(); // Refresh only after a real equipment change; repeated corpse interactions stay cheap.
+    if (!saved) {
+      if (before === undefined) delete deps.inventory[boundKey]; else deps.inventory[boundKey] = before;
+      deps.showToast?.('Could not save the bound weapon. Search the body again.', false);
+      return null;
     }
-    return deps.TOOL_ITEM_DEFS[record.key]?.label || 'Captain\'s modular weapon';
+    entity._captainWeaponLooted = true; // Repeated corpse reads cannot mint another copy.
+    unlooted.delete(record.key);
+    entity._captainEnchantmentFx?.dispose?.(); entity._captainEnchantmentFx = null;
+    return label;
+  }
+
+  function registrationPrice(record) {
+    return window.HarlyaoRelics?.unbindPrice?.(record.enchantments, record.origin) ?? null; // Reuse the established unbinding fee and Fey surcharge.
+  }
+
+  function registerBoundWeapon(boundKey) {
+    const record = decodeBoundKey(boundKey), g = gear(), es = window.EnchantmentSystem;
+    if (!record || !g || deps?.inventory?.[boundKey] !== 1 || g.tools?.[record.key]) return { ok: false, reason: 'not-owned' };
+    if (window.DelversGuild?.isMember?.() !== true) return { ok: false, reason: 'license' };
+    if (record.origin === 'Fey' && window.FeyArmamentQuest?.completed?.() !== true) return { ok: false, reason: 'quest' };
+    const price = registrationPrice(record);
+    if (!Number.isFinite(price) || price < 0 || !es?.unlockFromState) return { ok: false, reason: 'unavailable' };
+    const baseKey = window.ModularWeapons.itemKey(record.shaft, record.head, record.metal);
+    if (!deps.TOOL_ITEM_DEFS?.[baseKey]?.modular || !deps.TOOL_ITEM_DEFS[baseKey].slots?.includes('weapon')) return { ok: false, reason: 'invalid-weapon' };
+    const result = window.GearMemberTransaction?.run?.({ inventoryKeys: [boundKey], mutate() {
+      if ((Number(deps.inventory.gold) || 0) < price) return { ok: false, reason: 'gold', price };
+      deps.inventory.gold = (Number(deps.inventory.gold) || 0) - price;
+      delete deps.inventory[boundKey];
+      g.tools ||= {}; g.toolMastery ||= {}; g.captainModularWeapons ||= {};
+      g.weaponEnchantments ||= {}; g.weaponEnchantmentVisuals ||= {};
+      const { shaft, head, metal, uid, stars, donors, origin } = record;
+      g.captainModularWeapons[record.key] = { shaft, head, metal, uid, stars, donors, origin };
+      g.tools[record.key] = true;
+      g.toolMastery[record.key] = { xp: 0 };
+      g.weaponEnchantments[record.key] = record.enchantments;
+      if (record.visual) g.weaponEnchantmentVisuals[record.key] = record.visual;
+      const learned = es.unlockFromState(record.enchantments, { deferSave: true }); // Base by ID; Flourishes by their exact slot.
+      return { ok: true, toolKey: record.key, learned, price };
+    } }) || { ok: false, reason: 'unavailable' };
+    if (!result.ok) {
+      if (result.reason === 'gold') deps.showToast?.('Garanki requires ' + price + 'g to re-register this weapon.', false);
+      return result;
+    }
+    registerDefinition(record.key, record);
+    deps.buildInventoryGrid?.(); deps.buildEquipmentSlots?.();
+    es.logEvent?.(result.learned.length ? 'Garanki learned: ' + result.learned.join(', ') : 'Garanki re-registered a captain weapon');
+    deps.showToast?.('Weapon re-registered to you.' + (result.learned.length ? ' Garanki learned: ' + result.learned.join(', ') : ''), true);
+    window.HarlyaoRelics?.render?.();
+    return result;
+  }
+
+  function releaseUnownedDefinition(key,d=deps) {
+    if(!key?.startsWith(PREFIX)||gear()?.tools?.[key])return false;
+    const held=window.CharacterHeldTools; // Per-item caches are public and this key belongs exclusively to the discarded rare weapon.
+    const texture=held?.toolTextures?.[key];texture?.dispose?.();
+    if(held?.toolTextures)delete held.toolTextures[key];
+    const loaded=held?.loadedToolTextures?.[key];if(loaded!==texture)loaded?.dispose?.();
+    if(held?.loadedToolTextures)delete held.loadedToolTextures[key];
+    held?.modularToolGeometries?.get(key)?.dispose?.();held?.modularToolGeometries?.delete(key);
+    if(d?.TOOL_ITEM_DEFS)delete d.TOOL_ITEM_DEFS[key];
+    return true;
+  }
+
+  function discard(entity) {
+    const record=entity?._banditCaptainArmament; // Release unclaimed unique weapon state when a Rootledoot encounter resets.
+    if(!record)return;
+    unlooted.delete(record.key);
+    entity._captainEnchantmentFx?.dispose?.();entity._captainEnchantmentFx=null;
+    releaseUnownedDefinition(record.key); // Owned loot retains its definition and cached presentation.
   }
 
   function patchBanditCombat() {
@@ -271,10 +446,11 @@
   patchBanditCombat();
 
   window.BanditCaptainArmaments = Object.freeze({
-    PREFIX, MIN_STARS, capStars, enchantmentCount, rollEnchantments, eligiblePairs, permittedDonors,
-    init, restore, registerDefinition, equip, grantCorpseWeapon, unlootedEnchantmentState, emitHit, tick,
+    PREFIX, MIN_STARS, capStars, enchantmentCount, rollEnchantments, eligiblePairs, rootledootPairs,isRootledootWeapon,permittedDonors,
+    init, restore, registerDefinition, equip, grantCorpseWeapon, unlootedEnchantmentState, emitHit, tick, discard, rollFeyEnchantments,
+    boundKeyFor, decodeBoundKey, ensureBoundItemDef, boundWeaponsInInventory, boundLabel, registrationPrice, registerBoundWeapon,
     debugSnapshot: entity => ({ key: entity?._banditCaptainArmament?.key || null, stars: entity?._banditCaptainArmament?.stars || 0,
       donors: entity?._banditCaptainArmament?.donors || [], enchantments: entity?._banditCaptainArmament?.enchantments || null,
-      registeredUnlooted: unlooted.size }), // Mobile-visible enemy inspection through the existing dev snapshot.
+      registeredUnlooted: unlooted.size, boundInPack: boundWeaponsInInventory().length }), // Mobile-visible enemy inspection through the existing dev snapshot.
   });
 })();

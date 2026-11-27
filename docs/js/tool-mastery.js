@@ -43,7 +43,10 @@
     const gearInventory = gear();
     if (!itemKey || !toolDefs()[itemKey] || !(amount > 0) || !gearInventory) return;
     if (!gearInventory.toolMastery[itemKey]) gearInventory.toolMastery[itemKey] = { xp: 0 };
+    const before = Number(gearInventory.toolMastery[itemKey].xp) || 0; // Read back the actual delta: the mastery policy can reject a legacy write.
     gearInventory.toolMastery[itemKey].xp += amount;
+    const gained = Math.max(0, (Number(gearInventory.toolMastery[itemKey].xp) || 0) - before);
+    if (gained > 0) window.RomanceFamily?.awardObservationXp?.({ amount: gained }); // Actual mastery awards also teach a back-stowed baby.
     window.MetalArmorSystem?.awardExperience?.(amount, 'tool/weapon Mastery XP', { save: false }); // "All experience" includes tool/weapon Mastery; every equipped metal armor article receives the same event, and the shared save below persists all gains atomically.
     window.WorldPopupText?.queueReward('masteryXp', `+${amount} ${toolDefs()[itemKey].label} Mastery`);
     deps.saveGearInventory?.();

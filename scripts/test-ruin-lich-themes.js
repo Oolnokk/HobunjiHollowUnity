@@ -17,13 +17,14 @@ assert.match(ruinSource, /getRuntimeContext:\(\)=>ruin\?\{[^}]*floorSet:ruin\.fl
 assert.match(puzzlesSource, /state\?\.context\?\.theme !== 'hronal'\) return null/, 'Rope lava is Hronal-only');
 assert.match(fogSource, /tradition === 'kanthic' \? 1/, 'Kanthic rooms retain pure blackness');
 assert.match(fogSource, /ruinTradition === 'tothal'\) return/, 'Tothal lantern illumination is disabled');
-assert.match(fogSource, /ruinLanternScale = 1/, 'Kanthic lantern shares the normal feathered radius');
-assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles,/, 'Kanthic uses the ordinary full-radius lantern');
+assert.match(fogSource, /ruinLanternScale = ruinTradition === 'kanthic' \? 0\.32 : 1/, 'Kanthic uses the same feathered lantern mask at only 32 percent of its normal radius');
+assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles\*0\.32,/, 'Kanthic exposes the actual contracted lantern radius to rope and ruin light consumers');
 const lanternMaskSource = fogSource.slice(fogSource.indexOf('function drawLanternMasksCompat('), fogSource.indexOf('function ruinShadowPolygons(')); // Only the lantern path is forbidden from using a hard camera-centered clipping circle.
 assert(lanternMaskSource.length > 0, 'Shared lantern-mask function is present');
 assert.doesNotMatch(lanternMaskSource, /ctx\.clip\(/, 'No hard camera-centered lantern clipping circle may survive');
-assert.match(fogSource, /function drawRuinGlyphSilhouette\(/, 'Kanthic glyph-shaped cutouts may use triangle clipping without changing lantern behavior');
+assert.match(fogSource, /function renderKanthicGlyphFrame\(/, 'Kanthic glyphs are composited with real world depth rather than triangle-shaped Canvas2D cutouts');
 assert.match(fogSource, /KANTHIC_STANDARD_DARKNESS_ALPHA = 0\.95/, 'Kanthic darkness uses the shared underground ambient rendering pass');
+assert.match(fogSource, /radiusTiles: 2\.4,/, 'default lantern tuning is explicitly bounded to 2.4 tiles, or 0.768 in Kanthic');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');
 assert.match(bootstrapSource, /dev-random-ruin-lich-themes\.js/, 'Loader must include the theme composer');
 const interiorSource=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8'); // Ground height remains separate from the renderer's sinking height.
@@ -45,13 +46,13 @@ class Node {
   updateMatrix() {}
   dispose() {this.disposed=true;}
 }
-class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateZ(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}getAttribute(key){return this.attributes[key];}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
+class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateY(){return this;}rotateZ(){return this;}translate(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}getAttribute(key){return this.attributes[key];}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
 class Material { constructor(options) { Object.assign(this, options); } clone() { return new Material(this); } dispose() {} }
 class Mesh extends Node { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
 class Instances extends Mesh { constructor(geometry, material, count) { super(geometry, material); this.count = count; this.instanceMatrix = {}; this.isInstancedMesh=true; this.matrixWrites=0; } setMatrixAt(){this.matrixWrites++;} }
 const THREE = {
   Group:Node, Object3D:Node, Vector3:Vector, Mesh, InstancedMesh:Instances,
-  PlaneGeometry:Geometry, ConeGeometry:Geometry, TetrahedronGeometry:Geometry, BoxGeometry:Geometry,
+  PlaneGeometry:Geometry, ConeGeometry:Geometry, TetrahedronGeometry:Geometry, BoxGeometry:Geometry, CylinderGeometry:Geometry,
   BufferGeometry:Geometry,Float32BufferAttribute:class {constructor(array,itemSize){this.array=array;this.itemSize=itemSize;this.count=array.length/itemSize;}getX(i){return this.array[i*this.itemSize];}getY(i){return this.array[i*this.itemSize+1];}getZ(i){return this.array[i*this.itemSize+2];}},
   MeshBasicMaterial:Material, DoubleSide:2, RepeatWrapping:1,
   TextureLoader:class { load(url, done) { const texture = {url,dispose(){}}; done?.(texture); return texture; } },

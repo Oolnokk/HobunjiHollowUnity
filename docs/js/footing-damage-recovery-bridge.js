@@ -29,14 +29,16 @@
     return maxFooting / FOOTING_FULL_RECOVERY_S;
   }
 
+  const sharedScale = typeof RS.registerStatModifierProvider === 'function'; // Resource owner also needs this scale before quantizing continuous movement costs.
+  if (sharedScale) RS.registerStatModifierProvider((_entity, key) => key === 'incomingFootingDamage' ? FOOTING_DAMAGE_MULTIPLIER : 1);
   const previousSpendFooting = RS.spendFooting.bind(RS);
-  RS.spendFooting = function doubledFootingDamage(entity, amount, reason = 'hit') {
+  RS.spendFooting = function doubledFootingDamage(entity, amount, reason = 'hit', options = {}) {
     // Prone already makes an entity immune to Footing loss. Keep that rule
     // explicit at the delay-owning choke point too so hits received while
     // prone can never create or refresh lastFootingDamageAt.
     if (entity?.prone) return 0;
-    const requested = Math.max(0, Number(amount) || 0) * FOOTING_DAMAGE_MULTIPLIER;
-    const spent = previousSpendFooting(entity, requested, reason);
+    const requested = Math.max(0, Number(amount) || 0) * (sharedScale || options.effectiveCost ? 1 : FOOTING_DAMAGE_MULTIPLIER);
+    const spent = previousSpendFooting(entity, requested, reason, options);
     if (spent > 0) entity.lastFootingDamageAt = nowMs();
     return spent;
   };

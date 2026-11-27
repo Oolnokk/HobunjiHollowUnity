@@ -358,6 +358,9 @@
       // scripts) instead of the NPC's ordinary tree/turn-in/favor routing.
       async function openNpcDialogue(walker, opts = null) {
         if (!walker || isPlayerInCombat()) return false; // Combat disables both direct dialogue calls and contextual Talk commands.
+        // Co-op: a conversation holds only the person talking, and an NPC talks to one player at a time (js/npc-conversations.js).
+        const conversation = window.NpcConversations.begin(player, walker);
+        if (!conversation.ok) { showToast(`${walker.rec?.name || 'They'} ${walker.rec?.name ? 'is' : 'are'} already talking with someone else.`, false); return false; }
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
@@ -391,6 +394,7 @@
           await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the existing world-space avatar/expression texture only.
         }
 
+        if (opts?.openingFarmGuide && (!dialogueOpen || _dialogueWalker !== walker)) return false; // A canceled asynchronous portrait load must not reopen the invitation.
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
@@ -410,6 +414,7 @@
 
       function closeNpcDialogue() {
         if (cutscenePreviewActive) return; // Only the director may advance/close cinematic dialogue; Leave, Escape and controller cancel share this authority.
+        window.NpcConversations.end(player); // The NPC is free for other players again.
         dialogueOpen = false;
         window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueCameraFraming?.end?.();
@@ -720,24 +725,33 @@
         onBranch: null, branchT: 0, branchSurfaceY: 0,
       };
 
-      // All players present in this session — just the local `player` today
-      // (there is no networking in this repo yet). Hostile-creature target
-      // acquisition reads from this list via nearestPlayer() below instead
-      // of hardcoding `player` directly, so a second connected player would
-      // just need to be pushed into this array for hostiles to be able to
-      // notice and chase them too, with nothing in the AI itself to change.
-      const players = [player];
+      // Every player in this session lives in js/actor-registry.js. Today that is
+      // just the local `player`; `players` is the registry's live array (never
+      // reassign it — modules hold it by reference), so a second/remote player
+      // registered there is seen by hostile targeting, companion/pet targeting
+      // and the combat deps with nothing else to change.
+      const players = window.ActorRegistry.getPlayers();
+      window.ActorRegistry.registerPlayer(player, { local: true });
+      window.ActorRegistry.setLocalAreaResolver(() => window.AreaScope ? window.AreaScope.listenerArea() : currentArea); // player.areaId is not always rewritten on a map swap; the listener's REAL area even during a remote-area tick.
+      // Co-op time rules (beds, Wait/Sleep, blackouts) live in js/time-consensus.js; a knocked-out local avatar cannot act until revived or the skip lands.
+      window.SharedCutscene.init({ tilePx: TILE });
+      window.RemoteAreaTick?.init({ tickPre: dt => window.WildernessSimulationLOD?.tick?.(dt), tickHostiles: dt => updateHostiles(dt), populate: () => window.WildlifeSpawn?.populateZone?.(), isCalm: () => !cutscenePreviewActive && !paused && !dialogueOpen, announce: () => showToast('A friend is arriving in a new area. One moment...', true), getCurrentArea: () => currentArea }); // updateHostiles is a hoisted declaration below.
+      let _timeKnockoutLock = null;
+      window.TimeConsensus.init({
+        tilePx: TILE,
+        onKnockoutStart: p => { if (p === player) { player._downed = player._timeKnockedOut = true; } if (p === player && !_timeKnockoutLock) _timeKnockoutLock = window.CharacterActionLocks?.acquire?.({ owner: 'time-consensus-knockout', reason: 'knocked out', participants: ['player'], channels: ['movement', 'tools', 'actions'] }) || null; },
+        onKnockoutEnd: p => { if (p === player) { player._downed = player._timeKnockedOut = false; _timeKnockoutLock?.release?.(); _timeKnockoutLock = null; } }, // Knocked out = not a target (enemies skip _downed) and takes no damage (damagePlayer).
+      });
 
       // Nearest live player to (x, y) — see updateHostiles' targetPlayer.
-      // Identical to hardcoding `player` while `players` has one entry.
-      function nearestPlayer(x, y) {
-        let best = null, bestDist = Infinity;
-        for (const p of players) {
-          const d = Math.hypot(p.x - x, p.y - y);
-          if (d < bestDist) { best = p; bestDist = d; }
-        }
-        return best;
-      }
+      // Pass { areaId } to prefer players in the creature's own area.
+      function nearestPlayer(x, y, opts) { return window.ActorRegistry.nearestPlayer(x, y, opts); }
+
+      // One entry for "attacker hurts target" (js/damage-authority.js): routes to
+      // damagePlayer for the local avatar, a remote-player handler for any other
+      // player, and damageCreature for everything else. damagePlayer/damageCreature
+      // are hoisted function declarations defined further down this closure.
+      window.DamageAuthority.init({ damageLocalPlayer: damagePlayer, damageCreature, getLocalPlayer: () => player });
 
       // Health/Stamina afflictions + Exhausted/black-stamina debt — see
       // docs/js/combat/resource-system.js. Adds player.afflictions/
@@ -788,7 +802,9 @@
       const PRONE_THROW_PLAYER_MIN_PX_S = 600; // Guarantees a readable player throw when a source supplied no ordinary knockback speed.
       const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
-      function applyKnockback(target, fromX, fromY, speedPxS) {
+      function applyKnockback(target, fromX, fromY, speedPxS, popupCredit = false) {
+        // Public movement callers may supply source metadata instead of the direct hit's precomputed credit.
+        popupCredit = popupCredit === true || window.WorldPopupText?.isLocalCombatSource?.(popupCredit?.attacker) === true;
         const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
         speedPxS *= reelingMul;
         if (!(speedPxS > 0)) return; // Zero-knockback hits still damage/stagger but must not launch a prone target.
@@ -820,7 +836,7 @@
           target.knockbackVX = Math.cos(hitAngle) * speedPxS;
           target.knockbackVY = Math.sin(hitAngle) * speedPxS;
           startProneThrow(target, target === player, target === player ? target.angle : target.facing,
-            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY));
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), popupCredit);
           target.knockbackT = 0;
           window.ImpactRagdollPlayback?.triggerTumble?.(target,
             hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
@@ -840,8 +856,12 @@
             // a large Footing hit, with a floor of one remaining Health.
             const currentHealth = Number(target.health);
             const impactHealth = Math.min(4, Math.max(0, (Number.isFinite(currentHealth) ? currentHealth : 1) - 1));
-            if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
-            window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            const healthLost = impactHealth > 0 ? window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' }) : 0; // Actual branch impact loss.
+            const footingLost = window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch'); // Actual branch impact Footing.
+            if (popupCredit) {
+              const healthPopup = window.WorldPopupText?.showCombatEffect?.(target, 'health', healthLost, true, 'impact'); // Actual branch-landing Health popup, if visible.
+              const footingPopup = window.WorldPopupText?.showCombatEffect?.(target, 'footing', footingLost, true, 'impact'); if (healthPopup != null || footingPopup != null) window.WorldPopupText?.showImpactCallout?.(target);
+            }
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
           if (target === player && !Number.isFinite(target.lungeFlightWorldY)
@@ -866,7 +886,7 @@
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
         target.knockbackVY = Math.sin(ang) * speedPxS;
-        window.KnockbackCollisionImpact?.begin?.(target, speedPxS, KNOCKBACK_DUR_S);
+        window.KnockbackCollisionImpact?.begin?.(target, speedPxS, KNOCKBACK_DUR_S, popupCredit);
         // Getting hit always interrupts an in-progress combat lunge — without
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
@@ -883,7 +903,7 @@
         }
       }
 
-      function startProneThrow(entity, isPlayer, facingAngle, direction) {
+      function startProneThrow(entity, isPlayer, facingAngle, direction, popupCredit = false) {
         let vx = Number(entity.knockbackVX) || 0;
         let vy = Number(entity.knockbackVY) || 0;
         const minSpeed = isPlayer ? PRONE_THROW_PLAYER_MIN_PX_S : PRONE_THROW_CREATURE_MIN_PX_S;
@@ -906,7 +926,7 @@
         entity.proneThrowT = PRONE_THROW_DUR_S;
         entity.proneThrowVX = vx;
         entity.proneThrowVY = vy;
-        window.KnockbackCollisionImpact?.begin?.(entity, Math.hypot(vx, vy), PRONE_THROW_DUR_S);
+        window.KnockbackCollisionImpact?.begin?.(entity, Math.hypot(vx, vy), PRONE_THROW_DUR_S, popupCredit);
       }
 
       // Classifies where a hit landed relative to the victim's own facing,
@@ -962,7 +982,7 @@
       // The player's direction-matched visual clip is retimed to that exact
       // gameplay duration. Thus every direction has the same stun at a given
       // Footing level even though the authored clips have different lengths.
-      function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, footingDamage) {
+      function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, footingDamage, popupCredit = false) {
         if (!window.ResourceSystem || entity.prone) return;
         const direction = hitDirectionRelativeToFacing(facingAngle, victimX, victimY, fromX, fromY);
         const staggerCfg = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger || {};
@@ -970,13 +990,14 @@
         const baseDurationS = Number(staggerCfg.baseDurationSeconds);
         const maxDurationS = Number(staggerCfg.maxDurationSeconds);
         const maxDurationAtFootingFrac = Number(staggerCfg.maxDurationAtFootingFraction);
-        window.ResourceSystem.spendFooting(entity, Math.max(0, footingDamage) * footingLossPerDamage, 'hit');
+        const footingLost = window.ResourceSystem.spendFooting(entity, Math.max(0, footingDamage) * footingLossPerDamage, 'hit'); // Actual post-resistance Footing loss.
+        if (popupCredit) window.WorldPopupText?.showCombatEffect?.(entity, 'footing', footingLost, true);
 
         // This hit emptied Footing — go straight to the full breakThrow
         // knockdown instead of playing a regular stagger reaction that would
         // just get immediately overwritten by it.
         if (entity.footing <= 0) {
-          startProneThrow(entity, isPlayer, facingAngle, direction);
+          startProneThrow(entity, isPlayer, facingAngle, direction, popupCredit);
           enterProneIfFootingDepleted(entity, isPlayer, direction);
           return;
         }
@@ -1084,7 +1105,7 @@
         }
         if (entity._cliffClimb) {
           if (entity._cliffClimb.phase === 'fall') { entity.proneThrowT = 0; return true; }
-          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone')) {
+          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone', entity._knockbackCollisionImpact?.popupCredit === true)) {
             entity.proneThrowT = 0;
             return true;
           }
@@ -1099,7 +1120,7 @@
           startX: entity.x, startY: entity.y, endX: entity.x, endY: entity.y,
           startSurfaceY: airborneY, endSurfaceY: groundY, visualSurfaceY: airborneY,
           elapsed: 0, duration: window.FormatUtils.clamp(0.14 + dropTiers * 0.055, 0.16, 0.36),
-          dropWorld, dropTiers, dirX: 0, dirY: 0,
+          dropWorld, dropTiers, dirX: 0, dirY: 0, popupCredit: entity._knockbackCollisionImpact?.popupCredit === true, // Carry the credited throw into the actual airborne landing.
         }; // Same animation and collision-cost pipeline as a shove off an actual ledge.
         entity._banditLungeHopCurrent = 0;
         entity._climbLeap = null;
@@ -2954,7 +2975,7 @@
         // unit of each output from the same batch without consuming another
         // ingredient — capped well below Bountiful Harvest's rate since
         // processed goods are already economically amplified by quality.
-        const efficientProcessingRank = window.PerkSystem?.rank('farming', 'efficientProcessing') || 0;
+        const efficientProcessingRank = fixedFamilyQuality ? 0 : (window.PerkSystem?.rank('farming', 'efficientProcessing') || 0); // Family batches do not receive player perk bonuses.
         const bonusChance = Math.min(0.15, efficientProcessingRank * 0.03);
         const bonusUnit = bonusChance > 0 && (window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0;
         outputs.forEach(output => {
@@ -3007,7 +3028,7 @@
         const emitterVisuals = (authoredVfx?.particleEmitters || []).map(record => ({ record, visual: window.AuthoredFurniture.createEmitterVisual(mesh, record) }));
         let vfxT = 0;
         let burstRemaining = 0;
-        function vfxActive() { return (isAging && !!job) || job?.kind === 'timed' || burstRemaining > 0; }
+        function vfxActive() { return ((isAging && !!job) || job?.kind === 'timed') && (!familyBatch() || jobRemainingHours() > 0) || burstRemaining > 0; }
         function triggerBurst() { if (!isAging) burstRemaining = PROCESS_BURST_S; }
         function jobRemainingHours() {
           if (!job) return 0;
@@ -3030,18 +3051,31 @@
           const durationHours = baseProcessingHours(def.method);
           job = { kind: 'timed', outputs, inputStars, inputLabel, source, yieldMultiplier,
             durationHours, readyAtGameHour: now + durationHours, substanceColor: timelineSubstanceColor(outputs) };
-          window.FarmEditor.saveFarmLayout();
+          const saved = window.FarmEditor.saveFarmLayout();
+          if (source === 'family-chore' && saved === false) { job = null; return { ok: false, message: 'Could not save the processor batch.' }; } // Family caller refunds the reserved ingredient.
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
           triggerBurst(); // Authored timeline/particle animations remain on render-time seconds, distinct from production.
           return { ok: true, started: true, durationHours };
         }
+        function familyBatch() { return job?.source === 'family-chore'; } // Generic family assignments collect their own finished batch.
+        function familyOutputFits() {
+          if (!job?.outputs?.length) return false;
+          const counts = new Map(); // Combined output keys must fit, even when a recipe repeats a key.
+          const possibleBonus = job.source === 'family' || familyBatch() ? 0 : (window.PerkSystem?.rank('farming', 'efficientProcessing') > 0 ? 1 : 0);
+          const units = (1 + possibleBonus) * Math.max(1, Math.floor(Number(job.yieldMultiplier) || 1));
+          for (const output of job.outputs) counts.set(output.key, (counts.get(output.key) || 0) + units);
+          for (const [key, count] of counts) if ((inventory[key] || 0) + count > window.InventoryStacks.MAX_TOTAL) return false;
+          return true;
+        }
         function finishTimedJob(notify = true) {
           if (job?.kind !== 'timed') return null;
+          if (familyBatch() && !familyOutputFits()) return { ok: false, message: 'Make room in your bag to collect this batch.' };
           const finished = job;
           job = null;
-          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family');
+          if (finished.source === 'family-chore' && window.FarmEditor.saveFarmLayout() === false) { job = finished; return { ok: false, message: 'Could not save collection.' }; } // Do not grant goods for a batch that is still saved as ready.
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family' || finished.source === 'family-chore');
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
-          window.FarmEditor.saveFarmLayout();
+          if (finished.source !== 'family-chore') window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
           window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
@@ -3051,12 +3085,12 @@
         }
         function updateVfx(dt) {
           // Non-authored stations still need to complete queued work after time passes.
-          if (job?.kind === 'timed' && jobRemainingHours() <= 0) finishTimedJob();
+          if (job?.kind === 'timed' && !familyBatch() && jobRemainingHours() <= 0) finishTimedJob(); // Family batches wait for an actual collection claim.
           if (!authoredVfx) return;
           vfxT += dt;
           if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
           const active = vfxActive();
-          const timed = job?.kind === 'timed';
+          const timed = job?.kind === 'timed' && (!familyBatch() || jobRemainingHours() > 0);
           const progress = timed ? Math.max(0, Math.min(1, 1 - jobRemainingHours() / Math.max(0.1, Number(job.durationHours) || baseProcessingHours(def.method)))) : 0;
           const liveTimeline = processTimeline ? { ...processTimeline, substanceColor: timed ? job.substanceColor : processTimeline.substanceColor } : null;
           const timelineState = liveTimeline ? window.AuthoredFurniture.applyProcessTimeline(mesh, authoredVfx, liveTimeline, progress) : null;
@@ -3083,6 +3117,38 @@
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
           startTimedJob({ outputs, inputStars, inputLabel, source, yieldMultiplier } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source, yieldMultiplier); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
+          familyRecipe(itemKey) {
+            // Tea is a three-herb recipe UI, not a single-ingredient processor.
+            if (def.specialMode) return null;
+            return window.ItemProcessing.getProcessingOutputs(def.method, itemKey);
+          },
+          familyEligible: !def.specialMode,
+          familyCanLoad() {
+            if (def.method !== 'squeezing') return true;
+            const worker = window.DewVats?.assignedWorkerForVat?.(obj.id); // A loader may supply a vat, but may not bypass its dedicated stomper requirement.
+            return !!worker && (!worker.familyWorker || !window.RomanceFamily?.isFamilyWorkUnavailable?.(worker.id));
+          },
+          familyReady() { return !!job && jobRemainingHours() <= 0 && familyOutputFits(); },
+          startFamilyJob(itemKey, workerId) {
+            if (!obj.familyEligible || !obj.familyCanLoad() || job || !workerId || !hasFarmPermission('storage')) return { ok: false };
+            const outputs = obj.familyRecipe(itemKey);
+            const now = window.ItemProcessing?.gameHour?.();
+            if (!outputs?.length || !Number.isFinite(now)) return { ok: false };
+            const inputStars = window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1;
+            const inputLabel = ITEM_DEFS[itemKey]?.label || itemKey;
+            if (isAging) {
+              const durationHours = baseProcessingHours(def.method);
+              job = { kind: 'aging', outputs, readyAtGameHour: now + durationHours, durationHours, inputStars, inputLabel, source: 'family-chore' };
+              if (window.FarmEditor.saveFarmLayout() === false) { job = null; return { ok: false, message: 'Could not save the processor batch.' }; }
+              window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
+              return { ok: true };
+            }
+            return startTimedJob(outputs, inputStars, inputLabel, 'family-chore');
+          },
+          collectFamilyJob() {
+            if (!obj.familyEligible || !hasFarmPermission('storage') || !obj.familyReady()) return { ok: false };
+            return obj.onAction('obj_process_' + furnitureKey);
+          },
           getButtons() {
             if (def.specialMode === 'teaGrinder') {
               return [{ icon: def.icon, label: 'Blend Tea Leaves', action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }]; // Tea Grinder owns a three-input modal rather than the generic one-held-item processor contract.
@@ -3122,11 +3188,15 @@
               const remainingHours = jobRemainingHours();
               if (remainingHours > 0) return { ok: false, message: `${def.name} is still working — ${window.ItemProcessing.formatProcessHours(remainingHours)} left.` };
               if (job.kind === 'timed') return finishTimedJob(false);
+              if (familyBatch() && !familyOutputFits()) return { ok: false, message: 'Make room in your bag to collect this batch.' };
               const outputs = job.outputs;
               const inputStars = job.inputStars;
+              const fixedFamilyQuality = familyBatch();
+              const finished = job; // Retain the ready aging batch if persistence refuses to clear it.
               job = null;
-              const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
-              window.FarmEditor.saveFarmLayout();
+              if (fixedFamilyQuality && window.FarmEditor.saveFarmLayout() === false) { job = finished; return { ok: false, message: 'Could not save collection.' }; }
+              const outputStars = addProcessedOutputs(outputs, inputStars, def.method, 1, fixedFamilyQuality);
+              if (!fixedFamilyQuality) window.FarmEditor.saveFarmLayout();
               saveMemberWorldData();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
@@ -3218,6 +3288,7 @@
         obj.mesh.position.set(col + 0.5, farmSurfaceYAtWorld(col + 0.5, row + 0.5), row + 0.5);
         worldObjects.set(col + ',' + row, obj);
         window.DewVats?.retargetAssignments(oldId, obj.id);
+        window.RomanceFamily?.retargetProcessingAssignment?.(oldId, obj.id); // Furniture identity changes with coordinates.
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} moved.` };
       }
@@ -3237,6 +3308,7 @@
         const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
         if (obj.getJob?.()) return { ok: false, message: `${def?.name || 'This processor'} cannot be removed until its contents are collected.` };
         window.DewVats?.retargetAssignments(obj.id, null);
+        window.RomanceFamily?.retargetProcessingAssignment?.(obj.id, null);
         worldObjects.delete(obj.col + ',' + obj.row);
         processingFurnitureObjects.delete(obj);
         obj.reset?.();
@@ -3635,7 +3707,7 @@
         entity._knockbackLedgeAir = { // Persists the original ledge height while horizontal knockback travels over lower terrain.
           originSurfaceY,
           ledgeX: blockedAt.x, ledgeY: blockedAt.y,
-          dirX, dirY, radiusPx,
+          dirX, dirY, radiusPx, popupCredit: impactState?.popupCredit === true, // Retain ownership if a later wall impact consumes the horizontal state.
           preflightLandingX: landing.x, preflightLandingY: landing.y,
           preflightLandingSurfaceY: landing.surfaceY,
         };
@@ -3697,6 +3769,7 @@
           startSurfaceY: air.originSurfaceY, endSurfaceY: landing.surfaceY,
           visualSurfaceY: air.originSurfaceY,
           elapsed: 0, duration, dropWorld, dropTiers,
+          popupCredit: (entity._knockbackCollisionImpact?.popupCredit ?? air.popupCredit) === true, // Latest shove wins; retain credit across a resolved horizontal impact.
           dirX: air.dirX, dirY: air.dirY,
         };
         entity._knockbackLedgeAir = null;
@@ -3715,9 +3788,7 @@
         return {
           dealHealthDamage(target, amount) {
             const opts = { environmentalImpact: true, reason: 'knockback collision', source: descriptor.label }; // Retains normal death authority without treating impact as a second weapon hit.
-            return target === player
-              ? damagePlayer(amount, sourceX, sourceY, 0, opts)
-              : damageCreature(target, amount, sourceX, sourceY, 0, opts);
+            return window.DamageAuthority.hit(target, amount, sourceX, sourceY, 0, opts); // Local/remote player or creature, by victim.
           },
           afterFootingDamage(target) {
             if (target.prone || target.footing > 0) return;
@@ -3736,7 +3807,7 @@
         return api.resolveStrength(
           entity, descriptor, fall.dropTiers, TILE,
           knockbackImpactHooks(entity, descriptor, fall.dirX, fall.dirY),
-          { mode: 'ledge-fall', dropWorld: fall.dropWorld, dropTiers: fall.dropTiers },
+          { mode: 'ledge-fall', dropWorld: fall.dropWorld, dropTiers: fall.dropTiers, popupCredit: fall.popupCredit === true },
         );
       }
 
@@ -3782,7 +3853,7 @@
         const dirY = speed > 1e-6 ? velocityY / speed : 0;
         const blockedAt = swept.blockedAt || { x: entity.x, y: entity.y }; // First rejected swept center retained specifically for collider classification.
         const descriptor = swept.knockbackDescriptorOverride || knockbackCollisionDescriptorAt(blockedAt.x, blockedAt.y, radiusPx, dirX, dirY);
-        return api.resolve(entity, descriptor, TILE, knockbackImpactHooks(entity, descriptor, dirX, dirY));
+        if (entity._knockbackLedgeAir && entity._knockbackCollisionImpact) entity._knockbackLedgeAir.popupCredit = entity._knockbackCollisionImpact.popupCredit === true; return api.resolve(entity, descriptor, TILE, knockbackImpactHooks(entity, descriptor, dirX, dirY)); // Capture current shove before the resolver consumes it.
       }
 
       // Which placed decorative-furniture keys the player can interact with
@@ -3837,7 +3908,9 @@
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
               if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
-              return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
+              // Every input, including generic Interact (controller A), must use the chosen-duration passage.
+              const opened = window.HobunjiSleepPassageActionBridge?.openSharedSleepPassage?.();
+              return opened ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Sleep is not available right now.' };
             },
           };
         }
@@ -4854,22 +4927,23 @@
         };
       }
 
-      function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
+      function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex, furnitureId = null) {
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
-        if (window.FurnitureTableSystem?.isSeatTaken(currentArea, {col,row,seatIndex}, 'player')) return {ok:false,message:'Someone has already taken this seat.'};
-        const seat = window.FurnitureTableSystem?.seatTransform(currentArea, { furnitureKey, col, row, seatIndex })
-          || resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
+        const seatTarget = { furnitureKey, col, row, seatIndex, furnitureId }; // The physical chair identity survives NPC handoffs and offset placements.
+        if (window.FurnitureTableSystem?.isSeatTaken(currentArea, seatTarget, 'player')) return {ok:false,message:'Someone has already taken this seat.'};
+        const placedSeat = window.FurnitureTableSystem?.seatTransform(currentArea, seatTarget);
+        const seat = placedSeat || (!furnitureId ? resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) : null); // Named chairs cannot become imaginary seats.
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
         const seatSurfaceY = activeSurfaceYAtWorld(seat.x, seat.z); // Used to lift the seated camera with zone plateau/ramp terrain.
-        const seatAbsoluteWorldY = seatSurfaceY + seat.y; // Used only by world-space camera/debug consumers; seat.y stays floor-relative for anatomy.
+        const seatAbsoluteWorldY = Number.isFinite(seat.worldY) ? seat.worldY : seatSurfaceY + seat.y; // Match the actual chair's world height, without adding its ground elevation twice.
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
-          furnitureKey, col, row, seatIndex,
+          furnitureKey, col, row, seatIndex, furnitureId: seat.furnitureId || furnitureId,
           phase: 'in', t: 0,
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
-          seatWorldY: seat.y,
+          seatWorldY: seatAbsoluteWorldY - seatSurfaceY,
           seatSurfaceY,
           seatAbsoluteWorldY,
           seatNormalDeg: seat.normalDeg,
@@ -4877,6 +4951,7 @@
           seatAnchorZ: seat.anchorZ,
           prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
+        window.NpcScheduling?.invalidateTargetDecisions?.(); // A newly occupied seat must immediately invalidate cached NPC destinations.
         activeCameraMode = 'seated';
         activeCameraTarget = { position: new THREE.Vector3(seat.x, seatAbsoluteWorldY + 0.15, seat.z) };
         // Start looking at the seated character's BACK rather than whatever
@@ -4949,6 +5024,7 @@
               cameraAngleOffsetDeg = 0;
             }
             sitInteraction = null;
+            window.NpcScheduling?.invalidateTargetDecisions?.(); // A vacated seat is immediately available to NPC planners again.
           }
         }
       }
@@ -4962,11 +5038,6 @@
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
-        if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
-          playerNeckJoint.rotation.set(0, 0, 0);
-          playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
-          return;
-        }
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
           && !cutscenePreviewActive
@@ -5025,7 +5096,7 @@
       // Interactable used by both getInteriorInteractableAt (interior scene)
       // and the farm's worldObjects registration (see placeDecorativeFurniture/
       // registerSitWorldObject) — same onAction shape either call site expects.
-      function makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg) {
+      function makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg, furnitureId = null) {
         return {
           interactIcon: '💺',
           interactLabel: 'Sit',
@@ -5034,7 +5105,7 @@
           },
           onAction(action) {
             if (action !== 'obj_sit' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
-            return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0);
+            return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0, furnitureId);
           },
         };
       }
@@ -5165,6 +5236,7 @@
       const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache, undefined, { frameSetOf: window.CreatureTextureCache.genotypeFrameSetKey }); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
       const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
+      const _genotypePendingPriority = new Map(); // Highest class requested for this pending appearance, avoiding repeated queue promotion scans.
       // Every key this function has ever logged a "kicking off compose" line
       // for — so a creature stuck retrying every tick (see
       // updateCreatureAnimFrame's needsRetry loop) logs its request/failure
@@ -5182,7 +5254,7 @@
       // forever, one full composeFrame call at a time, competing with every
       // other creature's real compose work for the same main thread).
       const _genotypeUnsupportedKinds = new Set();
-      function _getGenotypeTextures(kind, frame, genotype, blinkShut = false) {
+      function _getGenotypeTextures(kind, frame, genotype, blinkShut = false, priority = 'normal') {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer) {
           window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): window.CreatureGeneticsRender is not loaded — creature-genetics-render.js failed to load or hasn't run yet`, 'warn');
@@ -5214,8 +5286,10 @@
             if (_genotypeTexLogged.size >= 256) _genotypeTexLogged.delete(_genotypeTexLogged.values().next().value);
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
-          _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
+          _genotypePendingPriority.set(key, priority); // Track when an existing wild frame is upgraded for the player's pet.
+          _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut, { priority }).then(canvas => {
             _genotypeTexPending.delete(key);
+            _genotypePendingPriority.delete(key);
             if (!canvas) {
               _genotypeTexFailedAt.set(key, performance.now());
               window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame resolved null for sig="${sig}" — falling back to plain sprite (see composeFrame's own log line just above for why)`, 'warn');
@@ -5232,9 +5306,13 @@
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composited texture cached for sig="${sig}" (canvas ${canvas.width}x${canvas.height})`, 'wildlife');
           }).catch(err => {
             _genotypeTexPending.delete(key);
+            _genotypePendingPriority.delete(key);
             _genotypeTexFailedAt.set(key, performance.now());
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame THREW for sig="${sig}" — ${err?.stack || err}`, 'error');
           }));
+        } else if (priority === 'pet' && _genotypePendingPriority.get(key) !== 'pet') {
+          renderer.promoteFrame?.(kind, frame, sig, blinkShut, 'pet'); // Existing wild request is upgraded instead of restarting a second full pattern compose.
+          _genotypePendingPriority.set(key, 'pet');
         }
         return null;
       }
@@ -5255,9 +5333,9 @@
         const sig = window.CreatureGeneticsRender?.genotypeSignature?.(kind, genotype);
         return sig != null && window.CreatureTextureCache.genotypeFrameSetKey(boundKey) === `${kind}|${sig}`;
       }
-      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
+      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false, priority = 'normal') {
         if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // Prevent a late visual update from reacquiring removed-avatar memory.
-        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
+        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut, priority) : null;
         if (!genoTex && genotypeKind && genotype && _showingSameGenotype(avatarRef, genotypeKind, genotype)) {
           // This pose/blink frame is still composing, but the animal already
           // shows a colored frame of the same genotype: keep it on screen
@@ -5374,6 +5452,9 @@
         const sizeScale = { x: c.visualScaleX, y: c.visualScaleY }; // Already resolved by the factory, including authored size class.
         const targetScene = c.scene, targetGrid = c.areaGrid, gridCols = c.areaCols, gridRows = c.areaRows; // Stored area ownership survives town/wilderness transitions.
         const groundLift = c.groundLift; // Authored floor lift remains unchanged.
+        const pingdortShoulder = c.stableRole === 'shoulderPet' && creatureKey === window.PingdortRegistration?.KIND; // The flight presenter never takes ownership of shoulder portraits.
+        const authoredHeadRig = window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined;
+        const headRig = pingdortShoulder ? window.PingdortRegistration.shoulderHeadRig(authoredHeadRig) : authoredHeadRig; // Give the shoulder curl a native skin even before any head is painted.
         // A swarm species (honeyfuzzle) is one entity drawn as an instanced
         // flock — see js/honeyfuzzle-swarm.js; frontPlane is its yaw pivot.
         const avatarRef = def.swarm && window.HoneyfuzzleSwarm
@@ -5382,7 +5463,7 @@
           modelWidth, modelHeight,
           name: c.id,
           creatureId: creatureKey,
-          headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
+          headRig,
         });
         if (!def.swarm) {
           avatarRef.frontPlane = avatarRef.group.children[0] || null;
@@ -5422,6 +5503,7 @@
         targetScene.add(groundShadow);
 
         c.avatarRef = avatarRef;
+        if (pingdortShoulder) window.PingdortRegistration.attachShoulderRest(c, avatarRef, headRig);
         c.groundShadow = groundShadow;
         c._wildlifeVisualsReleased = false;
         c.currentFrameUrl = null;
@@ -5434,7 +5516,10 @@
         // by an earlier creature.
         if (!def.swarm) resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => { // A hovering swarm has no feet to anchor.
           if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
-          const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
+          const localFloorLift = creatureKey === 'pingdort' && c.stableRole === 'companion'
+            ? groundLift / sizeScale.y : undefined; // Match the flat companion pose to its size-specific floor lift.
+          if (creatureKey === window.TzatzulRegistration?.HATCHLING_KIND) avatarRef.groundAnchorBottomRatio = bottomRatio; // The articulated hatchling hinges camera tilt at this same opaque foot edge.
+          const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio, localFloorLift);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
@@ -5682,6 +5767,7 @@
         if (!c.isCompanion) {
           window.HobunjiActivityEvents?.emitCreatureKilled?.(c); // Kill attribution and barbarian/self-defense classification now live in js/activity-events.js.
         }
+        if (window.Rootledoots?.onDeath?.(c)) return true; // Rootledoots leave no ordinary corpse; the boss becomes a harvestable root.
         if (c._wildlifeVisualsReleased) {
           createCreatureVisuals(c); // Environmental/resource deaths still produce the normal visible, lootable corpse.
           c._wildlifeVisualLodHidden = false;
@@ -5696,7 +5782,7 @@
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
         if (c?._downed) return false; // A downed companion is untargetable until it is revived (js/companion-downed.js).
         if (!environmentalImpact && window.Combat?.attach?.blocksDamage(c, dmgOpts, fromX, fromY)) return false; // A creature sitting on a host (honeyfuzzle Swarm) is immune to that host's attacks (js/combat/combat-attach.js).
-        if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
+        if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing', window.WorldPopupText?.isLocalCombatSource?.(dmgOpts.attacker) === true); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
         // their own swept 3D Box3 collision and deliberately bypass this.
@@ -5726,6 +5812,8 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         if (!environmentalImpact) {
+          const enemyPerkHit = window.PerkSystem?.scaleEnemyCombatHit?.(actorAttacker, amount, dmgOpts); // Shared NPC perk owner also covers ranged and special direct attacks.
+          if (enemyPerkHit) { amount = enemyPerkHit.amount; dmgOpts = enemyPerkHit.options; }
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
           if (c.isCompanion) amount *= window.CompanionResilience?.damageTakenMultiplier?.(c) ?? 1; // Thick Hide / Guardian Fury companion training (js/stable-companion-resilience.js).
@@ -5740,7 +5828,7 @@
         }
         if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // 1.75x temporary, 2.5x true Footing-break; scales direct damage and attack afflictions once.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
-        const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
+        const impactMultiplier = environmentalImpact || actorAttacker ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
         resourceDamage.footing *= impactMultiplier;
         const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(c.health) || 0) : 0; // Used to report the actual pre-death Health loss back to the collision resolver.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
@@ -5826,20 +5914,24 @@
             c._voorgRearKickThreat = null;
           }
         }
-        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier * (resourceDamage.knockbackMultiplier ?? 1));
-        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
+        const popupCredit = window.WorldPopupText?.isLocalCombatSource?.(dmgOpts?.attacker) === true; // Explicit attacker only; nearby NPC combat never earns credit.
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier * (resourceDamage.knockbackMultiplier ?? 1), popupCredit);
+        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing, popupCredit);
         if (!c.prone) c._proneAirFallStartY = null; // A non-knockdown stagger cannot contaminate a later fall.
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
+        if (player._timeKnockedOut) return dmgOpts?.environmentalImpact === true ? { applied: 0, lethal: false } : undefined; // Passed out waiting for a revive (js/time-consensus.js): cannot be hurt or killed meanwhile.
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
         if (window.PlayerDowned?.isDowned?.()) { // A downed player takes no Health damage, knockback or stagger; each hit only shortens the bleed-out timer (js/player-downed.js).
-          if (!environmentalImpact) window.PlayerDowned.noteHitWhileDowned();
+          if (!environmentalImpact) { window.Rootledoots?.noteDownedHit?.(dmgOpts?.attacker, amount); window.PlayerDowned.noteHitWhileDowned(); }
           return environmentalImpact ? { applied: 0, lethal: false } : undefined;
         }
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
         if (!environmentalImpact) {
           const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
+          const enemyPerkHit = window.PerkSystem?.scaleEnemyCombatHit?.(attacker, amount, dmgOpts); // Same owner as NPC-versus-NPC hits; no player perk leakage.
+          if (enemyPerkHit) { amount = enemyPerkHit.amount; dmgOpts = enemyPerkHit.options; }
           amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
           amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
         }
@@ -5856,6 +5948,7 @@
           window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
           window.CorpseHoldLoot?.interrupt(); // ...and a hold-to-loot body
         }
+        window.Rootledoots?.noteDown?.(null, 0); // A new actual hit invalidates earlier down attribution; ResourceSystem records lethal Rootledoot overkill after mitigation.
         const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(player.health) || 0) : 0; // Used before respawn can replace lethal zero Health with a restored value.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
@@ -5897,6 +5990,7 @@
           window.ImpactRagdollPlayback?.stop?.(); // Clear the held break-throw rig before placing the player at a respawn point.
         }
         window.PlayerDowned?.reset?.(); // Any respawn ends the downed state.
+        if (window.Rootledoots?.handleDefeat?.()) return; // Nonlethal Fey blackout replaces the normal checkpoint death only for Rootledoot-caused defeat.
         if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) { window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); return; } // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.CombatTutorial?.active?.()) {
           window.CombatTutorial.leave(true);
@@ -5995,7 +6089,7 @@
         let lastName = '';
         const dmgType = currentWeaponDamageType(); // Used by the legacy fallback's damage routing and matching impact family.
         const impactSize = action === 'slash' ? 'huge' : 'medium'; // The legacy wide slash is its heavy attack; the ordinary cut is neutral weight.
-        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true } : { tag: dmgType };
+        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true, attacker: player } : { tag: dmgType, attacker: player };
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -6272,7 +6366,7 @@
       }
 
       function findAvailableAutoTarget() {
-        if (isDesktop && !desktopLockOnActive) return null;
+        if (!desktopLockOnActive && (isDesktop || window.Combat?.input?.autoTargetAvailable !== true)) return null; // Disabled mobile assist never previews targets; explicit lock-on remains supported.
         if (mobileAutoTargetEnabled()) return findAutoTarget();
         if (availableAutoTargetCacheFrame !== gameFrameSerial) {
           availableAutoTargetCacheValue = computeAutoTarget(true); // Uses ordinary range, visibility, and weapon/cone rules without selecting or turning toward prey.
@@ -6395,7 +6489,8 @@
       }
 
       function tickCreatureFootsteps(c, distPx) {
-        if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
+        if (c._familyBabyFollower || c.areaId !== currentArea) return; // Infants crawl rather than play animal footfalls.
+        if (c._companionBirdMotion?.mode === 'flight') return; // A flapping companion has wingbeat audio, not ground footsteps.
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
         const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
@@ -6433,6 +6528,15 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         if (window.DevRandomRuin?.shaftCreatureCanEnter?.(actor, wx, wy, walkingPath) === false) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        if (actor?.stableRole === 'companion' && def?.isFlyingSpecies && (currentArea === 'interior' || _isBuildingArea(currentArea)) && currentArea !== 'map_i_dev_random_ruin') {
+          const birdRadius = Math.max(.08, Math.min(.45, (actor.visualModelWidth || def.modelWidth || .5) * .25)) * TILE; // Hop routes must not pass through walls or solid furniture.
+          if (!canOccupyAt(wx, wy, birdRadius)) return false;
+        }
+        if (actor?._familyBabyFollower) {
+          const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Crawlers cannot swim or pass solid walls, even where wildlife may.
+          if (!tile || tile.incline || isSolid(tile.type) || WATERWAY_TYPES.has(tile.type) || (Number(tile.water) || 0) >= 0.003) return false;
+          if (!window.NpcPathfinding.isNpcPositionWalkable(currentArea, wx / TILE, wy / TILE, 0.12)) return false; // Check actual infant footprint, not just the tile center.
+        }
         if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
         if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return false;
@@ -6498,6 +6602,28 @@
       // tuning constants) now lives in js/enemy-collision-reposition.js.
       window.EnemyCollisionReposition.init({ creatureCanEnterTile });
 
+      // The compositor proposes motion; these native terrain owners alone commit positions.
+      function movementFootingDepleted(entity, dx, dy) {
+        const facing = entity === player ? entity.angle : (entity.facing || 0);
+        const direction = hitDirectionRelativeToFacing(facing, entity.x, entity.y, entity.x - dx * TILE, entity.y - dy * TILE);
+        enterProneIfFootingDepleted(entity, entity === player, direction);
+      }
+
+      function commitComposedMovement(entity, motion, requestedPx, actualPx) {
+        if (!motion?.wind) return;
+        window.ResourceSystem?.commitMovement?.(entity, motion, requestedPx > 0 ? Math.min(1, actualPx / requestedPx) : 0, movementFootingDepleted);
+      }
+
+      function driftIdleCreature(c, dt, startX, startY) {
+        const rs = window.ResourceSystem;
+        if (!rs?.hasWindblown?.(c) || rs.windMovementHandled?.(c) || c.x !== startX || c.y !== startY ||
+            c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb?.phase || c.onBranch ||
+            c._denHidden || c._animalSleeping || c.tzatzulCapturedBy || c.health <= 0) return false;
+        // Idle ground AI has no native walk request, so resolve its zero-intent wind
+        // through exactly the same tile-entry owner as a normal walk.
+        return moveCreatureToward(c, c.x, c.y, Number(c.def?.moveSpeed) || MOVE_SPEED, dt);
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt, movementOptions = null) {
         // A NaN/undefined target (e.g. a momentarily-gone companion master,
         // a stale reference) must never reach the position math below — dist
@@ -6521,12 +6647,13 @@
           enemyPursuitSpeedDebug.lastResolvedPxS = chasePace;
         }
         const baseSpeed = chasePace * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul; // One world pace for both ordinary and cliff-route travel.
-        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true;
+        if (!c._familyBabyFollower && window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true; // Crawling babies use ground routes and the same unseen recovery rather than cliff leaps.
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
+        const windActive = !!window.ResourceSystem?.hasWindblown?.(c) && !window.ResourceSystem?.windMovementHandled?.(c); // Idle targets still receive additive wind.
+        if (dist < 1 && !windActive) { c.vx = 0; c.vy = 0; return false; }
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
-        const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
+        const nx = dist >= 1 ? dx / dist * directionMul : 0, ny = dist >= 1 ? dy / dist * directionMul : 0;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
@@ -6534,7 +6661,8 @@
         // collision in updateMovement). A genuinely pinned chasing enemy then
         // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
-        const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
+        const motion = (windActive || window.FeyIllusions?.movementRotationRad?.(c)) ? window.ResourceSystem?.composeMovement?.(c, nx * step, ny * step, { mode: 'walk', scalarApplied: true, reference: effectiveSpeed * dt, dt, voluntary: dist >= 1, wind: windActive }) : null; // AI steering and wind share the existing ground collision request.
+        const desiredX = c.x + (motion?.x ?? nx * step), desiredY = c.y + (motion?.y ?? ny * step);
         const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY, c); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
         if (canMoveX) c.x = desiredX;
         const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY, c); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
@@ -6542,10 +6670,10 @@
         const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
         let moved = Math.hypot(c.x - prevX, c.y - prevY); // Used as the movement already achieved before deciding whether a collision escape is necessary.
-        let motionNX = nx, motionNY = ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
-        if ((blockedX || blockedY) && moved < step * window.EnemyCollisionReposition.MIN_MOVE_FRAC) {
+        let motionNX = motion && step > 0 ? motion.x / step : nx, motionNY = motion && step > 0 ? motion.y / step : ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
+        if (!motion?.wind && (blockedX || blockedY) && moved < step * window.EnemyCollisionReposition.MIN_MOVE_FRAC) {
           const remainingStep = Math.max(0, step - moved); // Used to keep axis-slide plus escape movement within the original per-frame travel budget.
-          const reposition = window.EnemyCollisionReposition.tryReposition(c, nx, ny, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
+          const reposition = window.EnemyCollisionReposition.tryReposition(c, motionNX, motionNY, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
           if (reposition) {
             moved = Math.hypot(c.x - prevX, c.y - prevY);
             motionNX = reposition.nx;
@@ -6554,9 +6682,11 @@
         } else if (c._collisionRepositionDebug?.active) {
           c._collisionRepositionDebug.active = false;
         }
-        c.vx = motionNX * effectiveSpeed; c.vy = motionNY * effectiveSpeed;
+        c.vx = motion?.wind && dt > 0 ? (c.x - prevX) / dt : motionNX * effectiveSpeed; c.vy = motion?.wind && dt > 0 ? (c.y - prevY) / dt : motionNY * effectiveSpeed;
+        if (motion?.wind) commitComposedMovement(c, motion, Math.hypot(motion.x, motion.y), moved);
         if (moved > 0) {
           window.DevRandomRuin?.syncShaftCreatureFloor?.(c);
+          if (c.ruinSkeletonTheme === 'kanthic') window.MinionCombat?.trailMovement?.(c, prevX, prevY, c.x, c.y, 'move', TILE); // Accepted walking, including wander and return-home; no render-dependent sampling.
           tickCreatureFootsteps(c, moved);
         }
         return moved > 0;
@@ -6671,6 +6801,72 @@
       function _companionPersonalSpacePx() {
         return 1.5 * (playerAvatarModelWidth || 0.9) * TILE;
       }
+      // A low-flight step is independent of swimming penalties and existing ground
+      // detours, but must leave a safe landing surface beneath the bird. High
+      // cliffs, unsupported shaft crossings, and unmeasured caves retain ground routing.
+      function companionBirdFlightClear(c, fromX, fromY, toX, toY) {
+        const outside = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
+        const ruin = currentArea === 'map_i_dev_random_ruin';
+        const roomData = !outside && !ruin && _isBuildingArea(currentArea) && !_isCavernBuildingArea(currentArea) ? _rawMapDataByMapId.get(currentArea) : null;
+        const farmhouse = currentArea === 'interior'; // The original farmhouse has its own scene and known ceiling.
+        if (!outside && !ruin && !roomData && !farmhouse) return false;
+        const radius = Math.max(.08, Math.min(.45, (c.visualModelWidth || c.def.modelWidth || .5) * .25)); // Conservative body footprint in world units.
+        const height = Math.max(.2, (c.halfHeight || .2) * 2);
+        const ceiling = farmhouse ? INTERIOR_WALL_HEIGHT : roomData ? (window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(roomData)?.wallHeight ?? INTERIOR_WALL_HEIGHT) : Infinity;
+        const gridNow = c.areaGrid || window.GridTileAccessors.getActiveGrid();
+        const support = (x, y) => ruin ? Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(x / TILE, y / TILE)) : activeSurfaceYAtWorld(x / TILE, y / TILE);
+        const fromFloor = support(fromX, fromY);
+        const clear = window.DevRandomRuin?.flightClear;
+        if (ruin && (typeof clear !== 'function' || !window.DevRandomRuin?.getState?.())) return false;
+        let previous = { x: fromX / TILE, z: fromY / TILE, floor: fromFloor };
+        const steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / (TILE * .2)));
+        for (let i = 0; i <= steps; i++) {
+          const wx = fromX + (toX - fromX) * i / steps, wy = fromY + (toY - fromY) * i / steps;
+          const x = wx / TILE, z = wy / TILE, floor = support(wx, wy);
+          const tile = gridNow?.[Math.floor(z)]?.[Math.floor(x)];
+          // An interrupted bird must be able to return to the same walkable story.
+          if (!tile || tile.mapBoundary || tile.incline || isSolid(tile.type) || !Number.isFinite(fromFloor) || !Number.isFinite(floor) || Math.abs(floor - fromFloor) > .55) return false;
+          if (!creatureCanEnterTile(c.def, wx, wy, fromX, fromY, c)) return false;
+          // Probe both the grounded-to-flight ascent and full body at cruise height.
+          const feet = floor + .65;
+          if (feet + height + .15 > ceiling) return false;
+          if (!ruin) {
+            for (const lift of [.08, .35, .65]) {
+              if (!canOccupyAt(wx, wy, radius * TILE, floor + lift + radius)
+                || !canOccupyAt(wx, wy, radius * TILE, floor + lift + Math.max(radius, height))) return false;
+            }
+          } else {
+            for (const offset of [-radius, 0, radius]) {
+              if (!clear(previous.x + offset, previous.floor + .65 + radius, previous.z, x + offset, feet + radius, z)
+                || !clear(previous.x, previous.floor + .65 + height, previous.z + offset, x, feet + height, z + offset)
+                || !clear(x + offset, floor + radius, z, x + offset, feet + Math.max(radius, height), z)) return false;
+            }
+          }
+          previous = { x, z, floor };
+        }
+        return true;
+      }
+
+      function tryBirdFollowFlight(c, tx, ty, dt) {
+        if (!c.def?.isFlyingSpecies || c.stableRole !== 'companion' || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || c.prone || c.knockbackT > 0 || c._knockbackLedgeFall) return false;
+        const speed = c.def.chaseSpeed * devGlobalSpeedMul
+          * (window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1)
+          * (window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1); // Same authored pursuit pace and debuffs, but no swimming slowdown.
+        const direction = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1;
+        let motion = null; // Accepted flight commits the same wind transaction as ground travel.
+        const startX = c.x, startY = c.y;
+        const resources = window.ResourceSystem;
+        const windActive = !!resources?.hasWindblown?.(c) && !resources?.windMovementHandled?.(c);
+        const moved = window.TzatzulLiveVisuals?.tryCompanionFlightStep?.(c, tx, ty, speed, dt, direction,
+          (x, y, nx, ny) => companionBirdFlightClear(c, x, y, nx, ny),
+          (dx, dy, stepDt) => {
+            motion = resources?.composeMovement?.(c, dx, dy, { mode: 'walk', scalarApplied: true, reference: speed * stepDt, dt: stepDt, airborne: true, wind: windActive });
+            return motion;
+          }) === true;
+        if (moved && motion?.wind) commitComposedMovement(c, motion, Math.hypot(motion.x, motion.y), Math.hypot(c.x - startX, c.y - startY));
+        return moved;
+      }
+
       function _companionFollowWanderTick(c, dt, master) {
         c.wanderT -= dt;
         if (!c.wanderTarget || c.wanderT <= 0) {
@@ -6709,7 +6905,9 @@
           : c._cliffClimb ? c._cliffClimb.surfaceY
           : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
-        const surfY = knockbackVisualSurfaceY(c, ordinarySurfY);
+        const birdMotion = c._companionBirdMotion ? window.TzatzulLiveVisuals : null; // The bird compositor separates low flight from terrain smoothing.
+        const birdLift = birdMotion?.companionLift(c, 'flight') || 0; // Hop lift is still composed at draw time.
+        const surfY = knockbackVisualSurfaceY(c, ordinarySurfY) + birdLift;
         const grp = c.avatarRef.group;
         window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Burning Health presentation follows the same live creature group used by every avatar update.
         // scaleY (driven by attacks like Pounce, default 1) squashes the
@@ -6730,12 +6928,14 @@
         } else if (headtakerDescending) {
           grp.position.x = tx; grp.position.z = tz; // Preserve the combat module's exact sky-to-host Y interpolation rather than ease toward it again.
         } else if (c._wildlifeVisualLodJustWoke || kickPoseHeld) {
-          grp.position.set(tx, ty, tz); // A held kick cannot visually keep sliding toward a previous fast-lunge target through the ordinary position lerp.
+          grp.position.set(tx, birdMotion ? birdMotion.companionBodyY(c, ty, birdLift, 1) : ty, tz); // A held kick cannot visually keep sliding toward a previous fast-lunge target through the ordinary position lerp.
           c._wildlifeVisualLodJustWoke = false;
         } else {
           grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
           grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
-          grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+          const blendY = Math.min(1, dt * 7); // Keep the existing support interpolation for birds and ordinary creatures.
+          grp.position.y = birdMotion ? birdMotion.companionBodyY(c, ty, birdLift, blendY)
+            : grp.position.y + (ty - grp.position.y) * blendY;
         }
         // Bob animation when moving — mirrors the player's own effort-based
         // move bob (updateMovement): amplitude ramps from the calm-walking
@@ -6931,6 +7131,7 @@
         // knows, otherwise composeFrame silently no-ops for them (spec not
         // found) and they'd never render a fill/pattern at all.
         const genotypeKind = c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
+        const appearancePriority = c.health > 0 && (c.master || player) === player && ['companion', 'mount', 'shoulderPet'].includes(c.stableRole) ? 'pet' : 'normal'; // Only the player's own living companion roles outrank wild creatures.
         // Item 3: eyes-open/eyes-shut blinking, layered into the same
         // genotype composite pass above the eyes' own layer (see
         // composeFrame's blinkShut param) — only meaningful for
@@ -6963,7 +7164,7 @@
             window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
           }
           if (c.currentFrameUrl !== c.def.sprites.idle || c._blinkAppliedShut !== blinkShut || needsRetry) {
-            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype, blinkShut);
+            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype, blinkShut, appearancePriority);
             c.currentFrameUrl = c.def.sprites.idle;
             c._blinkAppliedShut = blinkShut;
             if (genotypeKind && applied) {
@@ -7001,7 +7202,7 @@
           window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
         }
         if (c.currentFrameUrl !== url || c._blinkAppliedShut !== blinkShut || needsRetry) {
-          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype, blinkShut);
+          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype, blinkShut, appearancePriority);
           c.currentFrameUrl = url;
           c._blinkAppliedShut = blinkShut;
           if (genotypeKind && applied) {
@@ -7231,8 +7432,18 @@
         }
       }
 
+      // The wildlife visual LOD is keyed to the LOCAL camera, but its `hidden` result also drops a
+      // creature to the coarse 5 Hz AI tick. A creature streamed out for this client can still be
+      // fighting another player, so that player keeps it on the full-rate simulation (host side of
+      // co-op). Always false in single-player (one registered player, the local one).
+      function simulationKeptAwakeByOtherPlayer(c) {
+        const reg = window.ActorRegistry;
+        if (reg.playerCount() < 2) return false;
+        const other = reg.distanceToNearestPlayer(c.x, c.y, { areaId: c.areaId, strict: true, filter: p => !reg.isLocalPlayer(p) });
+        return other / TILE < window.WildlifeVisualLod.wakeRadius();
+      }
       function updateWildlifeVisualLod(c, distanceTiles) {
-        const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
+        const hidden = window.WildlifeVisualLod.update(c, _areaScopeDepth > 0 ? Infinity : distanceTiles); // A remote-area tick has no camera there: never build rigs for it. // Promotes data-only actors through the same distance owner.
         if (hidden) releaseInactiveCreatureTextures(c);
         return hidden;
       }
@@ -7276,11 +7487,14 @@
       });
 
       function updateHostiles(dt) {
+        const simPlayers = _areaScopeDepth > 0 ? window.ActorRegistry.playersInArea(currentArea) : players; // A remote-area tick (js/remote-area-tick.js) only sees the players actually in that area.
         window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
         const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
-        window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
-        window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
-        releasePreviousAreaCreatureTextures();
+        if (_areaScopeDepth === 0) { // Per-frame bookkeeping for the LOCAL area only; a remote-area tick must not reset it or release this scene's textures.
+          window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
+          window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
+          releasePreviousAreaCreatureTextures();
+        }
         currentHostilesFrame.length = 0;
         if (grazingPreyIndexArea !== currentArea) {
           grazingPreyIndexArea = currentArea;
@@ -7343,7 +7557,7 @@
             if (c.avatarRef?.group) c.avatarRef.group.visible = true;
           }
           const initialDistanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE; // Wakes a far creature immediately when the player crosses the nearer LOD boundary.
-          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles); // Selects full-rate or accumulated coarse simulation for this frame.
+          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles) && !simulationKeptAwakeByOtherPlayer(c); // Selects full-rate or accumulated coarse simulation for this frame.
           let entityDt = dt; // Carries accumulated elapsed time through the unchanged AI state machine on coarse far-wildlife ticks.
           if (initiallyLodSleeping) {
             c._farWildlifeAiAccumS = (c._farWildlifeAiAccumS || 0) + dt;
@@ -7379,7 +7593,7 @@
             c.targetPlayer = null; // Dead, downed, departed or unloaded targets must not hold enemy aggro indefinitely.
             if (c.state === 'chase' || c.state === 'searching') c.state = 'return';
           }
-          window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, players, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
+          window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, simPlayers, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
           // The den-night/retaliation/chase branches outrank forage animation.
           // Cancel its residual dive/chew pose here rather than waiting for
           // tickForage (which those higher-priority branches never reach).
@@ -7393,7 +7607,7 @@
           // humanoid a live actor target and zeroes its player aggro; chase,
           // leash and sight below must follow that actor, not the player.
           const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
-          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y); // Scent priority can change this frame's active chase target before movement/attack.
+          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y, { areaId: c.areaId }); // Scent priority can change this frame's active chase target before movement/attack.
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -7407,7 +7621,7 @@
           let dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y; // Refreshed when scent chooses a different player in this same AI tick.
           let distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
-          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
+          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE) && !simulationKeptAwakeByOtherPlayer(c); // Rechecks after target selection before choosing the resource cadence.
           if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
@@ -7453,7 +7667,7 @@
               c.state !== 'fleeing-low-health' && !onFleeCooldown &&
               distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
             const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
-              ? window.EnemyPetTargeting.chooseAggroTarget(c, players, companionObjects, currentArea, def.aggroRangePx, enemyCanSeeTarget)
+              ? window.EnemyPetTargeting.chooseAggroTarget(c, simPlayers, companionObjects, currentArea, def.aggroRangePx, enemyCanSeeTarget)
               : (distToPlayer <= def.aggroRangePx && enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx) ? targetPlayer : null); // Legacy player-only fallback for isolated runtimes that omit the new targeting module.
             if (acquiredTarget) {
               c.state = 'chase';
@@ -7481,7 +7695,7 @@
           // Scent-marked opponents take priority without bypassing wild animals' existing
           // aggro, leash, perception or attack-commitment rules.
           window.AnimalScentTargeting?.prioritizeWild?.(
-            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
+            c, simPlayers, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
           );
           if (c.state === 'chase' && c.targetPlayer && c.targetPlayer !== targetPlayer) {
             targetPlayer = c.targetPlayer; // The chosen scent opponent must own movement, alignment and strikes immediately.
@@ -7538,6 +7752,8 @@
             }
           }
 
+          const windStartX = c.x, windStartY = c.y; // Idle fallback is eligible only if no other motion owner moved this actor.
+          window.ResourceSystem?.beginMovementFrame?.(c);
           let moving = false, aimAngle = c.facing || 0, forageResult = null; // Shared foraging return feeds ordinary movement + sprite animation.
           if (c._knockbackLedgeFall) {
             advanceKnockbackLedgeFall(c, entityDt);
@@ -7762,7 +7978,7 @@
                         halfConeRad: attackHalfConeRad,
                         color: trailColor,
                       });
-                      if (targetPlayer?.health > 0 && !targetPlayer._downed &&
+                      if (targetPlayer?.health > 0 && !targetPlayer._downed && !targetPlayer._inCutscene &&
                           (!targetPlayer.areaId || targetPlayer.areaId === currentArea) &&
                           window.Combat?.meleeHit?.(c, targetPlayer, {
                         rangePx: def.attackRangePx,
@@ -7770,8 +7986,7 @@
                         direction: enemyAim?.direction,
                       })) {
                         const biteDamageOptions = { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c }; // Routes creature targets through their normal resilience/downed pipeline.
-                        if (players.includes(targetPlayer)) damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
-                        else damageCreature(targetPlayer, def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
+                        window.DamageAuthority.hit(targetPlayer, def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions); // Routes by who was actually bitten (local player, another player, or a companion).
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -7973,6 +8188,7 @@
           // interpolation target instead of being immediately smoothed back
           // to rest by that block's own unconditional _restoreCompanionHead.
           window.HobunjiGrehlrForaging?.applyForagingPose?.(c, entityDt);
+          if (driftIdleCreature(c, entityDt, windStartX, windStartY)) moving = true;
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
@@ -8031,9 +8247,15 @@
         TILE, player, getCurrentArea: () => currentArea, isZoneArea: _isZoneArea,
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         surfaceYForTile: tileSurfaceYInArea, creatureCanEnter: creatureCanEnterTile,
-        getCamera: () => camera,
+        canOccupy: canOccupyAt, getCamera: () => camera,
       });
-
+      window.FamilyBabyFollow?.init?.({
+        TILE, player, getCurrentArea: () => currentArea, getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        isWilderness: area => Object.hasOwn(EXTERIOR_ZONES, area),
+        isAreaSettled: () => sceneTransDir === 0 && !_layoutSwapInProgress,
+        travelCreatureToward, canEnter: creatureCanEnterTile, surfaceY: npcSurfaceY, scheduleMemberSave: () => scheduleLootMemberSave(),
+        getToddlerWalkSpeed: walker => (npcMovementConfig().speedTilesPerSecond ?? 1.25) * (window.NpcCharacterState?.movementSpeedMultiplier?.(walker.rec?.id) ?? 1) / Math.max(.001, devGlobalSpeedMul), // Compensate for the creature mover applying the global speed multiplier; ordinary humanoid walking does not.
+      }); // Uses the exact companion movement executor; no new wildlife combat object or second frame loop.
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
@@ -8137,10 +8359,18 @@
       // authored ROTATION is interpreted relative to the live face/neck bone.
       // This lets a perched animal turn and nod with the face without making
       // the shoulder coordinate itself orbit around the neck pivot.
+      const _shoulderCameraDeadzone = { perps: [0, 0], deadRad: 0 }; // Reused every frame by getCameraDeadzone below.
       const shoulderPetAttachment = window.ShoulderPetAttachmentRuntime?.create?.({
         THREE,
         getPlayerMesh: () => playerMesh, // Read the current owner root after any avatar rebuild.
         getPlayerNeckJoint: () => playerNeckJoint, // Resolve the live neck each frame rather than capturing the old rig.
+        getOwnerPortraitMeshes: () => [_playerAvatarFrontMesh, _playerAvatarBackMesh], // Current deformed portrait faces for shoulder-pet geometry limits.
+        getCameraDeadzone: () => { // Shoulder pets keep body and head out of the animal camera-edge zone; the attachment, not the generic plane rotation, owns their yaw.
+          const az = activeCameraAzimuthRad(); // Same [az, az+PI] centres as cameraRelativeCreaturePerps(), written into one reused object.
+          _shoulderCameraDeadzone.perps[0] = az; _shoulderCameraDeadzone.perps[1] = Math.PI + az;
+          _shoulderCameraDeadzone.deadRad = window.PerpRotation.CREATURE_PERP_DEAD_RAD;
+          return _shoulderCameraDeadzone;
+        },
         getRotationSource: () => s_shoulderPetRotationSource, // Preserve the existing authored head/body/world choice.
         getInvertRotationSource: () => s_invertShoulderPetRotationSource, // Existing compatibility setting.
         getCancelRotationalOffset: () => s_cancelShoulderPetRotationalOffset, // Existing authored offset setting.
@@ -8170,7 +8400,6 @@
       const SHOULDER_PET_CURIOUS_PITCH_DEG = 5; // Slight up/down curiosity layered onto the authored head rig where available.
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14; // A separate, clearly visible head turn keeps the body glance from reading as a whole-body pivot.
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG = 24;
-      const SHOULDER_PET_AWAY_HEAD_YAW_SIGN = 1; // Fixed pet-local left turn; both 0° and 180° body poses use this same head-yaw direction away from the character.
       const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
 
       function _companionHeadRestDeg(c) {
@@ -8377,8 +8606,8 @@
           state.timer = SHOULDER_PET_POSE_HOLD_MIN_S
             + rnd() * (SHOULDER_PET_POSE_HOLD_MAX_S - SHOULDER_PET_POSE_HOLD_MIN_S);
           c.__hobunjiShoulderFacingInward = facingInward; // The root attachment solve consumes this persistent state as 180° inward vs 0° outward.
-          state.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
-            + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG)); // Same pet-local left/away turn in both body poses.
+          state.targetYawDeg = SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
+            + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG); // Unsigned magnitude; final shoulder attachment determines the physically outward sign.
           state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
           window.ShoulderPetObservationFlip?.recordPose?.(c, {
             facingInward,
@@ -8394,7 +8623,8 @@
         state.currentLeanDeg = 0;
         state.targetLeanDeg = 0;
         state.currentPitchDeg += window.FormatUtils.clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
-        state.currentYawDeg += window.FormatUtils.clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
+        state.currentYawDeg = Math.abs(Number(state.currentYawDeg) || 0); // Migrate old signed curiosity snapshots to a magnitude.
+        state.currentYawDeg += window.FormatUtils.clamp(Math.abs(state.targetYawDeg) - state.currentYawDeg, -step, step);
         return state;
       }
 
@@ -8403,7 +8633,7 @@
         // The attachment root applies only the inward/outward observation flip.
         // Continuous curiosity pitch/yaw belongs exclusively to the head bones.
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
-        if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
+        // The final shoulder pin owns passive yaw, after the actual grip and body heading are known.
       }
 
       function _isPlayerGenuinelyIdle() {
@@ -8816,6 +9046,7 @@
         window.HeldObjectRenderOrder?.setShoulderPetLayering?.(
           nextPet, _playerAvatarFrontMesh, _playerAvatarBackMesh,
           _playerAvatarFrontMaterial, _playerAvatarBackMaterial,
+          { geometricDepth: true }, // Shoulder-pet visibility now follows physical depth, not paired portrait x-ray.
         );
       }
 
@@ -8835,10 +9066,13 @@
         setPlayerHatXray(false);
         updatePetLayering(hasActiveShoulderPetForPlayer, hasActiveShoulderPetForPlayer ? activeShoulderPetCompanion : null);
         if (!hasActiveCompanionForPlayer) updateAvatarDepthPriority(false);
+        let playerIdleThisFrame; // Resolve shared idle state only if a non-combat companion needs it.
+        const siccedThisFrame = hasActiveCompanionForPlayer ? window.EnchantmentSystem?.getCurrentSiccedTarget?.(currentArea) : null; // One mark scan for all owned companions.
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
           if (c.tzatzulCapturedBy) {
+            window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, 0, false, true); // A carrier owns height and position, not follower flight.
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
             continue; // Captured companions share the carrier's flight path instead of following their master.
@@ -8857,7 +9091,12 @@
           // A mount is driven entirely by updateMountRide/updateMountedMovement
           // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
           // the fight/wander companion AI at all, so skip it here.
-          if (c.stableRole === 'mount') continue;
+          if (c.stableRole === 'mount') {
+            // Riding owns positions, but not the animal's independent affliction clock.
+            // Active summoned mounts were skipped by both ordinary creature loops.
+            if (window.Mounts?.rideEntity === c) tickCreatureResources(c, dt);
+            continue;
+          }
 
           // A shoulder pet doesn't fight or wander off — it stays glued to
           // its master's side, positioned/oriented so its shoulderGrip anchor
@@ -8964,27 +9203,39 @@
           }
 
           const def = c.def;
+          const birdStartX = c.x, birdStartY = c.y; // Only actual horizontal motion can trigger flight or hopping.
           c.attackCooldownT = c._furiousSpecial
             ? c._furiousSpecial.cooldownBefore // Freeze the original companion cooldown while an interrupt attack runs.
-            : Math.max(0, c.attackCooldownT - dt);
+            : Math.max(0, (Number(c.attackCooldownT) || 0) - dt);
           if (!tickCreatureResources(c, dt)) continue;
           const companionTempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Saved tempo changes recovery/base Stamina while species attack timelines stay intact.
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
           const followGoal = window.CompanionFollowNavigation.goal(c, master); // Shared navigation/escape state, independent of the frame executor.
-          c._companionGroundFollow = {
-            mode: master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground',
-            distancePx: Math.round(followGoal.distance),
-            destinationX: Math.round(followGoal.x), destinationY: Math.round(followGoal.y),
-            routeActive: !!c._cliffClimb || !!c._cliffRouteTravel,
-          }; // Included in the existing mobile-friendly CompanionCombatResponse diagnostics.
+          const followDebug = c._companionGroundFollow || (c._companionGroundFollow = {}); // Reuse the diagnostics record instead of allocating every frame.
+          followDebug.mode = master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground';
+          followDebug.distancePx = Math.round(followGoal.distance);
+          followDebug.destinationX = Math.round(followGoal.x); followDebug.destinationY = Math.round(followGoal.y);
+          followDebug.routeActive = !!c._cliffClimb || !!c._cliffRouteTravel; // Included in the existing mobile-friendly CompanionCombatResponse diagnostics.
+          const hardCatchup = window.CompanionFollowNavigation.isHardDistance(c, followGoal); // Check before target scans or a potentially zone-wide detour.
+          if (hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+            const catchupFacing = Math.atan2(master.y - c.y, master.x - c.x); // Face the owner after the invisible relocation.
+            c.facing = catchupFacing;
+            _restoreCompanionHead(c, dt);
+            window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, 0, false, true); // An off-camera recovery is not flight.
+            followDebug.mode = 'distance-recovery'; followDebug.distancePx = Math.round(Math.hypot(master.x - c.x, master.y - c.y));
+            followDebug.routeActive = false;
+            updateCreatureMesh(c, dt, catchupFacing);
+            updateCreatureAnimFrame(c, dt, false);
+            continue;
+          }
           if (master.climbing && c.stableRole === 'companion') {
             if (c.treasureCue) _clearCompanionTreasureCue(c, dt, 'owner climbing');
             if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
           }
           const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
-          const beastmasterTargeting = window.EnemyPetTargeting?.chooseBeastmasterTarget; // Shared ground-pet and player selector, if loaded.
+          const beastmasterTargeting = window.EnemyPetTargeting?.chooseBeastmasterTargetCached || window.EnemyPetTargeting?.chooseBeastmasterTarget; // Shared ground-pet and player selector, if loaded.
           let target = isBanditCompanion
             ? (beastmasterTargeting
               ? beastmasterTargeting(c, master, players, companionObjects, currentArea, ALERT_RANGE_PX)
@@ -8992,7 +9243,7 @@
             : null; // Preserve player-only behavior if an isolated test omits the new module.
           if (!isBanditCompanion) {
             if (window.CompanionCombatResponse) {
-              if (window.CompanionCombatResponse.shouldReevaluate(c, master, currentArea, ALERT_RANGE_PX)) {
+              if (window.CompanionCombatResponse.shouldReevaluate(c, master, currentArea, ALERT_RANGE_PX) || (c._companionCombatTarget && !hostileObjects.has(c._companionCombatTarget))) {
                 target = window.CompanionCombatResponse.chooseTarget(c, master, hostileObjects, currentArea, ALERT_RANGE_PX); // Full target scoring ~7 Hz, attacks/movement per-frame.
               } else target = c._companionCombatTarget || null; // A valid committed target needs no full-enemy rescan.
             } else {
@@ -9011,10 +9262,10 @@
           // one living marked enemy the player companion's exclusive target,
           // overriding the proximity pick above until no Sicced enemy lives.
           if (!isBanditCompanion && master === player && c.stableRole === 'companion') {
-            const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
-            if (sicced && sicced.health > 0 && sicced.areaId === currentArea) target = sicced;
+            const sicced = siccedThisFrame;
+            if (sicced && hostileObjects.has(sicced)) target = sicced;
             const downedFocus = window.PlayerDowned?.getFocusTarget?.(); // While the owner is down, the enemy they last shot with a ranged weapon is the companion's priority.
-            if (downedFocus && downedFocus.health > 0 && !downedFocus._downed && downedFocus.areaId === currentArea) target = downedFocus; // Never chase a dead or already-downed target until its downed-focus state clears.
+            if (downedFocus && downedFocus.health > 0 && !downedFocus._downed && downedFocus.areaId === currentArea && !downedFocus._denHidden && !downedFocus._deathTransitionStarted && hostileObjects.has(downedFocus)) target = downedFocus; // Never chase a dead or already-downed target until its downed-focus state clears.
           }
 
           const rescueHost = c._honeyfuzzleRescueTarget; // Combat.attach assigns the swarmed ally this pet is actively rescuing.
@@ -9026,15 +9277,22 @@
           // Once a named move owns its lunge/strike, preserve the original living target
           // even if the master briefly runs outside ALERT_RANGE_PX. Without this, pets
           // cancelled a committed swing as soon as its enemy crossed the alert boundary.
+          const biteBusy = !!window.Combat?.telegraph?.isBusy(c); // Preserve the fallback bite's committed victim instead of switching its facing mid-windup.
+          const biteTarget = biteBusy ? c._companionBiteTarget : null;
+          if (!biteBusy) c._companionBiteTarget = null;
+          if (biteTarget && !window.CompanionCombatResponse.validFocus(biteTarget, currentArea)) {
+            window.Combat.telegraph.cancel(c);
+            c._companionBiteTarget = null;
+          } else if (biteTarget && !rescueActive) target = biteTarget;
           const committedTarget = c._animalAttack?.ctx?.target;
-          if (!target && !rescueActive && committedTarget?.health > 0 && !committedTarget._downed
-              && committedTarget.areaId === currentArea) target = committedTarget;
+          if (committedTarget && !rescueActive && window.CompanionCombatResponse.validFocus(committedTarget, currentArea)) target = committedTarget; // Do not switch the effective focus while a named attack still owns movement.
           if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
           }
           target = window.CompanionCombatResponse.prioritizeOwnerRetreat(
             c, target, dt, _clearCompanionTreasureCue, _clearCompanionWatchIdle
           ); // The chooser's retreat priority also wins after Sicced, special attacks and treasure overrides.
+          window.CompanionCombatResponse.syncEffectiveTarget(c, target); // Reset old retreat/route state even for Sicced or downed-focus overrides.
           if (!target && !rescueActive && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (!target && !rescueActive && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (!target && !rescueActive) c._stage = null;
@@ -9049,18 +9307,21 @@
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
-          const playerIdle = !isBanditCompanion && _isPlayerGenuinelyIdle();
+          const playerIdle = !isBanditCompanion && !target && (playerIdleThisFrame ??= _isPlayerGenuinelyIdle());
           if (c.watchPlayerIdle && (!playerIdle || distToMaster > FOLLOW_FAR_PX)) _clearCompanionWatchIdle(c, !playerIdle ? 'player became active' : 'follow distance required');
           if (!target && !c._followOwnerDownCliff && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
             const startChance = 1 - Math.pow(1 - COMPANION_WATCH_IDLE_RATE_PER_SEC, Math.max(0, dt));
             if (rnd() < startChance) _startCompanionWatchIdle(c);
           }
           if (!isBanditCompanion
-            && !c.treasureCue
+            && !target && !rescueActive && !c.treasureCue
             && !window.Combat?.animalAttacks?.isBusy(c)
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
+          const windStartX = c.x, windStartY = c.y;
+          window.ResourceSystem?.beginMovementFrame?.(c);
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
+          let directBirdFlight = false; // Reuse the accepted volume sweep rather than repeating it after movement.
           if (c._knockbackLedgeFall || c.prone || c.knockbackT > 0) {
             // An interrupted animal must not resume a stale lunge after recovering.
             // cancel() also restores any paused Furious cooldown; its attack owns the cleanup.
@@ -9133,7 +9394,10 @@
                 st.mode = 'active'; st.t = 0; // Enemy escaped the backup circle: resume pursuit rather than finishing a retreat away from the fight.
               }
               const furiousEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Uses the same collision-limited reach as an ordinary named attack.
-              const furiousStarted = !c.banditCompanion && !isCreatureSwimming(c) && dist <= furiousEngageRangePx
+              const furiousReady = !c.banditCompanion && (window.ResourceSystem?.getAffliction?.(c, 'furiousStamina') ?? c.afflictions?.furiousStamina ?? 0) > 0; // Skip the special selector and geometry on ordinary frames.
+              const routeClear = !c._travelPath?.length; // Do not interrupt an existing ground detour with an attack through a wall.
+              const furiousStarted = furiousReady && routeClear && !isCreatureSwimming(c) && dist <= furiousEngageRangePx
+                && (window.CompanionCombatResponse?.canAttackThroughTerrain?.(c, target) ?? true)
                 && !!window.Combat?.animalAttacks?.startFuriousSpecial?.(c, { target }); // Bypasses current cooldown and Stamina only when the most expensive enabled special is fully funded.
               if (furiousStarted) {
                 st.mode = 'backingUp'; st.t = 0; aimAngle = c.facing; // Attack owns motion immediately; its saved cooldown resumes after completion/cancellation.
@@ -9146,11 +9410,12 @@
                 const companionEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Attack selection includes one short, collision-checked lunge instead of requiring ordinary chase into melee range.
                 const taxedStaminaFactor = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed affects the actual attack payment, not just the displayed base cost.
                 const readyStamina = companionAttackCost * (Number.isFinite(taxedStaminaFactor) && taxedStaminaFactor >= 0 ? taxedStaminaFactor : 1); // Keeps the AI's affordability check aligned with ResourceSystem.
-                const companionCanCommit = dist <= companionEngageRangePx && c.attackCooldownT <= 0 && c.stamina + 0.0001 >= readyStamina && !isCreatureSwimming(c); // Don't begin attacks that would immediately exhaust a pet.
-                if (!companionCanCommit && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+                const attackReady = dist <= companionEngageRangePx && !c._travelPath?.length && c.attackCooldownT <= 0 && c.stamina + 0.0001 >= readyStamina && !isCreatureSwimming(c); // Only test geometry for attacks that could actually start.
+                const companionCanCommit = attackReady && (window.CompanionCombatResponse?.canAttackThroughTerrain?.(c, target) ?? true); // Don't begin attacks that would immediately exhaust a pet.
+                if (!companionCanCommit && (attackReady || c._travelPath?.length || dist > def.attackRangePx * 0.8)) moving = travelCreatureToward(c, target.x, target.y, def.chaseSpeed, dt); // Reuse the existing delayed ground detour solver rather than walking into a wall forever.
                 if (companionCanCommit) {
                   const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
-                  if (tacticalAttack?.waiting && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt); // Waiting for tactical cooldown must not strand an animal at the outer burst radius.
+                  if (tacticalAttack?.waiting && dist > def.attackRangePx * 0.8) moving = travelCreatureToward(c, target.x, target.y, def.chaseSpeed, dt); // Waiting for tactical cooldown must not strand an animal at the outer burst radius.
                   if (!tacticalAttack?.waiting) {
                     c.attackCooldownT = def.attackCooldownS * (companionTempo?.cooldown || 1);
                     // Saved tactics choose the action for trained companions;
@@ -9163,19 +9428,21 @@
                       : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge')); // Legacy cadence remains the fallback for enemy pets or unavailable training.
                     window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack',
                       { actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial' }); // Named companion moves and Guard Charge may spend Hyped only once.
-                    const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
+                    const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target }) ||
+                      (dist > def.attackRangePx && attackId !== 'guardCharge' && window.Combat?.animalAttacks?.start(c, 'guardCharge', { target })); // At lunge range a rejected special needs a real approach, not an out-of-range bite.
                     if (!startedModular) window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial');
                     if (startedModular) {
                       aimAngle = c.facing;
                     } else {
                       window.__farmLog?.(`[wildlife] companion ${c.creatureKey} (${c.id}): "${attackId}" failed to start against target (fallback: plain bite telegraph).`, 'wildlife');
+                      c._companionBiteTarget = target; // Keep the telegraph's committed target alive through changes in the decision cache.
                       window.Combat.telegraph.start(c, {
                         windupS: BITE_TELEGRAPH_WINDUP_S,
                         strikeS: BITE_TELEGRAPH_STRIKE_S,
                         onStrike: () => {
-                          if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                          if (window.CompanionCombatResponse.validFocus(target, currentArea) && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx && (window.RangedWeapons?.hasLineOfSight?.(c, target, true) ?? true)) {
                             const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), attacker: c }; // Fallback animal bites retain their attacker identity for scent spending and debuff attribution.
-                            if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                            if (window.ActorRegistry.isPlayer(target)) window.DamageAuthority.hit(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
                             else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             window.AudioSystem?.playCreatureClawHit(c);
@@ -9203,7 +9470,8 @@
             // A climbing owner is not a carrier: chase the walkable destination via
             // the shared cliff-route network, or wait on the ground once nearby.
             if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
-              moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              directBirdFlight = tryBirdFollowFlight(c, followGoal.x, followGoal.y, dt);
+              moving = directBirdFlight || travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
               if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             } else {
               c.vx = 0; c.vy = 0;
@@ -9227,16 +9495,30 @@
             moving = _companionFollowWanderTick(c, dt, master);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
+          if (driftIdleCreature(c, dt, windStartX, windStartY)) moving = true;
           c.facing = aimAngle;
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
-          if (window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+          const recoveredAfterMove = !hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt); // Also cancels any accumulated flight/hop elevation.
+          if (recoveredAfterMove) {
             moving = false; runInPlace = false; // The invisible snap has already updated the animal's true and rendered positions.
+          }
+          if (def.isFlyingSpecies && c.stableRole === 'companion') {
+            const interrupted = !!(recoveredAfterMove || c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || window.Combat?.animalAttacks?.isBusy(c) || window.Combat?.telegraph?.isBusy(c)); // Do not let follower flight override another physical or combat owner.
+            const movedPx = moving ? Math.hypot(c.x - birdStartX, c.y - birdStartY) : 0; // Ground navigation already applied the actual collision-safe step.
+            const flightClear = !interrupted && (directBirdFlight || ((movedPx > .08 || c._companionBirdMotion?.lift > 0) && companionBirdFlightClear(c, birdStartX, birdStartY, c.x, c.y))); // Same clearance owner as direct movement.
+            const birdMotion = window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, movedPx, flightClear, interrupted);
+            followDebug.birdLocomotion = birdMotion?.mode || 'perched'; // Existing mobile companion debug record.
+            followDebug.birdFlightClear = flightClear;
+            followDebug.birdLift = birdMotion?.lift || 0;
           }
 
           if (c._animalAttack?.id === 'rearKick' && !window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, dt); // Companions release old gaze during windup, not during their frozen hoof pose.
           updateCreatureMesh(c, dt, aimAngle);
-          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) {
+            const birdMoving = c._companionBirdMotion ? c._companionBirdMotion.mode === 'flight' : moving || runInPlace; // Hopping and landing use the native folded-wing idle, not the flying run sprite.
+            updateCreatureAnimFrame(c, dt, birdMoving, c._companionBirdMotion ? false : runInPlace);
+          }
         }
 
         // Run last, after every avatar's position has actually been updated
@@ -9391,6 +9673,7 @@
       // lives in js/mount-system.js (window.Mounts) — see window.Mounts.init(...) below.
 
       function clearHostileObjects() {
+        window.Rootledoots?.reset?.('area hostiles cleared'); // Invalidate asynchronous waves before the shared teardown disposes their rigs.
         hostileObjects.forEach(c => despawnCreature(c));
         hostileObjects.clear();
       }
@@ -9470,8 +9753,7 @@
       // — so the date/time (and weather) silently reset every session no
       // matter how long the world had actually been played. Loaded once in
       // spawnPlayerAvatar (before checkTothalShift, since currentTothalYear()
-      // reads calendar.day) and saved on every day rollover (advanceDay/
-      // sleepInBed) plus on tab close, mirroring _saveTothalYear's pattern.
+      // reads calendar.day) and saved on every day rollover (advanceDay) plus on tab close, mirroring _saveTothalYear's pattern.
       function _loadWorldCalendar() {
         const worldId = _tothalWorldId();
         if (!worldId) return null;
@@ -9559,6 +9841,7 @@
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
         member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
         member.cookingState = window.CookingSystem.serialize();
+        member.rootledootState = window.Rootledoots?.serialize?.() || null; // Cleared locales and daily encounter checks survive reloads.
         member.animalHides = window.AnimalHides?.serialize?.() || { version: 1, pack: {} }; // Persist individual hide genetics beside the world-member's count inventory.
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
@@ -10463,6 +10746,7 @@
         player.lunging = true;
         player.lungeT = durationS;
         player.lungeDur = durationS;
+        player._windLungeIntegrated = false; // Once wind perturbs a lunge, use incremental native sweeps for the rest of that lunge.
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
         player.lungeOriginX = player.x; // Immutable record of where this attack's lunge began (lungeStartX/Y are re-seated when a flight freezes); read by hanging ropes to turn lunge distance into swing force.
@@ -12024,10 +12308,17 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
-          (x.target !== 'zone' || window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) !== false) &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
           canUseRoofSpot(x, area) &&
           (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
+        if (t?.target === 'zone' && window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) === false) {
+          _pendingSpotTransition = null;
+          _transitionLatch = key; // One reminder per approach; stepping away rearms the exit.
+          showToast(window.OpeningStoryCutscene.farmGuideExitMessage, true);
+          _spotReachedBar = true;
+          refreshActionBar();
+          return;
+        }
         _pendingSpotTransition = t;
         // Deliberately once per frame, not only when the spot changes: nothing
         // else re-resolves the action arch as the reticle moves or a tile/NPC
@@ -13117,6 +13408,15 @@
       // (the walker's only LOD gate before this) left every NPC on the far
       // side of a large area paying full gait/wander cost for no reason.
       const NPC_LOD_NEAR_TILES = 24; // Nearer wake boundary so a walker doesn't flicker in and out of the cheap tier at one exact distance.
+      // Opt-in coarse ticking of off-area walkers now lives in js/offarea-npc-tick.js (window.OffAreaNpcTick).
+      // On-screen bodies for non-local players (guests, the dev dummy) now live in js/remote-player-avatar.js: the same makeNpcWalker rig the cutscene player stand-in uses, mirrored from the player's simulation entity.
+      window.RemotePlayerAvatar.init({
+        TILE, makeNpcWalker, despawnWalker: despawnNpcVisitor, npcSurfaceY,
+        getCurrentArea: () => currentArea,
+        getActiveScene: () => window.GridTileAccessors.getActiveScene(),
+        getLocalProfile: () => window.EquipmentPanel?.applyGearClothingToPlayerData?.(_playerData || window.__hobunjiPlayerProfile) || null,
+      });
+      window.OffAreaNpcTick.init({ getCurrentArea: () => currentArea, isDialogueOrCutsceneWalker: w => _dialogueWalker === w || npcDialogueStaging?.walker === w || cutscenePreviewActive });
       const NPC_OFF_AREA_LEGS_INTERVAL_S = 0.5; // Off-area walkers' procedural legs only settle their resting pose at this cadence.
       const NPC_LOD_FAR_TILES = 28;
 
@@ -13126,10 +13426,29 @@
         if (!def?.sit) return null;
         const placedSeat = window.FurnitureTableSystem?.seatTransform(target.area, target); // Named chairs retain their table binding and locale transform.
         if (placedSeat) return placedSeat;
+        // Visible/loaded maps must never create a seated pose at a stale schedule coordinate.
+        // Unloaded offscreen maps and area-less authored cutscenes keep the logical transform.
+        if (target.area && window.FurnitureTableSystem?.requiresLiveSeat?.(target.area)) return null;
         return resolveSeatWorldTransform(
           target.furnitureKey, target.c, target.r, def.fw || 1, def.fd || 1,
           target.rotY || 0, target.seatIndex || 0
         );
+      }
+
+      // Keep the scheduler's station identity, but route to the live chair's tile.
+      // Cache the adjusted target so offset chairs do not allocate a new object every frame.
+      function npcSeatNavigationTarget(walker, target, seat) {
+        if (target?.pose !== 'sit' || !target.furnitureKey) return target;
+        const live = !!seat?.furnitureId;
+        if (!live && (seat || !window.FurnitureTableSystem?.requiresLiveSeat?.(target.area))) return target;
+        const c = live ? Math.floor(seat.x) : target.c, r = live ? Math.floor(seat.z) : target.r;
+        if (live && target.furnitureId === seat.furnitureId && target.c === c && target.r === r) return target;
+        const furnitureId = live ? seat.furnitureId : ''; // Missing chairs must not publish reservations or permit furniture collision overlap.
+        const prior = walker._seatNavigationTarget; // Reused until the planner's target or physical seat tile changes.
+        if (prior?.source === target && prior.c === c && prior.r === r && prior.furnitureId === furnitureId) return prior.target;
+        const adjusted = live ? { ...target, furnitureId, c, r } : { ...target, pose: 'stand', furnitureId: '', furnitureKey: '' };
+        walker._seatNavigationTarget = { source: target, c, r, furnitureId, target: adjusted };
+        return adjusted;
       }
 
       async function makeNpcWalker(rec, initialTarget) {
@@ -13261,7 +13580,7 @@
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           handAttachY: avatarGroup.userData?.handAttachY,
-          name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
+          name: rec?.id || rec?.name || 'npc', isLivePlayer: false, profile, portraitSize: PORTRAIT_SIZE, // NPC/cinematic rigs must never register as the gameplay player's compositor root.
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
           spine: window.HobunjiCharacterSpine?.resolve({ profile, npcRecord: rec, appearance }), // Elders' authored aging.hunch widens the stance and stride (js/character-spine.js).
@@ -13549,6 +13868,7 @@
           update(dt) {
             window.RigTransformLayers?.clear(root, 'npc-move-bob'); // Remove last frame's visual bounce before any movement mode or early return.
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (this._familyBabyFollowing && window.FamilyBabyFollow?.updateWalker?.(this, dt)) return;
             if (window.NpcPathfinding?.updateCliffClimb?.(this, dt)) return; // A selected cliff crossing owns all three world coordinates during its hops.
             // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
             // a visible nonlethal flight instead of a fake resource-system death.
@@ -13606,8 +13926,12 @@
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
             const scheduledTarget = window.NpcScheduling.resolveNpcScheduleTargetCached(this, this.area === currentArea); // Schedule decisions use short leases while movement/pose remain per-frame.
-            const target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
+            let target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
               ? { ...scheduledTarget, pose: 'lie' } : scheduledTarget; // Unifies all humanoid sleepers with existing authored pose:'lie' stations.
+            const targetArea = target ? normalizeNpcArea(target.area) : null;
+            let seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Resolve once before publishing reservation and navigation.
+            if (seatTransform?.furnitureId && window.FurnitureTableSystem?.isPlayerSeatTaken?.(this.area, target)) seatTransform = null; // The player wins even during a stale schedule decision lease.
+            if (targetArea === this.area) target = npcSeatNavigationTarget(this, target, seatTransform);
             window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
             // Running remains limited to player-following, combat escape and flood evacuation.
@@ -13617,7 +13941,6 @@
               && (target?.floodShelter || target?.area !== this.area || Math.hypot(root.position.x - (target.c + 0.5), root.position.z - (target.r + 0.5)) > (npcMovementConfig().arrivalRadiusTiles ?? 0.18));
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
-            const targetArea = target ? normalizeNpcArea(target.area) : null;
             const bedTransform = window.FurnitureTableSystem?.lieTransform?.(
               this.area, targetArea === this.area && !this.animalDef ? target : null, this);
             this._bedLieSurface = null; // Clear stale bedroom contacts before state handlers can return early.
@@ -13627,7 +13950,6 @@
               shadowSurfaceOffset: characterGroundShadowSurfaceOffset,
             })) return;
             const cfg = npcMovementConfig();
-            const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
             const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
             const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
             this._bedLieSurface = targetArea === this.area && target?.pose === 'lie' && !bedTransform?.occupied
@@ -13674,13 +13996,20 @@
               }
             }
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
+            const leftSeat = !!this._seatedStationKey && !seatedStationKey; // Dialogue pauses still need to recover from a removed seat.
             if (seatedStationKey !== this._seatedStationKey) {
               window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');
               this._seatedStationKey = seatedStationKey;
             }
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
-            if (this.pause === Infinity) return;
-            this.applyFacingDeadzone(this.desiredRot, 0.15);
+            const dialogueSeatHold = this.pause === Infinity && !cutscenePreviewActive && dialogueOpen && _dialogueWalker === this && seatedAtTarget; // Ordinary paused conversations still anchor their seated participant.
+            if (leftSeat && (this.pause !== Infinity || (dialogueOpen && _dialogueWalker === this && !cutscenePreviewActive))) {
+              const floor = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+              root.position.y = floor;
+              groundShadow.position.y = characterGroundShadowSurfaceOffset();
+            }
+            if (this.pause === Infinity && !dialogueSeatHold) return;
+            if (!dialogueSeatHold) this.applyFacingDeadzone(this.desiredRot, 0.15);
             if (!target) return;
             if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               despawnNpcVisitor(this); // Used to remove a recurring visitor only after they physically reach the authored exit.
@@ -13750,7 +14079,7 @@
             // radius set: he'd circle near the stage, kurraya never in hand, no
             // ambient music. A performer needs to actually stay at their
             // instrument to play it, so toolKey stations opt out of wandering.
-            const wanderEnabled = !target.toolKey && (target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0);
+            const wanderEnabled = !seatTransform && !target.toolKey && (target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0);
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
             // once entered, instead of the plain freeze-at-the-exact-tile
@@ -13790,17 +14119,23 @@
             }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
-              const groundY = npcSurfaceY(this.area, target.c, target.r);
+              const groundY = npcSurfaceY(this.area, Math.floor(tx), Math.floor(tz));
               if (seatTransform) {
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
                 const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Per-species hip in the floor-relative leg rig.
                 const visualRigScaleY = Number(this._npcCharacterRigRoot?.scale?.y); // NPC species/age scaling lives on this shared parent of legs, torso and hands.
                 const scaledPosteriorY = standingPosteriorY * (Number.isFinite(visualRigScaleY) && visualRigScaleY > 0 ? visualRigScaleY : 1); // Chair sink uses actual world hip height, not pre-scale height.
+                const seatBaseY = Number.isFinite(scaledPosteriorY) && Number.isFinite(seatTransform.worldY)
+                  ? seatTransform.worldY - seatTransform.y : groundY; // Live anchor already includes floor elevation and postY; never add the scheduled tile elevation again.
                 const seatSink = Number.isFinite(scaledPosteriorY) ? seatTransform.y - scaledPosteriorY
                   : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
-                root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
-                this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
+                root.position.y += (seatBaseY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
+                if (!dialogueSeatHold) this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
+                if (dialogueSeatHold) {
+                  groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
+                  return; // Never equip tools or advance schedule behavior during a paused conversation.
+                }
               } else {
                 root.position.y = groundY + (target.pose === 'lie' ? 0 : Math.sin(performance.now() / 600) * 0.005);
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
@@ -13951,9 +14286,11 @@
         return walker;
       }
 
-      function despawnNpcVisitor(walker) {
+      function despawnNpcVisitor(walker, allowUnregistered = false) {
         const index = npcWalkers.indexOf(walker); // Used to remove exactly this completed departure without touching another NPC.
-        if (index < 0) return false;
+        if (!walker || walker._npcVisitorDisposed || (index < 0 && allowUnregistered !== true)) return false; // Async encounter builders may return an owned rig before roster adoption.
+        walker._npcVisitorDisposed = true; // Retirement is idempotent, including an explicitly unadopted result.
+        window.FamilyBabyFollow?.clearWalker?.(walker); // Retire crawl ownership before disposing the live rig.
         window.BedLiePose?.releaseNpc?.(walker);
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
@@ -13969,7 +14306,7 @@
           const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []; // Used to release this visitor avatar's per-spawn GPU materials.
           materials.forEach(material => { material.map?.dispose?.(); material.dispose?.(); });
         });
-        npcWalkers.splice(index, 1);
+        if (index >= 0) npcWalkers.splice(index, 1); // Never splice the last live walker when retiring an unadopted rig.
         window.__farmLog?.(`[schedule] ${walker.rec?.id || 'visitor'} despawned at ${walker.currentScheduleTarget?.label || 'visitor exit'}`, 'info');
         return true;
       }
@@ -14100,17 +14437,19 @@
             if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
             if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
             if (w._npcUpdateError?.retryAt > npcUpdateNowMs) continue;
+            const walkerDt = window.OffAreaNpcTick.step(w, dt); // Off-area walkers get a coarse, accumulated dt (opt-in); null skips this frame.
+            if (walkerDt === null) continue;
             try {
               const oldHeadX = w.root?.position?.x, oldHeadZ = w.root?.position?.z; // Real travel this frame drives the head target, not a stale requested speed.
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
-              w.update(dt);
+              w.update(walkerDt);
               if (npcWalkers[i] === w) {
-                window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Humanoid NPCs use real schedule-driven lie/stand poses.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
                 window.NpcMovementHeadTarget?.updateWalker?.(w, oldHeadX, oldHeadZ, npcMovementHeadLookOptions);
-                _tickNpcPortraitLife(w, dt);
+                _tickNpcPortraitLife(w, walkerDt);
               }
               if (w._npcUpdateError) w._npcUpdateError = null;
             } catch (error) {
@@ -15869,7 +16208,7 @@
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       async function enterZone(mapId, defaultCol, defaultRow) {
         if (!cutscenePreviewActive && window.OpeningStoryCutscene?.canEnterWilderness?.() === false) {
-          showToast('Visit your farm with Spearhead before heading into the wilderness.', true);
+          showToast(window.OpeningStoryCutscene.farmGuideExitMessage, true);
           return;
         }
         // A Tothal Shift in progress is about to replace this zone's layout —
@@ -16360,10 +16699,13 @@
         _zoneCacheHistory.push(entry);
         if (_zoneCacheHistory.length > 40) _zoneCacheHistory.shift();
         if (cutscenePreviewActive || _tothalShiftPromise) { entry.skipped = cutscenePreviewActive ? 'cutscene preview' : 'tothal shift'; return; }
-        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
+        // Co-op: a zone where ANY player stands is never evicted (its scene, NPCs, bandits and camps must survive), and it
+        // does not use up the inactive-zone budget; only zones nobody is in compete for it.
+        const occupied = window.ActorRegistry.occupiedAreas();
+        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && !occupied.has(id) && _zoneScenes.has(id));
         const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
         for (const mapId of [..._zoneScenes.keys()]) {
-          if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
+          if (mapId === currentArea || occupied.has(mapId) || keep.has(mapId)) { entry.kept.push(mapId); continue; }
           releaseResidentRigs(mapId);
           let blocker = zoneEvictionBlocker(mapId);
           if (blocker === 'resident rig' && window.ZoneBanditRelease.releaseZone(mapId)) blocker = zoneEvictionBlocker(mapId); // Only when bandits are the sole pin; see js/zone-bandit-release.js.
@@ -18794,7 +19136,7 @@
         playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
           modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
-          name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+          name: 'player', isLivePlayer: true, profile, portraitSize: PORTRAIT_SIZE, // Explicitly identifies the real gameplay rig to the body compositor.
           portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
@@ -18943,6 +19285,43 @@
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
       let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
       let paused = false;
+      // Co-op: every UI hold that sets `paused` (menus, the appearance editor, town proposals, the pause button) holds only
+      // the LOCAL player; the world keeps running for everyone else. `paused` therefore means "the local player is held";
+      // worldPaused() means "the whole world is stopped", which only happens in single-player. World-simulation readers use it.
+      const worldPaused = () => paused && window.TimeConsensus?.shouldGate() !== true;
+
+      // Area scope (co-op, stage 1 of ticking more than one area; see MULTIPLAYER.md "Ticking more than one area").
+      // The active grid/scene lookups are pure functions of `currentArea`, so a simulation tick for an area nobody local is in
+      // runs with `currentArea` swapped to that area and restored afterwards. Only an already-BUILT zone is ever scoped (the
+      // lookups would build a missing scene as a side effect). While scoped: the audio system keeps hearing from the player's
+      // real area (listenerArea) so remote creatures make no sound, and the wildlife visual LOD sees everything as far away so
+      // no rigs are built for a scene nobody is looking at.
+      let _areaScopeDepth = 0, _areaScopeListenerArea = null;
+      function withAreaScope(areaId, fn) {
+        if (!areaId || areaId === currentArea) return fn();
+        if (!_isZoneArea(areaId) || !_zoneScenes.has(areaId)) return undefined;
+        const saved = currentArea;
+        if (_areaScopeDepth === 0) _areaScopeListenerArea = saved;
+        _areaScopeDepth++;
+        currentArea = areaId;
+        try { return fn(); } finally { currentArea = saved; if (--_areaScopeDepth === 0) _areaScopeListenerArea = null; }
+      }
+      window.AreaScope = Object.freeze({
+        with: withAreaScope,
+        isRemote: () => _areaScopeDepth > 0,
+        listenerArea: () => _areaScopeListenerArea ?? currentArea,
+        hasScene: areaId => areaId === currentArea || (_isZoneArea(areaId) && _zoneScenes.has(areaId)),
+        // Stage 3: build a zone's scene for a guest nobody has visited on this host (no player move, no currentArea change).
+        ensureScene(areaId) {
+          if (!_isZoneArea(areaId)) return false;
+          if (_zoneScenes.has(areaId) && !_dirtyZoneScenes.has(areaId)) return true;
+          if (!buildZoneScene(areaId)) return false;
+          window.ReagentPlants?.ensureZoneReagents(areaId);
+          window.WildBerries?.ensureZone(areaId);
+          window.WildTreasure?.ensureZone(areaId);
+          return true;
+        },
+      });
 
       // Facing lag: visual/reticle angle lags behind raw movement angle.
       // facingAngle is what the reticle and sprite actually use.
@@ -19082,13 +19461,13 @@
         else if (meleeAttackFacingCommit.attackSeen) meleeAttackFacingCommit = null;
       }
 
-      function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength, perspectiveFacing = shoulderPerspectiveFacingAngle()) {
+      function shoulderBodyPerspectiveAuthority(cameraFacing = cameraFacingAngleRad()) {
         if (activeCameraMode !== SHOULDER_SURF_MODE) return 'other-camera';
         const meleeAttackActive = meleeAttackCurrentlyActive(); // Covers travel attacks, ordinary swings, and held melee windups without treating farming-tool animation as combat.
         const rangedAttackActive = activeTool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.(); // Deliberately excludes reload so only an actual shot gives the point body/root authority.
         if (meleeAttackActive || rangedAttackActive) return 'attack';
-        if (Number(movementStrength) > 0.001) return 'movement';
-        if (Math.abs(angleDiff(perspectiveFacing, facingAngle)) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) return 'idle-neck-catchup';
+        if (heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged' || activeTool === 'harpoon')) return 'camera-weapon'; // Neutral armed yaw belongs to camera look, never to the movement stick.
+        if (Math.abs(angleDiff(cameraFacing, facingAngle)) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) return 'idle-neck-catchup';
         return 'idle-free';
       }
 
@@ -19276,8 +19655,10 @@
           updateProneState(dt);
           return;
         }
-        syncMobileAutoTargetCombatState();
-        syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
+        if (window.Combat?.input?.autoTargetAvailable === true) {
+          syncMobileAutoTargetCombatState();
+          syncMobileAutoTargetButton(); // Only the available mobile feature needs frame-driven visibility and encounter updates.
+        }
         updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
@@ -19330,7 +19711,6 @@
         }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
-        if (window.BedLiePose?.isActive?.()) { player.vx = 0; player.vy = 0; return; } // Animated bed entry owns movement until morning.
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
@@ -19373,13 +19753,17 @@
         }
 
         if (player.dodging) {
-          player.dodgeT -= dt;
+          const travelDt = Math.min(Math.max(0, dt), Math.max(0, player.dodgeT)); // Final partial roll frame must not extend travel or wind cost.
+          player.dodgeT -= travelDt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
           const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy reduces dodge travel over the unchanged dodge duration/iframe window.
-          const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul; // Shared per-frame speed keeps position and reported velocity identical.
-          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
-          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
+          const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul;
+          const dodgeMotion = window.ResourceSystem?.composeMovement?.(player, player.dodgeDirX * dodgeSpeedPx * travelDt, player.dodgeDirY * dodgeSpeedPx * travelDt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: dodgeSpeedPx * travelDt, dt: travelDt }); // Input direction was already resolved by the compositor.
+          const dodgeDx = dodgeMotion?.x ?? player.dodgeDirX * dodgeSpeedPx * travelDt, dodgeDy = dodgeMotion?.y ?? player.dodgeDirY * dodgeSpeedPx * travelDt;
+          const dodgeStartX = player.x, dodgeStartY = player.y; // Report and charge the accepted sweep, not unrelated earlier frame movement.
+          const desiredX = window.FormatUtils.clamp(player.x + dodgeDx, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.y + dodgeDy, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerDodgeOccupy); // Raised-support dodges use the same physical foot height as jumps, without altering native dodge timing or panicked-impact callbacks.
           player.x = dodgeSwept.x; player.y = dodgeSwept.y; // Commit physical contact before the impact can cause a lethal/respawn transition.
           if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
@@ -19394,8 +19778,10 @@
               return; // The physical impact owner may already have killed/respawned the actor; do not overwrite that state.
             }
           }
-          player.vx = player.dodgeDirX * dodgeSpeedPx;
-          player.vy = player.dodgeDirY * dodgeSpeedPx;
+          player.vx = travelDt > 0 ? (player.x - dodgeStartX) / travelDt : 0;
+          player.vy = travelDt > 0 ? (player.y - dodgeStartY) / travelDt : 0;
+          commitComposedMovement(player, dodgeMotion, Math.hypot(dodgeDx, dodgeDy), Math.hypot(player.x - dodgeStartX, player.y - dodgeStartY));
+          if (player.prone) return; // The normal depletion path cancelled the action.
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
@@ -19453,21 +19839,29 @@
           facingAngle = committedLungeAngle;
           player.angle = committedLungeAngle;
 
-          player.lungeT = Math.max(0, player.lungeT - dt);
+          const priorProgress = 1 - Math.pow(player.lungeT / player.lungeDur, 3); // Delta of the authored ease-out curve, not an independent wind animation.
+          const travelDt = Math.min(Math.max(0, dt), Math.max(0, player.lungeT)); // The ease-out and Footing charge share the same remaining action time.
+          player.lungeT = Math.max(0, player.lungeT - travelDt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = window.FormatUtils.clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
-          const desiredY = window.FormatUtils.clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
+          const lungeStep = player.lungeDistancePx * Math.max(0, eased - priorProgress);
+          const lungeMotion = window.ResourceSystem?.composeMovement?.(player, player.lungeDirX * lungeStep, player.lungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep, dt: travelDt }); // A cone-halted lunge has no remaining horizontal budget.
+          if (lungeMotion?.wind) player._windLungeIntegrated = true;
+          const desiredX = window.FormatUtils.clamp(player._windLungeIntegrated ? player.x + (lungeMotion?.x ?? player.lungeDirX * lungeStep) : player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player._windLungeIntegrated ? player.y + (lungeMotion?.y ?? player.lungeDirY * lungeStep) : player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
           // Swept, not a single endpoint check — this recomputes an absolute
           // target from total elapsed progress every frame (ease-out is
           // fastest right at the start), so a big lunge like Charged
           // Breaker's ~7 tiles can cover more than a tile in one frame and
           // would otherwise tunnel clean through a one-tile-thick plateau
           // wall instead of stopping at it.
+          const lungeStartX = player.x, lungeStartY = player.y; // Wind costs only the actual committed lunge sweep.
           const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = lungeSwept.x; player.y = lungeSwept.y;
+          commitComposedMovement(player, lungeMotion, Math.hypot(lungeMotion?.x || 0, lungeMotion?.y || 0), Math.hypot(player.x - lungeStartX, player.y - lungeStartY));
+          if (player.prone) return;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
           if (Number.isFinite(player.lungeFlightWorldY)) {
             player.lungeFlightWorldY = player.lungeFlightStartWorldY
@@ -19519,7 +19913,7 @@
           ix /= inputLen;
           iy /= inputLen;
           const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
-          if (!Number.isFinite(mobileArchDragAngle) && inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
+          if (activeCameraMode !== SHOULDER_SURF_MODE && !Number.isFinite(mobileArchDragAngle) && inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
         // Universal stuck-recovery: the instant the player first presses a
@@ -19576,13 +19970,8 @@
           ix = rIx; iy = rIy;
         } else if (ix !== 0 || iy !== 0) {
           // Shoulder mode already inherits the hallucinated yaw from camera bearing; world-space input receives it once here.
-          const drift = window.FeyIllusions?.movementRotationRad?.(player) || 0; // Composes after cardinal bias, preserving user input strength.
-          if (drift) {
-            const cos = Math.cos(drift), sin = Math.sin(drift);
-            const movedX = ix * cos - iy * sin;
-            iy = ix * sin + iy * cos;
-            ix = movedX;
-          }
+          const intent = window.ResourceSystem?.movementIntent?.(player, ix, iy); // Demented steering belongs to the compositor, after cardinal bias.
+          if (intent) { ix = intent.x; iy = intent.y; }
         }
 
         // Resolved per-frame movement intent, read by ordinary dodge and
@@ -19685,8 +20074,9 @@
         const maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS;
         const maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = player.x + player.vx * dt;
-        const desiredY = player.y + player.vy * dt;
+        const walkMotion = !crawlMotion ? window.ResourceSystem?.composeMovement?.(player, player.vx * dt, player.vy * dt, { mode: 'walk', scalarApplied: true, rotationApplied: true, reference: targetSpeed / Math.max(.001, analogEase) * dt, dt, voluntary: inputStrength > 0.001 }) : null; // Wind is external velocity; do not store it in the acceleration integrator.
+        const desiredX = player.x + (walkMotion?.x ?? player.vx * dt);
+        const desiredY = player.y + (walkMotion?.y ?? player.vy * dt);
         const nextX = window.FormatUtils.clamp(desiredX, minX, maxX);
         const nextY = window.FormatUtils.clamp(desiredY, minY, maxY);
         const moveStartX = player.x;
@@ -19707,6 +20097,9 @@
           tryPlayerTileSidestep(moveStartX, moveStartY, nextX, nextY, minX, maxX, minY, maxY);
         }
 
+        commitComposedMovement(player, walkMotion, Math.hypot(walkMotion?.x || 0, walkMotion?.y || 0), Math.hypot(player.x - moveStartX, player.y - moveStartY));
+        if (walkMotion?.wind && player.prone) return; // Preserve normal prone crawling/facing when no wind-induced fall occurred.
+
         // ── Facing ────────────────────────────────────────────
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
         // Melee aim assist is intentionally invisible and exists only immediately before windup.
@@ -19719,24 +20112,23 @@
           targetAimAngle = mobileArchDragAngle;
           lastMoveAngle = mobileArchDragAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
-          // The head and attack rays remain camera-authored at all times. The
-          // physical body/root inherits that direction immediately during
-          // movement or attacks; while idle it keeps its direction until the
-          // exact head aim would exceed the former 60° independent neck range,
-          // then catches up only enough to restore that allowance. Nothing in
-          // this branch writes camera rotation, so body catch-up cannot restrict
-          // the camera itself.
-          const perspectiveFacing = shoulderPerspectiveFacingAngle(); // Shared point bearing used by direct alignment and the idle neck-limit boundary.
-          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength, perspectiveFacing); // Central state boundary shared with the on-demand mobile/debug report below.
+          // Camera look alone owns neutral armed facing. Unarmed free-look
+          // retains its neck allowance regardless of whether the player walks.
+          // Nothing in this branch writes camera rotation.
+          const cameraFacing = cameraFacingAngleRad(); // Stable look yaw, independent of strafe displacement and camera-follow lag.
+          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(cameraFacing);
           const meleeFacingOverride = meleeAttackBodyFacingOverride();
           if (Number.isFinite(meleeFacingOverride) && perspectiveAuthority === 'attack') {
             facingAngle = meleeFacingOverride;
-          } else if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
-            facingAngle = perspectiveFacing;
+          } else if (perspectiveAuthority === 'attack') {
+            facingAngle = shoulderPerspectiveFacingAngle(); // Deliberate strikes retain their existing reticle convergence.
+          } else if (perspectiveAuthority === 'camera-weapon') {
+            facingAngle = cameraFacing;
+            targetAimAngle = cameraFacing;
           } else if (perspectiveAuthority === 'idle-neck-catchup') {
-            const rootFromPointDiff = angleDiff(facingAngle, perspectiveFacing); // Preserves the allowed neck yaw instead of squaring the idle body fully to the point.
-            const targetFacing = perspectiveFacing + window.FormatUtils.clamp(rootFromPointDiff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD); // Nearest body bearing that puts the head back at the independent limit.
-            const catchupDiff = angleDiff(targetFacing, facingAngle); // Drives only the body/root toward the legal boundary at the former catch-up rate.
+            const rootFromPointDiff = angleDiff(facingAngle, cameraFacing);
+            const targetFacing = cameraFacing + window.FormatUtils.clamp(rootFromPointDiff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+            const catchupDiff = angleDiff(targetFacing, facingAngle);
             facingAngle += catchupDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
           }
           player.angle = facingAngle;
@@ -20999,6 +21391,7 @@
           commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
           return;
         }
+        if (activeAction === 'rootledoot_pick') { const aimed = getReticleTile(); window.Rootledoots?.pick?.(aimed.col, aimed.row); refreshActionBar(); return; }
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           // Compatibility fallback only — ordinary press/hold/release input
@@ -21120,8 +21513,8 @@
           if (climb) window.ClimbSystem.startClimb(climb);
           return;
         }
-        if (activeAction === 'obj_door_toggle') {
-          const door = resolveObjActionTarget(activeAction); // Existing authored-wooden-door target and onAction own opening/collision.
+        if (activeAction === 'obj_ruin_site_door' || activeAction === 'obj_door_toggle') {
+          const door = activeAction === 'obj_ruin_site_door' ? ruinEntranceAt() : resolveObjActionTarget(activeAction); // Existing authored-wooden-door target and onAction own opening/collision.
           const result = door?.onAction?.(activeAction) || { ok: false, message: 'No door here.' };
           if (result.message) showToast(result.message, result.ok !== false);
           if (result.ok !== false && !result.deferMemberSave) saveMemberWorldData();
@@ -22094,6 +22487,7 @@
       const SLAB_H     = 0.5;   // thickness of all ground slabs
       const TRENCH_TOP = -0.5;  // top surface of trench
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
+      const PATH_TOP   = NORMAL_TOP + 0.075; // Standing height for PATH tiles, near the lower quartile of paved brick center heights.
       const RAISED_TOP = +0.5;  // top surface of raised bed
       // World-Y rise per plateau elevation tier (absolute units shared by each
       // merged tile's elevTier and authored ramp.rampElevation values — see
@@ -22229,9 +22623,10 @@
         // inherit the authored placement metadata from their furniture root.
         for (let node = candidate?.userData?.cameraObstacleSource || candidate; node; node = node.parent) {
           const placement = node.userData?.mapEditorRef;
-          if (placement?.kind === 'furniture' && placement.mapId === currentArea
-            && placement.itemKey === seatItemKey && placement.col === sitInteraction.col
-            && placement.row === sitInteraction.row) return true;
+          if (placement?.mapId !== currentArea || !['furniture', 'decor'].includes(placement.kind)) continue;
+          if (sitInteraction.furnitureId ? placement.id === sitInteraction.furnitureId
+            : placement.kind === 'furniture' && placement.itemKey === seatItemKey && placement.col === sitInteraction.col
+              && placement.row === sitInteraction.row) return true;
         }
         return false;
       }
@@ -22273,7 +22668,8 @@
         }
         for (const obj of interiorFurnitureObjects) {
           const isActiveSeat = sitInteraction && obj.area === currentArea
-            && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
+            && (sitInteraction.furnitureId ? obj.id === sitInteraction.furnitureId
+              : obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row);
           if (obj.area === currentArea && obj.mesh && !isActiveSeat) meshes.push(obj.mesh);
         }
         return meshes;
@@ -23240,6 +23636,7 @@
       // Surface top Y for water placement and player standing
       function tileSurfaceY(type) {
         switch (type) {
+          case TileType.PATH:      return PATH_TOP;
           case TileType.TRENCH:    return TRENCH_TOP;
           case TileType.RIVER:     return RIVER_TOP;
           case TileType.STREAM:    return STREAM_TOP;
@@ -23475,6 +23872,8 @@
         const detail = event.detail || {};
         const root = detail.entity === player ? playerMesh : detail.entity?.avatarRef?.group || detail.entity?.root;
         if (!root || !detail.delta) return;
+        // Outgoing Health numbers belong to the attributed hit/impact owners, not general vitals events.
+        if (detail.delta < 0 && detail.entity !== player) return;
         if (detail.immediate) {
           window.WorldPopupText?.showChange(detail.delta < 0 ? 'damage' : 'healing', detail.delta, { root });
           return;
@@ -24055,7 +24454,7 @@
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
           if (!actionHeldDown) { cancelChargeAction('input released'); return; }
-          if (activeTool !== chargeAction.tool || activeAction !== chargeAction.action) { cancelChargeAction('tool/action changed'); return; } // Stops a former held tool from finishing after equipment changes.
+          if (activeTool !== chargeAction.tool || activeAction !== chargeAction.action || heldMode !== 'tool') { cancelChargeAction('tool/action changed'); return; } // Stops a former held tool from finishing after equipment changes.
           const reticle = getReticleTile();
           if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
@@ -24346,6 +24745,8 @@
         return {
           holder: heldItemHolder,
           plane: _heldItemPlane,
+          itemKey: _heldItemKey, // Shared clearance diagnostics identify the exact selected carry art.
+          groundPoseIdle: !_heldDrinkPhase && !_heldThrowAimT, // Only the stationary carry owns clearance; drink and flask release retain their authored timeline.
           mode: _heldItemHandMode,
           width: (geo?.width || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.x || 1),
           height: (geo?.height || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1),
@@ -25556,7 +25957,6 @@
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
         const pairedPoseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true; // Exclusive paired choreography owns the live root position/yaw and authored knees until its lock releases.
-        window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
@@ -25773,9 +26173,9 @@
           // across whatever body yaw the clamp leaves.
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
-          // Live travel direction (same 5px/s threshold as the walk bob below)
-          // outranks everything else when picking which dead-zone edge to use.
-          window.PerpRotation.setMovementHint(player.perpState, Math.hypot(player.vx, player.vy) > 5 ? Math.atan2(player.vx, player.vy) : null);
+          // In shoulder mode the corrective edge follows logical look yaw, not travel.
+          // Other camera modes retain their existing movement-facing behavior.
+          window.PerpRotation.setMovementHint(player.perpState, activeCameraMode === SHOULDER_SURF_MODE && !dialogueOpen ? rawTargetRotY : Math.hypot(player.vx, player.vy) > 5 ? Math.atan2(player.vx, player.vy) : null);
           const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, playerCameraPerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
@@ -26602,15 +27002,21 @@
         window.PerfProfiler?.end(prePausePerf);
 
         if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
-        if (!paused) {
+        // Co-op: any UI hold (main menu, appearance editor, town proposals, the pause button) holds only the local player;
+        // the world, the clock and everyone else keep running (a conversation never paused the world either).
+        // Single-player is unchanged: `paused` stops the whole world (see worldPaused above).
+        const localPaused = paused;
+        if (!worldPaused()) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
           const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
-          pollControllerInput();
-          applyControllerCameraLook(dt);
-          updateMovement(dt);
+          if (!localPaused) { // The local player's own input and movement stay held while their menu is open.
+            pollControllerInput();
+            applyControllerCameraLook(dt);
+            updateMovement(dt);
+          }
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
           }
@@ -26628,7 +27034,7 @@
           const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
-          window.PlayerVitals.updatePlayerVitals(dt);
+          if (!localPaused) window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
@@ -26648,6 +27054,7 @@
             window.CompanionDowned?.update?.(dt); // Downed-companion timers/pose and deferred revive teleports (js/companion-downed.js).
           }
           window.PlayerDowned?.update?.(dt); // Bleed-out timer and Health pin while the player is down (js/player-downed.js).
+          if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) window.Rootledoots?.tick?.(dt); // Module returns immediately outside eligible zones and throttles chunk checks.
           window.PlayerCrawl?.update?.(dt); // Lean/lowering channels and blend for the downed crawl (js/player-crawl.js).
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
@@ -26669,13 +27076,17 @@
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
               tickCorpses(dt);
-            } else if (_isBuildingArea(currentArea)) {
+              window.RemoteAreaTick?.update(dt); // Co-op only and opt-in: coarse tick of creatures in other occupied, already-built zones (js/remote-area-tick.js).
+            } else if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
+              window.TzatzulLiveVisuals?.tick?.(dt, currentArea); // Owned flying companions need the same renderer in ordinary rooms too, including the farmhouse.
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
-              updateHostiles(dt);
+              if (_isBuildingArea(currentArea)) { // The legacy farmhouse never ran an interior hostile loop.
+                updateHostiles(dt);
+                tickCorpses(dt);
+              }
               window.PerfProfiler?.end(hostilePerf);
-              tickCorpses(dt);
             }
           }
 
@@ -26688,19 +27099,21 @@
 
           const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
-          window.DenNestSystem.updateNestInteraction(dt);
-          window.CorpseHoldLoot?.update(dt); // Short hold-to-loot bodies (cave catacomb skeletons) — js/corpse-hold-loot.js.
-          if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
+          if (!localPaused) { // The local player's own interactions stay held under their menu (the world above keeps running in co-op).
+            window.DenNestSystem.updateNestInteraction(dt);
+            window.CorpseHoldLoot?.update(dt); // Short hold-to-loot bodies (cave catacomb skeletons) — js/corpse-hold-loot.js.
+            if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
+          }
 
           // Interior exit detection: player walks onto any door's exit-nub
           // threshold (see js/house-pieces.js's computeInteriorLayout()).
-          if (currentArea === 'interior' && sceneTransDir === 0) {
+          if (!localPaused && currentArea === 'interior' && sceneTransDir === 0) {
             const iCol = Math.floor(player.x / TILE), iRow = Math.floor(player.y / TILE);
             if (_interiorExitTiles.has(iCol + ',' + iRow)) exitInterior();
           }
 
           // Transition spots (farm ↔ interior ↔ town ↔ building)
-          if (sceneTransDir === 0) checkTransitionSpots();
+          if (!localPaused && sceneTransDir === 0) checkTransitionSpots(); // Never walk through a door because the player stands on it while a menu is open.
 
           if (currentArea === 'farm' || currentArea === 'town') {
             window.WeatherFX.updateWaterParticles(dt);
@@ -26839,6 +27252,7 @@
         }
         // Run after NPC routing/facing so an active ambient greeting can hold
         // its speaker toward the intended target for the rendered frame.
+        if (currentArea === 'town' && gameStarted && !paused && !dialogueOpen && !cutscenePreviewActive && sceneTransDir === 0) void window.OpeningStoryCutscene?.updateFarmGuide?.(now); // NPC positions and player mesh are current; travel/input decisions have already finished.
         ambientDialogueRuntime?.update(now);
         if (currentArea === 'town') {
           window.WaterSystem.updateTownWaterMeshes();
@@ -26953,7 +27367,7 @@
         // Run it AFTER ordinary pre-render hand, neck and stance presentation,
         // so those other writers cannot hide the player or invalidate the next
         // frame's pose checkpoint. The two dancers are finalized together.
-        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
+        window.FestivalWheelDanceRuntime?.update?.(dt,worldPaused(),currentArea); // NPC dance progress follows the world clock, not one player's menu.
         worldPopupRuntime?.update(now); // Billboards use the final camera and portrait poses for this frame, including during pause.
 
         // ── Render active scene ──────────────────────────────────
@@ -27071,8 +27485,8 @@
           // Breeding progress ticks per in-game hour crossed (rather than
           // once per day) so a pair's bar visibly creeps forward through
           // the day and can complete the moment it fills, not just at the
-          // next morning — see FarmAnimals.tickBreedingProgress. sleepInBed()
-          // covers whatever fraction of the day this real-time path skips.
+          // next morning — see FarmAnimals.tickBreedingProgress. The Sleep passage
+          // uses the same hourly calendar progression.
           window.FarmAnimals.tickBreedingProgress();
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
@@ -27087,7 +27501,7 @@
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
         window.NpcFarmPlots?.onNewDay?.();
-        // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
+        // Breeding is ticked hourly (see updateCalendar), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
         window.FarmAnimals.tickResources();
@@ -27107,47 +27521,7 @@
         _saveWorldCalendar();
       }
 
-      // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
-      // the next morning rather than waiting for calendar.time01 to wrap
-      // naturally — same day-rollover work as advanceDay() (weather reroll,
-      // crop growth, Tothal Shift check, den respawns), plus resetting the
-      // clock itself and restoring the player, which advanceDay() doesn't
-      // need to do since it only ever fires from a real elapsed-time wrap.
-      function sleepInBed() {
-        // Whatever fraction of today's waking hours hadn't been played
-        // through yet (and so never got an hourly breeding tick from
-        // updateCalendar) gets credited here in one lump, so a pair
-        // progresses the same one day's worth whether that day was played
-        // out in real time or slept through.
-        const remainingDayFraction = Math.max(0, 1 - calendar.time01);
-        calendar.day += 1;
-        calendar.time01 = 0; // wake at MORNING_HOUR
-        window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
-        tickCropDay();
-        window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
-        window.FarmAnimals.tickResources();
-        window.FarmAnimals.tickHearts();
-        window.ProceduralTasks.maybeRefreshRequestPostings();
-        checkTothalShift();
-        window.WildlifeSpawn.clearPendingDenRespawn();
-        window.ReagentPlants.respawnAllZoneReagents();
-        window.WildBerries.respawnAll(); // Same daily respawn advanceDay() runs.
-        window.WildTreasure.respawnAll();
-        window.ZoneRegrowth.tickFelledTreeRegrowth();
-        window.ZoneRegrowth.tickMinedRockRegrowth();
-        player.health  = player.maxHealth;
-        player.stamina = player.maxStamina;
-        const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
-        lastActionMessage = msg;
-        _saveWorldCalendar();
-        return { ok: true, message: msg };
-      }
-
-      window.BedLiePose?.init?.({
-        THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
-        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed,
-        showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
-      }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
+      window.BedLiePose?.init?.({ THREE }); // NPC mattress presentation only; player sleep belongs to CalendarSystem.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
@@ -27328,6 +27702,7 @@
         const _cabStart = performance.now();
         try {
           const buttons = computeActionButtonsImpl(context); // Ripe crops claim the primary world-action slot even while food or a flask is held.
+          if (window.AdventuringTools?.isHoldingTorch?.()) return buttons; // Never reorder the reserved Swing/Throw slots.
           const harvestIndex = buttons.findIndex(button => button.action === 'harvest' && button.allowed); // Used to move only an actionable crop ahead of held-item defaults.
           if (harvestIndex > 0) buttons.unshift(buttons.splice(harvestIndex, 1)[0]);
           return buttons;
@@ -27366,14 +27741,16 @@
           .map(button => ({ ...button, worldInteraction: true, inputAction: 'interact', style: 'secondary' }));
         const ruinDoorActions = currentArea === 'map_i_dev_random_ruin'
           ? window.DevRandomRuinInteractions?.getDoorActionButtons?.() || [] : []; // Native V50 transit doors use their existing validated proximity/action owner.
-        return torchActions.concat(woodenDoorActions, ruinDoorActions);
+        const siteDoor = ruinEntranceAt(reticle); // Wilderness entrance uses the same validated object as ordinary Interact.
+        const siteActions = (siteDoor?.getButtons?.() || []).map(button => ({ ...button, worldInteraction: true, inputAction: 'interact', style: 'secondary', promptRoot: siteDoor.promptRoot || siteDoor.mesh }));
+        return torchActions.concat(siteActions, woodenDoorActions, ruinDoorActions);
       }
 
       function campfireActionButtons(nearbyActions) {
         if (!nearbyActions?.length || heldMode !== 'tool') return null;
         const primaryAction = toolActions[activeTool]?.[0]; // Preserves the equipped tool's first action, including Swing Torch, at a nearby campfire.
         if (!primaryAction) return null;
-        if (activeTool === 'adventuring') return [adventuringToolActionButtons()[0], nearbyActions[0]];
+        if (activeTool === 'adventuring') return adventuringToolActionButtons(); // Stow the torch before opening the campfire menu.
         const reticle = getReticleTile(); // Shares the current aimed tile with the ordinary tool action bar.
         const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col]; // Supplies the normal contextual primary-action wording.
         const [fallbackIcon] = actionLabels[primaryAction] || ['🔧']; // Keeps the tool's existing action icon.
@@ -27385,7 +27762,17 @@
         }, nearbyActions[0]]; // Campfire takes only Action 2, never Action 1.
       }
 
+      function ruinEntranceAt(reticle = getReticleTile()) {
+        const sites = window.RuinSites; // Direct tile-index lookups only; no per-frame scan of wilderness sites.
+        if (!sites?.objectAt) return null;
+        const aimed = sites.objectAt(currentArea, reticle.col, reticle.row);
+        if (aimed?.type === 'ruin_door') return aimed;
+        const standing = sites.objectAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+        return standing?.type === 'ruin_door' ? standing : null;
+      }
+
       function computeActionButtonsImpl(context = null) {
+        if (window.AdventuringTools?.isHoldingTorch?.()) return adventuringToolActionButtons(); // Held torch owns both tool slots before contextual world overrides.
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
         if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
@@ -27467,6 +27854,8 @@
         }
 
         const furnitureAim = getReticleTile(); // Directly aimed chairs and surface objects take priority over a merely nearby NPC.
+        const siteDoor = ruinEntranceAt(furnitureAim); // The entrance prompt is reachable from its approach, not only its blocked door tile.
+        if (siteDoor) return (siteDoor.getButtons?.() || []).map(button => ({ ...button, worldInteraction: true, promptRoot: siteDoor.promptRoot || siteDoor.mesh }));
         const rubbleButtons = !farmEditMode ? window.Shattercasks?.contextButtons?.(furnitureAim) : null; // Aimed Shattercask blast rubble; exact reticle tile (sticky while in reach), like corpse loot.
         if (rubbleButtons) {
           const eligible = eligibleWorldButtons(rubbleButtons);
@@ -27677,6 +28066,9 @@
         // down: same hold contract as hives (js/companion-downed.js).
         const companionReviveButton = window.CompanionDowned?.getHoldButton?.(reticle.col, reticle.row);
         if (companionReviveButton && eligibleWorldButtons([companionReviveButton]).length) return [companionReviveButton];
+
+        const rootledootAction = window.Rootledoots?.action?.(reticle.col, reticle.row); // Same action bar and reticle on desktop, controller and touch.
+        if (rootledootAction && eligibleWorldButtons([rootledootAction]).length) return [rootledootAction];
 
         // Bandit tents are runtime props rather than worldObjects, so expose
         // their context action explicitly. Pointer/keyboard holds still feed
@@ -27962,7 +28354,8 @@
         // facing a tree is most likely to be in.
         const climbBtn = btns.find(b => b.action === 'climb_branch');
         const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
-        if (first) activeAction = first.action;
+        // The active charge owns its explicit action; a passive HUD refresh must not cancel it.
+        if (first && (!chargeAction || heldMode !== 'tool' || activeTool !== chargeAction.tool)) activeAction = first.action;
         // The dodge button is climbing's only real trigger, so it's the
         // one that should visually say so — swaps to the climb/climb-down
         // icon+label while a target's in reach, back to the plain dodge
@@ -28045,6 +28438,7 @@
 
             function _abtFire() {
               const act = el.dataset.action;
+              if (window.AdventuringTools?.isHoldingTorch?.() && ((el.id === 'btnAction1' && act !== 'torch_swing') || (el.id === 'btnAction2' && act !== 'torch_throw'))) return; // Ignore a stale touch action during equip refresh.
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
               // Navigation/interaction actions always fire; tool actions respect swing cooldown.
@@ -28123,6 +28517,7 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              if (window.AdventuringTools?.isHoldingTorch?.() && ((el.id === 'btnAction1' && act !== 'torch_swing') || (el.id === 'btnAction2' && act !== 'torch_throw'))) return; // Do not begin a stale contextual hold.
               _pressedArchAction = act; // Retain the original action throughout this pointer's press/release pair.
               const physicalInputAction=({btnAction1:'action1',btnAction2:'action2',btnAction3:'action3',btnItemAction1:'itemAction1',btnItemAction2:'itemAction2'})[el.id]||null;
               if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch:' + ev.pointerId)){
@@ -28556,6 +28951,7 @@
       if (menuResetBtn) menuResetBtn.addEventListener('click', doReset);
       if (menuPauseBtn) menuPauseBtn.addEventListener('click', () => {
         paused = !paused;
+        if (paused && window.TimeConsensus?.shouldGate()) showToast('Co-op: the world keeps running while you are paused.', false);
         menuPauseBtn.textContent = paused ? '▶' : '⏸';
         debugLog(paused ? 'paused' : 'resumed');
       });
@@ -28615,7 +29011,7 @@
       let mobileAutoTargetWasInCombat = false; // Edge tracking allows explicit prey targeting outside an encounter.
       let mobileAutoTargetWeaponWasOut = false;
       function syncMobileAutoTargetCombatState() {
-        if (isDesktop) return;
+        if (isDesktop || window.Combat?.input?.autoTargetAvailable !== true) return;
         const inCombat = isPlayerInCombat();
         const weaponOut = shoulderSurfCombatStanceActive();
         const ended = (mobileAutoTargetWasInCombat && !inCombat) || (mobileAutoTargetWeaponWasOut && !weaponOut);
@@ -28629,8 +29025,9 @@
 
       function syncMobileAutoTargetButton() {
         if (!btnSwapTarget) return;
-        const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
-        const hidden = isDesktop || !findAvailableAutoTarget(); // Prey can expose the toggle before combat starts, including while autotarget is disabled.
+        const available = !isDesktop && window.Combat?.input?.autoTargetAvailable === true; // The mobile control is unavailable until its owner explicitly enables the feature.
+        const enabled = available && mobileAutoTargetEnabled(); // A desktop/controller lock must not activate the hidden mobile button.
+        const hidden = !available || !findAvailableAutoTarget(); // Never scan for prey when the mobile feature is unavailable.
         if (btnSwapTarget.classList.contains('abt-hidden') !== hidden) btnSwapTarget.classList.toggle('abt-hidden', hidden);
         if (btnSwapTarget.classList.contains('active') !== enabled) btnSwapTarget.classList.toggle('active', enabled);
         const pressed = String(enabled); // Avoids rewriting accessibility state every movement frame.
@@ -28671,7 +29068,7 @@
           if (!cancelled && !press.held && !btnSwapTarget.classList.contains('abt-hidden')) window.Combat?.input?.setAutoTargetEnabled(!mobileAutoTargetEnabled());
         }
         btnSwapTarget.addEventListener('pointerdown', event => {
-          if (targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
+          if (window.Combat?.input?.autoTargetAvailable !== true || targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
           event.preventDefault();
           event.stopPropagation();
           const rect = btnSwapTarget.getBoundingClientRect(); // Fixed gesture center avoids feedback from moving the knob.
@@ -28862,6 +29259,7 @@
         const el = document.getElementById('btnAction' + slotIndex);
         const action = el?.dataset.action;
         const buttons = computeActionButtons();
+        if (window.AdventuringTools?.isHoldingTorch?.() && slotIndex <= 2) return buttons[slotIndex - 1] || null; // Ignore stale DOM context from the previous held mode.
         return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
       }
       function runActionButtonAtSlot(slotIndex, inputActionId = `action${slotIndex}`) {
@@ -28939,8 +29337,7 @@
           if (heldMode === 'tool' && activeTool === 'weapon') return button.dataset.action !== toolActions.weapon[slot - 1];
           if (heldMode === 'tool' && activeTool === 'ranged') return button.dataset.action !== (slot === 1 ? 'shoot' : 'ammo_select');
           if (heldMode === 'tool' && activeTool === 'adventuring')
-            return button.dataset.action !== toolActions.adventuring[slot - 1]
-              && !(slot === 2 && button.dataset.action === 'campfire_menu'); // The torch's own actions are not world overrides, and campfire Action 2 cannot block Swing Torch.
+            return button.dataset.action !== toolActions.adventuring[slot - 1] && !window.AdventuringTools?.isHoldingTorch?.(); // A stale contextual arch cannot block the held torch.
           return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
         },
       });
@@ -28984,6 +29381,12 @@
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
+        }
+        if (phase === 'press' && (actionId === 'action1' || actionId === 'action2') && window.AdventuringTools?.isHoldingTorch?.()
+          && !menuOpen && !dialogueOpen && !paused && !farmEditMode && !window.__mapEditorGizmoActive
+          && !window._desktopSelectionArc?.toolMenuOpen?.() && !window._desktopSelectionArc?.entryMenuOpen?.()) {
+          runActionButtonAtSlot(actionId === 'action1' ? 1 : 2, actionId);
+          return; // In ordinary gameplay no context claim or placement override may take the two held torch slots.
         }
         if (window.FarmworkUI?.isPlanning?.()) {
           if (['action1', 'action2', 'action3'].includes(actionId)) {
@@ -29967,6 +30370,7 @@
           if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press', 'mouse:' + e.button); return; } // preventDefault also stops middle-click autoscroll.
+          if ((mouseAction === 'action1' || mouseAction === 'action2') && window.AdventuringTools?.isHoldingTorch?.()) { runInputAction(mouseAction, 'press', 'mouse:' + e.button, e); return; }
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press', 'mouse:' + e.button);
@@ -30306,11 +30710,12 @@
       });
       window.__hobunjiFurnitureDebug = {
         give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
+        openNpcDialogue: walker => openNpcDialogue(walker), // Headless/dev: start the real NPC dialogue (conversation lock included).
         place: placeDecorativeFurniture,
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
-        bedPose: () => ({ player: window.BedLiePose?.debug?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // On-device player/NPC sleeping posture, surface and x-ray status.
+        bedPose: () => ({ passage: window.CalendarSystem?.timeDebugSnapshot?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // Current time passage and NPC mattress presentation for mobile diagnostics.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
@@ -30390,9 +30795,9 @@
         get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
         meleeAttackAlignmentSnapshot: () => {
           const target = manualAutoTarget;
-          const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
+          const availableTarget = findAvailableAutoTarget(); // Reports a candidate only for available mobile assist or deliberate lock-on.
           return {
-            latestChange: 'Combat and potion actions remain available when aiming at cave walls or beyond the map. Canceled holds release ability windups; weapon and mobile pointer release state is cleared even if an action throws.',
+            latestChange: 'Mobile autotarget is unavailable: its Settings row, target button, encounter checks and candidate previews are disabled. Deliberate lock-on remains available.',
             area: currentArea,
             inputSlots: [1, 2].map(slot => window.Combat?.input?.getState?.(slot)),
             swing: { remainingS: toolSwingT, held: combatSwingHeld },
@@ -30466,7 +30871,7 @@
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
       // Safety net for any inventory/pack change not already covered by an
       // explicit saveMemberWorldData() call above. Also flushes the
-      // in-progress time-of-day (advanceDay/sleepInBed already save on their
+      // in-progress time-of-day (advanceDay already saves on its
       // own day rollovers, but this catches whatever time01 progress
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
@@ -30595,7 +31000,7 @@
         MAX_WATER,
         clamp: window.FormatUtils.clamp,
         player,
-        getCurrentArea: () => currentArea,
+        getCurrentArea: () => window.AreaScope.listenerArea(), // The listener's real area, even while a remote-area tick has swapped currentArea (js/remote-area-tick.js).
         camera, // Camera orientation supplies the listener's right/up/forward axes; actual ear stays at the player.
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Audio occlusion/distance samples the same wilderness and interior heights as combat.
         getActorWorldY: (actor) => window.Combat?.deps?.getActorWorldY?.(actor), // Reuses the live player/creature height resolver already injected into Combat.init below.
@@ -30709,6 +31114,7 @@
         cancelWeaponSwingHold,
         cancelPlayerToolAnimation: cancelPlayerToolAnimationForInteraction, // Bandaging clears legacy pending strikes alongside staged attacks.
         beginCombatLunge,
+        movementFootingDepleted, // Shared compositor invokes the original prone owner for enemy movement losses.
         setCombatSwingCone,
         spawnBurstEffect,
         playCreatureBark: (...a) => window.AudioSystem?.playCreatureBark(...a),
@@ -31078,7 +31484,7 @@
 
       const NON_PLAYER_TOOL_HOLDER = Object.freeze({ kind: 'non-player' }); // No mastery, fresh base metal unless the caller passes the real holder.
       window.BanditCombat?.init({
-        isPaused: () => paused, // The commander-led army pauses its abstract planner with the game.
+        isPaused: worldPaused, // The commander-led army pauses its abstract planner with the world (not with one co-op player's menu).
         isGameStarted: () => window.__hobunjiGameStarted === true, // Prevent abstract marching while the title/creator owns the world.
         rnd,
         clamp: window.FormatUtils.clamp,
@@ -31525,7 +31931,7 @@
           if (walker && !npcWalkers.some(w => w.rec?.id === rec.id)) npcWalkers.push(walker);
           return walker;
         },
-        saveMemberWorldData,
+        saveMemberWorldData, scheduleMemberSave: () => scheduleLootMemberSave(),
       });
       window.NpcSeatRequest?.init?.({ // "Ask for seat" on the More wheel: the module owns the request; these are the game's narrow adapters.
         getArea: () => currentArea,
@@ -31536,7 +31942,7 @@
         canSit: () => !window.FarmAnimals.isHarvesting() && (window.Mounts?.rideState ?? 'none') === 'none',
         beginSitAtTarget: target => { // The NPC's own physical seat (key, tile, seat index, facing), the same transform the player's Sit action uses.
           const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
-          return beginSitInteraction(target.furnitureKey, target.c, target.r, def?.fw || 1, def?.fd || 1, target.rotY || 0, target.seatIndex || 0);
+          return beginSitInteraction(target.furnitureKey, target.c, target.r, def?.fw || 1, def?.fd || 1, target.rotY || 0, target.seatIndex || 0, target.furnitureId || target.sourceFurnitureId || null);
         },
         toast: showToast,
         now: () => performance.now(),
@@ -32766,11 +33172,11 @@
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        getMovementInput: climbMovementInput,
+        getMovementInput: () => ({ ...climbMovementInput(), rotationApplied: activeCameraMode === SHOULDER_SURF_MODE }), // Free-jump compositor must not rotate the shoulder camera's inherited Demented yaw twice.
         getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
         canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
           !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
-          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.FarmAnimals?.isHarvesting?.() &&
           !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
         canPlayerOccupy, // Normal grounded movement authority.
         canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
@@ -32927,6 +33333,7 @@
       // Slagothim trade caravans (road travel, trading, notices, compass)
       // live in js/slagothim-traders.js.
       window.SlagothimTraders?.init({
+        TILE, player, hostileObjects, // Shinjimi shares this adapter: live player LOS/contact, tile conversion and humanoid avoidance.
         calendar,
         inventory,
         ITEM_DEFS,
@@ -32936,7 +33343,7 @@
         metalBarItemKey,
         npcWalkers,
         makeNpcWalker,
-        despawnNpcWalker: despawnNpcVisitor,
+        despawnNpcWalker: despawnNpcVisitor, // Async builders may explicitly retire unadopted results; normal exits still require membership.
         npcSurfaceY,
         getZoneLayout: zoneId => _zoneLayouts.get(zoneId),
         getTownGrid: () => townGrid,
@@ -33356,6 +33763,23 @@
         makeTaskId: window.ProceduralTasks.makeTaskId,
       });
 
+      window.Rootledoots?.init({
+        TILE, player, rnd, hostiles: hostileObjects, corpses: corpseObjects, companions: companionObjects,
+        getArea: () => currentArea, getGrid: window.GridTileAccessors.getActiveGrid, getScene: window.GridTileAccessors.getActiveScene,
+        getZoneDef: zone => EXTERIOR_ZONES[zone], getNpcWalkers: () => npcWalkers,
+        canActivate: () => window.__hobunjiGameStarted === true && sceneTransDir === 0 && !_layoutSwapInProgress && !dialogueOpen && !menuOpen && !isPlayerInCombat(), // Defer new locale rolls until the player's world is settled.
+        isInCombat: isPlayerInCombat,
+        worldId: _tothalWorldId, cycle: currentTothalYear, day: () => calendar.day, chunkSize: wildernessChunkTileSize,
+        surfaceY: activeSurfaceYAtWorld, walkable: (c,r) => {
+          const tile=window.GridTileAccessors.getActiveGrid()?.[r]?.[c]; // Reject solid terrain and water even where animal movement allows them.
+          return !!tile&&!isSolid(tile.type)&&!WATERWAY_TYPES.has(tile.type)&&creatureTileWalkable(c,r)&&canOccupyAt((c+.5)*TILE,(r+.5)*TILE,TILE*.22);
+        },
+        isBareGround: tile => tile.type === TileType.GRASS && !tile.crop && !tile.mapBoundary,
+        despawn: despawnCreature, dirt: (c,r) => spawnActionParticles(c,r,'dig',true), toast: showToast, save: saveMemberWorldData,
+        canReceiveRoot: () => !!ITEM_DEFS.feyHeftroot && (Number(inventory.feyHeftroot)||0) < window.InventoryStacks.MAX_TOTAL,
+        giveRoot: () => { inventory.feyHeftroot=(Number(inventory.feyHeftroot)||0)+1; }, // Only mutate the bag inside the atomic reward transaction.
+        refreshRewards: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); window.EquipmentPanel?.buildEquipmentSlots?.(); refreshActionBar(); },
+      });
       window.BanditCamps?.init({
         clamp: window.FormatUtils.clamp,
         rnd,
@@ -33422,7 +33846,7 @@
         },
       });
       window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
-        scene, worldObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
+        scene, worldObjects, processingFurnitureObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
@@ -33520,7 +33944,7 @@
         else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
-        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // Seed a starter bed in the farmhouse for a brand-new world — the Sleep passage
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
         // player has no bed item in inventory yet to buy+place one themselves.
         // Gated on this world having no saved layout at all, so it never
@@ -33573,6 +33997,7 @@
         window.NpcGifting?.restoreDiscoveredPrefs?.(playerData.npcDiscoveredGiftTraits);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
+        window.Rootledoots?.restore?.(playerData.rootledootState);
         window.AnimalHides?.restore?.(playerData.isNewWorld ? null : playerData.animalHides, inventory); // Restore coat records only after the authoritative bag counts load.
         window.SkillSystem.restore(playerData);
         window.PerkSystem?.restore(playerData);
@@ -33923,7 +34348,14 @@
         } finally { for (const pin of preloadPins) _genotypeTextureResidency.release(pin); }
       }
 
+      // A cutscene pauses every player and everyone watches it, wherever they are (js/shared-cutscene.js).
+      // Crowd scenes (js/festival-blossom-ceremony.js, js/romance-wedding.js) place the other players in the crowd.
       async function runCutscenePreview(payload, runtimeOptions = {}) {
+        window.SharedCutscene.begin({ id: payload?.id || payload?.title || 'cutscene', title: payload?.title || null, area: payload?.mapId ? normalizeNpcArea(payload.mapId) : null });
+        try { return await runCutscenePreviewScene(payload, runtimeOptions); }
+        finally { window.SharedCutscene.end(); }
+      }
+      async function runCutscenePreviewScene(payload, runtimeOptions = {}) {
         payload = window.NpcPathfinding?.upgradeCutscenePayload?.(payload) ?? payload; // Move stages navigate around walls/furniture unless they opt out (collisionAware:false).
         const liveMode = runtimeOptions.live === true; // Switches the Director's existing stage engine from disposable preview semantics to a gameplay-safe authored cutscene.
         const previousArea = currentArea; // Restored after a live cutscene so its temporary scene swap never strands normal gameplay on the cinematic map.
@@ -34233,7 +34665,7 @@
               // back to.
               const playerProfile = window.EquipmentPanel.applyGearClothingToPlayerData(_playerData || window.__hobunjiPlayerProfile); // Uses the same equipped clothing/dye overlay as the live player avatar.
               const fakeRec = {
-                id: 'player', name: actor.name || 'Player',
+                id: '__cutscene_player_' + (actor.id || 'standin'), name: actor.name || 'Player', // Keep the authored actor id separate from the reserved live-player runtime identity.
                 appearance: playerProfile?.appearance,
                 equippedCosmetics: playerProfile?.equippedCosmetics || [],
                 appliedDyes: playerProfile?.appliedDyes || {},
@@ -34248,6 +34680,7 @@
             }
           } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entity.isPlayerStandIn = actor.isPlayer === true; // Cinematic framing follows the authored role, not a reserved runtime rig id.
           entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
           if (actor.lantern) window.CutsceneLanternCarriers?.add(entity.root); // Lantern-carrying cutscene rigs light the scene through WeatherFX's lantern mask (docs/js/cutscene-lantern-carriers.js).
@@ -34431,7 +34864,7 @@
           if (povShot || (!cinematicCameraReady && window.CinematicCameraRuntime?.isActive?.())) { /* This stage's authored/procedural view remains live across dialogue. */ }
           else if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
             if (!payload.cinematicCamera || payload.cinematicCamera.trackSpeaker || window.CinematicCameraRuntime?.activeRecord?.()?.camera?.id !== payload.cinematicCamera.id) window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: entity?.walker });
-          } else if (payload.widePlayerShots && entity?.rec?.id === 'player') {
+          } else if (payload.widePlayerShots && entity?.isPlayerStandIn) {
             activeCameraMode = idleCameraMode;
             activeCameraTarget = idleCameraTarget;
           } else if (!options.preserveCamera) {
@@ -35010,6 +35443,50 @@
         window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
       }
 
+      let openingGuidePoints = null; // Cached pair of safe road-adjacent waiting/leading tiles, replaced on town layout change.
+      function openingFarmGuideTarget(walking) {
+        const gate = worldTownTransitions.find(spot => spot.target === 'farm' && spot.area === 'town'); // Actual authored farm entrance.
+        if (!gate || !townGrid) return null;
+        const cached = openingGuidePoints;
+        if (cached?.gate === gate && cached.grid === townGrid &&
+            isNpcTileWalkable('town', cached.wait.c, cached.wait.r) && isNpcTileWalkable('town', cached.lead.c, cached.lead.r)) return walking ? cached.lead : cached.wait;
+        const candidates = []; // Rebuild only when the authored map changes or a selected spot becomes blocked.
+        for (let dr = -4; dr <= 4; dr++) for (let dc = -4; dc <= 4; dc++) {
+          const c = gate.col + dc, r = gate.row + dr, distance = Math.hypot(dc, dr);
+          if (distance < 1 || distance > 4 || !isNpcTileWalkable('town', c, r)) continue;
+          if (worldTownTransitions.some(spot => spot.col === c && spot.row === r)) continue;
+          const road = townGrid[r]?.[c]?.type === TileType.PATH;
+          candidates.push({ c, r, distance, road, inward: dr < 0 });
+        }
+        const rank = (p, desired) => Math.abs(p.distance - desired) + (p.road ? 0 : 2) + (p.inward ? 0 : .5); // Prefer the visible approach road inside town.
+        const leads = candidates.slice().sort((a,b) => rank(a,1) - rank(b,1));
+        const waits = candidates.slice().sort((a,b) => rank(a,3) - rank(b,3));
+        let pair = null; // Require a connected, directly traversable pair instead of independent nearby tiles.
+        for (const lead of leads) {
+          const wait = waits.find(p => p.distance > lead.distance + .75 && canNpcBeeline('town', p.c + .5, p.r + .5, lead.c, lead.r));
+          if (wait) { pair = { lead, wait }; break; }
+        }
+        if (!pair) return null;
+        const target = p => ({ area: 'town', c: p.c, r: p.r, pose: 'stand', activity: 'Waiting for the new farmer', label: 'Farm entrance' });
+        openingGuidePoints = { gate, grid: townGrid, wait: target(pair.wait), lead: target(pair.lead) };
+        return walking ? openingGuidePoints.lead : openingGuidePoints.wait;
+      }
+
+      function visibleOpeningFarmGuide() {
+        if (currentArea !== 'town' || !gameStarted || paused || menuOpen || dialogueOpen || cutscenePreviewActive || sceneTransDir !== 0 ||
+            isPlayerInCombat() || sitInteraction || farmEditMode || actionHeldDown || chargeAction || toolSwingT > 0 ||
+            window.CombatTutorial?.active?.() || window.Fishing?.state?.active || window.MusicMinigame?.state?.active ||
+            window.CharacterActionLocks?.isLocked?.('player', 'movement')) return null;
+        const walker = findNpcWalker('spearhead_unumanuk'); // Use the real NPC and the shared dialogue staging.
+        const point = walker?.root?.position;
+        if (walker?.area !== 'town' || !walker.root?.visible || !point || window.NpcConversations?.isBusy?.(walker, player)) return null;
+        if (Math.hypot(point.x * TILE - player.x, point.z * TILE - player.y) > 4 * TILE) return null;
+        const target = openingFarmGuideTarget(false); // Do not summon the player while Spearhead is still crossing town.
+        if (!target || Math.hypot(point.x - target.c - .5, point.z - target.r - .5) > 1.25) return null;
+        const observer = { x: point.x * TILE, y: point.z * TILE, health: 1, avatarGroup: walker.avatarGroup, root: walker.root, areaId: 'town', walker }; // Shared sight expects pixel coordinates and real avatar height.
+        return window.RangedWeapons?.hasLineOfSight?.(observer, player, true) === true ? walker : null;
+      }
+
       function openingFarmTourPoints() {
         const entry = { c: Math.floor(player.x / TILE), r: Math.floor(player.y / TILE) }; // Starts where the owner actually entered the farm.
         const front = window.FarmhouseLoginSpawn?.frontDoor?.(); // Supplies both the approach and door normal for the final facade view.
@@ -35056,6 +35533,16 @@
         preloadOpeningMeeting,
         placeOutsideTemple: placeOpeningPlayerOutsideTemple,
         farmTourPoints: openingFarmTourPoints,
+        farmGuideTarget: openingFarmGuideTarget,
+        visibleFarmGuide: visibleOpeningFarmGuide,
+        async openFarmGuideDialogue(walker) {
+          try {
+            return await openNpcDialogue(walker, { openingFarmGuide: true, node: { type: 'line', text: 'Follow me. I will show you to your farm.', next: null } });
+          } catch (error) {
+            if (dialogueOpen && _dialogueWalker === walker) closeNpcDialogue(); // Release the local conversation lock if portrait or dialogue setup fails.
+            throw error;
+          }
+        },
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
         debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, horizontalCameraSqueeze: _cameraHorizontalDebug, orbit: window.CinematicCameraRuntime?.activeCamera?.()?.orbitDebug || null, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.

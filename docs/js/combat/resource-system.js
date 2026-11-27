@@ -25,7 +25,7 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const round1 = value => Math.round(value * 10) / 10;
-  const nowMs = () => performance.now();
+  const nowMs = () => (window.SimClock ? window.SimClock.now() : performance.now()); // Shared sim clock (js/sim-clock.js).
   const STAMINA_RECOVERY_MULTIPLIER = 1.25; // Used by every time-based Stamina recovery path: ordinary regen, Exhausted debt, and Stamina-affliction recovery.
   const ACTION_PUNISHMENT_RECOVERY_MULTIPLIER = 4; // Used by action-punishing afflictions after the entity deliberately avoids their punished action.
   const ACTION_PUNISHMENT_RECOVERY_GRACE_MS = 750; // Used to require a short pause after the punished action before the accelerated recovery engages.
@@ -164,7 +164,17 @@
     furiousStamina: {
       name: "Furious Stamina", resource: "stamina", extend: "currentBack", priority: 36, recovers: false, enhanced: true,
       family: "enhanced", tags: ["enhanced", "fury"],
-      desc: "Enhanced Stamina. When it pays for an offensive Held attack, the portion it funds progresses at three times normal speed."
+      desc: "Offensive Held attacks snapshot Furious Stamina before spending; +2% speed per point, up to +200%. Pays Held attack costs one for one."
+    },
+    unshackledStamina: {
+      name: "Unshackled Stamina", resource: "stamina", extend: "currentBack", priority: 37, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "ohthic", "tempo"],
+      desc: "Combo attacks snapshot Unshackled Stamina before spending; +2% speed per point, up to +200%. Pays Combo attack costs one for one."
+    },
+    weightlessStamina: {
+      name: "Weightless Stamina", resource: "stamina", extend: "zero", priority: 32, recovers: true, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "ohthic"],
+      desc: "Each point grants +2% movement and dodge speed and attack lunge distance, up to +200%. Occupies the last Stamina spent and naturally fades."
     },
     moralizedStamina: {
       name: "Moralized Stamina", resource: "stamina", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
@@ -186,6 +196,46 @@
       family: "enhanced", tags: ["enhanced", "mirror"],
       desc: "Enhanced Health generated from actual damage dealt; it absorbs incoming Health loss before ordinary Health."
     },
+    windblownStamina: {
+      name: "Windblown Stamina", resource: "stamina", extend: "currentBack", priority: 91, recovers: true,
+      family: "control", tags: ["tothal", "wind"],
+      desc: "Each application changes the world-space wind direction. Additive movement reaches 50% of available speed on the ground and 75% in midair at 100 points; voluntary movement with the wind costs Footing (also 50% stronger in midair). Naturally fades."
+    },
+    leadboundStamina: {
+      name: "Leadbound Stamina", resource: "stamina", extend: "currentBack", priority: 96, recovers: true,
+      family: "control", tags: ["hronal", "earth"],
+      desc: "Each point reduces movement speed, dodge speed and lunge distance by 0.75%, up to 75%. Ordinary Stamina expenditure clears it first; it also naturally recovers."
+    },
+    soulweightedHealth: {
+      name: "Soulweighted Health", resource: "health", extend: "currentBack", priority: 84, recovers: true,
+      family: "control", tags: ["kanthic", "soul"],
+      desc: "Ordinary direct Health loss discharges up to an equal amount of Soulweight, draining that much ordinary Stamina without triggering Exhaustion."
+    },
+    veilmarkedHealth: {
+      name: "Veilmarked Health", resource: "health", extend: "currentBack", priority: 85, recovers: true,
+      family: "offensiveDebuff", tags: ["ohthic", "spirit"],
+      desc: "Direct damage consumes up to an equal amount of Veilmark and that portion bypasses enhanced Health protection."
+    },
+    currentStamina: {
+      name: "Current Stamina", resource: "stamina", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "tothal"],
+      desc: "A reserve only dodges may spend. Each point pays for two ordinary Stamina."
+    },
+    temperedFooting: {
+      name: "Tempered Footing", resource: "footing", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "hronal"],
+      desc: "Each point grants +2% Attack Power (affliction buildup), up to +200%. Absorbs Footing loss one for one and does not naturally decay."
+    },
+    pactHealth: {
+      name: "Pact Health", resource: "health", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "kanthic"],
+      desc: "Absorbs direct Health damage at two for one. Each point consumed adds one Soulweighted Health to its owner; the debt takes effect on subsequent hits."
+    },
+    guardianHealth: {
+      name: "Guardian Health", resource: "health", extend: "currentBack", priority: 39, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "ohthic"],
+      desc: "Absorbs damage dealt through the Health-affliction damage channel at two for one. Direct weapon damage cannot spend it."
+    },
     dementedStamina: {
       name: "Demented Stamina", resource: "stamina", extend: "currentBack", priority: 32, recovers: true,
       family: "control", tags: ["fey", "illusion", "vertigo"],
@@ -205,8 +255,12 @@
 
   const ENHANCED_RESOURCE_DEFS = Object.freeze({
     furiousStamina: Object.freeze({
-      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 100, tempoMultiplier: 3,
-      benefitsTransaction: tx => tx?.actionKind === "offensiveHeldCharge" || tx?.actionKind === "offensiveHeldFlurry",
+      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 130, tempoMultiplier: 3,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => (tx?.tempoActionKind || tx?.actionKind) === "offensiveHeldCharge" || (tx?.tempoActionKind || tx?.actionKind) === "offensiveHeldFlurry",
+    }),
+    unshackledStamina: Object.freeze({
+      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 130, tempoMultiplier: 3,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => (tx?.tempoActionKind || tx?.actionKind) === "combatCombo",
     }),
     moralizedStamina: Object.freeze({ resource: "stamina", conversionRate: 3, normalPriority: 50 }),
     hypedStamina: Object.freeze({
@@ -218,7 +272,22 @@
     resoluteFooting: Object.freeze({ resource: "footing", conversionRate: 3, normalPriority: 50 }),
     resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
     mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
+    currentStamina: Object.freeze({
+      resource: "stamina", conversionRate: 2, normalPriority: 5, beneficialPriority: 120,
+      requiresBeneficialTransaction: true, benefitsTransaction: isDodgeTransaction,
+    }),
+    temperedFooting: Object.freeze({ resource: "footing", conversionRate: 1, normalPriority: 60 }),
+    pactHealth: Object.freeze({
+      resource: "health", conversionRate: 2, normalPriority: 5, beneficialPriority: 90,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.source === "directDamage",
+    }),
+    guardianHealth: Object.freeze({
+      resource: "health", conversionRate: 2, normalPriority: 5, beneficialPriority: 100,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.source === "afflictionTick",
+    }),
   });
+  const enhancedByResource = Object.create(null); // Immutable definition groups used by resource transactions; never cache live amounts.
+  for (const entry of Object.entries(ENHANCED_RESOURCE_DEFS)) (enhancedByResource[entry[1].resource] ||= []).push(entry);
   // Short-lived combat debuffs are deliberately separate from resource-ring
   // afflictions: they change combat math for a duration without occupying
   // Health/Stamina/Footing bar segments. Quick Attack mastery choices are the
@@ -311,9 +380,10 @@
     return clamp(unclamped, Number.isFinite(Number(minModifier)) ? Number(minModifier) : 0.05, Number.isFinite(Number(maxModifier)) ? Number(maxModifier) : Infinity);
   }
 
-  function cleanupTimedDebuffs(entity, atMs = nowMs()) {
+  function cleanupTimedDebuffs(entity, atMs) {
     const store = timedDebuffStore(entity); // Existing runtime store; null is the steady-state path for almost every actor.
     if (!store) return null;
+    if (atMs === undefined) atMs = nowMs(); // No clock read for actors without timed statuses.
     let hasLive = false; // Tracks whether the object can stay attached without allocating Object.keys/Object.entries every frame.
     for (const id in store) {
       const entry = store[id]; // Current timed status checked against the shared monotonic combat clock.
@@ -389,7 +459,154 @@
     return entity._temporaryKnockdownProne === true ? 1.75 : 2.5; // Footing-break prone stays stronger while Footing refills.
   }
 
+  function planarAmountMultiplier(entity, id) {
+    return 1 + Math.min(100, Math.max(0, getAffliction(entity, id))) * 0.02; // Shared linear scaling; 100 points gives 3×.
+  }
+
+  function attackTempoMultiplier(entity, actionKind) {
+    if (actionKind === "combatCombo") return planarAmountMultiplier(entity, "unshackledStamina");
+    if (actionKind === "offensiveHeldCharge" || actionKind === "offensiveHeldFlurry") return planarAmountMultiplier(entity, "furiousStamina");
+    return 1;
+  }
+
+  // Single scalar movement compositor for all resource-driven mobility effects.
+  // Existing locomotion and swept collision owners apply this once to their
+  // native speed/distance budgets; attack timing and forced knockback stay separate.
+  function movementMultiplier(entity, mode = "walk") {
+    const key = mode === "walk" ? "moveSpeed" : "dodgeLungeDistance"; // Walking versus committed dodge/lunge travel.
+    const weightless = planarAmountMultiplier(entity, "weightlessStamina"); // Ohthic positive mobility.
+    const leadbound = 1 - Math.min(100, Math.max(0, getAffliction(entity, "leadboundStamina"))) * 0.0075; // Hronal opposing mobility.
+    return weightless * leadbound * timedStatusMultiplier(entity, key);
+  }
+
+  // Directional and scalar movement effects share this owner. Callers supply
+  // an authored displacement/velocity and let their original collision owner
+  // resolve the composed vector; no status writes actor coordinates itself.
+  const windMotionFrames = new WeakSet(); // Used to suppress an idle drift pass when a native movement path already handled wind.
+  const windFootingRemainders = new WeakMap(); // Sub-tenth Footing costs accumulate across frames, never round up every frame.
+  const windDirections = new WeakMap(); // Runtime direction; loaded afflictions receive one seeded direction on first use.
+
+  function movementIntent(entity, x, y, alreadyRotated = false) {
+    const yaw = alreadyRotated ? 0 : (Number(window.FeyIllusions?.movementRotationRad?.(entity)) || 0); // Shoulder-camera input has already inherited Demented yaw.
+    if (!yaw) return { x, y };
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    return { x: x * cos - y * sin, y: x * sin + y * cos };
+  }
+
+  function windblownDirection(entity) {
+    if (!windDirections.has(entity)) {
+      const angle = (window.GameRandom?.random?.() ?? Math.random()) * Math.PI * 2;
+      windDirections.set(entity, { x: Math.cos(angle), y: Math.sin(angle), angle });
+    }
+    return windDirections.get(entity);
+  }
+
+  function hasWindblown(entity) { return getAffliction(entity, "windblownStamina") > 0; }
+
+  const WINDBLOWN_AIR_MULTIPLIER = 1.5; // Shared tuning for airborne horizontal drift and associated assisted-travel Footing cost.
+
+  function windAirMultiplier(entity, airborne) {
+    // Explicit native solver state wins; the fallback covers player dodges and
+    // committed lunges that already expose their active flight state.
+    const inAir = typeof airborne === "boolean" ? airborne : !!(
+      entity?._freeJump?.phase === "air" ||
+      entity?._mountHop ||
+      (entity === window.Combat?.deps?.player && window.Mounts?.rideState === "mounted" && window.Mounts?.rideEntity?._mountHop) ||
+      (entity?.lunging && (entity.lungeHopUnits > .01 || entity.lungeDirectFlightStrength > .01)) ||
+      (entity?._banditLunging && entity._banditLungeAirborne)
+    );
+    return inAir ? WINDBLOWN_AIR_MULTIPLIER : 1;
+  }
+
+  function composeMovement(entity, x, y, options = {}) {
+    const mode = options.mode || "walk"; // Used to select the existing scalar mobility budget.
+    const scalar = options.scalarApplied ? 1 : movementMultiplier(entity, mode);
+    const intended = movementIntent(entity, Number(x) || 0, Number(y) || 0, options.rotationApplied === true);
+    const baseX = intended.x * scalar, baseY = intended.y * scalar;
+    const amount = Math.min(100, Math.max(0, getAffliction(entity, "windblownStamina")));
+    if (!amount || !entity || options.wind === false) return { x: baseX, y: baseY, footingCost: 0, wind: false };
+    const direction = windblownDirection(entity); // Shared world-space wind, never camera-relative.
+    const suppliedReference = Number(options.reference); // An explicitly halted action has a zero budget, not an implicit replacement speed.
+    const reference = Math.max(0, Number.isFinite(suppliedReference) ? suppliedReference : Math.hypot(baseX, baseY)); // In the same units as the caller's vector (velocity or displacement).
+    const airMultiplier = windAirMultiplier(entity, options.airborne); // Only wind changes, never authored steering or vertical physics.
+    const strength = reference * amount * .005 * airMultiplier;
+    const voluntary = options.voluntary === false ? 0 : Math.hypot(baseX, baseY);
+    const dot = voluntary > 1e-8 ? (baseX * direction.x + baseY * direction.y) / voluntary : 0;
+    const alignment = Math.max(0, Math.min(1, dot));
+    const duration = Math.max(0, Number(options.dt) || 0);
+    return { x: baseX + direction.x * strength, y: baseY + direction.y * strength,
+      footingCost: amount * .1 * alignment * duration * airMultiplier, wind: true, windX: direction.x, windY: direction.y };
+  }
+
+  // A mounted pair shares one physical trajectory, not two successive moves.
+  // Both afflictions evaluate the same already-scaled native heading so one
+  // actor's wind cannot masquerade as the other's voluntary movement.
+  function composeMountedMovement(rider, carrier, x, y, options = {}) {
+    const opts = { ...options, airborne: typeof options.airborne === "boolean" ? options.airborne : !!carrier?._mountHop, mode: "walk", scalarApplied: true, rotationApplied: true }; // Rider and carrier share the same airborne state.
+    const riderMotion = hasWindblown(rider) ? composeMovement(rider, x, y, opts) : null;
+    const carrierMotion = carrier !== rider && hasWindblown(carrier) ? composeMovement(carrier, x, y, opts) : null;
+    return {
+      x: (riderMotion?.x ?? x) + (carrierMotion ? carrierMotion.x - x : 0),
+      y: (riderMotion?.y ?? y) + (carrierMotion ? carrierMotion.y - y : 0),
+      riderMotion, carrierMotion,
+    };
+  }
+
+  function commitMountedMovement(rider, carrier, motion, fraction, onDepleted) {
+    if (!motion) return;
+    commitMovement(rider, motion.riderMotion, fraction, onDepleted);
+    if (carrier !== rider) commitMovement(carrier, motion.carrierMotion, fraction, onDepleted);
+  }
+
+  function beginMovementFrame(entity) { if (entity) windMotionFrames.delete(entity); }
+  function windMovementHandled(entity) { return !!entity && windMotionFrames.has(entity); }
+
+  function commitMovement(entity, motion, fraction = 1, onDepleted) {
+    if (!entity || !motion?.wind) return;
+    windMotionFrames.add(entity);
+    const cost = Math.max(0, Number(motion.footingCost) || 0) * Math.max(0, Math.min(1, Number(fraction) || 0));
+    if (!cost || entity.prone || !Number.isFinite(entity.footing)) return;
+    // Accumulate effective cost AFTER resistance. Quantize against the next
+    // enhanced pool's conversion rate, so 0.1-point updates cannot bypass a
+    // 3:1 shield or round resistance away at high frame rates.
+    const total = (windFootingRemainders.get(entity) || 0) + cost * footingLossMultiplier(entity);
+    const spend = quantizedWindFootingCost(entity, total);
+    windFootingRemainders.set(entity, Math.max(0, total - spend));
+    if (spend > 0) {
+      (window.ResourceSystem?.spendFooting || spendFooting)(entity, spend, "Windblown movement", { effectiveCost: true }); // Preserve recovery-delay and any later transaction observers.
+      if (entity.footing <= 0 && !entity.prone) {
+        windFootingRemainders.delete(entity); // A prior fall never lends a fractional charge to the next recovery.
+        (onDepleted || window.Combat?.deps?.movementFootingDepleted)?.(entity, motion.windX, motion.windY);
+      }
+    }
+  }
+
+  function quantizedWindFootingCost(entity, total) {
+    // Only consult the enhanced priority table when an enhanced reserve is
+    // actually present; ordinary Windblown movement stays allocation-free.
+    const pools = getAffliction(entity, "temperedFooting") > 0 || getAffliction(entity, "resoluteFooting") > 0
+      ? getEnhancedResources(entity, "footing", { kind: "loss", reason: "Windblown movement" }) : [];
+    let remaining = total;
+    for (const entry of pools) {
+      const rate = entry.def.conversionRate;
+      const capacity = entry.amount * rate;
+      if (remaining + 1e-9 < capacity) {
+        return round1(total - remaining + Math.floor((remaining + 1e-9) * 10 / rate) * rate / 10);
+      }
+      remaining = Math.max(0, remaining - capacity);
+    }
+    return round1(total - remaining + Math.floor((remaining + 1e-9) * 10) / 10);
+  }
+
   function timedDebuffModifier(entity, key) {
+    // Preserve the established game.js, NPC and diagnostics callers without
+    // allowing a second formula or a second application of the resource effects.
+    if (key === "moveSpeed") return movementMultiplier(entity, "walk");
+    if (key === "dodgeLungeDistance") return movementMultiplier(entity, "dodge");
+    return timedStatusMultiplier(entity, key);
+  }
+
+  function timedStatusMultiplier(entity, key) {
     const store = timedDebuffStore(entity); // Fast no-status path used by per-frame movement/combat loops.
     if (!store) return 1;
     const liveStore = cleanupTimedDebuffs(entity); // Expiration cleanup stays allocation-free and only scans actors that actually have timed statuses.
@@ -486,9 +703,10 @@
   }
 
   function initEntity(entity) {
+    windDirections.delete(entity); windFootingRemainders.delete(entity); windMotionFrames.delete(entity); // Reused player/spawn objects cannot carry a prior member's motion runtime.
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
     // Old sensory-only Fey segments are not carried over into the new exertion-based afflictions.
-    for (const obsolete of ["phantomWoundsHealth", "phantomBloodHealth", "phantomPainFooting"]) delete entity.afflictions[obsolete];
+    for (const obsolete of ["phantomWoundsHealth", "phantomBloodHealth", "phantomPainFooting", "undertowStamina", "calcifiedFooting", "hearthstoneFooting"]) delete entity.afflictions[obsolete];
     if (Object.prototype.hasOwnProperty.call(entity, "_timedCombatDebuffs")) delete entity._timedCombatDebuffs; // Timed combat statuses are runtime-only and must never survive a fresh spawn/profile initialization.
     entity.exhaustion = { active: false, blackStamina: 100, ...(entity.exhaustion || {}) };
     if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
@@ -510,10 +728,11 @@
 
   function getAffliction(entity, id) {
     const locked = entity?._immutableAfflictions?.[id]; // Permanent afflictions stay gameplay-fixed even if outside code writes their display field.
-    return Number.isFinite(locked) ? locked : (entity.afflictions?.[id] ?? 0);
+    return Number.isFinite(locked) ? locked : (entity?.afflictions?.[id] ?? 0);
   }
 
   function maxAfflictionAmount(entity, def) {
+    if (def === AFFLICTIONS.leadboundStamina) return Math.max(0, Math.min(entity?.maxStamina || 0, Number(entity?.stamina) || 0)); // Current-anchored burden never hides beyond the spendable ordinary pool.
     if (def?.resource === "health") return entity?.maxHealth || 0; // Health afflictions clamp against Health.
     if (def?.resource === "footing") return entity?.maxFooting || 0; // Footing afflictions clamp against Footing.
     return entity?.maxStamina || 0; // Existing non-Health afflictions default to Stamina.
@@ -529,6 +748,7 @@
       return;
     }
     entity.afflictions[id] = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+    if (id === "windblownStamina" && entity.afflictions[id] <= 0) { windDirections.delete(entity); windFootingRemainders.delete(entity); } // Direct clears, cleansing and expenditure all reset the same runtime state.
   }
 
   function setImmutableAffliction(entity, id, amount) {
@@ -574,6 +794,10 @@
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before + amount);
     const added = round1(getAffliction(entity, id) - before);
+    if (id === "windblownStamina" && getAffliction(entity, id) > 0) { // Even a capped successful reapplication changes direction.
+      windDirections.delete(entity);
+      windblownDirection(entity);
+    }
 
     if (id === "burningHealth" && added > 0 && getAffliction(entity, "kindlingHealth") > 0) {
       convertKindlingToBurning(entity, "ordinary Burning applied");
@@ -591,7 +815,8 @@
     if (id === 'rentHealth' && !window.HobunjiSacredGround?.contains?.(entity)) return 0; // Generic cleanses and passive recovery cannot remove a sacred-only wound.
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before - amount);
-    return round1(before - getAffliction(entity, id));
+    const remaining = getAffliction(entity, id);
+    return round1(before - remaining);
   }
 
   function bleedOut(entity, amount, options = {}) {
@@ -669,10 +894,13 @@
   function getEffectiveMax(entity, key) {
     const player = window.Combat?.deps?.player; // Used to apply maximum-resource potion/perk buffs only to their consumer.
     const isPlayer = entity === player;
-    const staminaMul = (isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1) * statModifier(entity, "maxStamina"); // Used by Endurance / Increase Stamina / trinkets.
-    const healthMul = (isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1) * statModifier(entity, "maxHealth"); // Increase Health perk / trinkets.
-    if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
+    if (key === "stamina") {
+      const staminaMul = (isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1) * statModifier(entity, "maxStamina"); // Only Stamina queries need Endurance / Increase Stamina / trinkets.
+      const full = (entity.maxStamina || 0) * staminaMul; // Shared capacity and clamp ceiling.
+      return clamp(full - getAffliction(entity, "windedStamina"), 0, full);
+    }
     if (key === "health") {
+      const healthMul = (isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1) * statModifier(entity, "maxHealth"); // Only Health queries need Increase Health / trinkets.
       const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
       const rentHealth = Math.max(0, getAffliction(entity, "rentHealth")); // Persistent Wyrm-witch capacity loss; cleared only by shared sacred-ground detection.
       const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth") - rentHealth, 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
@@ -739,7 +967,7 @@
   }
 
   function applyHealthAfflictionDamage(entity, amount, cause = 'affliction') {
-    if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // No bleed/poison can hurt a newborn hidden under its physical carry proxy.
+    if ((window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0; // No bleed/poison can hurt a newborn hidden under its physical carry proxy.
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount * statModifier(entity, 'incomingHealthDamage'), { kind: "damage", source: "afflictionTick" }); // Glass Fang / False Courage change actual DoT Health loss without creating extra affliction buildup. // Enhanced Health absorbs DoT through the same transaction path as direct damage.
     const remaining = enhanced.ordinaryRemaining;
@@ -760,6 +988,7 @@
     entity.stamina = entity.exhaustion.active
       ? 0
       : round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina"))); // While Exhausted, black Stamina is the only live stamina pool.
+    if (getAffliction(entity, "leadboundStamina") > entity.stamina) setAffliction(entity, "leadboundStamina", entity.stamina); // Direct drains and capacity changes cannot leave an invisible burden.
     entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina, 0, 100));
     if (Number.isFinite(entity.footing)) entity.footing = round1(clamp(entity.footing, 0, getEffectiveMax(entity, "footing")));
   }
@@ -862,29 +1091,26 @@
     return Number.isFinite(last) ? Math.max(0, nowMs() - last) : Infinity;
   }
 
-  function enhancedResourcePriority(def, transaction) {
-    const beneficial = typeof def?.benefitsTransaction === "function" && def.benefitsTransaction(transaction); // Action-specific benefit may outrank general enhanced resources without any one-off Furious check.
-    return beneficial ? Number(def.beneficialPriority ?? def.normalPriority) || 0 : Number(def?.normalPriority) || 0;
-  }
-
   function getEnhancedResources(entity, resourceKey, transaction = {}) {
-    return Object.entries(ENHANCED_RESOURCE_DEFS)
-      .filter(([id, def]) => def.resource === resourceKey && getAffliction(entity, id) > 0)
-      .map(([id, def]) => ({
-        id,
-        def,
-        amount: getAffliction(entity, id),
-        priority: enhancedResourcePriority(def, transaction),
-        benefitsTransaction: typeof def.benefitsTransaction === "function" && def.benefitsTransaction(transaction),
-      }))
-      .sort((a, b) => b.priority - a.priority || b.def.conversionRate - a.def.conversionRate);
+    const pools = []; // Only positive reserves of the requested resource enter the priority sort.
+    const definitions = enhancedByResource[resourceKey];
+    if (!definitions) return pools;
+    for (const [id, def] of definitions) {
+      const amount = getAffliction(entity, id); // Current balance, sampled once per eligible pool.
+      if (!(amount > 0)) continue;
+      const benefitsTransaction = typeof def.benefitsTransaction === "function" && def.benefitsTransaction(transaction); // Same predicate controls priority and eligibility.
+      const priority = benefitsTransaction ? Number(def.beneficialPriority ?? def.normalPriority) || 0 : Number(def.normalPriority) || 0;
+      pools.push({ id, def, amount, priority, benefitsTransaction });
+    }
+    if (pools.length > 1) pools.sort((a, b) => b.priority - a.priority || b.def.conversionRate - a.def.conversionRate);
+    return pools;
   }
 
   function resolveEnhancedResourceTransaction(entity, resourceKey, amount, transaction = {}) {
     const requested = Math.max(0, Number(amount) || 0); // Effective ordinary-resource points the transaction wants to pay/absorb.
     let remaining = requested; // Effective amount left after each enhanced pool contributes through its conversion rate.
     const consumed = []; // Detailed raw/effective contributions used by debug and offensive-Held tempo calculations.
-    let weightedTempo = 0; // Effective points multiplied by their own action tempo; ordinary remainder contributes at 1× below.
+    const tempoSnapshot = resourceKey === "stamina" ? attackTempoMultiplier(entity, transaction.tempoActionKind || transaction.actionKind) : 1; // Read before any payment mutates the reserve.
 
     for (const entry of getEnhancedResources(entity, resourceKey, transaction)) {
       if (!(remaining > 0)) break;
@@ -897,7 +1123,7 @@
       const removed = removeAffliction(entity, entry.id, rawConsumed);
       const actualEffectivePaid = Math.min(remaining, removed * rate);
       if (!(actualEffectivePaid > 0)) continue;
-      const tempo = entry.benefitsTransaction ? Math.max(1, Number(entry.def.tempoMultiplier) || 1) : 1;
+      const tempo = entry.benefitsTransaction && entry.def.tempoMultiplier ? tempoSnapshot : 1;
       consumed.push({
         id: entry.id,
         rawConsumed: removed,
@@ -907,8 +1133,11 @@
         benefitsTransaction: entry.benefitsTransaction,
       });
       remaining = Math.max(0, remaining - actualEffectivePaid);
-      weightedTempo += actualEffectivePaid * tempo;
 
+
+      if (entry.id === "pactHealth") {
+        addAffliction(entity, "soulweightedHealth", removed); // The borrowed shield's debt is charged only when it is actually consumed.
+      }
       if (entry.id === "moralizedStamina") {
         window.EnchantmentSystem?.logEvent?.(`${removed} Moralized Stamina paid ${round1(actualEffectivePaid)} Stamina`);
       } else if (entry.id === "furiousStamina" && tempo > 1) {
@@ -916,9 +1145,8 @@
       }
     }
 
-    weightedTempo += remaining;
     const enhancedPaid = round1(requested - remaining);
-    const tempoMultiplier = requested > 0 ? Math.max(1, weightedTempo / requested) : 1;
+    const tempoMultiplier = tempoSnapshot;
     return {
       resourceKey,
       requested: round1(requested),
@@ -934,12 +1162,18 @@
     return addAffliction(entity, id, amount);
   }
 
+  function isDodgeTransaction(tx = {}) {
+    const kind = String(tx.actionKind || ""); // Explicit action classifications take precedence over legacy reason labels.
+    const reason = String(tx.reason || "");
+    return kind === "combatDodge" || (!kind && /\bdodge\b/i.test(reason) && !/\bpassive\b/i.test(reason));
+  }
+
   function spendStamina(entity, amount, reason = "action", transaction = {}) {
     if (!entity) return { spent: 0, excess: 0, enhancedPaid: 0, consumed: [], tempoMultiplier: 1, panicSpent: 0 };
     entity.lastAttackAttemptAt = nowMs();
     const actionKind = String(transaction?.actionKind || ''); // Structured action kind shared by resource-specific stamina spending.
     const label = String(reason || ''); // Legacy reason labels preserve dodge detection for untyped actions.
-    const dodge = actionKind === 'combatDodge' || /\bdodge\b/i.test(label); // Also covers the ordinary roll's second somersault payment.
+    const dodge = isDodgeTransaction({ actionKind, reason: label }); // Legacy somersaults still qualify; passive Blink upkeep does not.
     amount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "staminaCost");
     if (entity === window.Combat?.deps?.player) {
       const attacking = !dodge && (/^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponLoad|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind) || (!actionKind && /attack|swing|strike|breaker|flurry|quick|jab|stab|shot|reload|heavy/i.test(label)));
@@ -948,6 +1182,8 @@
       if (attacking) amount *= statModifier(entity, 'attackStaminaCost') * (heavy ? statModifier(entity, 'heavyAttackStaminaCost') : 1);
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08);
+    } else if (actionKind !== 'combatNpcMelee') {
+      amount *= entity?.def?.combatPerkModifiers?.staminaCost ?? 1; // Melee's definition already includes this discount; dodge/throws and other actions do not.
     }
     // Panicked Stamina is a reserved affliction, not an ordinary enhanced
     // resource. Other Stamina pays for ordinary actions first. A dodge draws
@@ -978,8 +1214,9 @@
       const consumedPanic = Math.max(0, normalSpent - Math.max(0, before - panicReserved)); // Remaining portion after non-panic Stamina paid.
       if (consumedPanic > 0) removeAffliction(entity, "panickedStamina", consumedPanic);
     }
+    const leadboundSpent = normalSpent > 0 ? removeAffliction(entity, "leadboundStamina", normalSpent) : 0; // Current-anchored burden is paid before overlapping lower bands, never by enhanced reserves.
     entity.stamina = after;
-    if (normalSpent > 0) resolveSpentAfflictions(entity, after, before);
+    if (normalSpent > leadboundSpent) resolveSpentAfflictions(entity, after, before - leadboundSpent);
     if (excess > 0) enterExhausted(entity, excess, reason);
     enforceCaps(entity);
     return finish({ spent: normalSpent, excess, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier });
@@ -992,12 +1229,16 @@
   // 0 is what the caller uses as its signal to enter prone (see initEntity's
   // comment) rather than anything tracked in here. A prone entity is immune
   // to further loss until it recovers, per the feature's own rule.
-  function spendFooting(entity, amount, reason = "hit") {
-    if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // Newborns do not enter prone/footing damage from combat.
+  function footingLossMultiplier(entity) {
+    const resistance = entity === window.Combat?.deps?.player ? 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08) : (entity?.def?.combatPerkModifiers?.footingResistance ?? 1); // Same resistance for every ordinary Footing loss.
+    return timedDebuffModifier(entity, "footingDamageTaken") * statModifier(entity, 'incomingFootingDamage') * resistance;
+  }
+
+  function spendFooting(entity, amount, reason = "hit", options = {}) {
+    if ((window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0; // Newborns do not enter prone/footing damage from combat.
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
-    amount *= timedDebuffModifier(entity, "footingDamageTaken") * statModifier(entity, 'incomingFootingDamage'); // Double-edged balance trinkets adjust only received Footing damage, before existing resistance and enhanced Footing.
-    if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
+    if (!options.effectiveCost) amount *= footingLossMultiplier(entity); // Wind's accumulator already contains the mitigated cost; never apply resistance twice.
     const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
     const ordinaryLoss = enhanced.ordinaryRemaining;
     const before = entity.footing;
@@ -1010,21 +1251,23 @@
   // docs above) proportional to how much of the band the spend crossed.
   function resolveSpentAfflictions(entity, spendEnd, spendStart) {
     const woundedOverlap = consumeZeroBasedSpend(entity, "woundedStamina", spendEnd, spendStart);
-    if (woundedOverlap > 0) applyDamage(entity, woundedOverlap, { reason: "spent Wounded Stamina" });
+    if (woundedOverlap > 0) applyDamage(entity, woundedOverlap, { reason: "spent Wounded Stamina", source: "afflictionTick" });
 
     const infectedOverlap = consumeZeroBasedSpend(entity, "infectedStamina", spendEnd, spendStart);
-    if (infectedOverlap > 0) applyDamage(entity, infectedOverlap, { reason: "spent Infected Stamina" });
+    if (infectedOverlap > 0) applyDamage(entity, infectedOverlap, { reason: "spent Infected Stamina", source: "afflictionTick" });
 
     const shatteredOverlap = consumeZeroBasedSpend(entity, "shatteredStamina", spendEnd, spendStart);
     if (shatteredOverlap > 0) addAffliction(entity, "bleedingHealth", shatteredOverlap * 1.6);
 
     const frostbittenOverlap = consumeZeroBasedSpend(entity, "frostbittenStamina", spendEnd, spendStart); // Frostbitten Stamina converts only the spent overlap into equal Footing damage.
     if (frostbittenOverlap > 0) spendFooting(entity, frostbittenOverlap, "spent Frostbitten Stamina");
+    consumeZeroBasedSpend(entity, "weightlessStamina", spendEnd, spendStart); // Last ordinary Stamina band, after all expenditure punishments.
   }
 
   function consumeZeroBasedSpend(entity, id, spendEnd, spendStart) {
     const amount = getAffliction(entity, id);
-    const overlap = getRangeOverlap(spendEnd, spendStart, 0, amount);
+    const offset = id === "weightlessStamina" ? 0 : getAffliction(entity, "weightlessStamina"); // Punishing zero-based bands sit immediately above Weightless.
+    const overlap = getRangeOverlap(spendEnd, spendStart, offset, offset + amount);
     if (overlap <= 0) return 0;
     removeAffliction(entity, id, overlap);
     return round1(overlap);
@@ -1047,12 +1290,62 @@
   // SFX, UI labels) — it no longer implies any specific affliction. Returns
   // the actual Health lost.
   function attackPowerForAttack(opts = {}) {
-    const raw = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.().attackPower : null) ?? DEFAULT_ATTACK_POWER); // Player shape, NPC shape, or ranged weapon declares offensive status strength.
-    return Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Only gameplay's authored Attack Power affects on-hit buildup, not post-defense Health damage.
+    const raw = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.()?.attackPower : null) ?? DEFAULT_ATTACK_POWER); // Player shape, NPC shape, or ranged weapon declares offensive status strength.
+    const basePower = Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Retain the authored base limit, then apply the enhanced reserve.
+    return basePower * planarAmountMultiplier(opts.attacker, "temperedFooting"); // Buildup only: never changes direct Health or Footing damage.
+  }
+
+  // Both the core damage path and the Drunken Health compatibility adapter use this single owner.
+  function resolvePlanarHealthTransaction(entity, amount, opts = {}) {
+    const damage = Math.max(0, Number(amount) || 0); // Damage remaining after ordinary attack modifiers / Drunken Health conversion.
+    const direct = opts.source !== "afflictionTick"; // Wounded/Infected expenditure is affliction damage, not a weapon strike.
+    const soulweightBefore = direct ? getAffliction(entity, "soulweightedHealth") : 0; // Snapshot old debt before Pact consumption adds new debt.
+    const bypass = direct ? removeAffliction(entity, "veilmarkedHealth", Math.min(damage, Math.max(0, entity.health), getAffliction(entity, "veilmarkedHealth"))) : 0;
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", Math.max(0, damage - bypass), {
+      kind: "damage", source: direct ? "directDamage" : "afflictionTick", reason: opts.reason || "damage",
+    });
+    return { ordinaryRemaining: round1(enhanced.ordinaryRemaining + bypass), soulweightBefore };
+  }
+
+  function settleSoulweight(entity, lost, transaction) {
+    const oldDebt = transaction?.soulweightBefore || 0; // Only the debt present before the hit may discharge.
+    if (!(lost > 0 && oldDebt > 0 && !entity.exhaustion?.active && entity.stamina > 0)) return;
+    const drained = removeAffliction(entity, "soulweightedHealth", Math.min(lost, oldDebt, entity.stamina));
+    entity.stamina = round1(Math.max(0, entity.stamina - drained)); // A drain, not a paid action: no action triggers or Black-Stamina debt.
+  }
+
+  function showAttackEffect(entity, id, amount, opts = {}) {
+    if (!opts.attacker || opts.environmentalImpact || !(amount > 0)) return;
+    const popup = window.WorldPopupText; // Reuses authored damage animation and ownership filter.
+    popup?.showCombatEffect?.(entity, id, amount, popup.isLocalCombatSource?.(opts.attacker));
+  }
+
+  function addAttackAffliction(entity, id, amount, opts) {
+    const added = window.ResourceSystem.addAffliction(entity, id, amount); // Actual capped buildup, including live compatibility adapters.
+    showAttackEffect(entity, id, added, opts);
+    return added;
+  }
+
+  function applyAttackAfflictions(entity, opts = {}) {
+    if (opts.afflictionBonuses) {
+      const buildupAttackPower = attackPowerForAttack(opts); // One shared attack-power basis for all live hit adapters.
+      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Shared affliction family vocabulary for player and NPC attackers.
+      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
+        const definition = AFFLICTIONS[id]; // Ranged weapon archetypes may register a 40× buildup alias for B'shuakauitl darts.
+        if (!definition || !(mul > 0)) continue;
+        const actualId = definition.rangedAliasFor && AFFLICTIONS[definition.rangedAliasFor] ? definition.rangedAliasFor : id; // Never store an internal alias as a separate, unspendable status.
+        const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
+        const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
+        const player = window.Combat?.deps?.player; // Legacy anonymous player hits on creatures retain their old behavior; known NPCs use their own ranks.
+        const attackerRank = opts.attacker ? (opts.attacker === player ? window.PerkSystem?.rank('combat', perkId) : opts.attacker.def?.combatPerks?.[perkId]) : (!Object.hasOwn(opts, 'attacker') && entity !== player ? window.PerkSystem?.rank('combat', perkId) : 0); // Explicit null/undefined sources are not attributed to the player.
+        const familyMul = perkId ? 1 + (attackerRank || 0) * 0.12 : 1;
+        addAttackAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul, opts); // Status buildup follows Attack Power, not the dart/club's Health damage.
+      }
+    }
   }
 
   function applyDamage(entity, amount, opts = {}) {
-    if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // Preserve the saved family member through every shared NPC damage path.
+    if ((window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0; // Preserve the saved family member through every shared NPC damage path.
     if (!(amount > 0)) return 0;
     entity.lastAttackReceivedAt = nowMs();
 
@@ -1065,39 +1358,29 @@
       }
     }
 
-    const buildupAttackPower = attackPowerForAttack(opts); // One shared source for ordinary and Drunken Health damage adapters.
     finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
-    const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
+    const transaction = resolvePlanarHealthTransaction(entity, finalDamage, opts);
     const before = entity.health;
-    entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
+    entity.health = round1(clamp(entity.health - transaction.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
+    settleSoulweight(entity, lost, transaction);
     // Shared player/NPC damage path: retain the real lethal weapon type, not a
     // currently-active bleed/poison buildup that may have come from an older hit.
     if (before > 0 && entity.health <= 0) entity._lethalDamageCause = String(opts.tag || opts.damageType || opts.reason || 'impact').toLowerCase();
 
-    if (opts.afflictionBonuses) {
-      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Only the player currently inflicts afflictionBonuses (see damageCreature) — safe to apply these perks unconditionally.
-      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        const definition = AFFLICTIONS[id]; // Ranged weapon archetypes may register a 40× buildup alias for B'shuakauitl darts.
-        if (!definition || !(mul > 0)) continue;
-        const actualId = definition.rangedAliasFor && AFFLICTIONS[definition.rangedAliasFor] ? definition.rangedAliasFor : id; // Never store an internal alias as a separate, unspendable status.
-        const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
-        const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
-        const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
-        addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
-      }
-    }
+    applyAttackAfflictions(entity, opts);
     if (opts.fixedAfflictionBuildup) {
       // On-hit flat buildup belongs inside the authoritative damage transaction: invulnerability,
       // blocked attacks and intercepted damage never call applyDamage. Unlike percentage-based
       // afflictions, flat buildup cannot inherit prone vulnerability from the scaled hit amount.
       const flatProneMul = opts.environmentalImpact === true ? 1 : getProneAttackMultiplier(entity); // Applies 1.75x/2.5x to authored flat attack effects only, never ambient collision damage.
       for (const [id, amount] of Object.entries(opts.fixedAfflictionBuildup)) {
-        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAffliction(entity, id, amount * flatProneMul);
+        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAttackAffliction(entity, id, amount * flatProneMul, opts);
       }
     }
 
     enforceCaps(entity);
+    showAttackEffect(entity, 'health', lost, opts);
     if (lost > 0) window.dispatchEvent(new CustomEvent('hobunji-resource-change', { detail: { entity, delta: -lost, reason: opts.reason || 'damage', immediate: true } }));
     return lost;
   }
@@ -1265,6 +1548,9 @@
     if (def.extend === "maxBack") {
       leftPoints = clamp((max || 0) - amount, 0, max || 0); // Footing reservations occupy the unavailable end of the ring.
       widthPoints = clamp(amount, 0, max || 0);
+    } else if (resourceKey === "stamina" && ["woundedStamina", "infectedStamina", "shatteredStamina", "frostbittenStamina"].includes(id)) {
+      leftPoints = clamp(getAffliction(entity, "weightlessStamina"), 0, max || 0);
+      widthPoints = clamp(amount, 0, Math.max(0, max - leftPoints));
     } else if (def.extend === "currentBack") {
       const right = clamp(current, 0, max || 0);
       leftPoints = clamp(right - amount, 0, max || 0);
@@ -1284,6 +1570,24 @@
     clearTimedDebuff,
     getProneAttackMultiplier,
     timedDebuffModifier,
+    movementMultiplier,
+    movementIntent,
+    composeMovement,
+    commitMovement,
+    composeMountedMovement,
+    commitMountedMovement,
+    beginMovementFrame,
+    windMovementHandled,
+    hasWindblown,
+    movementDebug: entity => ({ // Mobile diagnostics; no per-frame DOM work.
+      walk: movementMultiplier(entity, 'walk'), dodgeLunge: movementMultiplier(entity, 'dodge'),
+      windblown: getAffliction(entity, 'windblownStamina'),
+      windAirMultiplier: windAirMultiplier(entity), // Mobile diagnostics show the active flight modifier.
+      windYawDeg: hasWindblown(entity) ? windblownDirection(entity).angle * 180 / Math.PI : null,
+      dementedYawDeg: (Number(window.FeyIllusions?.movementRotationRad?.(entity)) || 0) * 180 / Math.PI,
+    }),
+    attackTempoMultiplier,
+    planarAmountMultiplier,
     registerStatModifierProvider,
     statModifier,
     afflictionBonusesForTag,
@@ -1317,11 +1621,14 @@
     restoreStamina,
     getEnhancedResources,
     resolveEnhancedResourceTransaction,
+    resolvePlanarHealthTransaction,
+    settleSoulweight,
     addEnhancedResource,
     convertKindlingToBurning,
     spendStamina,
     spendFooting,
     applyDamage,
+    applyAttackAfflictions, addAttackAffliction, showAttackEffect, // Shared with the Drunken Health live damage adapter.
     attackPowerForAttack, // Shared by the Drunken Health adapter and mobile combat diagnostics.
     tick,
     getRestInfo,

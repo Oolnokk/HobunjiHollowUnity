@@ -64,7 +64,7 @@ function placeTree(x, z, { climb = true } = {}) {
   chunk.add(tree);
   return tree;
 }
-const trees = [placeTree(0, 0), placeTree(3, 1), placeTree(6, 2, { climb: false }), placeTree(9, 3)];
+const trees = [placeTree(0, 0), placeTree(2, 1), placeTree(4, 2, { climb: false }), placeTree(6, 3)];
 const grass = new THREE.Mesh(leafGeo, leafMat);
 grass.userData = { isWildernessGrassChunk: true, cullSphere: { x: 0, z: 0, radius: 1 } };
 chunk.add(grass);
@@ -122,8 +122,10 @@ assert.equal(trunkBatch.raycast(new THREE.Raycaster(), []), undefined, 'batches 
 
 // Unchanged frame: no instance upload.
 const uploads = I.snapshot().uploads;
+const keyBuilds = I.snapshot().keyBuilds;
 I.suspendForRender(scene, { isZone: true })();
 assert.equal(I.snapshot().uploads, uploads, 'static trees: matrices uploaded once');
+assert.equal(I.snapshot().keyBuilds, keyBuilds, 'still trees reuse grouping keys');
 
 // A fading tree keeps its own transparent clone material: drawn by itself.
 fading.add(trees[1]);
@@ -165,12 +167,93 @@ delete trees[3].children[1].onBeforeRender;
 
 // Capacity grows with the forest.
 const many = [];
-for (let i = 0; i < 12; i++) many.push(placeTree(20 + i, 5));
+for (let i = 0; i < 12; i++) many.push(placeTree(16 + (i % 6), 4 + Math.floor(i / 6)));
 cullables = [...trees, ...many, grass];
 scene.updateMatrixWorld(true);
 restore = I.suspendForRender(scene, { isZone: true });
-assert.equal(batches(scene).find(b => b.geometry === trunkGeo).count, 16);
+const spatialTrunks = batches(scene).filter(b => b.geometry === trunkGeo);
+assert.deepEqual(spatialTrunks.map(b => b.count).sort((a,b)=>a-b), [4,12], 'distant cells never share a corridor-wide batch');
+assert.equal(I.snapshot().cells,2);
+for (const batch of spatialTrunks) {
+  const xs = [];
+  for (let i = 0; i < batch.count; i++) { batch.getMatrixAt(i,m); xs.push(m.elements[12]); }
+  assert(Math.max(...xs)-Math.min(...xs)<I.CELL_TILES, 'tight cell-local instance centers');
+}
 restore();
+// Real bounds/camera cull on the production instanced-culling owners.
+const realContext = vm.createContext({window:win,globalThis:win,console,WeakRef});
+for (const pathName of ['instanced-mesh-bounds.js','instanced-mesh-view-cull.js']) {
+  if(pathName==='instanced-mesh-bounds.js') delete win.InstancedMeshBounds;
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../docs/js',pathName),'utf8'),realContext);
+}
+// Recreate proxies so the actual bounds tracker enrolls them.
+I.setEnabled(false); I.setEnabled(true);
+restore = I.suspendForRender(scene,{isZone:true});
+scene.updateMatrixWorld(true);
+const camera = new THREE.OrthographicCamera(-4,4,4,-4,.1,100);
+camera.position.set(3,2,20); camera.lookAt(3,2,0); camera.updateMatrixWorld(true);
+const undoCull = win.InstancedMeshViewCull.suspendForRender(scene,camera);
+assert(undoCull, 'far cell actually culls');
+const near = batches(scene).filter(b=>b.geometry===trunkGeo);
+assert.equal(near.length,1);
+assert.equal(near[0].count,4,'near cell remains in camera pass, far cell excluded');
+undoCull(); restore();
+// Negative scale and descendant-bearing source meshes fail open.
+trees[0].scale.x = -1;
+const child = new THREE.Mesh(leafGeo,leafMat); trees[1].children[0].add(child);
+scene.updateMatrixWorld(true);
+restore=I.suspendForRender(scene,{isZone:true});
+assert(trees[0].children[0].visible);
+assert(trees[1].children[0].visible,'a source with visible descendants is not hidden');
+restore();
+trees[0].scale.x=1; trees[1].children[0].remove(child);
+// Freshly streamed trees must be positioned correctly before the renderer's first update.
+const freshA = placeTree(33, 2), freshB = placeTree(34, 2);
+cullables = [freshA,freshB,freshA]; // Duplicate discovery must not duplicate instances.
+restore=I.suspendForRender(scene,{isZone:true}); // Deliberately no scene.updateMatrixWorld().
+const freshBatch=batches(scene).find(b=>b.geometry===trunkGeo);
+assert.equal(freshBatch.count,2);
+freshBatch.getMatrixAt(0,m);
+assert.equal(m.elements[12],33);
+restore();
+// Explicit culling / shader / group-order policy stays with the original.
+freshA.children[0].frustumCulled=false;
+freshA.children[1].material=new THREE.MeshBasicMaterial();
+freshA.children[1].material.onBeforeCompile=()=>{};
+freshA.renderOrder=4;
+restore=I.suspendForRender(scene,{isZone:true});
+assert.equal(restore,null,'group order cannot be represented by a scene-level instance');
+assert(freshA.children.every(part=>part.visible));
+freshA.renderOrder=0;
+restore=I.suspendForRender(scene,{isZone:true});
+assert(freshA.children[0].visible);
+assert(freshA.children[1].visible);
+assert.equal(I.snapshot().skipped.uncullable,1);
+assert.equal(I.snapshot().skipped['shader-hook'],1);
+restore?.();
+// Force a failure after at least one batch has already hidden its sources.
+I.setEnabled(false); I.setEnabled(true);
+cullables=trees;
+const OriginalInstance=THREE.InstancedMesh;
+let created=0;
+THREE.InstancedMesh=class extends OriginalInstance {
+  constructor(...args) { if(++created===2) throw Error('injected proxy failure'); super(...args); }
+};
+assert.throws(()=>I.suspendForRender(scene,{isZone:true}),/injected proxy failure/);
+THREE.InstancedMesh=OriginalInstance;
+assert.equal(holderOf(scene),undefined);
+for (const tree of trees) for (const part of tree.children) {
+  assert.equal(part.visible,part.name!=='climbBranch'||tree!==trees[2]);
+  assert.equal(part.userData.hobunjiDrawProxyHidden,undefined);
+}
+// Rebuild after rollback and then retire distant cell buffers.
+cullables=[...trees,...many];
+I.suspendForRender(scene,{isZone:true})();
+// Retired cell buffers are removed after their short reuse window.
+cullables=trees; scene.updateMatrixWorld(true);
+for(let i=0;i<=I.RETIRE_AFTER_FRAMES+1;i++) I.suspendForRender(scene,{isZone:true})?.();
+assert(holderOf(scene).children.every(batch=>batch.count>0),'unloaded cells release their instance buffers');
+assert.equal(I.snapshot().retired,0);
 
 // Leaving the scene, or switching it off, releases the batches.
 const other = new THREE.Scene();

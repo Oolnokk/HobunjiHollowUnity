@@ -59,7 +59,7 @@ function resetRuntimeLoad(){
   E.threeStatus.textContent='Retrying runtime…';
   scheduleThreePreview(0);
 }
-function runtimeProfileKey(){return`${E.species.value}::${E.gender.value}::${R.three.runtimeDocsBase||runtimeDocsBase()}`}
+function runtimeProfileKey(){return`${E.species.value}::${E.gender.value}::${E.showHair?.checked?'hair':'bare'}::${R.three.runtimeDocsBase||runtimeDocsBase()}`}
 function blankRuntimeNpc(){
   return{
     name:'Clothing fit runtime preview',
@@ -67,10 +67,12 @@ function blankRuntimeNpc(){
       speciesId:E.species.value,
       gender:E.gender.value,
       randomSeed:`clothing-fit-runtime:${E.species.value}:${E.gender.value}`,
-      cosmetics:{
+      // Bare by default so fitting lines up against the skull; the Hair toggle
+      // keeps the game's seeded hair/eyes/beard to show what pokes through.
+      ...(E.showHair?.checked?{}:{cosmetics:{
         hairFront:'none',hairBack:'none',hairSide:'none',hairSideL:'none',
         eyes:'none',upperFace:'none',facialHair:'none'
-      }
+      }})
     },
     equippedCosmetics:[],
     appliedDyes:{},
@@ -93,7 +95,9 @@ async function runtimePortraitSet(){
     }
     if(!profile)throw new Error(`Could not build runtime portrait profile for ${E.species.value} ${E.gender.value}.`);
 
+    const keepFace=E.showHair?.checked?new Set(['hair','hairFront','hairBack','hairSide','hairSideL','eyes','upperFace','facialHair']):new Set();
     for(const prop of ['hair','hairFront','hairBack','hairSide','hairSideL','eyes','upperFace','facialHair','hat','hood','pauldron','torsoCosmetic','armCosmetic']){
+      if(keepFace.has(prop))continue; // Worn garments are always stripped so only the fitted/authored item is previewed.
       if(profile[prop])profile[prop]={id:'none',label:'None',tintSlot:null,layers:[]};
     }
 

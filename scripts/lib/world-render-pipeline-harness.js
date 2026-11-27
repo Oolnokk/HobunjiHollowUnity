@@ -23,10 +23,12 @@ function makeThree() {
   }
   class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
   class ShaderMaterial { constructor(params = {}) { Object.assign(this, params); this.type = 'ShaderMaterial'; this.uniforms = params.uniforms || {}; } }
+  class MeshBasicMaterial { constructor(params) { Object.assign(this, params); } }
   class DepthTexture { constructor(w, h) { this.width = w; this.height = h; } }
   class WebGLRenderTarget {
     constructor(w, h, options = {}) { this.width = w; this.height = h; this.stencilBuffer = !!options.stencilBuffer; this.texture = { rt: this }; }
     setSize(w, h) { this.width = w; this.height = h; }
+    dispose() { this.disposed = true; }
   }
   class Object3D {
     constructor() { this.children = []; this.parent = null; this.userData = {}; this.layers = new Layers(); this.name = ''; }
@@ -48,9 +50,9 @@ function makeThree() {
   class PlaneGeometry {}
   function WebGLRenderer() {}
   return {
-    Color, Vector2, ShaderMaterial, DepthTexture, WebGLRenderTarget, Object3D, Layers, Scene, Mesh, Group,
+    Color, Vector2, ShaderMaterial, MeshBasicMaterial, DepthTexture, WebGLRenderTarget, Object3D, Layers, Scene, Mesh, Group,
     OrthographicCamera, PlaneGeometry, WebGLRenderer,
-    BackSide: 1, LessDepth: 2, NearestFilter: 1003, RGBAFormat: 1023, DepthStencilFormat: 1027, UnsignedInt248Type: 1020,
+    FrontSide: 0, BackSide: 1, LessDepth: 2, NearestFilter: 1003, RGBAFormat: 1023, DepthStencilFormat: 1027, UnsignedInt248Type: 1020,
     UniformsLib: { fog: { fogDensity: { value: 0 }, fogNear: { value: 1 }, fogFar: { value: 2 }, fogColor: { value: new Color() } } },
     UniformsUtils: { merge(list) { const out = {}; for (const u of list) for (const k of Object.keys(u)) out[k] = { value: u[k].value }; return out; } },
   };
@@ -89,7 +91,7 @@ function createWorldRenderPipelineHarness(overrides = {}) {
     PerceptionMode: { renderOverlay: () => record({ kind: 'call', id: 'perception' }) },
     OutlineCompositeMaterial: { create: T => { record({ kind: 'call', id: 'compositeCreate' }); return new T.ShaderMaterial({ uniforms: {
       tColor: { value: null }, tEdgeId: { value: null }, tEdgeIdDepth: { value: null }, tSceneDepth: { value: null }, uTexel: { value: new T.Vector2(1, 1) },
-      uCameraNear: { value: 0 }, uCameraFar: { value: 0 }, uSeamOutlinesOn: { value: 0 }, uSeamColorDistThresh: { value: 0 }, uSeamOcclusionTolerance: { value: 0 } } }); } },
+      uCameraNear: { value: 0 }, uCameraFar: { value: 0 }, uSeamOutlinesOn: { value: 0 }, tShellMaskDepth: {value:null}, uDepthOutlinesOn:{value:0}, uOrthographic:{value:0}, uDepthFogMode:{value:0}, uDepthFogColor:{value:new T.Color()}, uDepthFogNear:{value:0}, uDepthFogFar:{value:1}, uDepthFogDensity:{value:0}, uSeamColorDistThresh: { value: 0 }, uSeamOcclusionTolerance: { value: 0 } } }); } },
     MobileRenderBudget: { sample: (now, active) => record({ kind: 'call', id: 'budgetSample', active }) },
   };
   Object.assign(window, stubs, overrides.window || {});
@@ -146,6 +148,8 @@ function createWorldRenderPipelineHarness(overrides = {}) {
           cloudForestFog: () => harness.settings.cloudForestFog,
         },
       });
+      // Existing pass-order fixtures explicitly exercise the legacy shell path.
+      if (overrides.outlineMode !== 'default') harness.pipeline.setGeneratedOutlineMode('shell');
       return harness;
     },
     frame(now = 1000) { log.length = 0; harness.pipeline.renderFrame(now); return log.slice(); },

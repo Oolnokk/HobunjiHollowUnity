@@ -16,11 +16,11 @@ class Matrix4 {
 }
 const identity = [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]; // Root and neck keep their bind-space points unchanged.
 const scaleHead = [2,0,0,0,0,3,0,0,0,0,1,0,.1,-.2,0,1]; // Distinct head scale and offset make neck-only sampling visibly wrong.
-const plane = {isSkinnedMesh:true,geometry:{userData:{blendHeight:.6}},bindMatrix:new Matrix4(1,1,1,4,5,0),bindMatrixInverse:new Matrix4(1,1,1,-4,-5,0),skeleton:{bones:[{},{},{}],boneMatrices:[...identity,...identity,...scaleHead],update(){}},updateMatrixWorld(){assert.equal(ancestorsFresh,true);},localToWorld(p){p.x+=10;p.y+=20;p.z+=30;return p;}}; // Nonidentity bind/world transforms detect accidental double world application.
+const plane = {isSkinnedMesh:true,position:new Vector3(),geometry:{userData:{blendHeight:.04}},bindMatrix:new Matrix4(1,1,1,4,5,0),bindMatrixInverse:new Matrix4(1,1,1,-4,-5,0),skeleton:{bones:[{},{},{}],boneMatrices:[...identity,...identity,...scaleHead],update(){}},updateMatrixWorld(){assert.equal(ancestorsFresh,true);},localToWorld(p){p.x+=10;p.y+=20;p.z+=30;return p;}}; // Nonidentity bind/world transforms detect accidental double world application.
 let ancestorsFresh = false; // A head pose can be queried before Three's normal world render updates its parents.
 const avatar = {userData:{portraitModelWidth:2,portraitModelHeight:2,sourceCanvas:{width:100,height:100},neckRig:{available:true,skinnedPlane:plane,neckLocal:{y:0},headScaleJoint:{}}},updateWorldMatrix(){ancestorsFresh=true;},updateMatrixWorld(){}}; // Minimal canonical PNG rig with the separate head-scale bone.
 const THREE = {Vector3,Matrix4}; // Only the math used by this production pixel path is required.
-const sandbox = {window:{THREE},THREE,localStorage:{getItem(){return null;},setItem(){}}}; // Runs the base module, then its gameplay parity adapter, in one realm.
+const sandbox = {window:{THREE},localStorage:{getItem(){return null;},setItem(){}}}; // Runs the base module, then its gameplay parity adapter, in one realm.
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync('docs/js/png-plane-avatar.js','utf8'),sandbox);
 function exercise(label){
@@ -35,10 +35,20 @@ function exercise(label){
   api.setPortraitsFlipped(false);api.resolveSkinnedPixelWorldPosition(avatar,pixel,out);
   assert(Math.abs(out.x-13.1)<1e-9,label+' follows portrait flip changes');
   assert(Math.abs(independent.x-15.1)<1e-9,label+' never exposes shared scratch as a returned result');
-  api.setPortraitsFlipped(true);api.resolveSkinnedPixelWorldPosition(avatar,{x:50,y:50},out);
-  assert(Math.abs(out.x-12.356475)<1e-9 && Math.abs(out.y-25.63255)<1e-9,label+' blends torso/neck/head weights rather than assuming a rigid head');
+  api.setPortraitsFlipped(true);api.resolveSkinnedPixelWorldPosition(avatar,{x:50,y:51},out); // Exactly halfway through the 2-source-pixel neck band on a 100px portrait.
+  assert(Math.abs(out.x-12.05)<1e-9 && Math.abs(out.y-24.86)<1e-9,label+' blends torso/neck/head weights within the short neck instead of assuming a rigid head');
 }
 exercise('base resolver');
+const sharedResolver = sandbox.window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition;
 vm.runInContext(fs.readFileSync('docs/js/portrait-plane-outline-parity.js','utf8'),sandbox);
+assert.equal(sandbox.window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition, sharedResolver, 'outline adapter preserves the single source-pixel resolver');
 exercise('game parity resolver');
 console.log('skinned pixel output: bind/world parity, mirrored weighted heads, ancestor refresh and vector reuse PASS');
+
+// Animation Author imports Three as an ES module; window.THREE is optional.
+plane.position = new Vector3();
+sandbox.THREE = undefined;
+sandbox.window.THREE = undefined;
+ancestorsFresh = false;
+const moduleResult = sandbox.window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition(avatar, {x:25,y:25});
+assert(Math.abs(moduleResult.x-15.1)<1e-9, 'module-only Three uses the live mesh vector constructor');

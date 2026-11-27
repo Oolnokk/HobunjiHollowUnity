@@ -12,9 +12,18 @@
     perched:'assets/creaturesprites/pingdort_perched.png',
     wings:'assets/creaturesprites/pingdort_wings.png',
   }); // Authored PNGs also provide the native farm, nursery and companion fallback silhouette.
+  const PRESENTATION=Object.freeze({
+    label:'Pingdort',hostile:false,diet:'carnivore',modelWidth:.48,spriteAspect:1000/1617,
+    sprites:Object.freeze({idle:SPRITES.perched,run:Object.freeze([SPRITES.flying,SPRITES.flying])}),
+  }); // Shared creature metadata for gameplay and the Animal Head Rig bestiary picker.
   const RIG_URL='config/creatures/pingdort-flying-rig.json'; // Authored shared two-bone flying rig with burden socket.
   const debug={registered:false,rigLoaded:false,failures:0,tintAssignments:0,lastTint:null,lastError:null}; // Mobile-readable registration, coat tint and asset diagnostics.
-  let rigPromise=null; // One image/config decode shared by all wild and pet Pingdorts.
+  let settingsPromise=null; // The native shoulder pet needs the authored curl without downloading wing textures.
+  let rigPromise=null; // One image decode shared by all articulated wild and companion rigs.
+  const SHOULDER_BODY_RIG=Object.freeze({
+    enabled:true,pivot:{x:0,y:.5},minDeg:0,maxDeg:0,meshResolution:32,
+    weightMap:{width:2,height:2,encoding:'rle-u9',unsetValue:256,data:[4,0]},
+  }); // A deformable native shoulder card with no invented head movement when there is no painted head rig.
 
   function configureLivestock(){
     const game=window.SCRATCHBONES_CONFIG?.game;
@@ -31,13 +40,13 @@
     if(!db)return false;
     const baseline=db['gar-wolf']||db.grehlr||{};
     const previous=db[KIND]||{};
-    db[KIND]={...baseline,...previous,label:'Pingdort',hostile:false,diet:'carnivore',
-      defaultSizeClass:'small',modelWidth:.48,spriteAspect:1000/1617,
+    db[KIND]={...baseline,...previous,...PRESENTATION,
+      defaultSizeClass:'small',
       attackDamage:6,attackTag:'sharp',attackCooldownS:2.4,
       attackRangePx:(Number(injected.TILE)||64)*3.5,
       isFlyingSpecies:true,attacks:['pingdortBoulderBomb'],
       lootPool:'creature_pingdort', // Wild Pingdorts drop their own meat and skin, never inherited Gar-wolf loot.
-      sprites:{idle:SPRITES.perched,run:[SPRITES.flying,SPRITES.flying]}};
+      sprites:{idle:PRESENTATION.sprites.idle,run:[...PRESENTATION.sprites.run]}};
     // Wild flocks override their own attack dispatch; personal companions use this special.
     if(render)render[KIND]={...(render[KIND]||{}),prefix:KIND,
       base:{idle:SPRITES.perched,run1:SPRITES.flying,run2:SPRITES.flying},patterns:[],
@@ -75,15 +84,34 @@
       img.src=url;
     });
   }
+  function loadSettings(){
+    if(!settingsPromise)settingsPromise=fetch(RIG_URL)
+      .then(r=>{if(!r.ok)throw new Error('Pingdort rig HTTP '+r.status);return r.json();})
+      .then(raw=>window.FlyingAnimalRig.normalize(raw))
+      .catch(error=>{settingsPromise=null;throw error;});
+    return settingsPromise;
+  }
   async function loadRig(){
     if(!rigPromise)rigPromise=Promise.all([
-      fetch(RIG_URL).then(r=>{if(!r.ok)throw new Error('Pingdort rig HTTP '+r.status);return r.json();}),
+      loadSettings(),
       ...Object.values(SPRITES).map(loadImage),
-    ]).then(([raw,flying,perched,wings])=>{
+    ]).then(([settings,flying,perched,wings])=>{
       debug.rigLoaded=true;
-      return {settings:window.FlyingAnimalRig.normalize(raw),images:{flying,perched,wings}};
+      return {settings,images:{flying,perched,wings}};
     }).catch(error=>{rigPromise=null;debug.failures++;debug.lastError=String(error);throw error;});
     return rigPromise;
+  }
+  function shoulderHeadRig(authored){
+    return window.AnimalHeadRigRuntime?.normalizeRig?.(authored) ? authored : SHOULDER_BODY_RIG;
+  }
+  async function attachShoulderRest(actor,avatar,headRig){
+    if(!avatar.headRig||avatar.shoulderRest?.authored)return;
+    try{
+      const {perchSpline}=await loadSettings(); // Use the exact same source spline as a wild Pingdort.
+      if(!perchSpline||actor.avatarRef!==avatar||actor.stableRole!=='shoulderPet'||!avatar.group.parent)return;
+      window.AnimalShoulderSpline?.decorateAvatar(window.THREE,avatar,
+        {...headRig,shoulderRest:{...perchSpline,enabled:true,useSpline:true}}, {fullSprite:true});
+    }catch(error){debug.failures++;debug.lastError=String(error);}
   }
   const SOURCE_COAT_HEX='#9dc09c'; // Approximate native sage-green pigment used as the existing animal shade-fill's luminance anchor.
   function recoloredImages(images,hex){
@@ -115,7 +143,7 @@
     const initial=/^#[0-9a-f]{6}$/i.test(String(requested||''))?requested:null;
     let recolored=null; // A fallback to authored PNGs is safer than tinting the white eye when canvas compositing is unavailable.
     if(initial)try{recolored=recoloredImages(images,initial);}catch(error){debug.failures++;debug.lastError=String(error);}
-    const instance=window.FlyingAnimalRig.create(settings,recolored||images); // Retains the real wing bones, original silhouettes, and native cleanup owner.
+    const instance=window.FlyingAnimalRig.create(settings,recolored||images); // Wild perches use the authored curl. The live companion presenter flattens its own rig.
     let displayedColor=recolored?initial:null; // Tracks the exact color already baked into this rig's PNG textures, not a multiplied material tint.
     const poseMaterials=instance.bodyMaterials; // References the existing flying/perched/wings materials; gripping shares perched.
     instance.restoreTint=(nextHex=displayedColor)=>{
@@ -149,6 +177,6 @@
     return instance;
   }
   configureLivestock(); // Must run before game.js snapshots LIVESTOCK_ITEM_KINDS and resources.
-  window.PingdortRegistration=Object.freeze({KIND,FERTILE_EGG,FARM_EGG,ZONES,SPRITES,register,configureLivestock,loadRig,createRig,
+  window.PingdortRegistration=Object.freeze({KIND,FERTILE_EGG,FARM_EGG,ZONES,SPRITES,PRESENTATION,register,configureLivestock,loadRig,createRig,shoulderHeadRig,attachShoulderRest,
     debugSnapshot:()=>({...debug})});
 })();

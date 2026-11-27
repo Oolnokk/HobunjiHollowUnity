@@ -169,13 +169,19 @@
       const dropWorld = Math.max(0, climb.surfaceStartY - climb.surfaceEndY);
       const resolved = c.prone ? window.HobunjiCliffFallImpact?.resolve?.(c, {
         dropWorld, dropTiers: window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5,
-        dirX: 0, dirY: 0,
+        dirX: 0, dirY: 0, popupCredit: climb.popupCredit === true,
       }) : null; // A knockdown during a cliff crossing uses height-scaled cliff effects once.
       if (!resolved) {
         const health = Number(c.health);
         const impact = Math.min(FALL_HEALTH_MAX, Math.max(0, (Number.isFinite(health) ? health : 1) - 1));
-        if (impact > 0) window.ResourceSystem?.applyDamage?.(c, impact, { tag: 'blunt', source: 'fell from cliff' });
-        window.ResourceSystem?.spendFooting?.(c, FALL_FOOTING, 'fell from cliff');
+        const healthLost = impact > 0 ? window.ResourceSystem?.applyDamage?.(c, impact, { tag: 'blunt', source: 'fell from cliff' }) : 0; // Actual landing loss.
+        const footingLost = window.ResourceSystem?.spendFooting?.(c, FALL_FOOTING, 'fell from cliff');
+        if (climb.popupCredit === true) {
+          const popup = window.WorldPopupText; // Same collision presentation path as ordinary shoves.
+          const healthPopup = popup?.showCombatEffect?.(c, 'health', healthLost, true, 'impact');
+          const footingPopup = popup?.showCombatEffect?.(c, 'footing', footingLost, true, 'impact');
+          if (healthPopup != null || footingPopup != null) popup?.showImpactCallout?.(c);
+        }
       }
       c._cliffClimbCooldownT = RETRY_COOLDOWN_S;
     } else {
@@ -189,7 +195,7 @@
   }
 
   // Projectile hit while on the face: let go and fall back to the foot.
-  function knockOff(c, reason = 'shot while climbing') {
+  function knockOff(c, reason = 'shot while climbing', popupCredit = false) {
     const climb = c?._cliffClimb;
     if (!climb || climb.phase !== 'climb') return false;
     // A descending crossing was previously immune to knock-off, so prone
@@ -199,6 +205,7 @@
     c._cliffRouteTravel = null; // Knocked-off enemies must not resume a discarded hop from thin air.
     c._cliffEntryPath = null;
     climb.phase = 'fall';
+    climb.popupCredit = popupCredit === true; // The hit that actually started the descent owns its landing.
     climb.t = 0;
     climb.startX = c.x; climb.startY = c.y;
     if (!droppingTowardLowerEnd) {

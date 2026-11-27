@@ -61,16 +61,16 @@
   // Head, feet, hands, pose orbit, vertical placement and opaque bounds excluded.
   // Mao-ao male retains his originally authored 1x perch; no runtime derivation.
   const characterRecords = [
-    ['tletingan::male', -17.000000000000004, -5.5, [-0.2448354156580218,0.4465232083661127,0,0.957612], [0.22770354382724423,0.42663710735156957,0], [-0.2448354156580218,0.4465232083661127,0], [59.09264957264957,108.5], 0.85,0.645,0.85,0.9,1,6],
-    ['engh-sho::male', -52.49999999999999, 30.5, [-0.28930388062923146,0.7000103424366998,0,1.035258], [0.2721813782445264,0.6838406837818225,0], [-0.28930388062923146,0.7000103424366998,0], [53.60656565656566,128.5], 0.95,1.005,0.95,1.15,1.275,0],
+    ['tletingan::male', -17.000000000000004, -5.5, [-0.2448354156580218,0.4465232083661127,0,0.957582], [0.22770354382724423,0.42663710735156957,0], [-0.2448354156580218,0.4465232083661127,0], [59.09264957264957,108.5], 0.85,0.645,0.85,0.9,1,6],
+    ['engh-sho::male', -52.49999999999999, 30.5, [-0.28930388062923146,0.7000103424366998,0,0.896974], [0.2721813782445264,0.6838406837818225,0], [-0.28930388062923146,0.7000103424366998,0], [53.60656565656566,128.5], 0.95,1.005,0.95,1.15,1.275,0],
     ['mao-ao::male', -47, 25, [-0.28087406205430004,0.6455541403639915,0,1], [0.19067248465844266,0.6947557240731601,0], [-0.28087406205430004,0.6455541403639915,0], [62.551070840197696,125.5], null,0.95,1,1.1,1.05,0],
-    ['mao-ao::female', -44.50000000000001, 22.5, [-0.23898599170593354,0.646996571654354,0,0.972561], [0.1771042396564939,0.6511546407522855,0], [-0.23898599170593354,0.646996571654354,0], [76.5545073375262,114.5], 1,0.925,0.8,1,1.025,0],
-    ['kenkari::male', -5.500000000000004, -19, [-0.18055321970300925,0.37969897363327487,0,1.217724], [0.17819817802695415,0.27810760526210354,0], [-0.18055321970300925,0.37969897363327487,0], [79.65683229813665,77.5], 0.75,0.51,0.75,1,1,0],
-    ['kenkari::female', -4.0000000000000036, -19, [-0.16564616738866406,0.25011972083640993,0,1.093466], [0.1629792650553279,0.29929878500014695,0], [-0.16564616738866406,0.25011972083640993,0], [87.90841750841751,82.5], 0.75,0.51,0.75,0.925,1,0],
-    ['tletingan::female', -23.00000000000001, -8, [-0.19326419458235525,0.38220450093854685,0,1.016661], [0.19339659287777322,0.38426858848533485,0], [-0.19326419458235525,0.38220450093854685,0], [67.36241610738254,99.5], 0.85,0.62,0.85,0.925,1.025,5],
-    ['mashtzarr::male', -27.499999999999993, 5.5, [-0.3481292844745114,0.5072329547240978,0,1.71221], [0.2938287377558306,0.471474644548211,0], [-0.3481292844745114,0.5072329547240978,0], [63.960809102402024,87.5], 1,0.755,1.18,0.925,1.175,0],
-    ['mashtzarr::female', -31.000000000000007, 9, [-0.2938000697183753,0.37168801102709437,0,1.56391], [0.30553153725919435,0.39823082948935073,0], [-0.2938000697183753,0.37168801102709437,0], [72.13592233009709,97.5], 1,0.79,1.18,0.9,1.125,0],
-    ['engh-sho::female', -49.500000000000014, 27.5, [-0.24815066240089945,0.46042886220274515,0,1.010418], [0.20505349784094706,0.4967497459859368,0], [-0.24815066240089945,0.46042886220274515,0], [71.9398595258999,112.5], 0.95,0.975,0.95,1.225,1.325,0],
+    ['mao-ao::female', -44.50000000000001, 22.5, [-0.23898599170593354,0.646996571654354,0,0.972531], [0.1771042396564939,0.6511546407522855,0], [-0.23898599170593354,0.646996571654354,0], [76.5545073375262,114.5], 1,0.925,0.8,1,1.025,0],
+    ['kenkari::male', -5.500000000000004, -19, [-0.18055321970300925,0.37969897363327487,0,1.217687], [0.17819817802695415,0.27810760526210354,0], [-0.18055321970300925,0.37969897363327487,0], [79.65683229813665,77.5], 0.75,0.51,0.75,1,1,0],
+    ['kenkari::female', -4.0000000000000036, -19, [-0.16564616738866406,0.25011972083640993,0,1.093433], [0.1629792650553279,0.29929878500014695,0], [-0.16564616738866406,0.25011972083640993,0], [87.90841750841751,82.5], 0.75,0.51,0.75,0.925,1,0],
+    ['tletingan::female', -23.00000000000001, -8, [-0.19326419458235525,0.38220450093854685,0,1.016629], [0.19339659287777322,0.38426858848533485,0], [-0.19326419458235525,0.38220450093854685,0], [67.36241610738254,99.5], 0.85,0.62,0.85,0.925,1.025,5],
+    ['mashtzarr::male', -27.499999999999993, 5.5, [-0.3481292844745114,0.5072329547240978,0,1.712158], [0.2938287377558306,0.471474644548211,0], [-0.3481292844745114,0.5072329547240978,0], [63.960809102402024,87.5], 1,0.755,1.18,0.925,1.175,0],
+    ['mashtzarr::female', -31.000000000000007, 9, [-0.2938000697183753,0.37168801102709437,0,1.563862], [0.30553153725919435,0.39823082948935073,0], [-0.2938000697183753,0.37168801102709437,0], [72.13592233009709,97.5], 1,0.79,1.18,0.9,1.125,0],
+    ['engh-sho::female', -49.500000000000014, 27.5, [-0.24815066240089945,0.46042886220274515,0,0.950541], [0.20505349784094706,0.4967497459859368,0], [-0.24815066240089945,0.46042886220274515,0], [71.9398595258999,112.5], 0.95,0.975,0.95,1.225,1.325,0],
   ];
 
   const staleCharacterPosteriorFloors = Object.freeze({ // Exact pre-preview posterior defaults; arbitrary later authoring remains untouched.
@@ -113,7 +113,7 @@
     ['dabinggi-hound',[0,0.17901245841201874,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[-0.16036566987282258,-0.12636677592420467,0.12410100452746164],[[2,2],[1,1],[0.35,0.35]],null],
     ['uumkaoii',[0,0.2575246358178592,0.005623701988496838],'animation-author-export-2026-10-22',null,null,null,[0,-0.2057328849409156,-0.004605298975405354],[[1.5,1.5],[1,1],[0.24,0.24]],null],
     ['puktuk',[0,0.1830394938019193,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0,-0.257,0.034273761545456985],[[0.75,0.75],[0.45,0.45],[0.28,0.28]],null],
-    ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0,-0.11122461401165312,0.05961047587703741],[[1,1],[0.75,0.75],[0.34,0.34]],null], // Large scale 1.1 and Large ground offset 0.462 from the October 25 Rig Coordinates export.
+    ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0,-0.27834423457602814,0.051543592657975104],[[1,1],[0.75,0.75],[0.34,0.34]],null], // Shoulder grip only from Rig Coordinates export (31); sizes and saddle unchanged.
     // Recovered saddle and shoulder-grip authoring from the October 22 exports (19), (20), and (21).
     ['nelk',[0,0.12365496943656872,0.09343178888117182],'animation-author-export-2026-10-22',null,null,null,[0.05838103969211583,-0.06616055534830413,0.05330590874914502],[[1.75,1.75],[1,1],[0.44,0.44]],null],
     ['nazgraku',[0,0.07886458733711826,-0.0022188537422596633],'animation-author-export-2026-10-22',null,null,null,[-0.010120303229480966,-0.112,0.04704726667943677],[[1.5,1.5],[1,1],[0.5,0.5]],null],
@@ -137,7 +137,7 @@
     'gar-wolf': Object.freeze([Object.freeze([0.01,-0.26545210788556156,0.07486897921502367])]), // Exact old master grip; user-authored positions remain untouched.
     'dabinggi-hound': Object.freeze([Object.freeze([0.01,-0.20203700498816118,0.09104867302389968])]), // Exact old master grip; user-authored positions remain untouched.
     'puktuk': Object.freeze([Object.freeze([0.01,-0.29715994741785007,-0.0010889163404909086])]), // Exact old master grip; user-authored positions remain untouched.
-    'voorg-ass': Object.freeze([Object.freeze([0.01,-0.33453636625016553,0.0181046276028018])]), // Exact old master grip; user-authored positions remain untouched.
+    'voorg-ass': Object.freeze([Object.freeze([0.01,-0.33453636625016553,0.0181046276028018]), Object.freeze([0,-0.11122461401165312,0.05961047587703741]), Object.freeze([0,-0.29318061503235254,0.051543592657975104])]), // Exact old master grip; user-authored positions remain untouched.
     nelk: Object.freeze([Object.freeze([0.030176488041515424,-0.11264054358274966,0.028253979555520257]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
     nazgraku: Object.freeze([Object.freeze([0.011498553593554665,-0.14241261412989242,0.000946211786312177]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
     grehlr: Object.freeze([Object.freeze([0.01,-0.3719770036140037,0])]),
@@ -196,7 +196,7 @@
   const skeeriChatheadFrame = Object.freeze({ x: 0.6611149088541667, y: 0.24899449865398673, width: 0.04, height: 0.04, coordinateSpace: 'sprite-normalized-top-left', version: 1 }); // Shared idle-sprite chathead crop for every Skeeri size variant.
   const creatureChatheadFrames = Object.freeze({
     'skeeri-medium': skeeriChatheadFrame,
-    moot: Object.freeze({ x: 0.0843, y: 0.085, width: 0.26, height: 0.37, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    moot: Object.freeze({ x: 0.10526108108108108, y: 0.0923913043478261, width: 0.3246486486486486, height: 0.4021739130434782, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     grehlr: Object.freeze({ x: 0.10721275741258315, y: 0.349719408702988, width: 0.2558259151491218, height: 0.35439898228896183, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'gar-wolf': Object.freeze({ x: 0, y: 0.2575, width: 0.25, height: 0.3575, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'dabinggi-hound': Object.freeze({ x: 0.05321196485715341, y: 0.2621006265961596, width: 0.17863723264419087, height: 0.350903183334192, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
@@ -285,7 +285,7 @@
       kind, chatheadFrame: creatureChatheadFrames[kind] ? { ...creatureChatheadFrames[kind] } : null,
       anchors: { saddle: identityAnchor(saddle), shoulderGrip: identityAnchor(shoulderGrip, kind === 'drenkirra' ? DRENKIRRA_SHOULDER_GRIP_YAW_DEG : (kind === 'uumkaoii' ? 0 : -61)) }, // Reverse Drenkirra's whole-pet Y rotation; Uumkao'ii remains neutral and other authored grips remain unchanged.
       saddleRule,
-      shoulderGripRule: { source: creatureAuthoredSource, coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
+      shoulderGripRule: { source: kind === 'voorg-ass' ? 'animation-author-export-2026-11-24' : creatureAuthoredSource, coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
       sizeScales, groundOffsets: { ...(creatureGroundOffsets[kind] || { large:0, medium:0, small:0 }) },
       sizeScaleRule: { version:1, axes:'png-plane-local-x-y', zScale:1, applicationOrder:'before-outer-prism-and-world-bounds', authoredDefaultVersion:6, authoredFixed:true, ...((kind === 'puktuk' || kind === 'voorg-ass') ? { source: creatureAuthoredSource } : {}) },
       shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 5,
@@ -367,6 +367,7 @@
   omgurkuLowerRig.sizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed size regardless of animal preview class.
   omgurkuLowerRig.sizeScalePercentages = { large: { x: 100, y: 100 }, medium: { x: 100, y: 100 }, small: { x: 100, y: 100 } }; // Mirrors fixed scales in exports.
   omgurkuLowerRig.anchors = { saddle: identityAnchor([0, 0, 0]), shoulderGrip: identityAnchor([0, 0, 0]) }; // The hybrid join remains owned by hybridPlacement.
+  omgurkuLowerRig.shoulderGripRule.source = 'animation-author-export-2026-09-15'; // Preserve the independent hybrid socket's existing provenance.
   masterCreatures['omgurku-lower'] = omgurkuLowerRig;
 
 
@@ -621,6 +622,15 @@
       const drenkirraOldPosition = kind === 'drenkirra' && normalizeStalePositions(staleCreatureShoulderGrips.drenkirra)
         .some(position => samePosition(oldGrip?.position, position)); // Detects a known obsolete socket XYZ independently from any hand-authored rotation.
       merged.anchors.shoulderGrip = reconcileAnchor(oldGrip, canonical.anchors.shoulderGrip, staleCreatureShoulderGrips[kind]);
+      if (kind === 'voorg-ass' && normalizeStalePositions(staleCreatureShoulderGrips[kind]).some(position => samePosition(oldGrip?.position, position))) {
+        // Only an exact retired stock position migrates; keep valid independent rotation and scale.
+        if (oldGrip.rotationDeg) for (const axis of ['x', 'y', 'z']) {
+          if (Number.isFinite(oldGrip.rotationDeg[axis])) merged.anchors.shoulderGrip.rotationDeg[axis] = oldGrip.rotationDeg[axis];
+        }
+        if (oldGrip.scale && ['x', 'y', 'z'].every(axis => Number.isFinite(oldGrip.scale[axis]) && oldGrip.scale[axis] > 0)) {
+          merged.anchors.shoulderGrip.scale = clone(oldGrip.scale);
+        }
+      }
       if (drenkirraOldPosition && oldGrip?.rotationDeg) {
         const canonicalRotation = canonical.anchors.shoulderGrip.rotationDeg; // Keeps unchanged components while correcting the known obsolete stock Y.
         const authoredRotation = oldGrip.rotationDeg; // Preserves custom yaw/pitch/roll even when its old grip POSITION needs migrating.

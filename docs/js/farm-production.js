@@ -191,7 +191,85 @@
     if (!definition?.method || !input || (definition.inputTag && (!input.tags?.includes(definition.inputTag) || input.tags?.includes('Processed')))) return null;
     return window.ItemProcessing.getProcessingOutputs(definition.method, itemKey);
   }
-  function enqueue(id, itemKey, count, source = 'bag') {
+  // Family automation uses the same real storage/queue and collection paths as manual operation.
+  function familyStorageAccess() {
+    if (!deps?.hasFarmPermission?.('storage') || !deps.loadStorage || !deps.saveStorage) return null;
+    return { load: deps.loadStorage, save: deps.saveStorage }; // Shared with livestock trough refilling.
+  }
+  function smallStation(id) {
+    for (const obj of deps?.processingFurnitureObjects || []) if (obj.id === id && obj.familyEligible) return obj;
+    return null;
+  }
+  function isFamilyStation(id, inputKey = '') {
+    if (!deps) return false;
+    const small = smallStation(id);
+    if (small) return !inputKey || !!small.familyRecipe?.(inputKey)?.length;
+    const entry = buildings.find(candidate => candidate.id === id);
+    return !!(entry && catalog[entry.key]?.method && catalog[entry.key]?.family !== 'seedMaker'
+      && (!inputKey || outputsFor(entry.key, inputKey)?.length));
+  }
+  function familyStations({ includeInputs = true } = {}) {
+    if (!deps) return [];
+    const stock = includeInputs ? familyStorageAccess()?.load() || {} : {};
+    const assignments = window.RomanceFamily?.familyChores?.()?.processing || {};
+    const stockedKeys = includeInputs ? Object.keys(stock).filter(key => stock[key] > 0) : []; // Read storage once when opening Farmwork.
+    const large = buildings.filter(entry => isFamilyStation(entry.id)).map(entry => {
+      const selected = assignments[entry.id]?.inputKey;
+      const inputs = [...new Set([...stockedKeys, ...(includeInputs && selected ? [selected] : [])])]
+        .filter(key => outputsFor(entry.key, key)?.length)
+        .map(key => ({ key, label: deps.ITEM_DEFS[key]?.label || key, count: stock[key] || 0 }));
+      return { id: entry.id, label: catalog[entry.key].label, col: entry.col, row: entry.row, inputs };
+    });
+    for (const obj of deps?.processingFurnitureObjects || []) {
+      if (!obj.familyEligible) continue;
+      const selected = assignments[obj.id]?.inputKey;
+      const inputs = [...new Set([...stockedKeys, ...(includeInputs && selected ? [selected] : [])])]
+        .filter(key => obj.familyRecipe?.(key)?.length)
+        .map(key => ({ key, label: deps.ITEM_DEFS[key]?.label || key, count: stock[key] || 0 }));
+      large.push({ id: obj.id, label: obj.label, col: obj.col, row: obj.row, inputs });
+    }
+    return large;
+  }
+  function familyJob(id, inputKey) {
+    const storage = familyStorageAccess();
+    if (!storage || !isFamilyStation(id, inputKey)) return null;
+    const small = smallStation(id);
+    if (small) {
+      const common = { source: 'processing', key: 'processing:' + id, stationId: id, c: small.col, r: small.row };
+      if (small.familyReady?.()) return { ...common, job: 'processingCollect', activity: 'collecting processed goods' };
+      if (small.getJob?.() || small.familyCanLoad?.() === false || !inputKey || !(storage.load()[inputKey] > 0)) return null;
+      return { ...common, job: 'processingLoad', inputKey, activity: 'loading the processor' };
+    }
+    const entry = buildings.find(candidate => candidate.id === id);
+    const size = footprint(entry.key, entry.rot); // Work at the accessible front edge, rather than inside a building.
+    const c = entry.col + Math.floor(size.w / 2), r = entry.row + size.h - 1;
+    const common = { source: 'processing', key: 'processing:' + id, stationId: id, c, r };
+    if (entry.ready.some(result => result.count > 0 && (deps.inventory[result.key] || 0) < window.InventoryStacks.MAX_TOTAL))
+      return { ...common, job: 'processingCollect', activity: 'collecting processed goods' };
+    // Never grow unattended queues or consume ingredients other than the selected recipe.
+    if (entry.ready.length || entry.queue.length || entry.nextAt != null || !inputKey) return null;
+    if (!(familyStorageAccess().load()[inputKey] > 0)) return null;
+    return { ...common, job: 'processingLoad', inputKey, activity: 'loading the processor' };
+  }
+  function applyFamilyJob(job, inputKey, workerId) {
+    const current = familyJob(job.stationId, inputKey);
+    if (!current || current.job !== job.job || current.inputKey !== job.inputKey || current.c !== job.c || current.r !== job.r) return false;
+    const small = smallStation(job.stationId);
+    if (small) {
+      if (job.job === 'processingCollect') return small.collectFamilyJob?.().ok === true;
+      if (!workerId) return false;
+      const storage = familyStorageAccess(), stock = storage?.load();
+      if (!stock || !(stock[job.inputKey] > 0)) return false;
+      const originalStock = { ...stock }; // Capture before saving, even if the storage adapter reuses its object.
+      const next = { ...originalStock, [job.inputKey]: stock[job.inputKey] - 1 };
+      if (storage.save(next) === false) return false; // Debit the real store before starting a batch; failed persistence cannot grant free goods.
+      const result = small.startFamilyJob?.(job.inputKey, workerId);
+      if (!result?.ok) { if (storage.save(originalStock) === false) deps.debugLog?.('Family processor refund could not restore storage; check saved farm data.','error'); return false; } // Rejected starts refund the reserved input.
+      return true;
+    }
+    return (job.job === 'processingCollect' ? collect(job.stationId) : enqueue(job.stationId, job.inputKey, 1, 'storage', workerId)).ok === true;
+  }
+  function enqueue(id, itemKey, count, source = 'bag', workerId = null) {
     if (!deps.hasFarmPermission('storage')) return { ok: false, message: 'Storage permission required.' };
     const entry = buildings.find(candidate => candidate.id === id); // Current building is resolved again at mutation time.
     if (!entry) return { ok: false, message: 'Building not found.' };
@@ -199,16 +277,22 @@
     if (!outputs) return { ok: false, message: 'That ingredient cannot be processed here.' };
     const stock = source === 'storage' ? deps.loadStorage() : deps.inventory; // Queue takes custody of raw input before it starts processing.
     if (!Number.isSafeInteger(count) || count < 1 || count > (Number(stock[itemKey]) || 0)) return { ok: false, message: 'Enter a quantity you own.' };
+    const previousQueue = workerId ? copy(entry.queue) : null, previousAt = entry.nextAt; // Family batches can undo the reservation if the layout write fails.
+    const originalStock = source === 'storage' ? { ...stock } : null;
+    if (source === 'storage' && deps.saveStorage({ ...stock, [itemKey]: stock[itemKey] - count }) === false) return { ok: false, message: 'Could not save ingredient withdrawal.' };
     for (let index = 0; index < count; index++) {
-      const stars = source === 'bag' ? deps.consumeInput(itemKey) : 3; // Shared storage currently has no quality buckets; bag inputs retain actual quality.
-      if (source === 'storage') stock[itemKey]--;
+      const stars = workerId ? (window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1) : source === 'bag' ? deps.consumeInput(itemKey) : 3; // Family output uses their own usefulness; manual storage inputs retain default quality.
       const previous = entry.queue[entry.queue.length - 1]; // Coalesces identical quality batches without limiting queue capacity.
       if (previous?.itemKey === itemKey && previous.stars === stars) previous.count++;
       else entry.queue.push({ itemKey, count: 1, stars, outputs: copy(outputs) });
     }
-    if (source === 'storage') deps.saveStorage(stock);
     if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
-    deps.saveMemberWorldData(); deps.saveFarmLayout();
+    if (workerId && deps.saveFarmLayout() === false) {
+      entry.queue = previousQueue; entry.nextAt = previousAt;
+      if (originalStock && deps.saveStorage(originalStock) === false) deps.debugLog?.('Family processor rollback could not restore storage; check saved farm data.','error');
+      return { ok: false, message: 'Could not save family processing queue.' };
+    }
+    deps.saveMemberWorldData(); if (!workerId) deps.saveFarmLayout();
     return { ok: true, message: 'Queued ' + count + ' ingredients.' };
   }
   function tick() {
@@ -232,7 +316,7 @@
         changed = true;
       }
     }
-    if (changed) { deps.saveFarmLayout(); deps.debugLog('Farm production finished queued batches.'); }
+    if (changed) { window.NpcFarmPlots?.invalidateFamilyChoreJobs?.(); deps.saveFarmLayout(); deps.debugLog('Farm production finished queued batches.'); }
     window.HoneyfuzzleHouse?.tick(buildings, now()); // Establishes due queen colonies; same low-frequency timer, no extra loop.
   }
   function collect(id) {
@@ -550,11 +634,24 @@
       const row = document.createElement('div'); row.className = 'shop-row'; // Every tier remains available independently of starting specialization, once the town is big enough.
       const label = document.createElement('div'); label.className = 'sh-info'; label.textContent = definition.label + ' Plan · ' + definition.price + 'g' + (locked ? ' · 🔒 Requires Town Value ' + required : ''); row.append(label);
       const buy = document.createElement('button'); buy.className = 'shop-buy-btn'; buy.textContent = locked ? 'Locked' : 'Buy'; buy.disabled = locked; // Purchase follows the existing carpenter transaction.
-      buy.onclick = () => { if ((Number(window.TownMine?.getTownValue?.()) || 0) < required) { shopDeps.showToast('Dzibim won\'t build that until the town has grown (Town Value ' + required + ').', false); return; } if ((shopDeps.inventory.gold || 0) < definition.price || (shopDeps.inventory[definition.planItem] || 0) >= 9) { shopDeps.showToast('Not enough ganang or plan stack is full.', false); return; } shopDeps.inventory.gold -= definition.price; shopDeps.inventory[definition.planItem] = (shopDeps.inventory[definition.planItem] || 0) + 1; shopDeps.saveMemberWorldData(); shopDeps.buildInventoryGrid(); shopDeps.showToast('Bought ' + definition.label + ' Plan.', true); };
-      row.append(buy); list.append(row);
+      row.append(buy);
+      if (!locked) {
+        const maximum = () => (Number(window.TownMine?.getTownValue?.()) || 0) < required ? 0 : window.ShopQuantity.max(shopDeps.inventory, { price: definition.price, grants: { [definition.planItem]: 1 }, stackCap: 9 }); // Preserve the processor plan's existing cap.
+        window.ShopQuantity.attach(buy, { maximum, price: definition.price, purchase: quantity => {
+          if (!window.ShopQuantity.valid(quantity, maximum())) { shopDeps.showToast('Not enough ganang or plan stack is full.', false); return; }
+          shopDeps.inventory.gold -= definition.price * quantity;
+          shopDeps.inventory[definition.planItem] = (shopDeps.inventory[definition.planItem] || 0) + quantity;
+          shopDeps.saveMemberWorldData();
+          shopDeps.buildInventoryGrid();
+          shopDeps.showToast('Bought ' + quantity + '× ' + definition.label + ' Plan.', true);
+          window.CarpenterShop?.render?.();
+        } });
+      }
+      list.append(row);
     }
   }
   function refreshColors() { for (const entry of buildings) { removeVisual(entry); spawn(entry); } }
   window.FarmProduction = { init, serialize, load, clear, arm, placeAt, move, rotate, footprint: entry => footprint(entry.key, entry.rot), enqueue, enqueueSeeds, collect, tick, open, renderRows, renderShop, refreshColors,
+    familyStorageAccess, isFamilyStation, familyStations, familyJob, applyFamilyJob,
     hasPlacement: () => !!placement, cancelPlacement: () => { placement = null; }, outputsFor, canPlace, irrigate, connectedCrops, fertilize, entries: () => buildings, now };
 })();

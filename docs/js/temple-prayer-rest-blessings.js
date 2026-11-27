@@ -47,7 +47,7 @@
 
   function currentGameHour() {
     if (!window.CalendarSystem || window.CalendarSystem.isInitialized?.() === false) return NaN; // Parser-time loading precedes game.js calendar injection; preserve saved timers until the clock is ready.
-    const snap = window.CalendarSystem?.timeDebugSnapshot?.(); // Uses the calendar's monotonic raw day/time so timers survive month/season boundaries.
+    const snap = window.CalendarSystem.getRawClock?.() ?? window.CalendarSystem.timeDebugSnapshot?.(); // Same raw time origin, without constructing the UI/debug report.
     const rawDay = finite(snap?.rawDay, NaN);
     const rawTime01 = finite(snap?.time01 ?? snap?.rawTime01, NaN);
     if (Number.isFinite(rawDay) && Number.isFinite(rawTime01)) return rawDay * 24 + rawTime01 * 24;
@@ -480,7 +480,7 @@
     const detail = event?.detail || {};
     const kind = detail.kind;
     if (kind !== 'sleep' && kind !== 'wait') return; // Dev-time skips never restore fatigue.
-    const sleepFromBed = kind === 'sleep' && (detail.source === 'legacy-bed' || consumeOwnedBedSleepToken()); // Only a real bed can award the stronger buff.
+    const sleepFromBed = kind === 'sleep' && consumeOwnedBedSleepToken(); // Only a real bed can award the stronger buff.
     const duration = Number(detail.hours); // Uses hours actually elapsed, not the sleep selector's requested duration.
     if (!Number.isFinite(duration) || duration <= 0) return; // Cancelled sleeps and waits grant neither buff.
     if (kind === 'wait') {

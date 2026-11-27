@@ -66,15 +66,17 @@
   }
 
   function portraitScaleFor(identity) {
-    const profileScale = Number(profileFor(identity)?.anatomy?.portraitScale); // Preferred because the preview copies this exact authored multiplier into PNGPlaneAvatar.
-    if (Number.isFinite(profileScale) && profileScale > EPSILON) return profileScale;
+    const comparison = comparisonApi();
+    const rendered = Number(comparison?.selectedKey === identity?.key ? comparison?.selectedPortraitScaleMultiplier : null); // The real skinned portrait records the multiplier used during its build.
+    if (Number.isFinite(rendered) && rendered > EPSILON) return rendered; // Match the guard and renderer even if an authored profile was normalized through a donor or alias.
     try {
-      return finitePositive(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+      const effective = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
         appearance: { speciesId: identity?.species, gender: identity?.gender },
-      }), 1);
-    } catch (_) {
-      return 1;
-    }
+      }));
+      if (Number.isFinite(effective) && effective > EPSILON) return effective;
+    } catch (_) { /* May run before the portrait renderer installs its config bridge. */ }
+    const profileScale = Number(profileFor(identity)?.anatomy?.portraitScale);
+    return Number.isFinite(profileScale) && profileScale > EPSILON ? profileScale : 1;
   }
 
   function runtimeScaleFor(identity) {
@@ -162,7 +164,7 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     const portrait = portraitScaleFor(identity); // Previously hidden plane scale included in the user-facing value.
     const runtime = runtimeHead ?? runtimeScaleFor(identity).head;
     const raw = rawHeadPercentFromRuntime(runtime, portrait);
-    basis.textContent = `Raw PNG head ${round1(raw)}% = portrait plane ${round1(portrait * 100)}% × runtime head factor ${round1(runtime * 100)}%.`;
+    basis.textContent = `Raw PNG head ${round1(raw)}% = portrait plane ${round1(portrait * 100)}% × runtime head factor ${round1(runtime * 100)}%. At 100%, head sizes preserve their relative unscaled source-PNG pixel dimensions.`;
   }
 
   function syncHeadUi(force = false) {
@@ -208,12 +210,24 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     const bounds = rawHeadBounds(portrait);
     const clampedRaw = clamp(Number(rawPercent), bounds.min, bounds.max);
     const runtimeHead = clamp(runtimeHeadPercentFromRaw(clampedRaw, portrait) / 100, MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD);
-    profile.anatomy ||= {};
-    profile.anatomy.headScale = runtimeHead;
+    const shared = window.HobunjiFullScaleBodyInputGuard; // Same host persistence and active-preview update as every other Full Character Scale slider.
+    const appliedByGuard = shared?.applyScaleField?.('head', clampedRaw);
+    if (!appliedByGuard) {
+      const host = window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost; // Older author bootstraps may load the presentation before its input guard.
+      const current = runtimeScaleFor(identity);
+      const inherited = host?.rigScaleFor?.(identity.species, identity.gender) || {}; // Keep custom hand/foot sizes and independent leg length in saved imports.
+      const next = { ...inherited, ...current, head: runtimeHead };
+      if (!host?.setRigScale?.(identity.species, identity.gender, next)) {
+        profile.anatomy ||= {};
+        profile.anatomy.headScale = runtimeHead; // Last-resort profile mutation; ordinary saves use the host map above.
+      }
+    }
 
     const scale = runtimeScaleFor(identity); // Uses current authored body X/Y so the head remains aspect-correct under non-uniform body scale.
     const joint = headScaleJointFor(previewGroupFor(identity));
-    if (joint?.scale?.set) {
+    if (!appliedByGuard && comparisonApi()?.refreshSelectedPreview) {
+      comparisonApi().refreshSelectedPreview(); // Guard already updates the preview; fallback must preserve the selected age stage.
+    } else if (!appliedByGuard && joint?.scale?.set) {
       joint.scale.set(scale.head / scale.x, scale.head / scale.y, 1);
       joint.updateMatrix?.();
       joint.updateMatrixWorld?.(true);
@@ -268,10 +282,9 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
       return;
     }
 
-    // Width/Height/Head-Y use the original handler. That handler also reads Head,
-    // so lend it the internal runtime percentage only for the duration of this
-    // event, then restore the raw-PNG display in a microtask.
-    if (!['maaFullScaleRangeX','maaFullScaleNumX','maaFullScaleRangeY','maaFullScaleNumY','maaFullScaleRangeOffsetY','maaFullScaleNumOffsetY'].includes(id)) return;
+    // Width/Height/Beltline/Head-Y are owned by the capture-phase input guard. This fallback
+    // preserves raw-PNG Head display on older tool builds without reinterpreting its value.
+    if (!['maaFullScaleRangeX','maaFullScaleNumX','maaFullScaleRangeHeight','maaFullScaleNumHeight','maaFullScaleRangeBeltline','maaFullScaleNumBeltline','maaFullScaleRangeOffsetY','maaFullScaleNumOffsetY'].includes(id)) return;
     const identity = selectedIdentity();
     if (!identity) return;
     const range = document.getElementById(HEAD_RANGE_ID);

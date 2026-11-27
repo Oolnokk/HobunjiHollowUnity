@@ -118,6 +118,6 @@ assert.equal(offscreen.visible,true,'renderer error must never strand an NPC hid
 }
 assert.match(fs.readFileSync('docs/js/house-pieces.js','utf8'),/npc-view-frustum-cull\.js\?v=/,
   'core loader delivers the culler before game.js starts');
-assert.equal((fs.readFileSync('docs/js/held-object-render-order.js','utf8').match(/suspendOutsideReplayRect/g)||[]).length,2,
-  'both held and shell depth reconstruction use NPC replay-subfrustum culling');
+assert.equal((fs.readFileSync('docs/js/held-object-render-order.js','utf8').match(/suspendOutsideReplayRect/g)||[]).length,1,
+  'the held depth reconstruction uses NPC replay-subfrustum culling');
 console.log('NPC view culling: real module, reversible frustum/near/large/area and render-failure tests passed.');

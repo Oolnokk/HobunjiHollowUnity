@@ -22,14 +22,17 @@
   const SCAN_SECONDS = 0.24; // Throttles bidirectional sight tests and population scans.
   const SAVE_VERSION = 1; // Compatible additive field inside SlagothimTraders' existing saved record.
   const MAX_MILK_GIFTS = 3; // Secret encounter limit, independent of ordinary daily gift eligibility.
+  const runtime=window.WildernessEncounterRuntime; // Uses the same encounter lifecycle/eligibility helpers as Rootledoots.
   let deps = null; // SlagothimTraders' existing injected, game-owned NPC, calendar, inventory and map adapters.
   let walker = null; // The one materialized NPC in the active exterior zone.
-  let walkerBuilding = false; // Prevents asynchronous duplicate walker construction.
+  const walkerBuild=runtime.createBuildSlot(); // Prevents asynchronous duplicate walker construction.
   let houseMesh = null; // Loaded Highland piece; renderer visibility is separate from collisions.
+  let encounterScene = null; // Active scene identity, including same-area rebuilds.
   let houseScene = null; // Tracks the scene that owns the piece when zones are streamed/recreated.
-  let houseBuilding = false; // Prevents repeated fetches during an in-flight build.
+  const houseBuild=runtime.createBuildSlot(); // Prevents repeated fetches during an in-flight build.
   let houseUnregister = null; // Shared hard-wall collision registration, active even when invisible.
   let generation = 0; // Invalidates pending asynchronous builders after map/world/encounter changes.
+  const feyApproachClock=runtime.createInterval(20); // Rare nearby-arrival rolls run at most once every 20 active-zone seconds.
   let scanTimer = 0; // LOS and NPC scans are not repeated every animation frame.
   let planTimer = 0; // Chore route choices are throttled separately from body updates.
   let debugTimer = 0; // Mobile in-page diagnostics repaint at most twice per second.
@@ -49,7 +52,9 @@
   function rnd() { return window.GameRandom?.random?.() ?? Math.random(); }
   function finite(value, fallback=0) { const n=Number(value); return Number.isFinite(n) ? n : fallback; }
   function clamp(n,a,b) { return Math.max(a,Math.min(b,n)); }
+  function activeScene() { return window.GridTileAccessors?.getActiveScene?.() || null; }
   function area() { return String(deps?.getCurrentArea?.() || ''); }
+  function ownsActiveScene() { return !!encounterScene && area()===state.zone && activeScene()===encounterScene; } // Synchronous guard for input/callbacks between scheduler ticks.
   function tileSize() { return Math.max(1, finite(deps?.TILE,64)); }
   function layout() { return state.zone ? deps?.getZoneLayout?.(state.zone) : null; }
   function houseSector(home, map) {
@@ -68,6 +73,7 @@
   function homeCenter() { return state.home ? {x:state.home.c+1.5,z:state.home.r+1.5} : null; }
   function moonCycle(day) { return Math.floor((day-1)/28); }
   function lunarDay(day) { return ((day-1)%28+28)%28+1; }
+  function latestFullMoonCycle(day) { return day>=14 ? moonCycle(day-13) : -1; } // Includes missed moons, even before the following month's 14th.
   function numberHash(seed) {
     let h=2166136261; // Deterministic FNV-1a keeps a chosen monthly location stable across reloads.
     for(let i=0;i<seed.length;i++) h=Math.imul(h^seed.charCodeAt(i),16777619);
@@ -78,7 +84,12 @@
     return () => {s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};
   }
   function zoneEligible(zone) { return ZONES.includes(zone) && !!deps?.EXTERIOR_ZONES?.[zone]; }
-  function currentDay() { return Math.floor(finite(deps?.calendar?.day,0)); }
+  function currentDay() {
+    const rawDay=Math.floor(finite(deps?.calendar?.day,0)); // World-day counter rolls over at 06:00, not midnight.
+    if(rawDay<1)return 0;
+    const civilDay=window.CalendarSystem?.civilDayForRawDay?.(rawDay,deps.calendar.time01); // Use the shared midnight-aware calendar seam.
+    return Math.floor(finite(civilDay ?? rawDay,rawDay));
+  }
   function worldSeed() { return String(deps?.tothalWorldId?.() || 'new-world'); }
 
   function bumpEvent(message) { state.lastEvent=message;window.__farmLog?.('[boney] '+message,'info'); }
@@ -115,10 +126,8 @@
     return null; // Never replace an occupied generated tile blindly.
   }
   function newMoonEncounter() {
-    const day=currentDay();
-    if(day<1||lunarDay(day)!==14)return;
-    const cycle=moonCycle(day);
-    if(cycle===state.completedCycle)return; // One reward per moon even if the player time-skips repeatedly.
+    const cycle=latestFullMoonCycle(currentDay()); // Recover the latest elapsed full moon instead of requiring an exact-date tick.
+    if(cycle<0||cycle<=state.completedCycle)return; // Never replay a claimed moon, including when time is rewound.
     if(state.phase!=='waiting'&&state.phase!=='complete')return; // Unfinished encounter stays until resolved, including across moons.
     const available=ZONES.filter(zoneEligible);
     if(!available.length)return;
@@ -164,16 +173,18 @@
   function clearHouse() {
     generation++;
     if(houseMesh?.parent)houseMesh.parent.remove(houseMesh);
-    houseMesh=null;houseScene=null;houseBuilding=false;
+    houseMesh=null;houseScene=null;houseBuild.cancel();
     houseUnregister?.();houseUnregister=null;
   }
   function releaseWalker() {
     generation++;
+    // Invalidated cutscenes cannot finish against the old encounter. Return to the last valid phase and release only their own lock.
+    if(sceneRunning){sceneRunning=false;if(state.phase==='scene')state.phase=state.reward?'leaving':'home';}
     if(walker) {
       const old=walker;walker=null;
       if(!deps?.despawnNpcWalker?.(old)) old.root?.parent?.remove?.(old.root);
     }
-    walkerBuilding=false;
+    walkerBuild.cancel();
   }
   function cutSouthDoorway(piece) {
     const faces=piece?.base?.faces;
@@ -192,18 +203,19 @@
     return {...piece,base:{...piece.base,faces:newFaces}}; // Authoring JSON stays unchanged.
   }
   async function ensureHouse() {
-    const scene=window.GridTileAccessors?.getActiveScene?.();
-    if(!state.home||area()!==state.zone||!scene||houseBuilding)return;
+    const scene=activeScene();
+    if(!state.home||area()!==state.zone||!scene||houseBuild.busy)return;
     if(houseMesh&&scene===houseScene)return;
     if(houseMesh?.parent)houseMesh.parent.remove(houseMesh);
     houseMesh=null;houseScene=null;
     if(!window.HousePieceGen?.buildGroupFromPiece||!window.THREE)return;
-    houseBuilding=true;
+    const buildToken=houseBuild.begin(); // Only this async request owns its loading flag.
     const serial=generation;
     try {
       const response=await fetch(HOUSE_FILE);
       if(!response.ok)throw new Error('HTTP '+response.status+' for Highland house piece');
       const piece=await response.json();
+      if(serial!==generation||area()!==state.zone||!state.home||scene!==activeScene()||!houseBuild.owns(buildToken))return; // Do not construct stale house geometry or dereference a removed home.
       const base=piece.currentPiece||piece;
       if(!Array.isArray(base.footprint?.cells)||base.footprint.cells.length!==9)
         throw new Error('Highland 3x3 footprint no longer matches its authored asset');
@@ -221,8 +233,8 @@
       scene.add(group);houseMesh=group;houseScene=scene;
       bumpEvent('Authored Highland house geometry loaded');
     } catch(err) {
-      bumpEvent('House geometry unavailable: '+(err?.message||err)); // Mobile diagnostics: no silent cube substitute.
-    } finally {houseBuilding=false;}
+      if(serial===generation)bumpEvent('House geometry unavailable: '+(err?.message||err)); // Mobile diagnostics: no silent cube substitute.
+    } finally {houseBuild.finish(buildToken);}
   }
   function updateHouseVisibility() {
     if(!houseMesh)return;
@@ -262,14 +274,15 @@
     return true;
   }
   async function ensureWalker() {
-    if(walker||walkerBuilding||!deps?.makeNpcWalker||!state.home||area()!==state.zone)return;
-    walkerBuilding=true;
+    const scene=activeScene(); // The constructor may finish after a same-zone scene swap.
+    if(walker||walkerBuild.busy||!deps?.makeNpcWalker||!state.home||area()!==state.zone||!scene)return;
+    const buildToken=walkerBuild.begin(); // A superseded builder cannot unlock a newer asynchronous walker request.
     const serial=generation,spot=state.target||{c:state.home.c+1,r:state.home.r+3};
     try {
       const w=await deps.makeNpcWalker(record(),{area:state.zone,c:spot.c,r:spot.r});
       if(!w)return;
-      if(serial!==generation||area()!==state.zone||!state.home||state.phase==='complete'||state.phase==='waiting') {
-        deps?.despawnNpcWalker?.(w);return;
+      if(serial!==generation||area()!==state.zone||scene!==activeScene()||!walkerBuild.owns(buildToken)||!state.home||state.phase==='complete'||state.phase==='waiting') {
+        deps?.despawnNpcWalker?.(w,true);return; // This constructor owns the unadopted result; the canonical visitor disposer may retire it.
       }
       walker=w;
       if(!deps.npcWalkers?.includes(w))deps.npcWalkers?.push(w);
@@ -281,8 +294,8 @@
         };
       }
       bumpEvent('Boney entered '+state.zone);
-    }catch(err){bumpEvent('NPC build failed: '+(err?.message||err));}
-    finally{walkerBuilding=false;}
+    }catch(err){if(serial===generation)bumpEvent('NPC build failed: '+(err?.message||err));}
+    finally{walkerBuild.finish(buildToken);}
   }
   function sightProxy(w) {
     let proxy=sightProxies.get(w); // Stable actor identity lets RangedWeapons reuse its existing 80 ms LOS and one-frame portrait-hitbox caches.
@@ -310,22 +323,11 @@
   }
   function nearbyOtherNpc() {
     if(!walker)return null;
-    let closest=null,range=8; // Scanned on the existing 240 ms perception tick, never in the render loop.
-    const here={x:walker.root.position.x,z:walker.root.position.z};
-    for(const other of (deps?.npcWalkers||[])) {
-      if(!other?.root||other===walker||other.area!==state.zone||other.animalKind
-        ||other.rec?.kind==='animal'||other.rec?.appearance?.avatarType==='animal')continue;
-      const point={x:other.root.position.x,z:other.root.position.z}; // Normalized tile-space escape reference for any ordinary NPC.
+    let closest=null,range=8; // The existing perception clock owns this scan.
+    const here=walker.root.position;
+    for(const point of runtime.peopleInArea({zone:state.zone,walkers:deps?.npcWalkers,actors:[deps?.hostileObjects],tileSize:tileSize(),exclude:actor=>actor===walker})){
       const d=dist(here,point);
-      if(d<range){closest=point;range=d;}
-    }
-    for(const other of (deps?.hostileObjects||[])) {
-      if(!other||other.areaId!==state.zone||!(other.health>0)||other.creatureKey)continue;
-      if(!(other.isBandit===true||other.isTribeHunter===true||other.isBarbarian===true
-        ||(other.rosterRecord?.appearance?.speciesId&&other.avatarRef?.group)))continue;
-      const point={x:finite(other.x)/tileSize(),z:finite(other.y)/tileSize()}; // Hostile humanoids are world-pixel X/Y, not NPC walker tile X/Z.
-      const d=dist(here,point);
-      if(d<range){closest=point;range=d;}
+      if(d<range){closest={x:point.x,z:point.z};range=d;}
     }
     return closest;
   }
@@ -501,7 +503,7 @@
     const inv = giftingDeps?.inventory;
     return state.phase === 'leaving' && !!state.reward && !sceneRunning
       && state.milksGiven < MAX_MILK_GIFTS && !!window.AuthoredCutsceneRuntime?.run
-      && area() === state.zone && !!walker && insideHome(playerTile(), 0.1)
+      && ownsActiveScene() && !!walker && insideHome(playerTile(), 0.1)
       && insideHome(position() && { x:position().x, z:position().z }, 0.1)
       && isMilkGift(held, giftingDeps) && (Number(inv?.[held.key]) || 0) > 0;
   }
@@ -526,11 +528,20 @@
       ],
     };
   }
+  function grantFeyReward(kind,rewardDeps) {
+    const cooking=window.CookingSystem;
+    return runtime.withConditionalReward({
+      consume:()=>cooking?.consumeFeySight?.()||0,restore:stacks=>cooking?.grantFeySight?.(stacks),
+      grant:()=>window.BoneyShinjimiRewards?.grant?.(kind,rewardDeps),
+      accept:prize=>!!prize&&(kind!=='milk'||(prize.kind==='boundRelic'&&prize.origin==='Fey')),
+    });
+  }
   function offerMilk(held, giftingDeps) {
     if (!canAcceptMilkGift(held, giftingDeps)) return false;
     const milkKey = held.key; // Captures the offered stack while the asynchronously presented dialogue is open.
     const count = state.milksGiven; // Selects first, second, or third dialogue without changing the limit early.
     const encounterGeneration = generation; // Invalidates stale dialogue continuations after world reload, house teardown or encounter replacement.
+    const dialogueScene=encounterScene; // A scene swap can precede the next scheduled teardown.
     let handled = false; // A double Continue or an unsuccessful grant cannot retry the same milk handover mid-dialogue.
     sceneRunning = true; // Locks the action synchronously, before the cutscene promise yields.
     void (async () => {
@@ -538,7 +549,7 @@
         await window.AuthoredCutsceneRuntime.run(milkSceneDefinition(count), {
           onDialogueContinue(stage) {
             if (stage?.id !== 'milk_reward' || handled || generation !== encounterGeneration || state.phase !== 'leaving'
-              || state.milksGiven !== count || area() !== state.zone
+              || state.milksGiven !== count || !ownsActiveScene() || dialogueScene!==encounterScene
               || !insideHome(playerTile(), 0.1) || (Number(giftingDeps.inventory?.[milkKey]) || 0) <= 0) return;
             handled = true;
             const previousMilk = Number(giftingDeps.inventory[milkKey]); // Rollback value if the Fey weapon could not be granted.
@@ -546,7 +557,7 @@
             state.milksGiven = count + 1; // HarlyaoRelics.grantBoundRelic saves immediately, so the first save must already include the exchanged milk and count.
             let prize = null;
             try {
-              prize = window.BoneyShinjimiRewards?.grant?.('milk', giftingDeps);
+              prize = grantFeyReward('milk', giftingDeps);
             } catch (err) {
               bumpEvent('Fey weapon grant failed: ' + (err?.message || err));
             }
@@ -567,25 +578,26 @@
           },
         });
       } catch(err) {
-        bumpEvent('Milk dialogue interrupted: ' + (err?.message || err));
+        if(generation===encounterGeneration&&ownsActiveScene())bumpEvent('Milk dialogue interrupted: ' + (err?.message || err));
       } finally {
-        sceneRunning = false;
-        giftingDeps.refreshActionBar?.();
+        if(generation===encounterGeneration){sceneRunning = false;giftingDeps.refreshActionBar?.();} // A stale cutscene cannot unlock a newer dialogue.
       }
     })();
     return true; // The existing gift dispatcher is synchronous; the cutscene owns the actual handover.
   }
   async function enterScene() {
-    if(sceneRunning||state.phase!=='home'||!window.AuthoredCutsceneRuntime?.run)return;
+    if(sceneRunning||state.phase!=='home'||!ownsActiveScene()||!window.AuthoredCutsceneRuntime?.run)return;
     sceneRunning=true;state.phase='scene';
+    const encounterGeneration=generation; // Restore/area unload must invalidate old choice callbacks just like milk callbacks.
+    const dialogueScene=encounterScene; // Compare live scene identity even before the update loop runs.
     let granted=false; // Reward must be granted once upon continuing the chosen response, not when the choice menu merely opens.
     const rewards={valuable_grant:'valuable',useful_grant:'useful',apologize_grant:'apologize',hat_sure:'hat'};
     try {
       await window.AuthoredCutsceneRuntime.run(sceneDefinition(),{
         onDialogueContinue(stage) {
           const kind=rewards[stage?.id];
-          if(!kind||granted)return;
-          const prize=window.BoneyShinjimiRewards?.grant?.(kind,deps);
+          if(!kind||granted||generation!==encounterGeneration||state.phase!=='scene'||!ownsActiveScene()||dialogueScene!==encounterScene)return;
+          const prize=grantFeyReward(kind,deps);
           if(!prize){bumpEvent('Reward not available; encounter remains retriable');return;}
           granted=true;state.reward=prize;state.hatTaken=kind==='hat';
           if(state.hatTaken&&walker?.rec) {
@@ -595,12 +607,12 @@
           save(); // Item grant and logical reward use the existing member/world save seam.
         },
       });
+      if(generation!==encounterGeneration)return;
       state.phase=granted?'leaving':'home';
       if(granted)bumpEvent('Reward claimed; house vanishes when the player leaves');
     }catch(err) {
-      state.phase=granted?'leaving':'home';
-      bumpEvent('Cutscene interrupted: '+(err?.message||err));
-    }finally{sceneRunning=false;}
+      if(generation===encounterGeneration){state.phase=granted?'leaving':'home';bumpEvent('Cutscene interrupted: '+(err?.message||err));}
+    }finally{if(generation===encounterGeneration)sceneRunning=false;}
   }
   function finishEncounter() {
     if(state.phase!=='leaving'||!state.home)return;
@@ -610,22 +622,57 @@
     state.phase='complete';
     clearHouse();releaseWalker();
     state.home=null;state.target=null;state.zone=null;
-    bumpEvent('Magic house vanished; encounter complete until next full moon');
+    bumpEvent('Magic house vanished; moon '+state.completedCycle+' complete');
     save();
   }
   function syncZone() {
     const active=area()===state.zone;
-    if(!active) {
-      if(houseMesh){clearHouse();ensureCollision();}
-      if(walker)releaseWalker();
+    const scene=active?activeScene():null; // Both pending and materialized objects belong to this scene.
+    if(encounterScene!==scene){
+      if(houseMesh||houseBuild.busy)clearHouse();
+      if(walker||walkerBuild.busy)releaseWalker();
+      encounterScene=scene;feyApproachClock.reset();
+      ensureCollision();
+    }
+    if(!active||!scene) {
+      if(houseMesh||houseBuild.busy){clearHouse();ensureCollision();}
+      if(walker||walkerBuild.busy)releaseWalker(); // Pending builders must be invalidated even before their first mesh is attached.
+      feyApproachClock.reset();
       return;
     }
     if(!state.home)return;
     ensureCollision();
-    if(!houseMesh&&!houseBuilding)void ensureHouse();
-    if(!walker&&!walkerBuilding)void ensureWalker();
+    if(!houseMesh&&!houseBuild.busy)void ensureHouse();
+    if(!walker&&!walkerBuild.busy)void ensureWalker();
     updateHouseVisibility();
   }
+  function tryFeyApproach(dt) {
+    if (state.phase !== 'roam' || !walker || area() !== state.zone || !(deps.player?.health>0) || window.PlayerDowned?.isDowned?.()) { feyApproachClock.reset(); return; }
+    if(!feyApproachClock.advance(dt))return;
+    const player = playerTile(), current = position(); // Only move a distant, unobserved wanderer, never interrupt a chase.
+    if (!player || !current || dist(current, player) < SIGHT_TILES * 2) return; // Already outside mutual sight; avoid a redundant LOS query.
+    const chance = window.CookingSystem?.feyEncounterChance?.(0.005) ?? 0.005; // Tunable baseline: one half-percent per eligible interval.
+    if (rnd() >= chance) return;
+    const h = homeCenter();
+    const routes=runtime.createRouteBudget(4); // Shared duplicate rejection and A* ceiling per approach roll.
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 2;
+      const c = Math.floor(player.x + Math.cos(angle) * radius), r = Math.floor(player.z + Math.sin(angle) * radius);
+      if(!routes.visit(c,r))continue;
+      if (!validTile(c, r) || !h || dist({x:c+.5,z:r+.5},h) < 4) continue;
+      if (window.NpcPathfinding?.isNpcPositionWalkable?.(state.zone,c+.5,r+.5) === false) continue; // Reject narrow prop and furniture collisions too.
+      if(!routes.reachable(
+        ()=>window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3),
+        ()=>window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)))continue;
+      releaseWalker(); // The existing async walker constructor places the new avatar on a validated surface.
+      state.target={c,r}; state.activity='wander'; state.resourceTarget=null; state.workLeft=0;
+      planTimer=0; scanTimer=SCAN_SECONDS; // Give the newly arrived walker its ordinary chase check before choosing a new chore.
+      void ensureWalker();
+      bumpEvent('Fey encounter: Boney materialized near the player');
+      return;
+    }
+  }
+
   function update(dt) {
     if(!deps||window.__hobunjiGameStarted!==true)return;
     dt=clamp(finite(dt),0,0.1);
@@ -636,6 +683,8 @@
     if(state.phase==='leaving') {if(!sceneRunning)finishEncounter();return;} // Never despawn the house during milk dialogue.
     if(area()!==state.zone||!walker)return;
     if(state.phase==='scene')return;
+    tryFeyApproach(dt);
+    if (!walker) return;
     contactBoost(dt);
     scanTimer+=dt;
     if(scanTimer>=SCAN_SECONDS) {
@@ -693,7 +742,8 @@
       reward:state.reward,hatTaken:state.hatTaken,milksGiven:state.milksGiven};
   }
   function restore(raw) {
-    clearHouse();releaseWalker();
+    clearHouse();releaseWalker();encounterScene=null;
+    feyApproachClock.reset();sceneRunning=false;
     Object.assign(state,initialState());
     if(raw?.version!==SAVE_VERSION)return;
     state.cycle=Number.isInteger(raw.cycle)?raw.cycle:-1;
@@ -704,7 +754,9 @@
       sector:SECTORS.some(row=>row.includes(raw.home.sector))?raw.home.sector:null}:null; // Older saves without sector use the loaded layout if available.
     state.target=goodCoord(raw.target)?{c:raw.target.c,r:raw.target.r}:null;
     state.phase=['planned','roam','flee','home','leaving','complete'].includes(raw.phase)?raw.phase:'waiting';
-    if(!state.zone||!state.home&&state.phase!=='planned')state.phase='waiting';
+    if(state.phase==='complete') {
+      state.zone=null;state.home=null;state.target=null; // Completed saves intentionally have no house to restore.
+    } else if(!state.zone||!state.home&&state.phase!=='planned')state.phase='waiting';
     state.activity=['tree','rock','wander','flee','hide'].includes(raw.activity)?raw.activity:'wander';
     state.workLeft=clamp(finite(raw.workLeft),0,30);
     const t=raw.resourceTarget; // A resumed chore must still point at the same authored tree/rock tile.
@@ -724,7 +776,9 @@
     bumpEvent('Restored moonlit encounter from existing world save');
   }
   function debugSnapshot() {
+    const day=currentDay(); // Calendar diagnostics distinguish a missed moon from pending terrain placement.
     return {phase:state.phase,cycle:state.cycle,completedCycle:state.completedCycle,
+      rawDay:deps?.calendar?.day??null,day,lunarDay:day>=1?lunarDay(day):null,latestFullMoonCycle:latestFullMoonCycle(day),
       zone:state.zone,home:state.home,target:state.target,activity:state.activity,
       lastSight:state.lastSight,lastEvent:state.lastEvent,houseVisible:!!houseMesh?.visible,
       collision:!!houseUnregister,walker:!!walker,catches:state.catches,
@@ -746,6 +800,7 @@
           summary:spoilersRevealed?'Location revealed':'Location hidden',
           rows:spoilersRevealed?[
             ['Encounter',state.phase],
+            ['Lunar day',currentDay()>=1?lunarDay(currentDay()):'Calendar unavailable'],
             ['Zone',zoneLabel],
             ['Sector',sector || (state.phase==='planned'?'Pending house placement':'Not available')],
           ]:[],
@@ -753,7 +808,7 @@
             ? (state.phase==='planned'
               ? 'The zone is selected; its nine-sector location is not known until the terrain supports a 3×3 house.'
               : !state.zone
-                ? 'No current house. A new zone is selected on lunar day 14 when the next encounter is eligible.'
+                ? 'No current house. A new zone is selected from the latest unclaimed full moon (lunar day 14), including missed dates.'
                 : 'Sector is the house centre within a 3×3 compass grid of the whole wilderness zone.')
             : 'Press Show spoilers to reveal the house’s current zone and sector.',
           actions:[{id:'toggle',label:spoilersRevealed?'🙈 Hide spoilers':'👁 Show spoilers',active:spoilersRevealed}],

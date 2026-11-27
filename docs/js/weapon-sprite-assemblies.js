@@ -25,6 +25,9 @@
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
+  const HEAD_MOVE_EPSILON=.035, HEAD_LEAN_PER_SPEED=.14, HEAD_SETTLE_RATE=10; // World units/s, radians per unit/s, and exponential settling per second.
+  const HEAD_YAW_CENTER=3*Math.PI/180; // NPC portrait clamp center hysteresis.
+  function headDeadzone(){return Math.max(0,Math.min(Math.PI/2,global.PerpRotation?.PERP_DEAD_RAD??(global.SCRATCHBONES_CONFIG?.game?.movement?.perpRotDeadzoneDeg??40)*Math.PI/180));}
   const DEF = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {}; // Single committed recipe registry shared with the Tool Hub; tool-specific definitions may still override it.
   const effects = global.HobunjiLayeredWeaponEffects; // Materials, interleaved fire, and visible-metal source masks live outside the animation module.
 
@@ -39,8 +42,24 @@
     return new URL('../' + String(path || '').replace(/^\/+/, ''), scriptUrl).href;
   }
 
-  function textureFor(THREE, path) {
+  function textureFor(THREE, path, outlined = false) {
     const url = imageUrl(path);
+    if (outlined && global.ModularWeapons?.outlinedImage) {
+      const key = 'modular-outline:' + url; // Distinct variant preserves nonmodular source textures.
+      if (!images.has(key)) {
+        const pending = textureFor(THREE, path).then(source => {
+          const image = global.ModularWeapons.outlinedImage(source.image);
+          if (image === source.image) return source;
+          const variant = source.clone(); // Preserve the canonical texture filters and color space.
+          if (variant.source && THREE.Source) variant.source = new THREE.Source(image); // Modern Three clones share Source; do not overwrite the original.
+          else variant.image = image; // Legacy Three textures store image directly.
+          variant.needsUpdate = true;
+          return variant;
+        }).catch(error => { images.delete(key); throw error; });
+        images.set(key,pending);
+      }
+      return images.get(key);
+    }
     if (!images.has(url)) {
       const pending = new Promise((resolve, reject) => {
         new THREE.TextureLoader().load(url, tex => {
@@ -105,6 +124,116 @@
       (height / 2 - point.y - 0.5 - (Number(offset?.y) || 0)) * unit,
       0,
     );
+  }
+
+  // NPC front-portrait convention: edge-on at camera bearing +/-90 degrees.
+  // Allocation-free clamp, preserving the selected side within center hysteresis.
+  function clampIdleHeadYaw(motion,yaw,viewYaw,deadRad) {
+    if(!Number.isFinite(viewYaw)||!(deadRad>0))return yaw;
+    const first=viewYaw+Math.PI/2;
+    const delta=Math.atan2(Math.sin(yaw-first),Math.cos(yaw-first));
+    const index=Math.abs(delta)<=Math.PI/2?0:1;
+    const d=index===0?delta:delta>0?delta-Math.PI:delta+Math.PI;
+    const side=motion.perp===index&&motion.side&&Math.abs(d)<HEAD_YAW_CENTER?motion.side:d>0?1:-1;
+    motion.side=side;motion.perp=index;
+    return Math.abs(d)<deadRad?first+index*Math.PI+side*deadRad:yaw;
+  }
+  function stepIdleHeadMotion(motion,vx,vz,dt,seedYaw,deadRad) {
+    if(!Number.isFinite(motion.yaw))motion.yaw=seedYaw;
+    if(!(dt>0))return motion;
+    const speed=Math.hypot(vx,vz);
+    const moving=Number.isFinite(speed)&&speed>HEAD_MOVE_EPSILON;
+    if(!moving&&motion.leanX===0&&motion.leanZ===0)return motion; // Exact idle equilibrium: no exponential/trigonometry.
+    if(moving)motion.yaw=Math.atan2(vx,vz);
+    const target=moving?Math.min(deadRad,speed*HEAD_LEAN_PER_SPEED)/speed:0;
+    const blend=1-Math.exp(-HEAD_SETTLE_RATE*dt);
+    motion.leanX+=(moving?vx*target-motion.leanX:-motion.leanX)*blend;
+    motion.leanZ+=(moving?vz*target-motion.leanZ:-motion.leanZ)*blend;
+    if(!moving&&Math.hypot(motion.leanX,motion.leanZ)<.001)motion.leanX=motion.leanZ=0;
+    return motion;
+  }
+  // Measure the actual baked rope attachment independently of the pendulum's resettable
+  // pivot history. Only strike recovery can feed an idle head impulse; locomotion wins.
+  function resetIdleHeadMotion(m,resetYaw=false) {
+    m.leanX=m.leanZ=m.returnX=m.returnZ=0;
+    m.tipReady=m.previousAttack=m.sawStrike=false;m.previousProgress=0;
+    if(resetYaw){m.yaw=m.displayYaw=m.renderedYaw=m.perp=null;m.side=0;m.source='initial';}
+  }
+  function bodyYawRate(deltaTime, previousYaw, yaw) {
+    if(!(deltaTime>0)||!Number.isFinite(previousYaw))return 0;
+    const delta=Math.atan2(Math.sin(yaw-previousYaw),Math.cos(yaw-previousYaw)); // Heading wraps seamlessly through ±π.
+    return Math.abs(delta)<=Math.PI/2?delta/deltaTime:0; // Abrupt facing resets cannot kick the head.
+  }
+  function advanceIdleHeadMotion(m,attacking,progress,strikeFrac,holdFrac,pivot,bodyVX,bodyVZ,dt,seedYaw,deadRad) {
+    if(!Number.isFinite(m.yaw))m.yaw=seedYaw;
+    if(!(dt>0)) {
+      // Initialization may establish a neutral baseline, but paused redraws cannot consume a return.
+      if(!m.tipReady){m.tipReady=true;m.tipX=pivot.x;m.tipY=pivot.y;m.tipZ=pivot.z;}
+      return;
+    }
+    const dx=pivot.x-m.tipX,dy=pivot.y-m.tipY,dz=pivot.z-m.tipZ;
+    const valid=m.tipReady&&dx*dx+dy*dy+dz*dz<=9;
+    if(!valid)resetIdleHeadMotion(m);
+    let vx=0,vz=0,tipMoving=false;
+    if(valid&&(attacking||m.previousAttack)){
+      vx=dx/dt-bodyVX;vz=dz/dt-bodyVZ;
+      tipMoving=Number.isFinite(vx)&&Number.isFinite(vz)&&vx*vx+vz*vz>HEAD_MOVE_EPSILON*HEAD_MOVE_EPSILON;
+    }
+    m.tipReady=true;m.tipX=pivot.x;m.tipY=pivot.y;m.tipZ=pivot.z;
+    const bodyMoving=Number.isFinite(bodyVX)&&Number.isFinite(bodyVZ)&&bodyVX*bodyVX+bodyVZ*bodyVZ>HEAD_MOVE_EPSILON*HEAD_MOVE_EPSILON;
+    if(attacking){
+      if(!m.previousAttack||progress<m.previousProgress-.01||!valid){
+        m.sawStrike=false;m.returnX=m.returnZ=0;
+      }
+      if(progress>=strikeFrac)m.sawStrike=true;
+      if(m.sawStrike&&progress>=holdFrac&&tipMoving){m.returnX=vx;m.returnZ=vz;}
+      m.leanX=m.leanZ=0; // The existing attack quaternion still owns active swings.
+    }else{
+      const returned=m.previousAttack&&m.sawStrike&&valid;
+      if(bodyMoving){
+        m.source='locomotion';
+        stepIdleHeadMotion(m,bodyVX,bodyVZ,dt,seedYaw,deadRad);
+      }else if(returned){
+        // Prefer the real last return step; a fully settled final keyframe uses
+        // the most recent nonzero recovery sample instead. Consume exactly once.
+        const x=tipMoving?vx:m.returnX,z=tipMoving?vz:m.returnZ,speed=Math.hypot(x,z);
+        if(speed>HEAD_MOVE_EPSILON){
+          const magnitude=Math.min(deadRad,speed*HEAD_LEAN_PER_SPEED);
+          m.yaw=Math.atan2(x,z);m.leanX=x/speed*magnitude;m.leanZ=z/speed*magnitude;
+          m.source='strike-return';
+        }else stepIdleHeadMotion(m,0,0,dt,seedYaw,deadRad);
+      }else stepIdleHeadMotion(m,0,0,dt,seedYaw,deadRad);
+      m.sawStrike=false;m.returnX=m.returnZ=0;
+    }
+    m.previousAttack=attacking;m.previousProgress=progress;
+  }
+
+  // Solve the tilted plane's NORMAL from its desired horizontal yaw and its
+  // tilted up vector. Pitching a yawed quaternion directly drifts its actual
+  // horizontal normal back into the forbidden NPC deadzone.
+  function leanHeadBasis(leanX,leanZ,lean,yaw,up,normal){
+    const scale=Math.sin(lean)/Math.hypot(leanX,leanZ);
+    up.set(leanX*scale,Math.cos(lean),leanZ*scale);
+    const x=Math.sin(yaw),z=Math.cos(yaw);
+    normal.set(x,-(up.x*x+up.z*z)/Math.max(1e-8,up.y),z);
+  }
+  function easeIdleHeadYaw(previous,target,dt){
+    if(!Number.isFinite(previous))return target;
+    const delta=Math.atan2(Math.sin(target-previous),Math.cos(target-previous)); // Follow the short arc across the yaw wrap.
+    return previous+delta*(1-Math.exp(-5*Math.max(0,dt)));
+  }
+  function idleHeadQuaternion(state,pivot,normal,out,dt) {
+    const q=state.scratch,motion=state.idleHeadMotion; // Each actual hand has its own baked tip; dual wield still shares actor motion and rope physics.
+    const deadRad=headDeadzone();
+    const camera=state.cameraPosition||global.SharedAttackPose?.getCameraPosition?.()||global.PerpRotation?.liveCameraPosition?.();
+    const rawYaw=Number.isFinite(motion.yaw)?motion.yaw:Math.atan2(normal.x,normal.z);
+    const viewYaw=camera&&Math.hypot(camera.x-pivot.x,camera.z-pivot.z)>1e-8?Math.atan2(camera.x-pivot.x,camera.z-pivot.z):null;
+    motion.displayYaw=easeIdleHeadYaw(motion.displayYaw,rawYaw,dt);
+    const yaw=clampIdleHeadYaw(motion,motion.displayYaw,viewYaw,deadRad);motion.renderedYaw=yaw;
+    const lean=Math.min(deadRad,Math.PI/2-1e-5,Math.hypot(motion.leanX,motion.leanZ));
+    if(lean<=1e-8)return out.setFromAxisAngle(q.axisUp,yaw);
+    leanHeadBasis(motion.leanX,motion.leanZ,lean,yaw,q.headUp,q.tmp);
+    return planeQuaternion(q.headUp,q.tmp,out,q);
   }
 
   function planeQuaternion(worldUp, preferredNormal, result, scratch) {
@@ -191,6 +320,13 @@
     states.delete(root);
   }
 
+  function assemblyKind(root) { const state=states.get(root);return state?.config?.flail?'flail':state?'layered':null; }
+  function isGroundNonSolidChild(plane,child){
+    const state=states.get(plane?.parent);
+    if(!state||state.plane!==plane)return false;
+    // Only exact emitter-owned groups are exempt. Real PNG overlays remain solid.
+    return !!state.fireEmitters?.some(fx=>fx.group===child&&child.userData?.weaponInterleavedVfx===true);
+  } // Exact decorated root, not a guessed tool-name alias.
   function definitionFor(itemKey, def) {
     return def?.weaponAssembly || DEF[itemKey] || DEF[def?.shapeKey] || (Array.isArray(def?.spriteLayers) && def.spriteLayers.length ? { layers: def.spriteLayers } : null);
   }
@@ -215,8 +351,11 @@
       metalOptions: options.metalOptions || null, masteryLevel: options.masteryLevel || (() => 0), resolveAsset: imageUrl, // Live XP rank drives authored non-metal VFX, while metal still uses plating/mastery options.
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
-      lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, // Character movement source supplied by gameplay, not the weapon's animated joint.
+      groundTrail:{grounded:false,x:0,y:0,z:0,px:0,py:0,pz:0}, // Per-hand world-space slack endpoint; never feeds the shared pendulum.
+      idleHeadMotion:{yaw:null,leanX:0,leanZ:0,renderedYaw:null,side:0,perp:null,tipReady:false,tipX:0,tipZ:0,tipY:0,returnX:0,returnZ:0,previousAttack:false,previousProgress:0,sawStrike:false,source:'initial'}, cameraPosition:null, // Retained logical heading and smoothed lean, separate from pendulum.
+      lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, movementRoot:null, turnRoot:null, turnYaw:null, turnRate:0, // Character movement source supplied by gameplay, not the weapon's animated joint.
       angularVelocity: new THREE.Vector3(), pivotVelocity: new THREE.Vector3(), hasPhysicsVelocity: false, physicsLength: 0, // Persistent world-space pendulum momentum and measured lever length.
+      equilibriumSkips: 0, // Diagnostic count of exact no-torque integration substeps skipped.
       lastShaftUp: new THREE.Vector3(), hasShaftUp: false, // Tracks observed pitch travel for procedural swings lacking authored pitch values.
       strikeTurnRad: 0, hasStrikeStart: false, wasAttacking: false, lastFrameProgress: 0, // The strike begins from the most recent gravity-and-lag position, never the shaft pose in windup.
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
@@ -318,7 +457,7 @@
       const chainTex = isRope ? null : await textureFor(THREE, f.chain.sprite);
       const ropeTexture = isRope ? await textureFor(THREE, f.chain.sprite || 'assets/objectsprites/rope_long.png') : null; // Original PNG shared with traversable ruin ropes.
       if (state.dead) return;
-      const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
+      const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite, f.head.modularOutline === true)));
       if (state.dead) return;
       const authoredRopeScale = connectorAxisScale(f.chain, 'scaleY'); // Width and head scale are never inferred from a mount line.
       const requestedLength = Number(f.chain.mountLengthPx); // Present only on a modular rope mount, never an ordinary authored flail.
@@ -388,6 +527,7 @@
   function setAction(root, options = {}) {
     const state = states.get(root);
     if (!state) return;
+    if(options.resetHeadMotion===true)resetIdleHeadMotion(state.idleHeadMotion,true); // Explicit editor seek, not ordinary neutral frames.
     if (options.progress === 0 || options.attacking !== true && state.attacking) {
       state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; // Reset attack replay without carrying momentum from a different timeline.
       if (options.progress === 0) { state.direction.set(0, -1, 0); state.hasPivot = false; }
@@ -399,6 +539,8 @@
     state.hf = Number.isFinite(options.holdFrac) ? Math.max(state.sf, Math.min(1, options.holdFrac)) : 0.68;
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
     state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Authored travel remains diagnostic; physical follow-through uses the measured world motion.
+    state.cameraPosition = options.cameraPosition || null; // Standalone editor camera, if supplied.
+    state.movementRoot = options.movementRoot || null; // Editor body frame; gameplay can identify the player from its existing movement position.
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
     state.fishingFlailHeadSpin = !!state.config.flail && state.attacking && options.fishingFlailHeadSpin === true; // The flexible head alone spins; normal flail strikes and NPC pendulums are unaffected.
     state.fishingFlailSpinRevolutions = Number.isFinite(Number(options.fishingFlailSpinRevolutions))
@@ -428,9 +570,11 @@
         if (replica) {
           replica.dualPhysicsSource = source; // Every swing copies this one authoritative WORLD-space direction, never a local-space angle.
           replica.attacking = source.attacking; replica.progress = source.progress;
+          replica.fishingFlailHeadSpin=source.fishingFlailHeadSpin;replica.fishingFlailSpinRevolutions=source.fishingFlailSpinRevolutions; // Shared attack phase, including special fishing throws.
           replica.flailLengthScale = source.flailLengthScale; // Each duplicate has its own visual connector but shares the source pose's reach.
           replica.wf = source.wf; replica.sf = source.sf; replica.hf = source.hf;
           replica.pitchTravelRad = source.pitchTravelRad; replica.yawTravelRad = source.yawTravelRad;
+          replica.cameraPosition=source.cameraPosition;
           replica.movementPosition = source.movementPosition; // One actor supplies locomotion; each replica still resolves its own pivot.
         }
       }
@@ -587,9 +731,26 @@
     const up = new THREE.Vector3(0, 1, 0); // The carrier's local Y remains the taut suspension axis.
     const basis = new THREE.Matrix4(); // Reused to orient the plane without allocations per frame.
     const inverseWorld = new THREE.Matrix4(); // Uses the rendered carrier matrix directly, avoiding a holder-pose recomputation during onBeforeRender.
+    const previousCarrier = new THREE.Matrix4(); // Exact world-matrix key across base/depth/outline replays.
+    const previousCamera = new THREE.Vector3();
+    const previousFacing = new THREE.Quaternion();
+    let facingReady = false;
     mesh.onBeforeRender = (_renderer, _scene, camera) => {
       if (!camera?.getWorldPosition) return;
-      camera.getWorldPosition(cameraPosition);
+      // The renderer already updated the actual camera matrix for this pass.
+      if (camera.matrixWorld?.elements) cameraPosition.setFromMatrixPosition(camera.matrixWorld);
+      else camera.getWorldPosition(cameraPosition);
+      if (facingReady && previousCarrier.equals(group.matrixWorld) && previousCamera.equals(cameraPosition)
+          && previousFacing.equals(mesh.quaternion)) {
+        mesh.userData.ropeFacingReuses = (mesh.userData.ropeFacingReuses || 0) + 1;
+        // Local position/scale or a replay hook may have changed the leaf
+        // matrix even though its required facing is unchanged. Refresh it
+        // exactly as the uncached path does, without rebuilding the basis.
+        mesh.updateMatrixWorld();
+        return;
+      }
+      previousCarrier.copy(group.matrixWorld);
+      previousCamera.copy(cameraPosition);
       cameraPosition.applyMatrix4(inverseWorld.copy(group.matrixWorld).invert()); // Match the ruin rope billboard without recomputing the game's baked tool-holder pose.
       normal.set(cameraPosition.x, 0, cameraPosition.z);
       if (normal.lengthSq() < 1e-8) normal.set(0, 0, 1);
@@ -598,6 +759,9 @@
       normal.crossVectors(right, up).normalize();
       mesh.quaternion.setFromRotationMatrix(basis.makeBasis(right, up, normal));
       mesh.updateMatrixWorld(); // Face the actual rendering camera, including Tool Hub/attack preview cameras.
+      previousFacing.copy(mesh.quaternion);
+      facingReady = true;
+      mesh.userData.ropeFacingUpdates = (mesh.userData.ropeFacingUpdates || 0) + 1;
     };
     return group; // The grapple head replaces the ruin rope's brush-shaped grip tip.
   }
@@ -645,6 +809,14 @@
     const d = body.direction, w = body.angularVelocity; // Mutated per-instance direction and angular velocity; no frame allocations.
     const steps = Math.ceil(Math.min(MAX_DT, dt) * 240), h = Math.min(MAX_DT, dt) / steps; // At most 20 substeps per render frame.
     const ax = -acceleration.x, ay = -gravity - acceleration.y, az = -acceleration.z; // Effective gravity in the accelerating pivot frame.
+    // Exact equilibrium only: a hanging, motionless connector with no
+    // sideways acceleration has zero torque at every substep. No epsilon,
+    // sleep threshold or reduced physical update rate.
+    if (w.x === 0 && w.y === 0 && w.z === 0 && Number.isFinite(damping) && Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az)
+        && d.y*az-d.z*ay === 0 && d.z*ax-d.x*az === 0 && d.x*ay-d.y*ax === 0) {
+      if (typeof body.equilibriumSkips === 'number') body.equilibriumSkips += steps;
+      return;
+    }
     const decay = Math.exp(-Math.max(0, damping) * h); // Mild air/bearing loss expressed per second, independent of frame rate.
     for (let i = 0; i < steps; i++) { // Kick/rotate/kick preserves free rotation and the exact connector length.
       w.x += (d.y * az - d.z * ay) * h / (2 * length);
@@ -716,12 +888,136 @@
     part.matrixWorldNeedsUpdate = true;
   }
 
+  // Idle head artwork stays world-up. Measure the vertical offset from its
+  // rope attachment to its authored contact edge, or all layer bounds.
+  function idleHeadContact(state,unit,profile) {
+    const head=state.config.flail.head,visual=head.visualTransform;
+    const cached=state.groundHeadContact; // Head geometry is static under its moving suspension; alpha trace only when image/geometry changes.
+    if(cached?.profile===profile&&cached.unit===unit&&cached.parts.length===state.headParts.length
+      &&state.headParts.every((p,i)=>p.geometry===cached.parts[i].geometry&&p.material?.map?.image===cached.parts[i].image))return cached.result;
+    const index=Math.max(0,head.layers.findIndex(l=>l.id===head.anchorLayer));
+    const mesh=state.headParts[index];
+    if(!mesh)return null;
+    const sx=visual?(Number(visual.scaleX)||1)*(visual.flipX?-1:1):1;
+    const sy=visual?(Number(visual.scaleY)||1)*(visual.flipY?-1:1):1;
+    const theta=-(Number(visual?.rotation)||0)*Math.PI/180;
+    const c=Math.cos(theta),s=Math.sin(theta);
+    const ty=(x,y)=>s*x*sx+c*y*sy;
+    const tx=(x,y)=>c*x*sx-s*y*sy;
+    const a=head.anchorSpace==='composite'?state.scratch.headAnchorLocal.set(state.headAnchor.x*unit,-state.headAnchor.y*unit,0)
+      :pixelPoint(state.headAnchorImage,state.headAnchor,unit,head.layers[index]?.offsetPx,state.scratch.headAnchorLocal);
+    const anchorY=ty(a.x,a.y);
+    const anchorX=tx(a.x,a.y),dx=(Number(visual?.x)||0)*unit,dy=(Number(visual?.y)||0)*unit;
+    let lower=Infinity,minX=Infinity,maxX=-Infinity,maxY=-Infinity;
+    const include=(x,y)=>{const xx=tx(x,y)-anchorX+dx,yy=ty(x,y)-anchorY-dy;minX=Math.min(minX,xx);maxX=Math.max(maxX,xx);maxY=Math.max(maxY,yy);lower=Math.min(lower,ty(x,y));}; // Cached contact-relative transformed bounds.
+    const auto=state.headParts.map(part=>{
+      if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
+      return global.HeldGroundPose?.autoContact?.(part.material?.map?.image,part.geometry.boundingBox,[]);
+    });
+    const traced=auto.every(points=>points?.length>0);
+    const authored=!traced&&!!profile.headContact;
+    if(traced){
+      for(let i=0;i<state.headParts.length;i++){
+        const part=state.headParts[i];
+        for(const p of auto[i])include(part.position.x+p.x,part.position.y-p.z);
+      }
+    }else if(authored) {
+      if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();
+      const b=mesh.geometry.boundingBox;
+      for(const p of profile.headContact)include(mesh.position.x+b.min.x+p.u*(b.max.x-b.min.x),mesh.position.y+b.max.y-p.v*(b.max.y-b.min.y));
+    }else for(const part of state.headParts) {
+      if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
+      const b=part.geometry.boundingBox;
+      for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])include(part.position.x+x,part.position.y+y);
+    }
+    const drop=anchorY-lower+(Number(visual?.y)||0)*unit;
+    const result=Number.isFinite(drop)?{drop,minX,maxX,maxY,authored,traced}:null;
+    state.groundHeadContact={profile,unit,parts:state.headParts.map(p=>({geometry:p.geometry,image:p.material?.map?.image})),result};
+    return result;
+  }
+
+  function tiltedHeadDrop(contact,quat) {
+    const x=2*(quat.x*quat.y+quat.w*quat.z),y=1-2*(quat.x*quat.x+quat.z*quat.z); // World-Y row, applied to cached contact-relative bounds.
+    return -(x*(x<0?contact.maxX:contact.minX)+y*(y<0?contact.maxY:-contact.drop));
+  }
+
+  // Read the authored physical connector and head from this exact assembly.
+  // Called only while a permanent Light fit is still pending.
+  function groundFitSpec(root,profile) {
+    const state=states.get(root),f=state?.config?.flail;
+    if(!f||!state.chain||!state.headRoot||!state.chainTop||!state.chainBottom||!state.headAnchor)return null;
+    const plane=state.plane,image=plane.material?.map?.image;
+    const width=image?.naturalWidth||image?.width;
+    if(!(width>0))return null;
+    const unit=(plane.geometry?.parameters?.width||.5)/width;
+    if(state.baseAnchorImage!==image){state.baseAnchor=anchor(image,f.haftAnchor,'top');state.baseAnchorImage=image;}
+    if(!state.baseAnchor)return null;
+    const contact=idleHeadContact(state,unit,profile);
+    if(!contact?.traced)return null; // Never freeze a physical fit against transparent texture bounds.
+    const p=pixelPoint(image,state.baseAnchor,unit,null,state.scratch.pivotLocal);
+    const spanX=(state.chainBottom.x-state.chainTop.x)*unit*connectorAxisScale(f.chain,'scaleX');
+    let spanY=(state.chainBottom.y-state.chainTop.y)*unit*connectorAxisScale(f.chain,'scaleY');
+    const mount=Number(f.chain.mountLengthPx);
+    if(!state.chain.userData?.hobunjiRuinRopeSprite&&Number.isFinite(mount)&&mount>0&&Math.abs(spanY)>1e-8)
+      spanY=Math.sign(spanY)*Math.sqrt(Math.max(1e-8,(mount*unit)**2-spanX**2));
+    return {x:p.x,y:p.y,spanX,spanY,headDrop:contact.drop*relativePartScale(f.head)};
+  }
+
+  function retainsGroundContact(trail,pivot) {
+    if(!trail.grounded)return false;
+    const dx=pivot.x-trail.px,dy=pivot.y-trail.py,dz=pivot.z-trail.pz; // Reset a stale contact after a teleport in any axis.
+    return dx*dx+dy*dy+dz*dz<=9;
+  }
+  function canPinGroundHead(trail,pivot,length,available) {
+    if(!retainsGroundContact(trail,pivot)||!Number.isFinite(available)||Math.abs(available)>length)return false;
+    const x=trail.x+trail.px-pivot.x,z=trail.z+trail.pz-pivot.z;
+    return x*x+available*available+z*z<=length*length; // No pull: retain the previous head orientation as well as its contact.
+  }
+
+  function trailCanPin(state,pivot,length,floor,contact,scale) {
+    return state.groundTrail.grounded&&canPinGroundHead(state.groundTrail,pivot,length,
+      pivot.y-(floor+.035+tiltedHeadDrop(contact,state.scratch.headQ)*scale));
+  }
+
+  // A grounded head stays at its last world-space contact until the connector
+  // reaches its maximum length. Project only the excess onto the floor disk.
+  function resolveGroundSlack(trail,direction,length,available,pivot) {
+    let x=direction.x*length,y=direction.y*length,z=direction.z*length;
+    const reachable=Number.isFinite(available)&&available<=length;
+    const floorY=reachable?Math.min(length,-available):-length;
+    const dx=pivot.x-trail.px,dz=pivot.z-trail.pz;
+    const keep=retainsGroundContact(trail,pivot);
+    const grounded=reachable&&(keep||y<=floorY+1e-8);
+    if(grounded){
+      y=floorY;
+      if(keep){x=trail.x-dx;z=trail.z-dz;} // Keep the head stationary in world space, not relative to the rotating haft.
+      const radius=Math.sqrt(Math.max(0,length*length-y*y));
+      const flat=Math.hypot(x,z);
+      if(flat>radius&&flat>0){x*=radius/flat;z*=radius/flat;}
+    }
+    trail.x=x;trail.y=y;trail.z=z;trail.px=pivot.x;trail.py=pivot.y;trail.pz=pivot.z;trail.grounded=grounded;
+    return trail;
+  }
+
+  // Preserve connector width for vertical art. Diagonal raster contacts can
+  // require X compression only once their horizontal span exceeds the slack length.
+  function slackConnectorScale(spanX,spanY,length,out) {
+    const x=Math.abs(spanX),y=Math.abs(spanY);
+    const target=Math.max(Math.hypot(x,y)*1e-6,length); // Keep the render matrix invertible at coincident contacts.
+    out.x=x>target?target/x:1;
+    out.y=y>1e-10?Math.max(1e-6,Math.min(1,Math.sqrt(Math.max(0,target*target-(x*out.x)**2))/y)):1;
+    return out;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
       if (!state.detachedAt) {
         state.detachedAt = now;
         state.hasPivot = false; // Re-equipping resets old idle momentum rather than launching the suspended head.
+        state.hasMovementPosition=false;state.turnRoot=null;state.turnYaw=null;state.turnRate=0;
+        resetIdleHeadMotion(state.idleHeadMotion);
+        state.groundTrail.grounded=false;
         state.hasPhysicsVelocity = false;
         state.angularVelocity.set(0, 0, 0);
       }
@@ -753,7 +1049,9 @@
       state.baseAnchorImage = baseImage; // Re-scan only when an edited/recolored haft changes its source image.
     }
     if (!state.baseAnchor || !state.chainTop || !state.chainBottom || !state.headAnchor) return;
-    const pivot = bakedPoint(pixelPoint(baseImage, state.baseAnchor, unit, null, q.pivotLocal), plane, null, q.inverseRootMatrix, q.pivot); // Baked local Y offset rotates with its own haft.
+    pixelPoint(baseImage,state.baseAnchor,unit,null,q.pivotLocal);
+    global.HeldGroundPose?.adjustHaftPoint?.(plane,q.pivotLocal);
+    const pivot = bakedPoint(q.pivotLocal, plane, null, q.inverseRootMatrix, q.pivot); // Baked local Y offset rotates with its own haft.
     plane.matrixWorld.decompose(q.decomposePos, q.baseQ, q.scale); // Rotation and rendered world scale from the baked matrix (getWorldQuaternion/getWorldScale bypass holder hooks).
     const baseQ = q.baseQ;
     const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
@@ -772,7 +1070,7 @@
         }
       }
     }
-    const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
+    let chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
     let chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Reach uses Y only; head size and connector width stay independently authored.
     const mountLength = Number(flail.chain.mountLengthPx); // Rope-mount line length, expressed in unchanged source-haft pixels.
     if (!state.chain.userData?.hobunjiRuinRopeSprite && Number.isFinite(mountLength) && mountLength > 0) {
@@ -782,8 +1080,35 @@
       // Original raster chain may be diagonal: preserve its X width/offset and solve only Y stretch for the desired span.
     }
     const authoredChainScaleY = chainScaleY; // Preserve the authored rope width even when a combat pose shortens its longitudinal reach.
-    chainScaleY *= state.flailLengthScale; // The same scaled endpoints drive rendered length, head contact and pendulum lever arm.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
+    const pose=global.HeldGroundPose;
+    const sharedSource=state.dualPhysicsSource&&!state.dualPhysicsSource.dead?state.dualPhysicsSource:null; // Source owns permanent geometry and rope fit; visible hands own live clearance.
+    const preview=pose?.previewAppliesTo?.(root)&&!sharedSource;
+    const runtime=pose?.enabled?.()&&!sharedSource
+      &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
+      ?global.WeaponToolStances?.getRuntimeState?.():null;
+    const profile=sharedSource?sharedSource.groundProfile:(preview||runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
+      ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null);
+    state.groundProfile=profile; // No separate metadata lookup or mutable physical fit for the visible replicas.
+    const floor=profile?pose.groundY():null; // The fitted length is a maximum; zero rope-minimum does not disable floor contact.
+    const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
+    // Fixed Light fit uses upright contact; live trailing accounts for tilt separately.
+    // Fit the connector in the neutral, vertically hanging reference pose, not
+    // its transient pendulum direction. Reuse the physical fit on every frame.
+    const spanX=(state.chainBottom.x-state.chainTop.x)*unit*chainScaleX;
+    const spanY=(state.chainBottom.y-state.chainTop.y)*unit*chainScaleY;
+    const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
+    const lightDrop=!sharedSource&&profile?.ropeMinScale!=null?pose.referenceDrop(root,q.pivotLocal):null; // Same immutable light stance reference as the haft.
+    const canFit=!!contact?.traced&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&(preview||global.PlayerJump?.heldPoseGrounded?.()===true);
+    const candidate=canFit?pose.ropeFitCandidate(spanX,spanY,attachmentScale,lightDrop-contact.drop*attachmentScale*headScale,profile.ropeMinScale,pose.lightRopeScale(root)):null;
+    const fixedScale=sharedSource?(sharedSource.fixedRopeScale??1):(profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1);
+    state.fixedRopeScale=fixedScale; // Both independently posed copies retain the canonical fitted rope length.
+    const desiredLocal=baseLength*fixedScale/attachmentScale;
+    if(fixedScale<1&&Math.abs(spanY)>1e-8)
+      chainScaleY*=Math.max(0.00001,Math.sqrt(Math.max(0,desiredLocal*desiredLocal-spanX*spanX))/Math.abs(spanY));
+    // Existing authored flail length animations are separate from the physical
+    // fitted size; they may shorten further, but cannot exceed it.
+    chainScaleY *= fixedScale<1?Math.min(1,state.flailLengthScale):state.flailLengthScale;
     if (state.chain.userData?.hobunjiRuinRopeSprite) {
       state.chain.scale.setScalar(localHandleScale * authoredChainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
     } else {
@@ -800,11 +1125,15 @@
     bottomLocal.x *= chainScaleX; bottomLocal.y *= chainScaleY; // Contacts must use the same stretched coordinates as visible connector geometry.
     const chainSpan = q.span.copy(topLocal).sub(bottomLocal);
     if (chainSpan.lengthSq() < 1e-10) return; // Degenerate all-transparent/one-pixel chain cannot form a lever.
-    state.physicsLength = Math.max(0.01, chainSpan.length() * attachmentScale); // World-space rope length supplies the pendulum lever arm.
+    const maxReach=chainSpan.length()*attachmentScale; // Actual authored endpoint span before live slack.
+    state.physicsLength = Math.max(0.01, maxReach); // World-space rope length supplies the pendulum lever arm.
     chainSpan.normalize();
-    const sharedPhysics = state.dualPhysicsSource?.dead ? null : state.dualPhysicsSource; // The original updates before its later-created visible copies in the shared frame scheduler.
+    const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Each physical haft has its own fallback trailing direction.
+    const sharedPhysics = sharedSource; // The original updates before its later-created visible copies in the shared frame scheduler.
     if (sharedPhysics) {
       state.direction.copy(sharedPhysics.direction); // Identical world-space sway; each side still uses its own baked haft attachment below.
+      q.velocity.copy(sharedPhysics.scratch.velocity); // Shared actor movement for both visible copies.
+      state.actorMotionValid=sharedPhysics.actorMotionValid;
     } else {
     q.measuredPivotVelocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // The animated attachment transfers real handle momentum.
     q.pivotAcceleration.copy(q.measuredPivotVelocity).sub(state.pivotVelocity).divideScalar(Math.max(0.001, dt));
@@ -816,13 +1145,15 @@
     }
     const actorPosition = state.movementPosition; // World-space locomotion supplied by game/preview, independent of the animated haft.
     const velocity = q.velocity;
-    if (actorPosition && Number.isFinite(actorPosition.x) && Number.isFinite(actorPosition.z)) {
+    state.actorMotionValid=!!actorPosition&&Number.isFinite(actorPosition.x)&&Number.isFinite(actorPosition.y)&&Number.isFinite(actorPosition.z);
+    if (state.actorMotionValid) {
       if (!state.hasMovementPosition || state.lastMovementPosition.distanceToSquared(actorPosition) > 9) {
+        state.turnYaw=null;
         state.lastMovementPosition.copy(actorPosition); // Teleports / first observation must not whip the chain.
         state.hasMovementPosition = true;
       }
-      velocity.copy(actorPosition).sub(state.lastMovementPosition).divideScalar(Math.max(0.001, dt));
-      state.lastMovementPosition.copy(actorPosition);
+      if(dt>0){velocity.copy(actorPosition).sub(state.lastMovementPosition).divideScalar(Math.max(0.001, dt));state.lastMovementPosition.copy(actorPosition);}
+      else velocity.set(0,0,0);
     } else {
       state.hasMovementPosition = false;
       velocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // Fallback for third-party holders lacking an actor position.
@@ -833,7 +1164,6 @@
     q.previousDirection.copy(state.direction); // Measure the driven connector velocity before release.
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
-    const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Both haft sprites attach at their bottom end: extend outward along local -Y, away from the grip.
     const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(q.rootWorldQ).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
       state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; q.pivotAcceleration.set(0, 0, 0);
@@ -890,23 +1220,71 @@
     }
     if (dt > 0 && !state.fishingFlailHeadSpin) state.hasPhysicsVelocity = true; // Head-only spin is a kinematic orbit, not an impulse into the pendulum integrator.
     }
-    if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
-    const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
+    // Actor turn drives the same drag as translation. Measure body yaw independently of the held pose.
+    const motionOwner=sharedPhysics||state; // Replicas use one heading sample and their own lever arms.
+    if(!sharedPhysics&&dt>0){
+      const player=motionOwner.movementPosition?global.PlayerBodyTransformComposer?.getPlayerMesh?.():null;
+      const body=motionOwner.movementRoot||(player&&player.position===motionOwner.movementPosition?player:null);
+      const world=body?.matrixWorld?.elements;
+      const yaw=world?Math.atan2(world[8],world[10]):null;
+      motionOwner.turnRate=world&&body===motionOwner.turnRoot?bodyYawRate(dt,motionOwner.turnYaw,yaw):0;
+      motionOwner.turnRoot=body;
+      motionOwner.turnYaw=yaw;
+    }
+    const bodyWorld=motionOwner.turnRoot?.matrixWorld?.elements; // World origin gives the radius to each actual haft.
+    const turnX=bodyWorld?motionOwner.turnRate*(pivot.z-bodyWorld[14]):0;
+    const turnZ=bodyWorld?-motionOwner.turnRate*(pivot.x-bodyWorld[12]):0;
+    const bodyVX=(state.actorMotionValid?q.velocity.x:0)+turnX;
+    const bodyVZ=(state.actorMotionValid?q.velocity.z:0)+turnZ;
+    advanceIdleHeadMotion(state.idleHeadMotion,state.attacking,state.progress,state.sf,state.hf,pivot,bodyVX,bodyVZ,dt,state.idleHeadMotion.yaw??Math.atan2(normal.x,normal.z),headDeadzone());
+    state.groundClearance=null;
+    if (state.dualWieldHidden) {state.groundTrail.grounded=false;return;} // Only visible hands own live floor contact.
+    // Use a continuous per-hand endpoint for ground contact; the connector can
+    // become slack but cannot exceed the permanent fit and authored pose reach.
+    // Rotating a head around an off-center anchor moves its visible silhouette.
+    // Keep the last rendered quaternion while the grounded head is not being pulled.
+    const pinned=contact&&trailCanPin(state,pivot,maxReach,floor,contact,attachmentScale*headScale);
+    const idleQ=!state.attacking?(pinned?q.headQ:idleHeadQuaternion(state,pivot,normal,q.headQ,dt)):null;
+    const liveDrop=contact&&idleQ?tiltedHeadDrop(contact,idleQ):null;
+    const available=contact?pivot.y-(floor+.035+liveDrop*attachmentScale*headScale):null;
+    const renderDirection=q.target.copy(state.direction); // Reuse post-physics scratch; do not mutate the shared direction.
+    const trail=state.groundTrail;
+    if(!state.attacking&&!state.fishingFlailHeadSpin&&Number.isFinite(available)){
+      // The hidden shared pendulum can swing up without floor contact. If the
+      // visible main hand is already dragging, an unpinned offhand that can
+      // reach the floor starts hanging down, rather than inheriting that kick.
+      const peers=sharedPhysics?.dualWieldReplicas; // Existing pair registry; no second physics simulation.
+      const seedOffhand=!trail.grounded&&peers?.[1]===root&&states.get(peers[0])?.groundTrail.grounded&&Math.abs(available)<=maxReach;
+      resolveGroundSlack(trail,seedOffhand?renderDirection.set(0,-1,0):state.direction,maxReach,available,pivot);
+      const actual=Math.hypot(trail.x,trail.y,trail.z);
+      if(actual>1e-10)renderDirection.set(trail.x/actual,trail.y/actual,trail.z/actual);
+      if(trail.grounded&&!sharedPhysics){ // Match the old ground-contact damping; lift-off starts from the last visible direction.
+        state.direction.copy(renderDirection);state.angularVelocity.multiplyScalar(.25);
+      }
+      if(actual<maxReach-1e-8){
+        const ratio=slackConnectorScale(topLocal.x-bottomLocal.x,topLocal.y-bottomLocal.y,actual/attachmentScale,q.tmp);
+        chainScaleX*=ratio.x;chainScaleY*=ratio.y;
+        topLocal.x*=ratio.x;bottomLocal.x*=ratio.x;topLocal.y*=ratio.y;bottomLocal.y*=ratio.y;
+        chainSpan.copy(topLocal).sub(bottomLocal).normalize();
+      }
+      if(Number.isFinite(available))state.groundClearance={length:actual,maxLength:maxReach,fittedScale:fixedScale,trailing:trail.grounded,slack:maxReach-actual,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor,headMinY:pivot.y+trail.y-liveDrop*attachmentScale*headScale,reason:-available>maxReach?'unreachable':'solved'};
+    }else{trail.grounded=false;}
+    const worldQ = planeQuaternion(q.headUp.copy(renderDirection).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
     const rootQInverse = q.rootInverseQ.copy(q.rootWorldQ).invert(); // root's baked matrixWorld was refreshed above and is unchanged since.
-    state.chain.position.copy(bakedPoint(chainCenterWorld, null, root, q.inverseRootMatrix, q.chainLocal));
-    state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
-    const inverseRootWorld = q.rootInverseWorld.copy(root.matrixWorld).invert(); // Shared parent correction; a species' nonuniform body dimensions never distort world-facing suspension.
+    const inverseRootWorld = q.rootInverseWorld.copy(root.matrixWorld).invert(); // One inverse serves both local anchors and both corrected part matrices.
+    state.chain.position.copy(q.chainLocal.copy(chainCenterWorld).applyMatrix4(inverseRootWorld));
+    state.chain.quaternion.copy(rootQInverse).multiply(worldQ); // Shared parent correction; a species' nonuniform body dimensions never distort world-facing suspension.
     const ropeWidthScale = state.chain.userData?.hobunjiRuinRopeSprite ? authoredChainScaleY : chainScaleX; // Pose length changes only Y, not the rope ribbon's visible width.
     const ropeDepthScale = state.chain.userData?.hobunjiRuinRopeSprite ? authoredChainScaleY : (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1);
     placeFlexiblePartWorld(state.chain, inverseRootWorld, chainCenterWorld, worldQ,
       q.partWorldScale.set(attachmentScale * ropeWidthScale, attachmentScale * chainScaleY, attachmentScale * ropeDepthScale), q.partWorldMatrix);
     const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Use the stretched bottom endpoint without rescaling the head.
+    if(trail.grounded)endWorld.copy(pivot).add(q.tmp.set(trail.x,trail.y,trail.z)); // Exact pinned contact, even when the connector is virtually zero-length.
     const headSpec = flail.head;
-    // The brazier remains world-up at rest; in a swing its top faces the haft.
-    const headUp = state.attacking ? q.headUp.copy(state.direction).negate() : q.headUp.set(0, 1, 0);
-    const headQ = planeQuaternion(headUp, normal, q.headQ, q);
+    // Idle locomotion and attack orientation remain independent.
+    const headQ = idleQ||planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.headQ, q);
     const layer = headSpec.layers.find(candidate => candidate.id === headSpec.anchorLayer); // Per-head authoring offset for the actual chain contact layer.
     const headAnchorLocal = headSpec.anchorSpace === 'composite'
       ? q.headAnchorLocal.set(state.headAnchor.x * unit, -state.headAnchor.y * unit, 0)
@@ -926,7 +1304,7 @@
       headCenterWorld.add(q.tmp.set(dx * unit, -dy * unit, 0)
         .multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Pair X/Y nudges move only head art, never the rope/chain.
     }
-    state.headRoot.position.copy(bakedPoint(headCenterWorld, null, root, q.inverseRootMatrix, q.headLocal));
+    state.headRoot.position.copy(q.headLocal.copy(headCenterWorld).applyMatrix4(inverseRootWorld));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
     placeFlexiblePartWorld(state.headRoot, inverseRootWorld, headCenterWorld, headQ,
       q.partWorldScale.setScalar(attachmentScale * headScale), q.partWorldMatrix); // A single world-size head, independent of body-axis stretch and rope reach.
@@ -978,6 +1356,8 @@
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
       fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, sourceFallback: fx.sourceFallback, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(fx.config.fixedMasteryRank ?? s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
+      groundClearance: s.groundClearance || null, // Mobile diagnostics for shortened and trailing connectors.
+      idleHead: s.config.flail?{yaw:s.idleHeadMotion.yaw,renderedYaw:s.idleHeadMotion.renderedYaw,leanX:s.idleHeadMotion.leanX,leanZ:s.idleHeadMotion.leanZ,source:s.idleHeadMotion.source}:null, // Phone-visible head motion diagnosis.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
@@ -986,7 +1366,8 @@
         head: relativePartScale(s.config.flail.head),
         renderedHaftLong: s.renderedHaftLongScale ?? null, renderedHaftWidth: s.renderedHaftWidthScale ?? null, // Mobile-readable evidence of which baked haft axis drives the flexible parts.
       } : null, // Mobile diagnostics expose both independent connector axes.
-      connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
+      connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null,
+      performance: s.config.flail ? { equilibriumSubstepsSkipped:s.equilibriumSkips||0, ropeFacingUpdates:s.chain?.children?.[0]?.userData?.ropeFacingUpdates||0, ropeFacingReuses:s.chain?.children?.[0]?.userData?.ropeFacingReuses||0 } : null, // Mobile diagnostics expose both handle-relative multipliers.
       ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.
       ropeTint: s.chain?.userData?.hobunjiRuinRopeSprite ? { color: s.config.flail.chain.color, method: s.chain.children?.[0]?.userData?.ropeTintMethod || 'unavailable' } : null, // Confirms the real 3D texture was shade-filled, including editor previews, without accessing devtools.
       lifetime: weakRegistry ? 'root-weak' : 'explicit-drop', // Visible fallback for browsers without weak references.
@@ -1090,6 +1471,7 @@
     return {
       ready: !!(state.chain && state.headRoot && state.headParts.length === state.config.flail.head.layers.length),
       chain: state.chain, headRoot: state.headRoot,
+      groundContactSprite: state.headParts[Math.max(0,state.config.flail.head.layers.findIndex(l=>l.id===state.config.flail.head.anchorLayer))]||null,
       neutralMatrices: neutralPreviewMatrices(state), // Valid even if this cached flail has never been drawn in the world.
       metalTargets: (state.metalTargets || []).slice(), // The live per-layer, post-occlusion head masks; the natural rope is not a metal emitter.
     };
@@ -1114,8 +1496,8 @@
   }
 
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, // Pure sizing and phase helpers have regression tests.
+    definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
+    resolveGroundSlack, canPinGroundHead, slackConnectorScale, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {

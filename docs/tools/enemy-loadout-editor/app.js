@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261123hb3b85ce';
+import { EnemyPreview } from './preview.js?v=20261127idleMainMerge1';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -38,6 +38,7 @@ function log(text) {
   area.scrollTop = area.scrollHeight;
 }
 const preview = new EnemyPreview($('stage'), log);
+preview.onStartupPhase = name => { $('stageMessage').textContent = 'Loading · ' + name + '…'; }; // Mobile users can see the slow phase without devtools.
 preview.onTimeline = (p, phase) => {
   if (document.activeElement !== $('scrub')) $('scrub').value = p;
   if ($('phaseLabel').textContent !== phase)
@@ -992,13 +993,18 @@ function renderPools() {
       updateRuleJson();
       return;
     }
+    const rootledoot=state.kind.startsWith('rootledoot:'); // The live Foundry compatibility pool is fixed, not a bandit donor-shape rule.
     const nativeShapes = state.kind.startsWith('bandit:')
       ? window.WeaponTrustBanditLoadouts?.allowedMeleeShapes(species)
       : null;
     const nativeWeapons = nativeShapes?.length
       ? Object.fromEntries(nativeShapes.map((id) => [id, 1]))
       : d.weapons;
-    pool(
+    if(rootledoot){
+      const pairs=window.BanditCaptainArmaments.rootledootPairs(),rank=state.kind.split(':')[1];
+      $('poolPanel').append(el('h3',null,'Compatible modular weapons ('+pairs.length+')'),el('p','help','Each weapon must use a dagger haft or Porakaneki greatclub head and pass the Foundry crafting rules. Hachutu hafts excluded. Fey enchantment chance: '+(rank==='captain'?'100%':rank==='lieutenant'?'50%':'25%')+'. No ranged weapons.'));
+      for(const pair of pairs)$('poolPanel').append(el('p','muted',pair.shaft+' + '+pair.head));
+    }else pool(
       'Melee weapon shape',
       ['weapons'],
       nativeWeapons,
@@ -1032,6 +1038,7 @@ function renderPools() {
         (k) => state.data.metals[k].tier,
       ),
     );
+    if(!rootledoot){
     scalar(
       'Chance of ranged weapon',
       'rangedChance',
@@ -1049,6 +1056,7 @@ function renderPools() {
         },
       Object.keys(window.RangedWeapons.config),
     );
+    }
     if (state.kind === 'bandit:flasker') {
       const recipes = window.BanditCombat.availableFlaskRecipeIds();
       pool(
@@ -1130,7 +1138,7 @@ function renderPools() {
         def.chance,
       );
     }
-    if (state.kind === 'harlyao-skeleton')
+    if (state.kind.startsWith('harlyao-skeleton'))
       $('poolPanel').prepend(
         el(
           'p',
@@ -1307,7 +1315,14 @@ function showRecord(record) {
     fact('Species', a.speciesId),
     fact('Gender', a.gender),
     fact('Health / Stamina', def.maxHealth + ' / ' + def.maxStamina),
+    ...(def.combatClass ? [
+      fact('Combat class / level', def.combatClass + ' / ' + def.combatLevel),
+      fact('Combat perks (' + def.combatPerkPointsSpent + ' points)', Object.entries(def.combatPerks || {}).map(([id, rank]) => (window.PerkSystem?.TREES.combat.find(p => p.id === id)?.name || id) + ' ' + rank).join(' · '), true),
+    ] : []),
     fact('Weapon', def.weaponKey),
+    ...(record.ruinBackSpikeInfo?[fact('Back spike attachment',record.ruinBackSpikeInfo.carrier,true)]:[]),
+    ...(record.roster.ruinSkeletonTheme?[fact('Ruin tradition',record.roster.ruinSkeletonTheme)]:[]),
+    ...(record.roster.enchantedWeapon||record.captainArmament?[fact('Enchantments', [...(record.roster.enchantedWeapon||record.captainArmament).enchantments.base,...Object.values((record.roster.enchantedWeapon||record.captainArmament).enchantments.flourishes||{})].map(id=>window.EnchantmentSystem?.DEFINITIONS?.[id]?.displayName||id).join(' · '),true)]:[]),
     fact('Ranged', def.rangedWeaponKey),
     fact('Outfit', record.roster.equippedCosmetics.join(', '), true),
     fact('Mount', record.mountSpecies),
@@ -1480,6 +1495,7 @@ for (const b of document.querySelectorAll('[data-tab]'))
     renderPools();
   };
 $('fitBtn').onclick = () => preview.fit();
+$('hideWeaponsToggle').onchange=()=>{preview.hideWeapons=$('hideWeaponsToggle').checked;};
 for (const b of document.querySelectorAll('[data-view]'))
   b.onclick = () => preview.view(b.dataset.view === 'back');
 $('orbitBtn').onclick = () => {

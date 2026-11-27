@@ -195,7 +195,12 @@
     return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
       + '<div style="font-weight:600">Skeeri aerial combat</div>'
       + '<div>Living flight actors: ' + (encounter.actors?.length || 0)
-      + ' · no-perch orbits: ' + (encounter.orbits || 0) + '</div>' + actors + '</div>';
+      + ' · no-perch orbits: ' + (encounter.orbits || 0) + '</div>'
+      + '<div>Appearance preload: ' + (encounter.prewarmReady ? 'ready' : 'not ready')
+      + ' · ruin entries requested: ' + (encounter.prewarmRequests || 0)
+      + ' · failures: ' + (encounter.prewarmFailures || 0) + '</div>'
+      + '<div>Separated original sprite pixels: eyes ' + (encounter.eyeMarkerPixels || 0)
+      + ' · fur markings ' + (encounter.furPatternPixels || 0) + '</div>' + actors + '</div>';
   }
 
   function renderPingdortCensus() {

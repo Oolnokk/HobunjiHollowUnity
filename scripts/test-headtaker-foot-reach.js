@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const legSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8');
 const headtakerSource = fs.readFileSync('docs/js/combat/combat-maskbound-headtaker.js', 'utf8');
 const start = legSource.indexOf('    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false,allowDeepFold=false) {');
-const end = legSource.indexOf('    let externalFootTargets = null;', start);
+const end = legSource.indexOf('    function setExternalFootTargets(', start); // Stop at the next function, not the relocated contact state declarations.
 assert(start >= 0 && end > start, 'extract the real external foot-target solver');
 assert(legSource.includes('applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)'), 'runtime forwards the special reach flag and the separate deep-fold option');
 assert(legSource.includes('externalFootExtendedReach = !!(externalFootTargets && options?.allowExtendedReach)'), 'disabling external foot IK also resets extended reach');
@@ -77,11 +77,15 @@ assert(measured.every(({foot})=>Math.hypot(foot.x,foot.y,foot.z)<.25),
 // for the exact grapple while staying active during normal walking.
 assert(legSource.includes('(externalFootTargets && externalFootExtendedReach)'), 'render hook opts out of pants depth push on exact contacts');
 const pushStart=legSource.indexOf('    function installFootDepthPush(foot) {');
-const pushEnd=legSource.indexOf('    function installFootAxes(foot) {',pushStart);
+const pushEnd=legSource.indexOf('    const childLimbMetadata =',pushStart); // The attach-time metadata is outside the render-hook closure under test.
 assert(pushStart>0 && pushEnd>pushStart,'read the actual foot render hook');
 const pushSource=legSource.slice(pushStart,pushEnd);
+const supportMathStart = legSource.indexOf('  function transformedFootBottomY(');
+const supportMathEnd = legSource.indexOf('  function buildFallbackFoot(', supportMathStart);
+assert(supportMathStart > 0 && supportMathEnd > supportMathStart, 'read the production ground-cap math');
+const supportMath = legSource.slice(supportMathStart, supportMathEnd); // Real bound and ground-cap functions used by the render hook.
 const makePush=new Function('THREE','state','root','externalFootTargets','externalFootExtendedReach',
-  'const pushCamera = new THREE.Vector3(); const rootScaleY=()=>1; '+pushSource+'; return installFootDepthPush;');
+  'const pushCamera = new THREE.Vector3(); const rootScaleY=()=>1; const usesFloorContact=()=>state.motionMode==="walk"; '+supportMath+pushSource+'; return installFootDepthPush;');
 class RenderVector extends Vector3 { setFromMatrixPosition(m){return this.set(m.elements[12],m.elements[13],m.elements[14]);} }
 const renderThree={Vector3:RenderVector};
 const fakeFoot={traverse(cb){cb(this)},isMesh:true,userData:{},onBeforeRender(){},onAfterRender(){},
@@ -97,4 +101,26 @@ makePush(renderThree,renderState,{matrixWorld:{elements:[1,0,0,0,0,1,0,0,0,0,1,0
 walkFoot.onBeforeRender(null,null,perspectiveCamera);
 assert(walkFoot.matrixWorld.elements[14]<1,'ordinary walking feet still use pants depth covering');
 walkFoot.onAfterRender();
+// The ordinary push remains a uniform eye-relative transform, but an actual
+// planted support box must stop it from crossing the floor under an elevated eye.
+renderState.motionMode = 'walk';
+const groundedFoot={...fakeFoot,userData:{groundSupportBox:{min:{x:-.1,y:-.1,z:-.2},max:{x:.1,y:.1,z:.2}}},
+  matrixWorld:{elements:new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,.1,1,1])},onBeforeRender(){},onAfterRender(){}};
+const elevatedEye={isPerspectiveCamera:true,matrixWorld:{elements:new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,2,4,1])}};
+const floorRoot={matrixWorld:{elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}};
+makePush(renderThree,renderState,floorRoot,null,false)(groundedFoot);
+const plantedMatrix=Array.from(groundedFoot.matrixWorld.elements);
+groundedFoot.onBeforeRender(null,null,elevatedEye);
+assert(Math.abs(groundedFoot.userData.groundDepthFactor-1)<1e-7,'a planted sole cannot be pushed below ground');
+groundedFoot.onAfterRender();
+assert.deepEqual(Array.from(groundedFoot.matrixWorld.elements),plantedMatrix,'the draw hook restores the original planted matrix');
+groundedFoot.matrixWorld.elements[13]=.3;
+const liftedMatrix=Array.from(groundedFoot.matrixWorld.elements);
+groundedFoot.onBeforeRender(null,null,elevatedEye);
+const e=groundedFoot.matrixWorld.elements, k=groundedFoot.userData.groundDepthFactor;
+assert(k>1,'a raised foot retains available depth covering');
+assert(e[13]-.1*e[5]>=-1e-6,'depth bias respects the true scaled bottom');
+assert(Math.abs(e[14]-(4+(liftedMatrix[14]-4)*k))<1e-6,'the capped transform still preserves perspective projection');
+groundedFoot.onAfterRender();
+assert.deepEqual(Array.from(groundedFoot.matrixWorld.elements),liftedMatrix,'the capped draw restores the raised foot matrix');
 console.log('PASS Headtaker feet reach spine/shoulder portrait contacts, bypass pants occlusion; ordinary gait unchanged');

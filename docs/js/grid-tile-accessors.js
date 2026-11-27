@@ -298,6 +298,8 @@
     init,
     getCurrentArea,
     isBuildingArea,
+    isZoneArea(area = getCurrentArea()) { return !!deps?._isZoneArea?.(area); }, // Classifies a zone without constructing its scene.
+    getBuildingWallStyle(area = getCurrentArea()) { return deps?._buildingScenes?.get?.(area)?.wallStyle ?? null; }, // Read-only interior danger/lighting metadata.
     getActiveCols,
     getActiveRows,
     getActiveGrid,

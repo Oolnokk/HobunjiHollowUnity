@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'); // The production renderer/painter integration must preserve complete uploaded rigs.
 const fs = require('node:fs'); // Loads the shipped modules and creature bestiary.
 const vm = require('node:vm'); // Runs browser-only installers without devtools.
-const ids = ["moot","voorg-ass","puktuk","gar-wolf","grehlr","dabinggi-hound","uumkaoii","nelk","nazgraku"]; // Nine species explicitly approved for this release.
+const ids = ["moot","voorg-ass","puktuk","gar-wolf","grehlr","dabinggi-hound","uumkaoii","nelk","nazgraku","pingdort"]; // Ten independently authored species.
 const bestiary = JSON.parse(fs.readFileSync('docs/config/creatures/hobunji-creature-bestiary.json','utf8'));
 const originalDrenkirra = { pivot:{x:.4375,y:.51}, weightMap:{ marker:'unchanged-head-paint' } }; // Non-upload regression fixture.
 const renderer = { ANIMAL_HEAD_RIGS: {drenkirra:originalDrenkirra}, HEAD_RIG_VARIANT_ALIASES:{} };
@@ -16,13 +16,14 @@ const win = {CreatureGeneticsRender:renderer, HobunjiAnimalHeadRigSpecies:specie
 const context = vm.createContext({window:win, localStorage,console,JSON,Object,String,Array,Number});
 vm.runInContext(fs.readFileSync('docs/js/animal-head-rig-authored.js','utf8'),context,{filename:'animal-head-rig-authored.js'});
 const api = win.HobunjiAuthoredAnimalHeadRigs;
-assert.equal(api?.version,'2026-11-18-nine-authored-rigs2','latest defaults must load on desktop and mobile');
+assert.equal(api?.version,'2026-11-26-ten-authored-rigs1','latest defaults must load on desktop and mobile');
 const plain = value=>JSON.parse(JSON.stringify(value)); // Normalizes the vm realm before deep-equality comparisons.
 for(const id of ids){
   const records=bestiary.creatures.filter(c=>c.id===id);
   assert.equal(records.length,1,id+': editor needs exactly one full creature record');
   const expected=records[0].headRig;
-  assert(expected?.shoulderRest?.enabled,id+': full painted shoulder export is required');
+  if(id==='pingdort') assert.equal(expected?.shoulderRest,undefined,'Pingdort curl remains owned by the flying rig');
+  else assert(expected?.shoulderRest?.enabled,id+': full painted shoulder export is required');
   assert.deepEqual(plain(api.get(id)),expected,id+': uploaded full rig equals painter source');
   assert.deepEqual(plain(renderer.ANIMAL_HEAD_RIGS[id]),expected,id+': renderer contains new default');
   assert.deepEqual(plain(species.ANIMAL_HEAD_RIGS[id]),expected,id+': species lookup contains new default');
@@ -57,7 +58,7 @@ vm.runInContext(fs.readFileSync('docs/js/baby-animal-head-warp.js','utf8'),conte
   {filename:'baby-animal-head-warp.js'});
 const warp=win.BabyAnimalHeadWarp;
 const growth={moot:1.35,'voorg-ass':1.41,puktuk:1.23,'gar-wolf':1.3,grehlr:1.28,
- 'dabinggi-hound':1.12,uumkaoii:1.23,nelk:1.19,nazgraku:1.23}; // Exact uploaded or inherited 123% scales.
+ 'dabinggi-hound':1.12,uumkaoii:1.23,nelk:1.19,nazgraku:1.23,pingdort:1}; // Exact uploaded or inherited 123% scales.
 for(const [id,scale] of Object.entries(growth)){
   assert.equal(warp.scaleForKind(id),scale,id+': uploaded baby scale must reach production warp');
   assert.equal(warp.shorteningForKind(id),api.get(id).babyHeadShortening??warp.getShortening(),
@@ -81,4 +82,4 @@ for(const [id,width,height] of [['gar-wolf',128,56],['grehlr',128,96]]){
   assert(grown!==original&&grown.data.some((v,i)=>v!==pixels[i]),id+': output head pixels grow');
   assert.equal(original.data,pixels,id+': original adult artwork is not modified');
 }
-console.log('uploaded animal head rigs: nine default head sizes and real baby-pixel warp checks passed');
+console.log('uploaded animal head rigs: ten default head sizes and real baby-pixel warp checks passed');

@@ -157,10 +157,19 @@ globalThis.RuinInteractionAudio={metronomeTick:beat=>timedPickBeats.push(beat)};
 let playing=0,closed=0,awarded=0;
 const music={beginPlayerSession(){playing++;return true;},close(){closed++;}};
 let player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
+let floorSamples=0; // A carved floor is sampled when the cave is built.
 const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,area,authoredCliffDoor:true,
+  sampleCaveFloorY:(x,z)=>{
+    floorSamples++;
+    assert.deepEqual({x,z},player,'sample the floor directly below the melody plate');
+    return .28;
+  },
   isActive:()=>activeArea===area,onSolved:()=>awarded++,getPlayerPosition:()=>player,getPlayerY:()=>0,
   music,events,puzzleCaveMelody:Song,songOptions:{difficulty:5},DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
 });
+assert.equal(floorSamples,1);
+assert.equal(timed.plate.position.y,.28+.08,'melody slab sits on its carved floor tile');
+assert.equal(timed.melodyPlate.y,.28,'camera framing uses the raised plate datum');
 assert.equal(timed.song.measures,4,'highest-tier cave melodies occupy four full measures');
 const chamber=parent.children.find(child=>child.name==='ruin-layer-challenge-music-test');
 const musicPosts=chamber.children.filter(child=>/^puzzle-cave-melody-pillar-\d+$/.test(child.name));

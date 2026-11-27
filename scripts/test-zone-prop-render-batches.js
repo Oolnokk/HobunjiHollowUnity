@@ -232,4 +232,110 @@ Batches.setEnabled(false);
 assert.strictEqual(frame(), null);
 Batches.setEnabled(true);
 
+// Actual Three.js integration for separate furniture source materials. Untextured
+// transparent= true/opacity=1 is provably opaque without needing a browser.
+const furnitureScene = new THREE.Scene();
+const furniture = new THREE.Group();
+furniture.userData.authoredFurnitureKey = 'campfire';
+furnitureScene.add(furniture);
+const parts = Array.from({length: 3}, (_, i) => {
+  const part = new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.2),
+    new THREE.MeshLambertMaterial({ color: 0x887766, transparent: true }));
+  part.position.set(i * .3, 0, 0);
+  part.userData.authoredPart = { kind: 'box' };
+  furniture.add(part);
+  return part;
+});
+function furnitureFrame() {
+  furnitureScene.updateMatrixWorld(true);
+  const restore = Batches.suspendForRender(furnitureScene, {isZone:true});
+  clock += 100;
+  return restore;
+}
+const furnitureHolder = () => furnitureScene.children.find(c => c.userData.hobunjiZonePropBatchHolder);
+assert.strictEqual(furnitureFrame(), null);
+clock += 1000;
+let restoreFurniture = furnitureFrame();
+assert(restoreFurniture);
+assert(parts.every(m => !m.visible));
+const furnitureBatch = furnitureHolder().children[0];
+assert.strictEqual(furnitureBatch.material.transparent, false);
+assert(parts.every(m => m.material.transparent && m.material !== furnitureBatch.material));
+restoreFurniture();
+const stableFurniture = Batches.snapshot().fastReuseFrames;
+restoreFurniture = furnitureFrame();
+assert(Batches.snapshot().fastReuseFrames > stableFurniture);
+restoreFurniture();
+parts[0].material.opacity = .4;
+restoreFurniture = furnitureFrame();
+assert(parts[0].visible, 'fading part leaves the batch immediately');
+assert(parts.slice(1).every(m => !m.visible), 'unchanged siblings remain batched');
+restoreFurniture();
+parts[1].geometry.setAttribute('position', parts[1].geometry.attributes.position.clone());
+restoreFurniture = furnitureFrame();
+assert(parts.every(m => m.visible), 'replacement attribute resets stillness immediately');
+restoreFurniture?.();
+assert.strictEqual(furnitureHolder().children.length, 0);
+assert(parts.every(m => m.material.transparent), 'render-proxy disposal never changes source material');
+
+// Independent dirty groups: the untouched cell must preserve its exact proxy
+// and geometry, and a dirty source must never leave a stale merged copy visible.
+const isolated = new THREE.Scene();
+const isolatedMat = new THREE.MeshLambertMaterial({color:0x778855});
+function isolatedGroup(x) {
+  const root = new THREE.Group();
+  root.userData.projectileCoverKind='tent';
+  root.position.x=x;
+  for(let i=0;i<3;i++) {
+    const part=new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.2),isolatedMat);
+    part.position.x=i*.3; root.add(part);
+  }
+  isolated.add(root); return root;
+}
+const left=isolatedGroup(1), right=isolatedGroup(24);
+const step=()=>{isolated.updateMatrixWorld(true);return Batches.suspendForRender(isolated,{isZone:true});};
+assert.strictEqual(step(),null);
+const emptyStart=Batches.snapshot();
+clock+=100;
+assert.strictEqual(step(),null);
+assert.equal(Batches.snapshot().fullCollects,emptyStart.fullCollects,'empty unsettled scene does not rescan on every frame');
+assert.equal(Batches.snapshot().emptyReuseFrames,emptyStart.emptyReuseFrames+1);
+clock+=1000;
+step()();
+const proxies=isolated.children.find(m=>m.userData.hobunjiZonePropBatchHolder);
+const rightProxy=proxies.children.find(m=>m.geometry.boundingSphere.center.x>16);
+assert(rightProxy);
+const rightGeometry=rightProxy.geometry;
+const beforeRepair=Batches.snapshot();
+clock+=100;
+left.children[0].position.y+=1;
+const undo=step();
+assert(undo);
+assert(left.children[0].visible && left.children.slice(1).every(m=>!m.visible),'only moved source leaves its cell batch');
+assert(right.children.every(m=>!m.visible),'unrelated cell stays batched');
+assert(proxies.children.includes(rightProxy) && rightProxy.geometry===rightGeometry,'unrelated proxy and buffers are not rebuilt');
+assert.equal(Batches.snapshot().fullCollects,beforeRepair.fullCollects,'dirty group did not force full collection');
+assert.equal(Batches.snapshot().partialRepairFrames,beforeRepair.partialRepairFrames+1);
+assert.equal(Batches.snapshot().repairedGroups,beforeRepair.repairedGroups+1);
+undo();
+assert([...left.children,...right.children].every(m=>m.visible) && !proxies.visible,'gameplay visibility restored');
+clock+=50;
+left.children[1].geometry.attributes.position.needsUpdate=true;
+step()();
+assert.equal(proxies.children.length,1,'a group that shrinks to one member is removed');
+assert.strictEqual(proxies.children[0],rightProxy);
+clock+=1100;
+step()();
+assert.equal(proxies.children.length,2,'settled sources rediscovered after the usual interval');
+assert(proxies.children.includes(rightProxy),'timed discovery also reuses unaffected geometry');
+
+// Adding a child to a previously batchable source must not hide that child.
+clock+=100;
+const independent=new THREE.Mesh(panel,canvas);
+independent.onBeforeRender=()=>{}; // Independently drawn, never eligible for a proxy.
+left.children[0].add(independent);
+const childUndo=step();
+assert(left.children[0].visible && independent.visible,'source with an independently drawn child leaves the batch immediately');
+assert(left.children.slice(1).every(m=>!m.visible),'other leaf sources remain batched');
+childUndo();
 console.log(`ok zone prop render batches (${JSON.stringify(Batches.snapshot())})`);

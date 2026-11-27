@@ -23,7 +23,7 @@ const inputSource = fs.readFileSync('docs/js/combat/combat-input.js','utf8'); //
 let clock=0, holdActive=false, holdStarts=0, throwsOnEnd=false, throwsOnCancel=false, tapCount=0, canceledAlignment=false, alignment=null; // Observable callbacks and deterministic hold clock.
 const ability = {category:'offensiveHold',onTap(){tapCount++;if(throwsOnEnd)throw Error('tap failed');},onHoldStart(){holdStarts++;holdActive=true;},onHoldEnd(){holdActive=false;if(throwsOnEnd)throw Error('release failed');},onHoldCancel(){holdActive=false;if(throwsOnCancel)throw Error('cancel failed');}}; // Holds expose the visual lock state that cancellation must clear.
 const context = {window:{Combat:{loadout:{getSlot:()=> 'test'},abilities:{get:()=>ability},isStaggered:()=>false,deps:{player:{},requestMeleeAttackAlignment(callback){alignment={runAttack:callback,cancel(){canceledAlignment=true;}};return alignment;}},update(){}},matchMedia:()=>({matches:false}),addEventListener(){},dispatchEvent(){}},document:{readyState:'loading',addEventListener(){}},performance:{now:()=>clock},requestAnimationFrame:fn=>fn(),CustomEvent:function(){},localStorage:{setItem(){}},console}; // Minimal browser input surface.
-vm.runInNewContext(inputSource,context);
+vm.runInNewContext(inputSource.replace('const MOBILE_AUTO_TARGET_AVAILABLE = false;', 'const MOBILE_AUTO_TARGET_AVAILABLE = true;'),context); // Exercise retained opt-in alignment cancellation.
 const input=context.window.Combat.input; // Public input API used by mobile and desktop.
 assert.equal(input.HOLD_THRESHOLD_S, 0.24, 'the attack hold threshold is 50% longer than 0.16 seconds');
 input.pressStart(1);

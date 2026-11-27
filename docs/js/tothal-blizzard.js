@@ -52,10 +52,17 @@
   function currentState() {
     const calendar = root?.WeatherFX?.getProjection?.()?.calendar;
     const day = Number(calendar?.day);
+    // Only raw days 27, 28 and 1 of the 28-day cycle can contain storm or melt.
+    // Keep the day read live for time skips, loads, and co-op area ticks.
+    if (!Number.isFinite(day) || day <= 1 || (Number.isInteger(day) && (day - 1) % MONTH_DAYS < MONTH_DAYS - 2 && (day - 1) % MONTH_DAYS !== 0)) {
+      lastDay = day; lastHour = NaN; lastState = zero;
+      return zero;
+    }
     const hour = Number(root?.CalendarSystem?.getHour?.());
     if (day === lastDay && hour === lastHour) return lastState;
     lastDay = day; lastHour = hour;
-    lastState = stateFor(day, hour);
+    const next = stateFor(day, hour); // Share immutable snapshots across weather and actor consumers.
+    lastState = next === zero ? zero : Object.freeze(next);
     return lastState;
   }
   const wilderness = area => ZONES.includes(String(area || ''));
@@ -63,9 +70,11 @@
   function snowCoverageFor(area) { return wilderness(area) ? currentState().snow : 0; }
   function isShelteringFor(area) { return wilderness(area) && stormIntensityFor(area) > 0.01; }
   function debugSnapshot(area = root?.GridTileAccessors?.getCurrentArea?.()) {
-    return { ...currentState(), zone: String(area || ''), wilderness: wilderness(area),
-      effectiveStorm: stormIntensityFor(area), effectiveSnow: snowCoverageFor(area),
-      westernSlopeDepthMultiplier: 1 + 0.5 * currentState().snow,
+    const state = currentState(); // One coherent clock sample per mobile diagnostic.
+    const inWilderness = wilderness(area);
+    return { ...state, zone: String(area || ''), wilderness: inWilderness,
+      effectiveStorm: inWilderness ? state.storm : 0, effectiveSnow: inWilderness ? state.snow : 0,
+      westernSlopeDepthMultiplier: 1 + 0.5 * state.snow,
       note: 'Rises day-28 midnight → shift midnight; wind ends 06:00, snow melts by noon' };
   }
   return Object.freeze({ ZONES, stateFor, currentState, wilderness,

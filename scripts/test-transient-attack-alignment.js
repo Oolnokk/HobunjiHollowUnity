@@ -158,7 +158,7 @@ const inputRuntime = { // Minimal DOM/browser shell used to execute combat-input
   CustomEvent: function CustomEvent() {},
   console,
 };
-vm.runInNewContext(input, inputRuntime);
+vm.runInNewContext(input.replace('const MOBILE_AUTO_TARGET_AVAILABLE = false;', 'const MOBILE_AUTO_TARGET_AVAILABLE = true;'), inputRuntime); // Exercise retained opt-in alignment code in isolation.
 const holdCrossingMs = inputRuntime.window.Combat.input.HOLD_THRESHOLD_S * 1000 + 10; // Advances synthetic hold presses just past the real threshold.
 assert.equal(inputRuntime.window.Combat.input.isAutoTargetEnabled(), false, 'mobile defaults off');
 inputRuntime.window.Combat.input.setAutoTargetEnabled(false, { persist: false });

@@ -9,6 +9,15 @@ on:
       - 'docs/js/vegetation-crop-rendering.js'
       - 'docs/js/farm-plot-editor.js'
       - 'docs/js/dew-vats.js'
+      - 'docs/js/farm-animals.js'
+      - 'docs/js/farm-production.js'
+      - 'docs/js/farmwork-ui.js'
+      - 'docs/js/world-popup-text.js'
+      - 'docs/js/farm-panel-core.js'
+      - 'scripts/test-world-popup-row-layout.js'
+      - 'docs/js/family-baby-*.js'
+      - 'scripts/test-family-chore-jobs.js'
+      - 'scripts/test-family-baby-*.js'
       - 'docs/config/romance-config.js'
       - 'scripts/test-romance-dating.js'
       - 'scripts/test-npc-farm-plots.js'
@@ -32,14 +41,32 @@ jobs:
           node --check docs/js/npc-farm-plots.js
           node --check docs/js/farm-plot-editor.js
           node --check docs/js/dew-vats.js
+          node --check docs/js/farm-animals.js
+          node --check docs/js/farm-production.js
+          node --check docs/js/farmwork-ui.js
+          node --check docs/js/world-popup-text.js
+          node --check docs/js/farm-panel-core.js
+          node --check docs/js/family-baby-burdens.js
+          node --check docs/js/family-baby-care.js
+          node --check docs/js/family-baby-follow.js
+          node --check docs/js/npc-following.js
           node --check docs/config/romance-config.js
       - name: Romance, childbirth and usefulness regression tests
         run: node scripts/test-romance-dating.js
       - name: Farmwork and harvest regression tests
         run: node scripts/test-npc-farm-plots.js
+      - name: Family livestock, processing and carry interruptions
+        run: node scripts/test-family-chore-jobs.js
+      - name: Shared toddler carry and follow regression
+        run: |
+          node scripts/test-family-baby-burdens.js
+          node scripts/test-family-baby-care.js
+          node scripts/test-family-baby-follow.js
       - name: Ginju town soil and grass footprint rendering
         run: node scripts/test-farm-grass-billboard-refresh.js
       - name: Real game harvest and processor-quality integration
         run: node scripts/test-family-harvest-quality.js
+      - name: Family XP camera gating and row layout
+        run: node scripts/test-world-popup-row-layout.js
       - name: Vat quality and save-bound external workers
         run: node scripts/test-item-quality-and-blackout-wander.js

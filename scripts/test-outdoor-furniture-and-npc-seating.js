@@ -66,6 +66,11 @@ for (const [map, id, furnitureKey, seatIndex] of authoredSeatBindings) {
   assert.equal(station.pose, 'sit', `${id} remains a sit station`);
   assert.equal(station.furnitureKey, furnitureKey, `${id} identifies its actual seat furniture`);
   assert.equal(station.seatIndex, seatIndex, `${id} identifies the intended seat anchor`);
+  if (station.furnitureId) {
+    const piece=map.furniture.find(f=>f.id===station.furnitureId);
+    assert.equal(piece?.itemKey,furnitureKey,`${id} binds to real furniture, even when its original schedule tile differs`);
+    assert.equal(station.sourceFurnitureId,station.furnitureId,'layout moves the named chair and its station together');
+  }
 }
 for (const id of ['station_temple_counsel_teacup', 'station_temple_counsel_ring_1', 'station_temple_counsel_ring_2', 'station_temple_counsel_ring_3', 'station_temple_counsel_ring_4', 'station_temple_counsel_ring_5', 'station_temple_counsel_ring_6']) {
   const station = stationById(temple, id);
@@ -92,8 +97,8 @@ assert.match(gameSource,
 assert.match(gameSource,
   /root\.rotation\.y = this\.rot;[\s\S]{0,240}this\.legs\?\.group[\s\S]{0,120}rawRot - root\.rotation\.y/,
   'NPC portrait planes use deadzone facing while procedural feet retain exact logical facing');
-assert.match(legSource, /standingPosteriorY: posteriorY/,
-  'the procedural-leg handle exposes the standing posterior height for NPC chair sinking');
+assert.match(legSource, /get standingPosteriorY\(\) \{ return posteriorY; \}/,
+  'NPC chair sinking reads the LIVE standing posterior height after independent leg-length edits');
 assert.match(legSource,
   /const standingPosteriorY = chain\.hip\.position\.y;[\s\S]{0,700}const fullLegLength = Math\.max\(0\.001, standingPosteriorY - contactY\);/,
   'seated bone lengths stay tied to the character posterior-to-foot anatomy instead of chair height');

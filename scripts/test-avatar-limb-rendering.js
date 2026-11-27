@@ -45,6 +45,7 @@ const hand = mesh('left_hand_visual'); // A real hand draw captured by the parit
 const hands = loadParity('hand', { group: group([hand]), getDebug: () => ({}), dispose() {} });
 assert(hand.layers.mask & (1 << 1), 'procedural hand is registered for the shell outline layer'); // Exercises the production attach wrapper.
 const camera = { isPerspectiveCamera: true, matrixWorldInverse: new Matrix4() }; // Looking down negative Z.
+const screenMask = { userData: { hobunjiScreenOutlineMask: true }, polygonOffset: false }; // Production screen-mask marker, not an expanded shell.
 const shell = { isShaderMaterial: true, side: 1, uniforms: { uThickness: { value: 0.006 } } }; // Shared outline material also used by other world meshes.
 function handThickness(depth) {
   hand.matrixWorld.elements[14] = -depth;
@@ -95,6 +96,12 @@ assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'outline d
 restoreStaged();
 assert.equal(detachedHand.matrixWorld.elements[13], 0.85, 'the pre-outline matrix is restored without compounding transforms');
 assert.equal(staged.window.HobunjiHandOutlineParity.getDebug().visualMatrixResyncs, 1);
+const restoreScreenHand = draw(detachedHand, { overrideMaterial: screenMask }, camera, screenMask);
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'screen depth masks use the visible hand, not the stale hierarchy pose');
+restoreScreenHand();
+assert.equal(detachedHand.matrixWorld.elements[13], 0.85, 'screen mask restores the original hand transform');
+assert.equal(staged.window.HobunjiHandOutlineParity.getDebug().lockedScreenMaskDraws, 1);
+assert.equal(handRig.getDebug().outlineLockedScreenMaskDraws, 1);
 
 // Nonuniform Nuhongan-like body scale and mirrored handedness must be composed
 // through the socket chain, not applied by rewriting authored hand coordinates.
@@ -118,7 +125,7 @@ assert(handRig.getDebug().visualMatrixResyncs >= 2, 'a second stale color draw i
 assert.match(read('docs/js/hand-pixel-probe-diagnostics.js'), /maxOriginDrift=/, 'the on-device Pixel Probe exposes the measured hand drift');
 const overlaySource = read('docs/js/held-object-render-order.js'); // Production overlay must refresh hands before projecting their screen-space bounds.
 assert.match(overlaySource, /refreshHeldMatrices\?\.\(held\)[\s\S]*const visibleHeld = filterOffscreenReplayMeshes\(camera, held\)/, 'held renderer refreshes hand matrices before camera culling');
-assert.match(overlaySource, /refreshHeldMatrices\?\.\(shellCandidates\)[\s\S]*const xrayMeshes = filterOffscreenReplayMeshes\(camera, shellCandidates\)/, 'shell renderer refreshes hand matrices before camera culling');
+assert.match(overlaySource, /refreshHeldMatrices\?\.\(shellCandidates\)[\s\S]*return originalRender\.call\(this, scene, camera\)/, 'shell renderer still refreshes held matrices before the ordinary shell pass draws');
 
 
 
@@ -131,7 +138,7 @@ for (const depth of [0, 0.1, 1, 2.5, 4]) {
 camera.isPerspectiveCamera = false;
 assert.equal(handThickness(20), 0.012, 'orthographic size is independent of distance');
 
-assert.match(read('docs/js/procedural-leg-animation.js'), /placeIdleTarget\('right', state\.rightContactY\);\s*window\.HobunjiFeetOutlineParity\?\.refreshRig\?\.\(root\)/, 'the leg owner notifies parity after installing final GLB feet');
+assert.match(read('docs/js/procedural-leg-animation.js'), /placeIdleTarget\('right', state\.rightContactY\);\s*if \(typeof options\.onFootVisualsReplaced === 'function'\) \{[\s\S]*?\}\s*\/\/ Runs only on real GLB replacement, not every frame\.\s*window\.HobunjiFeetOutlineParity\?\.refreshRig\?\.\(root\)/, 'the leg owner notifies parity after installing final GLB feet');
 
 const fallback = mesh('left_foot'); // Initially attached procedural foot.
 const root = group([fallback]); // Stable leg root survives async foot replacement.
@@ -166,6 +173,17 @@ assert.equal(finalFoot.matrixWorld.elements[12], 7);
 finishMask();
 assert.equal(finalFoot.matrixWorld.elements[12], 100, 'temporary water-mask matrix is restored');
 assert.equal(rig.getOutlineParityDebug().lockedWaterMaskDraws, 1);
+const restoreScreenFoot = draw(finalFoot, { overrideMaterial: screenMask }, camera, screenMask);
+assert.equal(finalFoot.matrixWorld.elements[12], 7, 'screen mask uses the last visible foot pose');
+assert.equal(screenMask.polygonOffset, false, 'screen mask never applies shell-only foot depth offset');
+restoreScreenFoot();
+assert.equal(finalFoot.matrixWorld.elements[12], 100, 'screen mask restores the original foot transform');
+assert.equal(rig.getOutlineParityDebug().lockedScreenMaskDraws, 1);
+assert.equal(feet.window.HobunjiFeetOutlineParity.getDebug().lockedScreenMaskDraws, 1);
+feet.setTime(60000);
+const restoreStale = draw(finalFoot, { overrideMaterial: screenMask }, camera, screenMask);
+assert.equal(finalFoot.matrixWorld.elements[12], 100, 'expired screen-mask snapshots cannot pull limbs into stale poses');
+restoreStale();
 rig.dispose();
 assert.equal(feet.window.HobunjiFeetOutlineParity.refreshRig(root), false, 'disposed rigs cannot register more meshes');
 
@@ -179,7 +197,7 @@ layeredFoot.onAfterRender = function originalAfter() {};
 layeredFoot.matrixWorld.elements[14] = 1;
 const depthSource = read('docs/js/procedural-leg-animation.js'); // Real foot draw-time push implementation, not a stand-in translation.
 const depthStart = depthSource.indexOf('    function installFootDepthPush(foot) {');
-const depthEnd = depthSource.indexOf('    function installFootAxes(foot) {', depthStart);
+const depthEnd = depthSource.indexOf('    const childLimbMetadata =', depthStart); // Isolate the rendering closure from attachment metadata.
 assert(depthStart >= 0 && depthEnd > depthStart, 'found real camera-relative foot depth hook');
 class EyeVector {
   setFromMatrixPosition(matrix) {

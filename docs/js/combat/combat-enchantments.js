@@ -33,6 +33,9 @@
     BURNING_APPLICATION: 3.5, // Burning Health buildup from the Base Burning enchantment.
     FROSTBITTEN_APPLICATION: 3.5, // Frostbitten Stamina buildup from the Base Frostbitten enchantment.
     MIRRORED_HEALTH_RATIO: 1, // Mirrored Health gained per actual post-mitigation Health damage dealt.
+    SPIRIT_HEAL_SELF_RATIO: 0.05, // Ordinary Health restored to the wielder per actual damage dealt.
+    SPIRIT_HEAL_ALLY_RATIO: 0.15, // Full ordinary Health recovery for each eligible ally.
+    SPIRIT_HEAL_RADIUS_TILES: 12, // Same-area ally recovery radius centered on the wielder.
 
     LIVING_FLAME_ENEMY_BURNING_APPLICATION: 8, // Meaningful target Burning Health buildup per successful hit.
     LIVING_FLAME_SELF_KINDLING_APPLICATION: 5, // Kindling Health applied to the wielder per successful hit.
@@ -51,7 +54,7 @@
 
   const DEFINITIONS = Object.freeze({
     sicced: Object.freeze({
-      id: 'sicced', displayName: 'Sicced', type: 'Flourish', alignment: 'Tothal',
+      id: 'sicced', displayName: 'Sicced', type: 'Flourish', alignment: 'Kanthic',
       icon: '🐾', flurryBehavior: 'proc',
       scalable: Object.freeze({ companionPower: true }),
       description: 'Marks the struck enemy as the animal companion’s exclusive target and empowers the companion against it.',
@@ -60,10 +63,11 @@
       id: 'fury', displayName: 'Fury', type: 'Flourish', alignment: 'Hronal',
       icon: '🔥', flurryBehavior: 'proc',
       scalable: Object.freeze({ amount: true }),
-      description: 'Grants Furious Stamina. Offensive Held attack progress funded by it consumes/progresses at 3× tempo.',
+      allowedSlots: Object.freeze(['tap1', 'tap2']),
+      description: 'Combo finishers and qualifying Quick Attacks grant Furious Stamina. Offensive Held attacks snapshot +2% speed per point (up to +200%) before spending it.',
     }),
     moralized: Object.freeze({
-      id: 'moralized', displayName: 'Moralized', type: 'Flourish', alignment: 'Kanthic',
+      id: 'moralized', displayName: 'Moralized', type: 'Flourish', alignment: 'Tothal',
       icon: '✦', flurryBehavior: 'proc',
       scalable: Object.freeze({ amount: true }),
       description: 'Grants Moralized Stamina; each point pays three points of Stamina cost or drain.',
@@ -89,15 +93,69 @@
       icon: '◈', scalable: Object.freeze({ amount: true }),
       description: 'Actual Health damage dealt grants an equal amount of Mirrored Health.',
     }),
+    spiritHeal: Object.freeze({
+      id: 'spiritHeal', displayName: 'Spirit Heal', type: 'Base', alignment: 'Ohthic',
+      icon: '♡', scalable: Object.freeze({ amount: true }),
+      description: 'Restores 5% of actual Health damage to the wielder and 15% independently to each nearby living ally within 12 tiles. Values scale with Immundanity.',
+    }),
     livingFlame: Object.freeze({
       id: 'livingFlame', displayName: 'Living Flame', type: 'Base', alignment: 'Hronal',
       icon: '♨', scalable: Object.freeze({ burningAmount: true, kindlingAmount: true }),
       description: 'Hits burn enemies and kindle the wielder. Rolling away Burning throws three times the cured fire into nearby enemies.',
     }),
     livingGust: Object.freeze({
-      id: 'livingGust', displayName: 'Living Gust', type: 'Base', alignment: 'Ohthic',
+      id: 'livingGust', displayName: 'Living Gust', type: 'Base', alignment: 'Tothal',
       icon: '〰', scalable: Object.freeze({ selfFootingCost: true }),
       description: 'Strengthens knockback and lunges, widens a knockback-only gust cone, and rewards attacks that topple their wielder.',
+    }),
+    stormwake: Object.freeze({
+      id: 'stormwake', displayName: 'Windblown', type: 'Base', alignment: 'Tothal',
+      icon: '🌊', scalable: Object.freeze({ amount: true }),
+      hitAffliction: Object.freeze({ id: 'windblownStamina', amount: 6 }),
+      description: 'Each hit adds 6 Windblown Stamina and changes the world-space wind direction. The wind adds movement up to 50% of available speed on the ground or 75% in midair at 100 points; moving with it costs Footing (50% more in midair), moving against it slows travel. Naturally fades. Values scale with Immundanity.',
+    }),
+    stonebind: Object.freeze({
+      id: 'stonebind', displayName: 'Leadbound', type: 'Base', alignment: 'Hronal',
+      icon: '⛰', scalable: Object.freeze({ amount: true }),
+      hitAffliction: Object.freeze({ id: 'leadboundStamina', amount: 5 }),
+      description: 'Each hit adds 5 Leadbound Stamina. Movement speed, dodge speed and lunge distance fall by 0.75% per point, up to 75%. Ordinary Stamina expenditure removes it first; it also naturally recovers. Values scale with Immundanity.',
+    }),
+    soulweight: Object.freeze({
+      id: 'soulweight', displayName: 'Soulweight', type: 'Base', alignment: 'Kanthic',
+      icon: '◉', scalable: Object.freeze({ amount: true }),
+      hitAffliction: Object.freeze({ id: 'soulweightedHealth', amount: 6 }),
+      description: 'Each hit adds 6 Soulweighted Health. Subsequent direct Health loss discharges Soulweight into equal ordinary Stamina loss, without creating Exhaustion. Values scale with Immundanity.',
+    }),
+    ancestralSight: Object.freeze({
+      id: 'ancestralSight', displayName: 'Weightless', type: 'Base', alignment: 'Ohthic',
+      icon: '◈', scalable: Object.freeze({ amount: true }),
+      grantAffliction: Object.freeze({ id: 'weightlessStamina', amount: 5 }),
+      description: 'Each successful hit grants the wielder 5 Weightless Stamina. Movement, dodge speed and lunge distance gain +2% per point, up to +200%. It naturally fades and is spent last.'
+    }),
+    stormRenewal: Object.freeze({
+      id: 'stormRenewal', displayName: 'Storm Renewal', type: 'Flourish', alignment: 'Tothal',
+      icon: '↻', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
+      grantAffliction: Object.freeze({ id: 'currentStamina', amount: 8 }),
+      description: 'Grants 8 Current Stamina, usable exclusively for dodge costs at two ordinary Stamina per point. Values scale with Immundanity; Flurry hits grant one quarter.',
+    }),
+    bedrock: Object.freeze({
+      id: 'bedrock', displayName: 'Tempered', type: 'Flourish', alignment: 'Hronal',
+      icon: '◆', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
+      grantAffliction: Object.freeze({ id: 'temperedFooting', amount: 10 }),
+      description: 'Grants 10 Tempered Footing. Each point increases Attack Power (affliction buildup) by 2%, up to +200%. Each point absorbs one Footing damage; it does not naturally decay. Values scale with Immundanity; Flurry hits grant one quarter.',
+    }),
+    blackBargain: Object.freeze({
+      id: 'blackBargain', displayName: 'Black Bargain', type: 'Flourish', alignment: 'Kanthic',
+      icon: '☾', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
+      grantAffliction: Object.freeze({ id: 'pactHealth', amount: 8 }),
+      description: 'Grants 8 Pact Health, which absorbs two direct Health damage per point. Every point spent adds one Soulweighted Health to the wielder. Values scale with Immundanity; Flurry hits grant one quarter.',
+    }),
+    ancestralMercy: Object.freeze({
+      id: 'ancestralMercy', displayName: 'Unshackled', type: 'Flourish', alignment: 'Ohthic',
+      icon: '✧', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
+      allowedSlots: Object.freeze(['tap2', 'hold1', 'hold2']),
+      grantAffliction: Object.freeze({ id: 'unshackledStamina', amount: 8 }),
+      description: 'Quick and Held Flourishes grant 8 Unshackled Stamina. Combo attacks snapshot +2% speed per point (up to +200%) before spending it. Flurry grants one quarter.'
     }),
     feyDementedStamina: Object.freeze({
       id: 'feyDementedStamina', displayName: 'Demented Stamina', type: 'Base', alignment: 'Fey',
@@ -155,10 +213,18 @@
     return window.Combat?.deps?.currentWeaponKey?.() || 'none';
   }
 
+  function allowsFlourishSlot(id, slotId) {
+    const def = DEFINITIONS[id]; // Fixed slot families correspond to Combo, Quick and Held abilities.
+    return def?.type === 'Flourish' && (!def.allowedSlots || def.allowedSlots.includes(slotId));
+  }
+
   function cleanWeaponState(raw) {
-    const base = Array.isArray(raw?.base)
-      ? [...new Set(raw.base.map(migratedId).filter(id => DEFINITIONS[id]?.type === 'Base'))].slice(0, BASE_LIMIT)
-      : [];
+    const base = []; // Preserve first valid unique entries, with no intermediate maps, filters or Set.
+    if (Array.isArray(raw?.base)) for (const value of raw.base) {
+      const id = migratedId(value);
+      if (DEFINITIONS[id]?.type === 'Base' && !base.includes(id)) base.push(id);
+      if (base.length >= BASE_LIMIT) break;
+    }
     const flourishes = {};
     for (const slotId of window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']) {
       const id = migratedId(raw?.flourishes?.[slotId]);
@@ -304,7 +370,7 @@
   function setFlourish(key, slotId, enchantmentId, options = {}) {
     if (!(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).includes(slotId)) return false;
     const def = DEFINITIONS[enchantmentId];
-    if (enchantmentId && def?.type !== 'Flourish') return false;
+    if (enchantmentId && !allowsFlourishSlot(enchantmentId, slotId) && !(options.importLegacySlot === true && def?.type === 'Flourish')) return false; // Only an already-owned bound relic may import a now-inactive legacy slot.
     const state = stateFor(key, true);
     if (enchantmentId) state.flourishes[slotId] = enchantmentId;
     else delete state.flourishes[slotId];
@@ -315,8 +381,13 @@
 
   function activeDefinitions(key = weaponKey()) {
     const state = stateFor(key);
-    const ids = [...state.base, ...Object.values(state.flourishes)].filter(Boolean);
-    return ids.map(id => DEFINITIONS[id]).filter(Boolean);
+    const active = []; // Base first, then eligible flourishes in their existing property order.
+    for (const id of state.base) if (id && DEFINITIONS[id]) active.push(DEFINITIONS[id]);
+    for (const slot of Object.keys(state.flourishes)) {
+      const id = state.flourishes[slot];
+      if (id && allowsFlourishSlot(id, slot)) active.push(DEFINITIONS[id]);
+    }
+    return active;
   }
 
   function getWeaponImmundanity(input = weaponKey()) {
@@ -366,8 +437,8 @@
     }
   }
 
-  function scaled(def, key, baseValue, property) {
-    return Number(baseValue) * (def.scalable?.[property] ? getEnchantmentPowerMultiplier(key) : 1);
+  function scaled(def, key, baseValue, property, power = null) {
+    return Number(baseValue) * (def.scalable?.[property] ? (power ?? getEnchantmentPowerMultiplier(key)) : 1);
   }
 
   function applyEnhanced(entity, id, amount, reason) {
@@ -383,15 +454,67 @@
     // recipients without changing individual Flourish handlers.
     const out = [attacker].filter(Boolean);
     for (const actor of window.Combat?.deps?.companionObjects || []) {
-      if (!actor || actor.health <= 0 || actor.stableRole === 'shoulderPet') continue;
-      if ((actor.master || attacker) === attacker) out.push(actor);
+      if (!livingActor(actor) || actor.stableRole === 'shoulderPet') continue;
+      if ((actor.master || window.Combat?.deps?.player) === attacker) out.push(actor); // An unowned/player pet must never inherit a hostile attacker's Flourish.
     }
     return out;
   }
 
+  // Spirit Heal uses a separate recipient scope: existing Flourishes retain their original behavior.
+  function applySpiritHeal(event, power) {
+    const { attacker, target, actualDamage } = event; // The resolved hit owns the healing budget.
+    const deps = window.Combat?.deps; // Live actor collections and local-area authority.
+    const registry = window.ActorRegistry; // Live co-op roster and authoritative area lookup.
+    const resources = window.ResourceSystem; // Ordinary recovery respects effective maxima and healing penalties.
+    if (!livingActor(attacker) || !Number.isFinite(actualDamage) || !(actualDamage > 0) || !(power > 0) || !resources?.applyHealthRecovery) return;
+    const isPlayer = actor => !!actor && (actor === deps?.player || registry?.isPlayer?.(actor) === true); // Null ownership never qualifies as a co-op player.
+    const canHeal = actor => livingActor(actor) && !actor._inCutscene && !actor.rec?.dead && !actor.rec?.deceased
+      && !(actor === deps?.player && window.PlayerDowned?.isDowned?.());
+    if (!canHeal(attacker) || !target || target === attacker) return;
+    const areaOf = actor => (actor === deps?.player ? deps?.getCurrentArea?.() : null) ?? registry?.areaOf?.(actor) ?? actor.areaId; // Local area authority wins over a stale avatar areaId.
+    const area = areaOf(attacker); // Never heal across map boundaries.
+    const radius = TUNING.SPIRIT_HEAL_RADIUS_TILES * (Number(deps?.TILE) || 0); // Squared range avoids square roots on recipient checks.
+    const radiusSq = radius * radius;
+    const amount = actualDamage * power; // One Immundanity calculation already supplied by onHit.
+    let restored = Math.max(0, resources.applyHealthRecovery(attacker, amount * TUNING.SPIRIT_HEAL_SELF_RATIO));
+    let allyCount = 0; // Counts actual positive ally recoveries for the mobile event log.
+    const seen = new Set([attacker, target]); // Prevent duplicate healing and never heal the struck victim.
+    const playerSide = isPlayer(attacker); // Only registered co-op players share a party; hostile NPCs never heal that party.
+    function healAlly(actor) {
+      if (seen.has(actor) || !canHeal(actor) || actor.stableRole === 'shoulderPet' || area == null || areaOf(actor) !== area || !(radius > 0)) return;
+      const dx = actor.x - attacker.x, dy = actor.y - attacker.y; // Horizontal world coordinates shared by combat.
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || dx * dx + dy * dy > radiusSq) return;
+      seen.add(actor);
+      const healed = resources.applyHealthRecovery(actor, amount * TUNING.SPIRIT_HEAL_ALLY_RATIO); // Full amount per ally, never split.
+      if (healed > 0) { restored += healed; allyCount++; }
+    }
+    if (playerSide) {
+      healAlly(deps?.player);
+      for (const actor of registry?.getPlayers?.() || []) healAlly(actor);
+    }
+    for (const actor of deps?.companionObjects || []) {
+      const owner = registry?.ownerOf?.(actor) || actor.master || (actor.banditCompanion ? null : deps?.player); // Preserve legacy ownership fallback only for non-hostile pets.
+      if (playerSide && actor.banditCompanion) continue; // A malformed hostile-pet owner must not turn it into a party ally.
+      if (owner === attacker || (playerSide && isPlayer(owner))) healAlly(actor);
+    }
+    if (playerSide) {
+      for (const actor of deps?.hostileObjects || []) {
+        // Neutral tribe combatants actively fighting this very opponent are temporary allies, not all neutral wildlife.
+        if ((actor.isTribeHunter || actor.isPorakanekiHunter) && actor._porakanekiPlannerControlled === true && actor._chunkCombatTarget === target) healAlly(actor);
+      }
+    }
+    if (restored > 0) logEvent(`Spirit Heal restored ${Math.round(restored * 10) / 10} Health (${allyCount} allies)`);
+  }
+
+  // Projectile impacts use this narrow adapter because they do not publish melee attack events.
+  function applyRangedSpiritHeal(attacker, target, weaponKey, actualDamage) {
+    if (!weaponKey || !Number.isFinite(actualDamage) || !(actualDamage > 0) || !hasBase('spiritHeal', weaponKey)) return;
+    applySpiritHeal({ attacker, target, actualDamage }, getEnchantmentPowerMultiplier(weaponKey));
+  }
+
   function applySicced(event, def, power) {
     const target = event.target;
-    if (!target || target.health <= 0) return;
+    if (!validSiccedTarget(target)) return;
     target._siccedUntilMs = Math.max(Number(target._siccedUntilMs) || 0, nowMs() + TUNING.SICCED_DURATION_S * 1000);
     target._siccedCompanionPowerMul = 1 + TUNING.SICCED_COMPANION_POWER_BONUS * power;
     siccedTargets.add(target);
@@ -430,13 +553,50 @@
     // Fey deliberately ignores ordinary positive Immundanity boosts. At a hard zero enchantment-power gate, illusions also fail.
     window.FeyIllusions?.apply?.(def.id, event.target, { weaponKey: event.weaponKey, attacker: event.attacker });
   }
+  // Planar effects share one data-driven application path; resource transactions own their unique behavior.
+  function livingActor(actor) {
+    return !!actor && Number(actor.health) > 0 && !actor._downed && !actor._denHidden && !actor._deathTransitionStarted
+      && !(window.RomanceFamily?.isProtectedFamilyChild?.(actor.rec?.id || actor.id) ?? window.RomanceFamily?.isBasketBaby?.(actor.rec?.id || actor.id));
+  }
+
+  function applyAttributedAffliction(target, id, amount, attacker) {
+    const resource = window.ResourceSystem; // Shared actual buildup and presentation path, retaining compatibility with isolated previews.
+    if (resource?.addAttackAffliction) return resource.addAttackAffliction(target, id, amount, { attacker });
+    return resource?.addAffliction?.(target, id, amount) || 0;
+  }
+
+  function applyRealmHitAffliction(event, def, power) {
+    if (!livingActor(event.target) || !(power > 0)) return false;
+    const effect = def.hitAffliction; // Authored reserve amount, scaled by weapon Immundanity.
+    if (!effect) return false;
+    const added = applyAttributedAffliction(event.target, effect.id, effect.amount * power, event.attacker);
+    if (!(added > 0)) return false;
+    logEvent(`${def.displayName}: +${added} ${window.ResourceSystem.AFFLICTIONS[effect.id].name} on ${targetName(event.target)}`);
+    return true;
+  }
+
+  function applyRealmFlourish(event, def, power) {
+    if (!livingActor(event.attacker) || !(power > 0)) return false;
+    const effect = def.grantAffliction; // Authored enhanced reserve; Flurry's numerical scale is already included in power.
+    if (!effect) return false;
+    const added = effect.id === 'weightlessStamina'
+      ? (window.ResourceSystem?.addAffliction?.(event.attacker, effect.id, effect.amount * power) || 0) // Bottom-anchored reserve is ordinary Stamina, not an upfront enhanced payment pool.
+      : applyEnhanced(event.attacker, effect.id, effect.amount * power, def.displayName);
+    if (!(added > 0)) return false;
+    logEvent(`${def.displayName}: +${added} ${window.ResourceSystem.AFFLICTIONS[effect.id].name}`);
+    return true;
+  }
+
   const FLOURISH_HANDLERS = { sicced: applySicced, fury: applyFury, moralized: applyMoralized, resolve: applyResolve,
+    stormRenewal: applyRealmFlourish, bedrock: applyRealmFlourish, blackBargain: applyRealmFlourish, ancestralMercy: applyRealmFlourish,
     feyHypedPulse: applyFeyFlourish, feyDreadPulse: applyFeyFlourish };
 
   function applyFlourish(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
     const def = DEFINITIONS[id];
-    if (!def || def.type !== 'Flourish' || !flourishQualifies(event)) return false;
+    if (!allowsFlourishSlot(id, event.slotId) || !flourishQualifies(event)) return false;
+    if (id === 'fury' && !['combo', 'quickAttack'].includes(event.attackCategory)) return false;
+    if (id === 'ancestralMercy' && !['quickAttack', 'offensiveHold'].includes(event.attackCategory)) return false;
 
     if (event.isFlurry) {
       if (def.flurryBehavior === 'numeric') {
@@ -452,7 +612,7 @@
     const handler = FLOURISH_HANDLERS[id];
     if (!handler) return false;
     const power = getEnchantmentPowerMultiplier(event.weaponKey);
-    handler(event, def, power * (event.flourishNumericMultiplier || 1));
+    if (handler(event, def, power * (event.flourishNumericMultiplier || 1)) === false) return false; // No false proc log when a new Flourish cannot apply its effect.
     if (event.attackCategory === 'combo') logEvent('Combo Flourish triggered');
     else if (event.attackCategory === 'quickAttack') logEvent('Quick Attack Flourish triggered');
     else if (event.isFlurry) logEvent('Flurry Flourish triggered');
@@ -497,49 +657,62 @@
 
   function onHit(event) {
     const key = event.weaponKey;
-    const power = getEnchantmentPowerMultiplier(key);
     const target = event.target;
     if (!target || target.health <= 0 && !(event.actualDamage > 0)) return;
+    const coffin=event.attacker?.ruinWallCoffin===true; // Read actor-local magic, not player gear sharing a crafted item key.
+    const baseIds=coffin?(event.attacker.rosterRecord?.enchantedWeapon?.enchantments?.base||[]):stateFor(key).base;
+    const alignment=coffin?DEFINITIONS[baseIds[0]]?.alignment:null; // Exactly one Base: one point of Immundanity for a planar enchantment.
+    const power=coffin?1+(['Hronal','Tothal','Kanthic','Ohthic'].includes(alignment)?ENCHANTMENT_POWER_PER_IMMUNDANITY:0):getEnchantmentPowerMultiplier(key); // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
+    for (const id of baseIds) {
+      const def = DEFINITIONS[id];
+      if (def?.hitAffliction) applyRealmHitAffliction(event, def, power);
+      if (def?.grantAffliction) applyRealmFlourish(event, def, power); // Weightless is a self-grant on every Base hit.
+    }
 
-    if (hasBase('burning', key)) {
-      window.ResourceSystem?.addAffliction?.(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount'));
+    if (baseIds.includes('burning')) {
+      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount', power), event.attacker);
     }
-    if (hasBase('frostbitten', key)) {
-      window.ResourceSystem?.addAffliction?.(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount'));
+    if (baseIds.includes('frostbitten')) {
+      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount', power), event.attacker);
     }
-    if (hasBase('mirrored', key) && event.actualDamage > 0) {
-      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount');
+    if (baseIds.includes('mirrored') && event.actualDamage > 0) {
+      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount', power);
       applyEnhanced(event.attacker, 'mirroredHealth', amount, 'Mirrored');
     }
-    if (hasBase('livingFlame', key)) {
-      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount');
-      const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount');
-      window.ResourceSystem?.addAffliction?.(target, 'burningHealth', targetBurn);
+    if (baseIds.includes('spiritHeal')) applySpiritHeal(event, power);
+    if (baseIds.includes('livingFlame')) {
+      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount', power);
+      const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount', power);
+      applyAttributedAffliction(target, 'burningHealth', targetBurn, event.attacker);
       window.ResourceSystem?.addAffliction?.(event.attacker, 'kindlingHealth', selfKindling);
     }
 
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
-      if (hasBase(id, key)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker });
+      if (baseIds.includes(id)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker });
     }
-    applyFlourish(event);
+    if(!event.attacker?.ruinWallCoffin)applyFlourish(event);
   }
 
   function onDefensive(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
     const def = DEFINITIONS[id];
-    if (!def || def.type !== 'Flourish' || def.alignment === 'Fey') return false; // Illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
+    if (!def || def.type !== 'Flourish' || def.alignment === 'Fey' || !allowsFlourishSlot(id, event.slotId) || id === 'fury' || id === 'ancestralMercy') return false; // Attack-tempo Flourishes require an attack rather than a block; illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
     const handler = FLOURISH_HANDLERS[id];
     if (typeof handler !== 'function') return false;
     const power = getEnchantmentPowerMultiplier(event.weaponKey);
-    handler(event, def, power);
+    if (handler(event, def, power) === false) return false;
     logEvent(event.defensiveResult === 'block' ? 'Defensive Flourish triggered on block' : 'Defensive Flourish triggered on near-hit dodge');
     return true;
   }
 
+  function validSiccedTarget(target) {
+    return !!target && Number(target.health) > 0 && !target._downed && !target._denHidden && !target._deathTransitionStarted; // Explicit marks cannot hold the pet on an unattackable actor.
+  }
+
   function pruneSiccedTargets() {
     const t = nowMs();
-    for (const target of Array.from(siccedTargets)) {
-      if (!target || target.health <= 0 || t >= (Number(target._siccedUntilMs) || 0)) siccedTargets.delete(target);
+    for (const target of siccedTargets) {
+      if (!validSiccedTarget(target) || t >= (Number(target._siccedUntilMs) || 0)) siccedTargets.delete(target);
     }
     if (currentSiccedTarget && siccedTargets.has(currentSiccedTarget)) return currentSiccedTarget;
     currentSiccedTarget = null;
@@ -556,12 +729,16 @@
     return currentSiccedTarget;
   }
 
-  function getCurrentSiccedTarget() {
-    return pruneSiccedTargets();
+  function getCurrentSiccedTarget(areaId) {
+    const current = pruneSiccedTargets(); // Global newest mark remains authoritative when no area is requested.
+    if (areaId == null || current?.areaId === areaId) return current;
+    let local = null; // Find a living marked enemy in this area without erasing a still-valid mark in another area.
+    for (const target of siccedTargets) if (target.areaId === areaId && (!local || target.health < local.health)) local = target;
+    return local;
   }
 
   function getCompanionTargetPowerMultiplier(companion, target) {
-    if (!companion?.isCompanion || !target || !siccedTargets.has(target) || nowMs() >= (Number(target._siccedUntilMs) || 0)) return 1;
+    if (!companion?.isCompanion || companion.banditCompanion || !validSiccedTarget(target) || !siccedTargets.has(target) || nowMs() >= (Number(target._siccedUntilMs) || 0)) return 1;
     return Math.max(1, Number(target._siccedCompanionPowerMul) || 1);
   }
 
@@ -589,7 +766,7 @@
       if (!inWide || inNormal) continue;
 
       if (typeof deps.applyKnockback === 'function') {
-        deps.applyKnockback(target, context.attacker.x, context.attacker.y, strength, { source: 'living-gust', footingDamageMultiplier: 0 });
+        deps.applyKnockback(target, context.attacker.x, context.attacker.y, strength, { source: 'living-gust', footingDamageMultiplier: 0, attacker: context.attacker });
       } else if (typeof deps.damageCreature === 'function') {
         // damageCreature is the existing public combat seam that owns knockback.
         // A zero-damage call intentionally asks it for movement only; no Base
@@ -599,6 +776,7 @@
           footingDamageMultiplier: 0,
           noAfflictions: true,
           enchantmentPeripheralGust: true,
+          attacker: context.attacker,
         });
       }
       affected++;
@@ -617,7 +795,7 @@
     for (const target of deps.hostileObjects || []) {
       if (!target || target.health <= 0 || target.areaId !== deps.getCurrentArea?.()) continue;
       if (Math.hypot(target.x - wielder.x, target.y - wielder.y) > radius) continue;
-      window.ResourceSystem?.addAffliction?.(target, 'burningHealth', amount);
+      applyAttributedAffliction(target, 'burningHealth', amount, wielder);
     }
     logEvent(`Living Flame roll transferred ${Math.round(amount * 10) / 10} Burning`);
   }
@@ -660,6 +838,7 @@
       `Mastery effects: ×${getMasteryPowerMultiplier(key).toFixed(2)}`,
       `Sicced target: ${getCurrentSiccedTarget() ? targetName(getCurrentSiccedTarget()) : 'none'}`,
       ...attunement,
+      `Movement compositor: ${JSON.stringify(window.ResourceSystem?.movementDebug?.(window.Combat?.deps?.player) || {})}`,
       '',
       'Recent events:',
       ...recentEvents.slice(-14).map(item => `• ${item.message}`),
@@ -751,7 +930,7 @@
     // the Engraved Whistle (or anything else) without either knowing.
     window.CompanionOffense?.registerProvider?.('sicced', (companion, target) => {
       const mul = getCompanionTargetPowerMultiplier(companion, target);
-      return mul > 1 ? { damage: mul, footing: mul, affliction: mul } : null;
+      return mul > 1 ? { damage: mul, footing: mul, affliction: mul, knockback: mul } : null;
     });
   }
 
@@ -761,10 +940,10 @@
     render: () => {
       const key = weaponKey(); // Captures which weapon these selectors edit, including while another weapon is equipped.
       const state = stateFor(key); // Reads canonical enchantments for the companion dropdowns.
-      const options = type => [{ value: '', label: '— None —' }, ...definitionOptions(type).map(def => ({ value: def.id, label: `${def.displayName} · ${def.alignment}` }))]; // Shares the same authored options as the former player-menu editors.
+      const options = (type, slot) => [{ value: '', label: '— None —' }, ...definitionOptions(type).filter(def => !slot || allowsFlourishSlot(def.id, slot)).map(def => ({ value: def.id, label: `${def.displayName} · ${def.alignment}` }))]; // Shares the same authored options as the former player-menu editors.
       return { summary: key, actions: [
         ...Array.from({ length: BASE_LIMIT }, (_, index) => ({ id: 'base', label: `Base ${index + 1}`, args: { key, index }, value: state.base[index] || '', options: options('Base') })),
-        ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => ({ id: 'flourish', label: `${slot.toUpperCase()} Flourish`, args: { key, slot }, value: state.flourishes?.[slot] || '', options: options('Flourish') })),
+        ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => ({ id: 'flourish', label: `${slot.toUpperCase()} Flourish`, args: { key, slot }, value: state.flourishes?.[slot] || '', options: options('Flourish', slot) })),
       ] };
     },
     onAction: (action, args) => {
@@ -797,6 +976,7 @@
     equipBase,
     addBase,
     setFlourish,
+    allowsFlourishSlot,
     activeDefinitions,
     hasBase,
     flourishForSlot,
@@ -806,6 +986,7 @@
     getMasteryPowerMultiplier,
     flourishQualifies,
     applyPeripheralGust,
+    applyRangedSpiritHeal,
     getCurrentSiccedTarget,
     enforceCompanionTargeting,
     renderLoadoutUI,

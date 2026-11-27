@@ -28,6 +28,35 @@ function buildFixture() {
   return { windowObject, intervals };
 }
 
+// The editor exposes one pair of hinge toggles for both hands.
+{
+  const { windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  for (const weights of [{ grip: 0, palmNormal: 1 }, { grip: 1, palmNormal: 0 }, { grip: 0, palmNormal: 0 }]) {
+    windowObject.HobunjiAttackEditorHandShoulderControls = { currentWeights: () => weights };
+    for (const side of ['right', 'left']) {
+      assert.deepEqual({ ...runtime.currentWeights(side) }, weights);
+    }
+  }
+}
+
+// A dual-wield offhand is attached even without a secondary grip on the main weapon.
+{
+  const { intervals, windowObject } = buildFixture();
+  const runtime = windowObject.HobunjiHandShoulderPoseRuntime;
+  windowObject.Combat = { deps: { __weaponToolStanceVisualHooks: true, triggerWeaponSwingVisual() {} } };
+  windowObject.WeaponToolStances = { getRuntimeState: () => ({
+    combatNeutralInjected: true, combatProgress: 0.55, itemKey: 'dagger',
+  }) };
+  intervals[0].fn();
+  windowObject.Combat.deps.triggerWeaponSwingVisual(1, { pose: {
+    strike: { shoulderAim: { grip: false, palmNormal: false } },
+  } });
+  assert.deepEqual({ ...runtime.currentWeights('right', null, true) }, { grip: 0, palmNormal: 0 });
+  assert.deepEqual({ ...runtime.currentWeights('left', null, true) }, { grip: 0, palmNormal: 0 });
+  assert.deepEqual({ ...runtime.currentWeights('left', null, false) }, { grip: 1, palmNormal: 1 });
+}
+
 // --- Semantic local hinges preserve legacy pose data without a third hinge ---
 {
   const { windowObject } = buildFixture();

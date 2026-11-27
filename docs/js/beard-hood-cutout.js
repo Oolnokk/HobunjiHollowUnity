@@ -279,9 +279,17 @@
     try {
       const ctx=hoodCanvas.getContext('2d',{willReadFrequently:true});
       if(!ctx)return empty;
-      const image=ctx.getImageData(0,0,SIZE,SIZE);
-      const plan=planTuftStretch(image.data,roots,options);
-      if(!plan.moves.length)return {...plan,applied:false};
+      const pristine=options.pristineHoodImageData; // Immutable readback of the exact current, unwarped hood draw.
+      const source=pristine?.width===SIZE && pristine?.height===SIZE && pristine.data?.length===PIXELS*4
+        ? pristine : ctx.getImageData(0,0,SIZE,SIZE);
+      const plan=planTuftStretch(source.data,roots,options);
+      // No write means the exact original readback is still current. A
+      // warped canvas must be read again: browser premultiplied-alpha
+      // roundtrips can change RGB at translucent edges after putImageData.
+      if(!plan.moves.length)return options.retainUnchangedImageData
+        ? {...plan,applied:false,unchangedImageData:source} : {...plan,applied:false};
+      const image=source===pristine ? ctx.createImageData(SIZE,SIZE) : source; // Only actual warps require a private mutable copy.
+      if(image!==source)image.data.set(source.data);
       for(const move of plan.moves)warpForRoot(image,move);
       ctx.putImageData(image,0,0);
       return {...plan,applied:true}; // Only front hood is modified; rear cloth and beard stay untouched.
@@ -525,32 +533,61 @@
       coneSpread:spread,upSpread,downLength,coverPixels,lowerCap};
   }
 
+  // Merge two already normalized, sorted request lists. Painted masks
+  // usually cover only a few pixels of the 200x200 portrait.
+  function unionRequestRuns(left, right) {
+    if (!left.length) return right;
+    if (!right.length) return left;
+    const result = []; // Disjoint ranges used by partitionBeardHood.
+    let l=0,r=0;
+    while(l<left.length||r<right.length){
+      const run=r>=right.length||(l<left.length&&left[l][0]<=right[r][0])?left[l++]:right[r++];
+      const last=result[result.length-1];
+      if(last&&run[0]<=last[0]+last[1])last[1]=Math.max(last[1],run[0]+run[1]-last[0]);
+      else result.push(run.slice());
+    }
+    return result;
+  }
+
   function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA, whiskerMask = null, topCoverMask = null, requestMode = null) {
-    // No authored hood permission mask means legacy permissive behavior.
-    // An explicit EMPTY mask means no hood pixel may be removed.
-    const request = decodeMask(requestMask);
-    const whiskers = decodeMask(whiskerMask); // Explicit beard override defeats otherwise protected hood areas.
-    const allowed = allowanceMask == null ? null : decodeMask(allowanceMask);
-    const topCover = topCoverMask == null ? null : decodeMask(topCoverMask); // Strictly higher precedence than whiskers.
-    const autoRequest = requestMode === 'silhouette'; // Source-art alpha substitutes for authored request pixels.
     const approved = new Uint8Array(PIXELS);
     const refused = new Uint8Array(PIXELS);
     let requested = 0, approvedPixels = 0, refusedPixels = 0, whiskerWins = 0;
-    let topCoverWins=0,topCoverWhiskers=0; // Expose how many overlaps the upper hood protected.
+    let topCoverWins=0,topCoverWhiskers=0;
     if (!beardRGBA || !hoodRGBA || beardRGBA.length !== PIXELS * 4 || hoodRGBA.length !== PIXELS * 4)
       return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins,topCoverWins,topCoverWhiskers};
-    for (let i = 0; i < PIXELS; i++) {
-      if ((!request[i] && !whiskers[i] && !(autoRequest && beardRGBA[i*4+3]>=242))
-        || beardRGBA[i*4+3]<8 || hoodRGBA[i*4+3]<8) continue;
-      requested++;
-      if(topCover?.[i]){
-        refused[i]=1;refusedPixels++;topCoverWins++;
-        if(whiskers[i])topCoverWhiskers++;
-      }else if (!allowed || allowed[i] || whiskers[i]) {
-        approved[i] = 1;approvedPixels++;
-        if (whiskers[i] && allowed && !allowed[i]) whiskerWins++;
+    const requestRuns=normalizeMask(requestMask)?.runs||[];
+    const whiskerRuns=normalizeMask(whiskerMask)?.runs||[];
+    const autoRequest=requestMode==='silhouette'; // Source alpha can request pixels outside the painted mask.
+    const candidates=autoRequest?[[0,PIXELS]]:unionRequestRuns(requestRuns,whiskerRuns);
+    if (!candidates.length) return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins,topCoverWins,topCoverWhiskers};
+    const bitmap=runs=>{
+      if(!runs.length)return null;
+      const bits=new Uint8Array(PIXELS);
+      for(const [start,length] of runs)bits.fill(1,start,start+length);
+      return bits;
+    };
+    const request=autoRequest?bitmap(requestRuns):null; // Painted mode already visits exactly the requested union.
+    const whiskers=bitmap(whiskerRuns);
+    // Null remains legacy allow-all, while explicit empty/invalid permission
+    // is protect-all. Keep that distinction even when no permission bits exist.
+    const allowed=allowanceMask==null?null:decodeMask(allowanceMask);
+    const topCover=bitmap(normalizeMask(topCoverMask)?.runs||[]);
+    for (const [start,length] of candidates) {
+      const end=start+length;
+      for(let i=start;i<end;i++){
+        const alpha=beardRGBA[i*4+3];
+        const whisker=whiskers?.[i];
+        if (alpha<8 || hoodRGBA[i*4+3]<8 || (autoRequest && !request?.[i] && !whisker && alpha<242)) continue;
+        requested++;
+        if(topCover?.[i]){
+          refused[i]=1;refusedPixels++;topCoverWins++;
+          if(whisker)topCoverWhiskers++;
+        }else if (!allowed || allowed[i] || whisker) {
+          approved[i]=1;approvedPixels++;
+          if(whisker && allowed && !allowed[i])whiskerWins++;
+        }else{refused[i]=1;refusedPixels++;}
       }
-      else {refused[i] = 1;refusedPixels++;}
     }
     return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins,topCoverWins,topCoverWhiskers};
   }
@@ -598,8 +635,12 @@
     try {
       const beardCtx = beardCanvas.getContext('2d',{willReadFrequently:true});
       const hoodCtx = hoodCanvas.getContext('2d',{willReadFrequently:true});
-      const beard = beardCtx.getImageData(0,0,SIZE,SIZE);
-      const hood = hoodCtx.getImageData(0,0,SIZE,SIZE);
+      const cachedBeard = options.beardImageData;
+      const beard = cachedBeard?.width === SIZE && cachedBeard?.height === SIZE
+        && cachedBeard.data?.length === PIXELS*4 ? cachedBeard : beardCtx.getImageData(0,0,SIZE,SIZE); // Optional pristine input, never mutated.
+      const hoodInput = options.unchangedHoodImageData || options.pristineHoodImageData; // Unchanged stretch buffer or immutable source.
+      const hood = hoodInput?.width === SIZE && hoodInput?.height === SIZE
+        && hoodInput.data?.length === PIXELS*4 ? hoodInput : hoodCtx.getImageData(0,0,SIZE,SIZE);
       const automatic=options.permissionMode==='auto'
         ? (options.autoPermission || autoHoodAllowanceMask(hood.data,options.coneSpread,{
           alphaLimit:options.hoodAlphaFloor??242
@@ -619,16 +660,21 @@
         topCoverWins,topCoverWhiskers} = partition;
       // Permission applies ONLY where the transformed front hood actually has
       // pixels. No hood at that coordinate means nothing to erase from beard.
-      for (let i = 0; i < PIXELS; i++) if (approved[i]) {
-        const offset = i * 4;
-        hood.data[offset] = hood.data[offset+1] = hood.data[offset+2] = hood.data[offset+3] = 0;
+      if (approvedPixels) {
+        const output = hood === options.pristineHoodImageData ? hoodCtx.createImageData(SIZE,SIZE) : hood; // Cached cloth never receives cutout holes.
+        if(output!==hood)output.data.set(hood.data);
+        for (let i = 0; i < PIXELS; i++) if (approved[i]) {
+          const offset = i * 4;
+          output.data[offset] = output.data[offset+1] = output.data[offset+2] = output.data[offset+3] = 0;
+        }
+        hoodCtx.putImageData(output,0,0);
       }
-      if (approvedPixels) hoodCtx.putImageData(hood,0,0);
       let erasedPixels = 0, outlinedPixels = 0;
       if (refusedPixels) {
         const outlined = applyRefusedBeardOutline(beard.data,refused);
-        beard.data.set(outlined.pixels);
-        beardCtx.putImageData(beard,0,0);
+        const output = beard === cachedBeard ? beardCtx.createImageData(SIZE,SIZE) : beard;
+        output.data.set(outlined.pixels);
+        beardCtx.putImageData(output,0,0);
         erasedPixels = outlined.erasedPixels;
         outlinedPixels = outlined.outlinedPixels;
       }

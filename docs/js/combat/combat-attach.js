@@ -50,6 +50,12 @@
 
   function deps() { return window.Combat.deps; }
 
+  // Hurts the specific player that was hit (DamageAuthority), falling back to the local-player dep.
+  function hitPlayer(d, target, amount, x, y, knockback, opts) {
+    if (window.DamageAuthority) return window.DamageAuthority.hit(target, amount, x, y, knockback, opts);
+    return d.damagePlayer(amount, x, y, knockback, opts);
+  }
+
   function isPlayer(entity) {
     const d = deps();
     return !!entity && (entity === d.player || (d.players || []).includes(entity));
@@ -109,7 +115,7 @@
     const hype = window.FeyHypedAttacks?.creatureDamagePayload?.(c, amount, 0, opts); // Long-lived attachment ticks use Combat.deps directly, not the per-special damage view.
     const tickDamage = hype ? hype.damage : amount; // Each second-stage Swarm tick carries reduced physical and sensory effects.
     const tickOptions = hype ? hype.opts : opts;
-    if (isPlayer(host)) d.damagePlayer(tickDamage, c.x, c.y, 0, tickOptions);
+    if (isPlayer(host)) hitPlayer(d, host, tickDamage, c.x, c.y, 0, tickOptions);
     else if (c.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(d.damageCreature, c, host, tickDamage, c.x, c.y, 0, tickOptions);
     else d.damageCreature(host, tickDamage, c.x, c.y, 0, tickOptions);
   }
@@ -136,7 +142,7 @@
     if (react.hitsOpponents) {
       for (const o of d.companionObjects) { if (o.stableRole !== 'shoulderPet') hitCreature(o); }
       for (const p of d.players || [d.player]) {
-        if (p.health > 0 && Math.hypot(p.x - host.x, p.y - host.y) <= radius) { d.damagePlayer(amount, host.x, host.y, 260, opts); struck.push(p); }
+        if (p.health > 0 && Math.hypot(p.x - host.x, p.y - host.y) <= radius) { hitPlayer(d, p, amount, host.x, host.y, 260, opts); struck.push(p); }
       }
     }
     host.hitFlashT = Math.max(host.hitFlashT || 0, 0.12); // Visible flinch from the swat.
@@ -229,7 +235,7 @@
       const reducedDamage = fullDamage * 0.25; // ResourceSystem derives afflictions and Footing from hit amount, so do NOT scale their coefficients twice.
       const reducedOpts = { ...normal.opts, footingDamageMultiplier:
         (Number.isFinite(normal.opts?.footingDamageMultiplier) ? normal.opts.footingDamageMultiplier : 1) }; // Do not set noStagger: that would suppress the requested quarter-strength knockback.
-      if (isPlayer(host)) d.damagePlayer(reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
+      if (isPlayer(host)) hitPlayer(d, host, reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
       else d.damageCreature(host, reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
       ally.attackCooldownT = Math.max(Number(ally.attackCooldownT) || 0, Number(ally.def?.attackCooldownS) || 1.1);
       if (ally.isCompanion && !ally.banditCompanion) ally._honeyfuzzleRescueCooldownUntilMs = performance.now() + RESCUE_EMERGENCY_COOLDOWN_MS; // A second swarmer must wait briefly, without making the first rescue wait through normal attack recovery.

@@ -61,9 +61,10 @@
       viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(viewProjection);
       let tracked = 0, inScene = 0, hiddenInstances = 0;
-      bounds.forEachTracked((mesh) => {
+      const visitInstances = callback => bounds.forEachTrackedInScene ? bounds.forEachTrackedInScene(activeScene, callback) : bounds.forEachTracked(callback); // Legacy tool pages may omit the scene notification owner.
+      visitInstances((mesh, visible) => {
         tracked++;
-        if (drawnRoot(mesh) !== activeScene) return;
+        if (!(visible ?? (drawnRoot(mesh) === activeScene))) return;
         inScene++;
         const world = bounds.worldSphere(mesh, sphere);
         if (!world || frustum.intersectsSphere(world)) return;

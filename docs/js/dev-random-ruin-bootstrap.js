@@ -34,7 +34,7 @@
   document.write('<script src="js/stone-age-ruin-scenery.js?v=20261118floorProfileIsolation2"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
   document.write('<script src="js/dev-random-ruin-door-slabs.js?v=20261105slab1"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinDoorSlabs.normalize.
   document.write('<script src="js/dev-random-ruin-cube-pillars.js?v=20261105cube2"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinCubePillars.normalize.
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261122h9cf4af4"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261126h2d6d5fc"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20261122ha683d19"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20261107nativeglyphsource1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20261107hf7aabd8"></scr' + 'ipt>');
@@ -54,11 +54,11 @@
   document.write('<script src="js/root-snare-runner.js?v=20261101fullbody1"></scr' + 'ipt>'); // Reuses the author preview's exact 1.5 + 1.5 + 3-second tug curve.
   document.write('<script src="js/root-snare-toss.js?v=20261101fullbody1"></scr' + 'ipt>'); // Baked renderable-only tumbling halves, no gameplay bone reparenting.
   document.write('<script src="js/root-snare-player-tear.js?v=20261101fullbody4"></scr' + 'ipt>'); // Full skinned character silhouette, dynamic cinematic view and insta-death.
-  document.write('<script src="js/dev-hachutu-ruin.js?v=20261122hdb46bde"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
+  document.write('<script src="js/dev-hachutu-ruin.js?v=20261125enemyClassAudit1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
-  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261122h85be70d"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
+  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261127ruinDecoyMerge9"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261116shortfire1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
-  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261122ropeholdarch1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261126torchEntrance2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261123hdca48af"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20261114adventRuin2"></scr' + 'ipt>');
 })();

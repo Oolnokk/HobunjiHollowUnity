@@ -21,6 +21,7 @@ class WebGLRenderer { render() { renderCalls++; } }
 let renderCalls = 0;
 
 const visits = new Map();
+let time=0;
 function makeMesh(extra = {}) {
   const mesh = new Object3D();
   mesh.isMesh = true;
@@ -32,7 +33,7 @@ function makeMesh(extra = {}) {
 const window = { THREE: { Object3D, Scene, WebGLRenderer, Box3: Stub, Frustum: Stub, Matrix4: Stub, Vector2: Stub, Vector3: Stub, Vector4: Stub }, requestAnimationFrame: () => 0 };
 window.window = window;
 const context = vm.createContext({
-  window, console, performance: { now: () => 0 }, queueMicrotask, Promise, Number, Math, Set, Map, WeakSet, WeakMap, Array, Object, String, JSON,
+  window, console, performance: { now: () => time }, queueMicrotask, Promise, Number, Math, Set, Map, WeakSet, WeakMap, Array, Object, String, JSON,
 });
 vm.runInContext(fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'), context);
 const api = window.HeldObjectRenderOrder;
@@ -77,6 +78,10 @@ assert(api?.installed, 'module installs against the fake THREE');
   assert.equal(wall.layers.mask & (1 << api.GROUND_REPLAY_LAYER), 0, 'untagged instanced walls keep ordinary depth');
   assert.equal(renderCalls, 1);
   assert(held2.layers.mask & (1 << api.HELD_OVERLAY_LAYER), 'first render after add() has enforced the held overlay layer');
+  const directBefore = api.snapshot().registryDirectScenePlacements;
+  api.scanScene(scene, true);
+  assert(api.snapshot().registryDirectScenePlacements > directBefore, 'full root-scene scan directly places classified members');
+  assert(held2.layers.mask & (1 << api.HELD_OVERLAY_LAYER), 'direct placement preserves registered held layers');
   const pendingFloor = makeMesh({ userData: { hobunjiGroundTopFacesOnly: true } }); // Simulates geometry queued just before a generation is discarded.
   scene.add(pendingFloor);
   assert.equal(api.forgetScene(scene), 3, 'retiring the scene drops placed and unplaced replay meshes');
@@ -90,5 +95,20 @@ assert(api?.installed, 'module installs against the fake THREE');
   api.scanScene(replacement, true);
   assert.equal(api.forgetScene(replacement), 1, 'moving the held mesh re-registers it in the replacement scene');
 
-  console.log('held classification batching and scene retirement: ok');
+  const pilotScene = new Scene(), late=makeMesh({isInstancedMesh:true});
+  pilotScene.add(late);api.scanScene(pilotScene);
+  assert.equal(api.snapshot().slowClassificationFallbackEnabled,false);
+  api.setSlowClassificationFallbackEnabled(true);api.scanScene(pilotScene);
+  const scans=api.performanceCounters().classificationFullScans;
+  time=1000;api.scanScene(pilotScene);
+  assert.equal(api.performanceCounters().classificationFullScans,scans);
+  late.userData.hobunjiGroundTopFacesOnly=true;
+  assert(api.invalidateClassification(late));api.scanScene(pilotScene);
+  assert(late.layers.mask & (1<<api.GROUND_REPLAY_LAYER),'targeted late classification bypasses the longer scan cadence');
+  assert.equal(api.performanceCounters().classificationFullScans,scans);
+  time=3001;api.scanScene(pilotScene);
+  assert.equal(api.performanceCounters().classificationFullScans,scans+1);
+  api.setSlowClassificationFallbackEnabled(false);api.scanScene(pilotScene);
+  assert.equal(api.performanceCounters().classificationFullScans,scans+2,'toggle restores immediate conservative scan');
+  console.log('held classification batching, cadence pilot and scene retirement: ok');
 })().catch((error) => { console.error(error); process.exit(1); });

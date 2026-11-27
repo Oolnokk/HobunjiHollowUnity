@@ -361,6 +361,8 @@
       const reductionRank = Math.max(0, Number(window.PerkSystem?.rank?.('combat', 'reduceStaminaUse')) || 0);
       const perkMultiplier = 1 - Math.min(0.6, reductionRank * 0.08);
       cost /= alchemyMultiplier * perkMultiplier;
+    } else {
+      cost /= Math.max(0.01, entity?.def?.combatPerkModifiers?.staminaCost ?? 1); // Like the player, reloading reserves the authored threshold, even with Stamina perks.
     }
     return cost;
   }
@@ -418,7 +420,7 @@
   }
   function isLoaded(itemKey, owner = null) {
     if (owner) return owner._rangedLoaded !== false;
-    if (!playerLoaded.has(itemKey)) playerLoaded.set(itemKey, true);
+    if (!playerLoaded.has(itemKey)) return defFor(itemKey)?.rangedType !== 'thrown'; // Registration defaults are lazy; explicit gameplay state always wins.
     return playerLoaded.get(itemKey);
   }
 
@@ -689,11 +691,58 @@
       : Math.max(0, Number(def?.projectileRadiusPx) || 0) / deps.TILE; // Aim/LOS degrade safely before the image finishes decoding.
   }
 
+  // Retain bounded retired GPU resources without sharing mutable live shots.
+  const projectileMaterialPool = []; // Used by projectile sprite acquire/release.
+  const projectileGeometryPool = []; // Used by exact-dimension plane/collider acquire/release.
+  const projectileGeometryKeys = new WeakMap(); // Ownership and dimensions.
+  const pooledProjectileMaterials = new WeakSet(); // Ownership of sprite materials.
+  const projectileTrailPool = []; // Retired trail buffer/material pairs; mesh wrappers are never reused across scenes.
+  const PROJECTILE_POOL_LIMIT = 16;
+  const projectilePoolStats = { materialReuses: 0, geometryReuses: 0, trailReuses: 0, overflowDisposals: 0 };
+  function acquireProjectileMaterial(texture) {
+    const material = projectileMaterialPool.pop();
+    if (material) {
+      projectilePoolStats.materialReuses++;
+      material.map = texture;
+      material.opacity = 1;
+      material.visible = true;
+      material.transparent = true;
+      return material;
+    }
+    const fresh = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
+    pooledProjectileMaterials.add(fresh);
+    return fresh;
+  }
+  function acquireProjectileGeometry(key, create) {
+    const index = projectileGeometryPool.findIndex(geometry => projectileGeometryKeys.get(geometry) === key);
+    if (index >= 0) {
+      projectilePoolStats.geometryReuses++;
+      return projectileGeometryPool.splice(index, 1)[0];
+    }
+    const geometry = create();
+    projectileGeometryKeys.set(geometry, key);
+    return geometry;
+  }
+  function releaseProjectileGeometry(geometry) {
+    if (!geometry) return;
+    if (projectileGeometryKeys.has(geometry) && projectileGeometryPool.length < PROJECTILE_POOL_LIMIT) {
+      projectileGeometryPool.push(geometry);
+    } else { geometry.dispose?.(); projectilePoolStats.overflowDisposals++; }
+  }
+  function releaseProjectileMaterial(material) {
+    if (!material) return;
+    material.map?.dispose?.();
+    if (pooledProjectileMaterials.has(material) && projectileMaterialPool.length < PROJECTILE_POOL_LIMIT) {
+      material.map = null; // Per-shot textures remain independently owned.
+      projectileMaterialPool.push(material);
+    } else { material.dispose?.(); projectilePoolStats.overflowDisposals++; }
+  }
+
   function createProjectileMesh(def, radiusPx, textureSource = null, sourceTransform = null) {
     const root = new THREE.Group();
     root.name = 'rangedProjectile';
     const collider = new THREE.Mesh(
-      new THREE.SphereGeometry(radiusPx / deps.TILE, 8, 6),
+      acquireProjectileGeometry('collider:' + radiusPx / deps.TILE, () => new THREE.SphereGeometry(radiusPx / deps.TILE, 8, 6)),
       new THREE.MeshBasicMaterial({ visible: false })
     );
     collider.name = 'hiddenProjectileCollider';
@@ -719,7 +768,7 @@
     let pendingAspect = 1;
     let pendingOpaqueBounds = null; // Delayed image decode may precede the plane mesh constructor; applied as soon as it exists.
     const updateAspect = loadedTexture => {
-      if (!weaponSprite) return;
+      if (root.userData.projectileRetired || !weaponSprite) return; // Delayed image load cannot touch a retired shot.
       const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
       const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
@@ -746,8 +795,9 @@
     const projectilePlaneWidth = hasExactSourcePlane ? sourcePlaneWidth : (weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065)); // Used by this projectile's one visual plane.
     const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)); // Generic PNG aspect path now matches the stowed and held torch art without redundant scaling.
     plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight),
-      new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
+      acquireProjectileGeometry('plane:' + projectilePlaneWidth + ':' + projectilePlaneHeight,
+        () => new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight)),
+      acquireProjectileMaterial(texture)
     );
     if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
     plane.userData.opaqueBounds = pendingOpaqueBounds;
@@ -825,6 +875,17 @@
   function createProjectileTrails(scene, colorEntries, radiusPx) {
     const trailWidth = Math.max(0.012, radiusPx / deps.TILE * 0.32);
     return colorEntries.map((entry, laneIndex) => {
+      const recycled = projectileTrailPool.pop();
+      if (recycled) {
+        projectilePoolStats.trailReuses++;
+        const mesh = new THREE.Mesh(recycled.geometry, recycled.material);
+        mesh.name = `projectileCometTrail:${entry.id}`;
+        mesh.frustumCulled = false;
+        mesh.renderOrder = (deps.heldObjectRenderOrder || 1.5) - 0.01;
+        mesh.geometry.setDrawRange(0, 0);
+        scene.add(mesh);
+        return { mesh, color: new THREE.Color(entry.color), id: entry.id, laneIndex, laneCount: colorEntries.length, trailWidth };
+      }
       const geometry = new THREE.BufferGeometry();
       const positions = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3);
       const colors = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3);
@@ -925,8 +986,15 @@
   function disposeProjectileTrails(p) {
     for (const lane of p.trailMeshes || []) {
       lane.mesh.parent?.remove(lane.mesh);
-      lane.mesh.geometry?.dispose?.();
-      lane.mesh.material?.dispose?.();
+      if (projectileTrailPool.length < PROJECTILE_POOL_LIMIT) {
+        lane.mesh.geometry.setDrawRange(0, 0);
+        lane.mesh.visible = false;
+        projectileTrailPool.push({ geometry: lane.mesh.geometry, material: lane.mesh.material });
+      } else {
+        lane.mesh.geometry?.dispose?.();
+        lane.mesh.material?.dispose?.();
+        projectilePoolStats.overflowDisposals++;
+      }
     }
     p.trailMeshes = [];
     p.trailPoints = [];
@@ -1659,6 +1727,7 @@
       // RangedWeapons.init receives separate deps from Combat.init. Use the live Combat damage adapter for player shots so wearable combat modifiers, skill/mastery interceptors, and damage attribution see the same hit. Enemy friendly-fire remains on the original independent callback.
       const playerDamageCreature = window.Combat?.deps?.damageCreature || deps.damageCreature; // Live player-shot damage route; the bare callback is a safe fallback during isolated module tests.
       playerDamageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, attacker: deps.player, rangedTrinketDamageMultiplier: p.rangedTrinketDamageMultiplier, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier });
+      window.EnchantmentSystem?.applyRangedSpiritHeal?.(p.owner || deps.player, c, p.itemKey, Math.max(0, healthBefore - Math.max(0, Number(c?.health) || 0))); // Use the actual projectile source and resolved Health loss, even after a weapon swap.
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       const killed = healthBefore > 0 && Math.max(0, Number(c?.health) || 0) <= 0; // Used to route mastery only on kills, matching mastery-policy's combat progression contract.
       const masteryPolicy = window.HobunjiMasteryPolicy; // Used to bypass the absent production awardRangedMastery callback while retaining it as a compatibility fallback.
@@ -1667,13 +1736,20 @@
       return { kind: 'actor', t: nearest.interval.enter, actor: c };
     }
 
-    const rawPlayerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
-    const playerInterval = rawPlayerInterval && rawPlayerInterval.enter <= segmentLimit + AIM_EPSILON ? rawPlayerInterval : null;
+    // Any player the segment crosses can be struck, nearest first — not only the local avatar.
+    // Remote players are skipped when known to be in another area (the local one never is: single-player behaviour is unchanged).
+    let playerInterval = null, struckPlayer = deps.player;
+    for (const pl of deps.players || window.ActorRegistry?.getPlayers?.() || [deps.player]) {
+      if (!pl || pl === p.owner) continue;
+      if (pl !== deps.player && p.areaId != null && window.ActorRegistry?.areaOf?.(pl) != null && window.ActorRegistry.areaOf(pl) !== p.areaId) continue;
+      const iv = segmentHitboxInterval(start, end, actorHitbox(pl), projectileRadius);
+      if (iv && iv.enter <= segmentLimit + AIM_EPSILON && (!playerInterval || iv.enter < playerInterval.enter)) { playerInterval = iv; struckPlayer = pl; }
+    }
     let friendly = p.stagedTarget
       ? stagedTargetHit(p.stagedTarget, start, end, projectileRadius, p.areaId)
       : nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
     if (friendly && friendly.interval.enter > segmentLimit + AIM_EPSILON) friendly = null;
-    let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: deps.player } : null;
+    let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: struckPlayer } : null;
     const petHit = nearestPlayerCompanionHit(start, end, projectileRadius, p.areaId); // Ground companions are separate actors, not part of the player hitbox.
     if (petHit && petHit.interval.enter <= segmentLimit + AIM_EPSILON &&
         (!nearest || petHit.interval.enter < nearest.interval.enter)) {
@@ -1708,9 +1784,11 @@
       else lastEvent = `enemy-pet-hit:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'creature'}`; // Separate mobile-readable proof of hits on the player's ground pet.
       return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
     }
-    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null });
-    applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
-    return { kind: 'actor', t: nearest.interval.enter, actor: deps.player };
+    const playerHitOpts = { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null };
+    if (window.DamageAuthority) window.DamageAuthority.hit(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, playerHitOpts); // Hurts the player actually struck.
+    else deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, playerHitOpts);
+    applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
+    return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
   }
 
   // Projectile orientation begins from the exact immutable launch frame.
@@ -1766,11 +1844,11 @@
     if (!p || p.dead) return;
     window.DungeonFire?.disposeProjectile?.(p); // Remove attached embers and detached flame zones before projectile geometry is released.
     p.dead = true;
+    p.mesh.userData.projectileRetired = true;
     p.mesh.parent?.remove(p.mesh);
     p.mesh.traverse(child => {
-      child.geometry?.dispose?.();
-      child.material?.map?.dispose?.();
-      child.material?.dispose?.();
+      releaseProjectileGeometry(child.geometry);
+      releaseProjectileMaterial(child.material);
     });
     disposeProjectileTrails(p);
   }
@@ -1885,12 +1963,18 @@
       return { aimAngle, moving: false, handled: true };
     }
     if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c);
-    const chargeS = def.rangedType === 'thrown' ? Number(def.chargeWindupS) || 0 : 0;
+    const chargeS = def.rangedType === 'thrown' ? Math.max(0, Number(def.chargeWindupS) || 0) : 0;
+    if (chargeS > 0) {
+      // Hidden throws commit the same full pose cost as visible throws; ResourceSystem applies the actor's own perk once.
+      window.ResourceSystem?.spendStamina?.(c, chargeStaminaCostForPose(1), `${def.label} charge`, {
+        actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon',
+      });
+    }
     c._rangedCooldownT = chargeS + Math.max(0.01, Number(def.fireDurationS) || 0.01) + 0.55; // Same cadence as a visible fire action plus its 0.55 s recovery.
     if (staging.rollAbstractHit(target)) {
       const count = Math.max(1, Math.round(def.projectileCount || 1));
       deps.damageCreature(target, Math.max(1, def.damage * count), c.x, c.y, def.knockbackPxS, {
-        tag: 'sharp', ranged: true, rangedItemKey: itemKey, friendlyFire: true, attacker: c, stagedDuel: true, attackPower: Number(def.attackPower) || 12,
+        tag: 'sharp', ranged: true, rangedItemKey: itemKey, friendlyFire: true, attacker: c, stagedDuel: true, attackPower: Number(def.attackPower) || 12, footingDamageMultiplier: 0, // Ordinary NPC projectiles have zero Footing damage in the visible path too.
       });
     }
     return { aimAngle, moving: false, handled: true };
@@ -2265,6 +2349,12 @@
       delete c._rangedLosDebug;
     }
   }
+  function retireOwnerProjectiles(owner) {
+    if(!owner)return 0;
+    let removed=0; // Explicit encounter teardown also retires airborne and embedded projectiles from these actors only.
+    for(const p of projectiles)if(!p.dead&&p.owner===owner){disposeProjectile(p);removed++;}
+    return removed;
+  }
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
   function computeWouldHitTarget() {
@@ -2340,7 +2430,7 @@
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     beginBanditAction, // Shared timing/charge setup for isolated loadout animation previews.
     rangedLoadStaminaCost, chargeStaminaCostForPose, // Shared balance helpers used by thrown-charge payment and regression coverage.
-    cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
+    cancelBanditAction, disposeOwner, retireOwnerProjectiles, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
     debugProjectileColliders: () => projectiles.filter(p => !p.dead && !p.embedded && p.areaId === deps?.getCurrentArea()).map(p => ({
       x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: projectileCollisionRadiusWorld(p),
@@ -2359,6 +2449,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
+    get projectilePool() { return { ...projectilePoolStats, materials: projectileMaterialPool.length, geometries: projectileGeometryPool.length, trails: projectileTrailPool.length }; }, // Read only when mobile diagnostics are opened.
     get hitboxWork() { return { builds: actorHitboxBuilds, reuses: actorHitboxReuses }; }, // Shared CPU-work evidence, available without browser devtools.
     get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, flightDistancePx: p.flightDistancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, collisionRadiusWorld: projectileCollisionRadiusWorld(p), opaqueBounds: p.mesh?.userData?.projectilePlane?.userData?.opaqueBounds || null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined, releaseAtS: playerAction.durationS * fireReleaseFrac(playerAction.def) } : null; },
@@ -2404,7 +2495,7 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Players and enemies can shoot between elevations where 3D sightlines clear terrain, supports and solid cover.',
+      latestChange: 'Bounded projectile material, exact-size geometry and trail buffer pools retain independent shot artwork and fade.',
       staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: chargeStaminaCostForPose(window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE), thrownChargeFull: chargeStaminaCostForPose(1), thrownChargeReadyPose: window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE },
       lastEvent, lastAudioEvent, lastTerrainImpact: lastTerrainImpact ? { ...lastTerrainImpact } : null, lastTorchThrow, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
@@ -2415,6 +2506,7 @@
       embeddedProjectiles: projectiles.filter(p => p.embedded && !p.dead).length,
       fadingEmbeddedProjectiles: projectiles.filter(p => p.embedded && p.fading && !p.dead).length,
       activeTrailMeshes: projectiles.reduce((sum, p) => sum + (p.trailMeshes?.length || 0), 0),
+      projectilePool: { ...projectilePoolStats, materials: projectileMaterialPool.length, geometries: projectileGeometryPool.length, trails: projectileTrailPool.length },
       friendlyFireHits, losRepositions, wouldHitCacheHits,
       loaded: Object.fromEntries(playerLoaded),
     }),

@@ -69,12 +69,12 @@ assert.equal(render.genotypeSignature('grehlr', grehlrLegacyColor),
   'Changing only the obsolete beard dye does not make a distinct render cache key');
 const drenkirraSwapped = { base: { color: '#AABBCC' }, bodystripes: { color: '#334455', enabled: true, copies: 2 } }; // Swapped coat-color regression: body uses stripes pigment, stripes use base pigment.
 assert.equal(render.patternTintColor('drenkirra', 'bodystripes', drenkirraSwapped), drenkirraSwapped.base.color);
-assert.notEqual(render.genotypeSignature('drenkirra', drenkirraSwapped),
+assert.equal(render.genotypeSignature('drenkirra', drenkirraSwapped),
   render.genotypeSignature('drenkirra', { ...drenkirraSwapped, bodystripes: { ...drenkirraSwapped.bodystripes, color: '#DD8844' } }),
-  'Drenkirra cache signature must include the swapped body color, not only its stripe tint');
+  'Unused B pigment cannot invalidate a primary-only stripe composite');
 assert.notEqual(render.genotypeSignature('drenkirra', drenkirraSwapped),
   render.genotypeSignature('drenkirra', { ...drenkirraSwapped, bodystripes: { ...drenkirraSwapped.bodystripes, enabled: false } }),
-  'Disabling a swapped Drenkirra stripe also changes the rendered base color');
+  'Disabling Drenkirra stripes changes visible pattern expression');
 assert.match(read('docs/js/creature-genetics-render.js'), /paintRegionId = patternUsesBaseCoat \? 'base' : patternId/,
   'Color Pools paint on Grehlr beard must follow the base rather than a second independent dye');
 assert.deepEqual(Array.from(render.SPECIES.nelk.patterns), ['cape', 'brushtail', 'spectacles'],
@@ -271,6 +271,22 @@ assert.equal(typeof blink.getVisualState({}, 'gar-wolf', 0), 'boolean',
 genetics.init({ CREATURE_DB: { uumkaoii: { defaultSizeClass: 'large' },
   nelk: { defaultSizeClass: 'medium' }, nazgraku: { defaultSizeClass: 'large' } },
   clamp: (value, min, max) => Math.max(min, Math.min(max, value)) });
+// Shared colors are inherited once, independent of pattern visibility.
+for (const [kind, ids] of Object.entries(genetics.PATTERN_DEFS)) {
+  const a = genetics.makeDefaultGenotype(kind), b = genetics.makeDefaultGenotype(kind);
+  for (const genes of [a, b, genetics.crossOffspring(a, b, kind, 0), genetics.crossOffspring(a, b, kind, 1), genetics.makeRareGiftGenotype(kind, 3)]) {
+    assert(genes.base?.color && genes.secondary?.color, kind + ' has both body pigments');
+    for (const id of ids) {
+      const primary = (kind === 'grehlr' && id === 'beard') || (kind === 'drenkirra' && id === 'bodystripes');
+      assert.equal(genes[id].color, primary ? genes.base.color : genes.secondary.color, kind + ':' + id + ' shares its assigned body color');
+    }
+  }
+}
+const oldColors = { base: { color: '#112233' }, mitts: { color: '#445566', copies: 0, enabled: false }, spectacles: { color: '#778899', copies: 1, enabled: true } };
+const shared = genetics.normalizeLegacyGenotype('dabinggi-hound', oldColors);
+assert.equal(shared.secondary.color, '#445566', 'First pattern supplies B even when disabled');
+assert.equal(shared.spectacles.color, '#445566');
+assert.equal(oldColors.spectacles.color, '#778899', 'Read-time normalization never mutates source');
 const fresh = genetics.makeDefaultGenotype('uumkaoii');
 assert(fresh.base?.color);
 assert(fresh.shell?.color);

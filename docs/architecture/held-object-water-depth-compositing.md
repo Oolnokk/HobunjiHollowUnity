@@ -1,5 +1,12 @@
 # Held objects, ground x-ray, and translucent water: rendering contract
 
+> **Floor-exemption x-ray no longer exists.** Weapons, hands, held tools, feet and pants all draw with ordinary
+> solid-world depth, so the per-holder floor reveal (elevation-filtered ground shader, stencil floor punch,
+> near-only depth snapshot, shell-outline x-ray replay and the ground-zone debug circle) was deleted. The held
+> replay that remains is the **ordinary-depth replay**: held parts draw after the PNG cutout/protected-cover
+> depth supplement so billboards occlude them, with the owner-portrait mask and water tint applied in the same
+> pass. Passages below that mention those retired mechanisms are historical; the code is the authority.
+
 > **Regression warning (farm flood, October 19, 2026):** Do not move the
 > **colorless opaque-grass/path depth restore** after the water/slush tint
 > pass. Doing so reintroduces irregular teal floodwater patches over raised
@@ -98,20 +105,18 @@ tradeoff; a pants wearer whose sprite intersects another actor's plane may
 still need a dedicated per-actor depth composite. Opaque world geometry
 continues to depth-test normally; weapon stencils share the actor order.
 
-## Worn pants use the feet's ground-x-ray policy
+## Feet and worn pants always use ordinary ground depth
 
-Each live pants garment now registers with the existing selective feet replay through
-`HeldObjectRenderOrder.markWaterOccludedMesh()`. This reuses the same local
-same-elevation grass/road/walkable-floor exemption, actor/camera-distance
-eligibility, and solid-cover and water/slush depth and tint behavior. Unworn,
-unloaded or off-distance NPC garments remain on the normal world depth path.
+Feet and pants keep physical terrain and prop occlusion in the world and
+outline passes. The legacy ground X-ray switch is retired, including in saved
+developer presets. The normal outline pass still draws modeled feet; authored
+PNG pants never get a generated shell.
 
-The X-ray hierarchy configuration is **unchanged**: no global color priority
-is raised. Pants still use their existing owner-portrait depth/alpha rules.
-A conservative replay scissor margin covers GPU-deformed pants whose CPU
-rest mesh bounds do not change while their legs animate. Pants are authored
-PNG-art garments, so they do not acquire procedurally generated shell outlines.
-The Dev Companion snapshot reports pants registrations separately.
+The lower-body water registry still uses
+`HeldObjectRenderOrder.markWaterOccludedMesh()` to tint physically submerged
+nearby parts, with no floor exemption. Dry, distant, or unresolved parts do not
+enter the tint replay. The existing conservative bounds for GPU-deformed pants
+and their owner-portrait depth/alpha rules are unchanged.
 
 ## Shoulder pets are part of the owner's portrait occlusion
 
@@ -167,36 +172,6 @@ Regression guards: `scripts/test-shoulder-pet-layering.js`,
 `scripts/test-held-front-portrait-mask.js`,
 `scripts/test-xray-hierarchy.js`, and `scripts/test-hat-xray-facing.js`.
 
-## Elevation-aware ground x-ray
-
-Ground is no longer removed wholesale from the held/foot depth rebuild.
-Each replay scopes visible tools, hands, feet and shell sources to the
-standing elevation and tile of their owning actor:
-
-- The player uses the movement root plus the active
-  `townSubtleElevation` composer channel, which is the same lift used for
-  town terrain and walkable furniture.
-- NPC equipment resolves to its `npc_walker_*` root (also explicitly tagged
-  by the NPC held-equipment runtime). NPC procedural body parts can resolve
-  through the existing `hobunjiCharacterRigScaleRoot` marker. Named-animal
-  body groups use their existing `namedAnimalNpc` marker.
-- The holder’s tile and its eight neighbors are eligible for the ground exemption. The holder’s world X/Z selects that area even when a weapon or rig part swings across a boundary.
-- Ground materials with standard Three.js world-position shaders discard only
-  front-facing, upward-facing fragments within 0.18 world units of the actor's standing
-  elevation. Lit materials use their transformed normal; unlit MeshBasic grass
-  uses its geometry normal. Any ground geometry without a normal attribute keeps
-  full-depth occlusion rather than guessing its surface orientation. World-space Y naturally includes map
-  tiers, trench bottoms, raised earth and continuous terrain surfaces.
-- Vertical cliff/wall faces and back-facing floors/ceilings remain depth occluders. Water, slush, snow,
-  billboard grass, props and other solid geometry retain their existing
-  material/depth behavior.
-- Unknown actor ownership, missing geometry normals, and custom ground shaders
-  without the required standard chunks fail closed: their ground remains fully opaque to the
-  held/foot overlay rather than guessing an elevation.
-
-Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Unknown/custom draw hooks still use conservative separate replays. Procedural hands and feet may join batching only when their registered parity hook owns the mesh's onBeforeRender without an earlier custom hook: the projection encloses both the current transform and a fresh prior visible transform, plus up to 2× shell-thickness expansion. If another hook replaces that callback, batching automatically falls back to conservative bounds. The leg rig's existing foot-depth-push callback is now explicitly certified as *screen-projection invariant* only when it has no preceding custom hook: a uniform scale about a perspective camera moves the foot in depth without changing its projected outline, while an orthographic view skips this adjustment. The feet parity adapter may trust that certified callback, expanding the existing batching opportunity to hands and feet across players, civilians and enemies. Any other draw-hook chain remains conservative. The synthetic 24-to-3 grouping test is a capacity check, **not** a measured NPC or enemy frame improvement. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
-restore remains before translucent water/slush tinting.
-
 ## Ordinary-depth replay supplement
 
 When every source in a group is proven not to need the holder-local floor
@@ -212,60 +187,6 @@ then restores translucent-cover depth as before. Mixed groups and renderers
 without color-mask locking retain the ground restore and original ordering.
 `test-held-ordinary-depth-budget.js` executes these pass budgets and restoration
 on both success and a thrown render.
-
-## Actor-centered ground X-ray zone
-
-The optional floor exception now uses a **filled circle in world X/Z**, rather
-than a square of nearby tiles. The shipped authored radius of one tile on each
-side corresponds to a 1.5-world-unit circle, preserving the previous three-tile
-diameter without snapping its center to a grid corner. The shader checks the
-squared distance of each eligible ground fragment to the actor's world X/Z,
-after applying the existing standing-elevation and upward-floor-face tests.
-Actual 3D geometry, walls, raised floors, water, snow and grass billboards
-continue to follow their own physical depth rules.
-**Ground depth outside the circle:** Some wilderness ground materials
-intentionally use `depthWrite: false` in the regular world color pass.
-Previously, the held-gear depth replay preserved that setting, allowing
-weapons to show through the ground *outside* the local exception even when
-the floor should obscure them. The depth-only held replay now temporarily
-enables depth writing for registered ground materials, including when
-their elevation shader is not yet compiled or is unsupported. When supported,
-mode 1 still discards standing-level ground *inside* the circle; other
-fragments write actual ground depth. Unsupported shader variants fail closed,
-so the floor remains a physical occluder even inside the circle instead of
-accidentally allowing x-ray outside it. The material's original `depthWrite`
-value is restored through the existing transaction after that replay.
-Normal world drawing, walls, raised surfaces and water rules do not change.
-
-**Ordinary held parts:** Equipment fully above the standing floor skips the
-local circle filter and normally uses a cheap depth supplement. This path
-previously skipped all terrain, including ground whose visible world material
-had never written depth. The supplement now keeps only registered ground
-leaves missing depth, temporarily enables their depth writes, and restores
-their materials before the held color draw. It still skips unrelated world
-geometry and does not clear the base depth.
-
-The mobile X-ray panel displays **Ground depth writers repaired (last replay)**,
-**Ground shader fallbacks**, and a **Use stencil floor punch (A/B test)**
-checkbox. It additionally reports ordinary held parts and actual floor-punch
-call/fallback counts, to distinguish permission to punch from an actual
-stencil reset. The checkbox switches between the fast stencil floor reset
-and full-depth rebuild when a depth snapshot is supported, helping isolate
-remaining *inside-circle* obstruction. The copied diagnostic report includes
-these counters. This does not alter the authored 1.5-world-unit radius.
-
-The existing per-tile lookup remains only a CPU batching index: characters
-standing at different coordinates inside one tile have separate circle centers.
-Both the standard clear-and-rebuild pass and stencil floor-punch use the same
-circle centers. The patch-refill cull uses a conservative bounding square plus
-the existing margin; it is an optimization, not the visible boundary.
-
-Dev Companion → X-ray and layer compositing → **Show ground X-ray circle in the
-world** toggles a translucent filled disc and rim at the player's standing
-elevation. That geometry is created lazily, follows the player, and is removed
-when disabled or when switching scenes. It does not write depth and cannot
-change the X-ray mask. This switch is a developer-only browser override, not
-part of save data.
 
 ## Shared surface occlusion composer
 
@@ -482,49 +403,6 @@ fall back to the full tint path. Framebuffers with no usable stencil
 keep conservative cover occlusion rather than painting unsupported
 partial tint.
 
-## Shell outlines inherit the source object's ground-x-ray visibility
-
-Flat character portrait PNGs, modular weapon sprite layers, flail-rope PNGs, merged leaf cards, and grass/weed billboards carry their **own authored outlines** and must not join layer 1. The only character parts requiring an inverted-hull outline are the volumetric hands and feet; independent volumetric terrain/furniture still uses its ordinary shell policy. Render classification removes accidental layer-1 membership from authored planes when they join the scene, including art outside the held-object registry. Their other render layers are retained. Held-object enforcement and shell replay also check authored art.
-
-The occluder depth material transaction is prepared **once per shell replay**, not once per elevation group: each group updates only ground tile/elevation uniforms. The final full-depth restore uses that same material transaction, and the outer `finally` restores material/camera/renderer flags even if a draw throws.
-
-The inverted-hull shell pass is a separate render from the visible object draw.
-Without an explicit parity step, the base mesh can correctly x-ray through
-classified ground while its shell is still rejected by the ordinary ground
-depth left in the framebuffer.
-
-HeldObjectRenderOrder applies the same rule to both representations:
-
-1. The normal layer-1 shell pass omits **only** registered held/foot meshes
-   whose owning tile/elevation actually requires the special floor exception.
-   Ordinary-depth player, civilian, enemy and companion shells stay in the
-   ordinary pass and draw once. If none needs a floor exception, there is no
-   shell-depth reconstruction at all.
-2. A scissored replay clears depth only around those meshes and reconstructs
-   solid depth while excluding the exact groundKind() set used by the
-   visible held/foot x-ray. The source meshes remain in the depth replay (with
-   depth writes temporarily enabled) so their front faces still mask the
-   expanded shell. Snow, water, slush, furniture, rocks, walls and other
-   non-ground occluders remain in this depth reconstruction. Carved
-   cavern shells retain their complete geometry; only same-height top faces are
-   discarded by the elevation filter, while different-height floors, walls and
-   ceilings continue to block outlines.
-3. Only the registered x-ray meshes' layer-1 shells are drawn against that
-   reconstructed depth. Their shell therefore follows the same ground
-   visibility exception as the underlying mesh without becoming visible
-   through unrelated solid objects.
-4. The ordinary scene depth is rebuilt colorlessly before later target and
-   outline consumers run. The replay restores the camera mask, override
-   material, visibility, geometry, scissor, shadow and renderer state.
-
-This is deliberately tied to the shared x-ray participant registries and
-ground classifier, rather than adding separate per-material or per-species
-shell exceptions. When another object type joins the selective ground-x-ray
-system, its registered shell automatically receives the same visibility
-policy. The shell replay is limited to the projected bounds of the affected
-objects when safe; skinned, instanced, morphed or near-plane-uncertain bounds
-fall back to a full-frame replay.
-
 ## The confirmed regression: teal patches in raised flooded grass
 
 Two Pixel Probes were captured on the **farm**, with Painterly **Off**.
@@ -720,3 +598,96 @@ The default `background.gearDepth=ignore` and
 `airborneDepthRebuilds`, `backgroundDepthMeshesExcluded` and
 `registeredBackgroundDepthMeshes` for mobile diagnostics.
 
+
+
+## Local participant distance policy
+
+Gameplay selects X-ray participants by their owner's tile relative to the
+player. `XRAY_TILE_RADIUS` is the single tile-reach constant for this
+square ring and for the existing holder-centered floor circle
+(`XRAY_CIRCLE_RADIUS = XRAY_TILE_RADIUS + 0.5`). These are distinct
+operations: participant eligibility is player-relative; the depth shader
+still exempts only same-height ground around the eligible holder.
+Feet and pants cannot participate in ground X-ray. Their separate water
+tint selection uses the local ring, or the six-unit camera sphere when
+the ring is unavailable or disabled. Existing category and species gates
+and ordinary weapon budget are unchanged. Frustum rejection and screen-space
+replay scissoring remain independent conservative bounds.
+
+
+### Optional selective traversal / registry sharing pilots
+
+`mixedWaterPrune` (default off) extends existing water-only branch pruning
+to mixed held-gear/water frames, strictly after ground/gear depth
+restoration and portrait stamping, for the two WATER_REPLAY submissions.
+It conservatively keeps the ancestor paths of relevant renderables,
+lights and cameras, and falls back on unknown nodes, LOD, unsafe hooks,
+pending shadow refresh or active scene matrix updates. Visibility is
+restored in finally. It replaces repeated native walks with one JS scan
+plus selective native walks; actual net cost must be measured.
+
+`replayRegistryMemo` (default off) shares ancestor root/visibility reads
+between adjacent pure registry collections, and shares the just-collected
+front list with the immediate stencil stamp. No cross-frame or cross-draw
+visibility cache. These switches are independent; the existing
+water-only pruner, ground restoration order, stencil rules and scissor
+policy are unchanged.
+
+
+### Classification repair cadence experiment
+
+The existing add-hook queue remains the immediate registration path.
+Writers introducing a late semantic tag, layer or material may call
+`HeldObjectRenderOrder.invalidateClassification(root)` to queue that
+subtree for the same deduplicated flush before the next render; this is
+additive classification, not an unregister API. Forced scene scans
+remain available. The optional `slowClassificationFallback` switch
+(default off) extends periodic full repairs from 750 ms to 3 seconds,
+with reseeding when toggled. No claim is made that all legacy semantic
+writers publish invalidation yet. Unannounced changes can be delayed,
+so test visually before promoting this experiment. Probe records full
+scans, forced scans, explicit invalidations and active/auxiliary costs.
+
+
+## Experimental ground pose (player only)
+
+X-ray Hierarchy → World depth and airborne replay → Held weapon ground clearance switches rotation / ordinary depth with no fit. The branch defaults to rotation. A rigid single-plane melee weapon is solved inside WeaponToolStances' temporary matrix bake, keeping the primary grip fixed. Explicit measured A/B item-space Z endpoints and heightFraction describe reference geometry without overriding base scale; optional disjoint segments contract by equal fractional strain down to minSegmentScale before grip-pivot rotation. Twisted planes may rotate but do not contract; independent multi-sprite, flail, dual-wield and NPC weapons retain legacy behavior. A failed clearance solve keeps normal terrain occlusion. Ground support is sampled by PlayerJump, not by visual body Y; ordinary free hands can lift within authored arm reach. The regular held-depth, owner mask, water tint, pants, feet, and combat collision remain independent. Mobile X-ray Hierarchy reports floor, original/final clearance, rotation, shortening and fallback reason. Authored profiles are opt-in; no existing weapon lengths were guessed or migrated.
+
+The Attack Animation Editor includes an explicit **Measure visible sprite A/B** action which scans the current PNG's alpha once to derive its source Z bounds (not transparent padding). Authoring still permits overriding those bounds and defining multiple disjoint shortening segments. Measured target scale uses the existing supported 0.1–3 scale range; the inspector reports the actual ratio if a requested extreme is capped. Profiles use the existing grip-shape metadata key, so exact modular-combination-specific measurements and multi-sprite deformation need separate follow-up.
+
+The Attack Animation Editor's Weapon geometry drawing panel replaces raw JSON entry. Drag A/B for longitudinal length, drag disjoint full-width shortening bands, and tap or trace the closed contact perimeter in source X/Z coordinates. Auto-trace computes a conservative convex hull of opaque pixel corners once, explicitly. Manual traces are the author's contact envelope: include both ends and all protrusions. The floor solver uses authored X/Z vertices plus polygon-edge intersections at every shortening boundary, rather than transparent quad corners. Invalid/out-of-bounds outlines retain rectangular fallback; no existing profiles are guessed. Layered/flipped previews are marked as runtime fallback. The renderer has no dependency on the editor canvas or alpha scanning.
+
+Flail pilot: the rigid single-plane haft can compress and rotate about its grip without hand translation. The compressed haft anchor follows the same strip deformation. For an authored flail profile, the rope has its own minimum scale (0/off in UI); draw the suspended head's contact edge separately on its anchor-layer image. Idle suspension uses the existing pendulum and reduces connector length before redirecting the minimum-length connector behind motion when the head would penetrate the local floor. It is a straight trailing connector approximation, not full slack-rope ground collision. Attacks, layered hafts, NPC and dual-wield assemblies remain legacy. Missing head edge uses conservative head bounds. Neither weapon collision nor attack timings are changed.
+
+### Permanent fitted length (experimental)
+Shortening is now a physical fit, not per-frame pose animation. The first eligible grounded Neutral computes and caches a single compression amount (including zero) for each player rig/item/profile; the same source-space anchor is used for subsequent grip remaps, swings, re-equipping and jumps. A failed clearance rotation keeps the fitted geometry and normal terrain occlusion. The rope independently fits once from a vertical hanging reference, then its contact response changes only suspension direction. Existing authored flail length animation can shorten the connector further, but cannot exceed the fitted length. The experimental fit cache is session/rig-scoped, not a serialized inventory mutation; a new rig or reload recomputes the fit at the next eligible grounded Neutral. The ground toggle still restores original geometry while disabled.
+
+A missing floor sample (e.g. above a pit) disables only the clearance rotation; the previously fitted strip is still applied. Fitting waits for a loaded sprite whose measured A/B endpoints fit its geometry. Rope fitting waits until the haft fit is established and respects the connector's minimum lateral span.
+
+
+### Light-stance fitting and haft-local bands (experimental)
+
+Physical shortening is sampled once from the shared authored Light weapon neutral, even if the live weapon uses Heavy neutral. The final loaded texture supplies its alpha contact envelope (threshold 21/255, cached by bitmap and geometry); no hand-painted outline is needed for every modular recipe. An unreadable bitmap cannot establish a permanent fit. A manual outline is only a rotation fallback. The separate suspended flail head is likewise traced, and the Light stance's authored rope-length channel participates in its physical fit.
+
+The Attack Animation Editor accepts rectangular shortening bands in canonical X/Z. In the Modular Weapon Editor, the new **Haft shortening bands (all heads)** source panel saves rectangles in the original 450×1204 haft coordinate system, plus a minimum remaining length percentage. The compositor's shaft-art transform maps these into the shared item frame. Modular recipes inherit only those haft bands; contact is traced from their final assembled texture, not their donor weapon's head. No head/metal-specific band setup is necessary.
+
+The experimental flat-sprite deformation preserves the grip and contracts each selected strip uniformly; off-width protrusions translate rigidly with its headward end. Choose a rectangle spanning the entire wooden shaft, not intersecting a rigid head's opaque connecting pixels. A flattened image cannot recover occluded material, so an ill-placed band can create seams or shift unrelated off-axis artwork. True per-layer overlap reconstruction is not implemented. Existing unsupported dual-wield, flipped and complex assemblies retain their legacy clearance. Compression remains visual only, cached during the actor/item lifetime and not serialized across reloads.
+
+### Standalone Attack Animation Editor parity
+
+The editor now loads the same clearance solver, supplies its ESM Three namespace and the displayed Y=0 floor, and computes a separate Light-neutral reference matrix without changing authored pose values. Applying geometry focuses Neutral; the editor's live status reports fitted band strain, rotation and lowest visible contact before/after correction. Raw preview can be toggled; active gizmos deliberately suspend correction to avoid recording fitted rotation into the source animation. The drawing panel always reads original uncompressed geometry, even while the visible sprite uses a private fitted mesh.
+
+The suspended assembly is identified by its actual decorated root. Its loaded opaque head and connector must be available before freezing Light-neutral haft shortening. The fit considers the hanging head as well as the rigid haft, then establishes the independent connector limit. A disabled rope shortening band preserves rope length but still permits ground-trailing correction. Raw editor mode disables both rigid and flexible clearance; diagnostic status distinguishes exact unsupported topology and reports the suspended head's clearance.
+
+The invisible offhand hand-placement subsystem intentionally creates child roots on ordinary weapon planes. The clearance topology check now exempts only the exact owned non-drawing copies; visible dual weapons and arbitrary layers still fall back. Duplicate meshes use the canonical source buffer so disposing a fitted strip cannot invalidate their geometry.
+
+### Authored weapon sizing and donor haft bands
+Rotation remains the default. The authored base tool scale determines unshortened size; the per-weapon species scale multiplier migrates to zero, with optional later authoring. Recorded A/B length percentages are reference metadata, not scale overrides. Ground fitting still shortens authored intervals and rotates about each grip. The fitted path intentionally has no legacy render-only 1.15 enlargement. Fifteen matching 450 × 1204 donor/shaft PNG pairs inherit their shipped shortening intervals and minimum strain, converted into original shaft pixel coordinates. Old empty Foundry drafts upgrade once; subsequently authored bands, including explicitly cleared bands, are retained.
+
+The rigid Torch-Staff has no solid overlay: its child group owns fire particles. Only exact assembly-owned emitter groups are ignored, allowing rigid clearance in runtime and preview. Solid overlays still require a separate layer-aware fit. The latest export updates all explicit length profiles and changed base sizes, retaining earlier workhammer geometry absent from the newer export. Light reference diagnostics belong to the current fit, never another weapon.
+
+### Dual-wield grip-pivot correction
+The canonical hidden weapon establishes the immutable Light fit even in dual poses. Both visible copies borrow its private fitted buffer (released before disposal), and the dual visual owner solves each separately after its idle/lag pose is baked. Corrections use the actual respective hand socket as world pivot, preserving its position with a compensating translation; orientation follows the corrected weapon. The original authored holder pose remains untouched during dual correction. Exact owned dual roots are the only additional visible children allowed by the canonical fit. The existing unsupported fallback remains for solid overlays and dual suspended assemblies. Clearance is evaluated per copy.
+
+### Weapon and hand ground X-ray retired
+Hands, weapons and held tools (including flail heads/ropes and both dual copies) always use ordinary solid-world depth in both color and shell grouping. Rotation mode remains the default geometric clearance; ordinary mode disables only the fit for comparison. Unsupported or failed solves can visually intersect and be occluded by the floor, never reveal art through it. Existing saved `xray` values migrate to rotation. The ordinary 3D hand outline, water tint, optional owner portrait mask and free-hand clearance remain; neither hand color nor its shell gets a floor exemption. Feet and pants also use normal solid-world depth. Wet lower-body water tint remains separate and does not exempt terrain.

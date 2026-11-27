@@ -1,113 +1,104 @@
 'use strict';
-// node scripts/test-kanthic-glyph-darkness.js
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const original=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8'); // The test instruments the production compositor rather than recreating it.
-const fog=original.replace('  function ordinaryBuildingInterior(area) {',
-  '  window.__probeGlyphMasks=(scene,deps,now=2000)=>{lightingDeps=deps;drawRuinPatternGlowMasks(scene,now);return {...ruinGlowStats};};\n  function ordinaryBuildingInterior(area) {');
-assert.notEqual(fog,original,'test hook must be inserted into the production source');
-new vm.Script(fog,{filename:'cloud-forest-fog.js'});
-
-class Vec {
+const source=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8');
+const fog=source.replace('  function ordinaryBuildingInterior(area) {',
+  '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();lastUnifiedLightingDraw=123;unifiedLightingPaintRevision=1;};window.WeatherFX.drawLightingOverlay=drawUnifiedLightingOverlay;};\n  function ordinaryBuildingInterior(area) {');
+assert.notEqual(fog,source);
+class Vec{
   constructor(x=0,y=0,z=0){this.set(x,y,z);}
   set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
   copy(v){return this.set(v.x,v.y,v.z);}
-  applyMatrix4(){return this;} // The identity world matrix makes texture-to-screen expectations exact.
-  setFromMatrixColumn(){return this.set(1,0,0);}
-  sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z);}
-  dot(v){return this.x*v.x+this.y*v.y+this.z*v.z;}
+  applyMatrix4(){return this;}
+  transformDirection(){return this;}
 }
-let tradition='kanthic'; // Switches between the new precise Kanthic rule and the unchanged Hronal rule.
-const win={THREE:{Vector3:Vec,RepeatWrapping:1000},WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition}};
+class Box{copy(b){this.min=b.min;this.max=b.max;return this;}applyMatrix4(){return this;}}
+class Plane{constructor(normal,constant){this.normal=normal;this.constant=constant;}}
+class Scene{
+  constructor(){this.children=[];this.fog=null;}
+  add(o){this.children.push(o);o.parent=this;}
+  remove(o){this.children.splice(this.children.indexOf(o),1);o.parent=null;}
+  traverse(fn){fn(this);for(const o of this.children)fn(o);}
+}
+class Layers{constructor(){this.mask=0xffffffff;}set(bit){this.mask=1<<bit;}}
+class Camera{constructor(){this.layers=new Layers();}}
+class Mesh{
+  constructor(geometry,material){this.geometry=geometry;this.material=material;this.visible=true;this.isMesh=true;this.matrix={copy(){}};this.matrixWorld={};this.layers=new Layers();}
+}
+class Texture{constructor(image){this.image=image;}}
+class Shader{constructor(o){Object.assign(this,o);}}
+let tradition='kanthic',area='map_i_dev_random_ruin',region='room:a',fade=0,paintCount=0,depthCount=0;
+const bounds=(minX,maxX,minY=-Infinity,maxY=Infinity)=>({minX,maxX,minY,maxY,minZ:0,maxZ:5});
+const regions={'room:a':bounds(0,5,-1,5),'room:b':bounds(5,10,-1,5),shaft:bounds(10,20)};
+const roomSystem={activeGlyphRegion:()=>region,glyphRegionBounds:id=>regions[id]};
+const win={THREE:{Vector3:Vec,Box3:Box,Plane,Scene,Mesh,CanvasTexture:Texture,ShaderMaterial:Shader,Camera,PlaneGeometry:class{}},
+  WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition},RuinRoomSystem:roomSystem,
+  PngPlaneOutlineOccluder:{renderDepth(){depthCount++;}}};
 vm.runInNewContext(fog,{window:win,performance:{now:()=>2000},console});
-const draws=[]; // All light-mask paints are recorded for assertions and mobile-neutral regression coverage.
-const context={
-  canvas:{width:500,height:500},globalCompositeOperation:'source-over',globalAlpha:1,
-  save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},clip(){},arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
-  transform(...args){draws.push({kind:'transform',args});},
-  createPattern(img,mode){draws.push({kind:'pattern',mode,img});return {img,mode};},
-  fillRect(...args){draws.push({kind:'tiles',mode:this.globalCompositeOperation,args});},
-  drawImage(img){draws.push({kind:'image',mode:this.globalCompositeOperation,alpha:this.globalAlpha,img});},
-  createRadialGradient(){draws.push({kind:'gradient'});return {addColorStop(){}};},
-};
-const camera={matrixWorld:{},near:0.01,far:100,
-  getWorldPosition(v){return v.set(-20,0,0);},
-  getWorldDirection(v){return v.set(1,0,0);}};
-const deps={lctx:context,camera,getCurrentArea:()=> 'map_i_dev_random_ruin',getPlayerWorldY:()=>0,
-  getThreeRect:()=>({width:500,height:500}),worldToOverlay:(x,y,z)=>({x:100+x*10,y:100+z*10})};
-const image={width:16,height:16}; // Engraving atlas coverage is what the compositor must use, not a radial gradient.
-const positions={array:new Float32Array([1,1,1, 3,1,1, 1,1,3]),count:3};
-const uvs={array:new Float32Array([0,1, 1,1, 0,0]),count:3};
-const geometry={boundingSphere:{center:new Vec(1.5,1,1.5),radius:2},
-  getAttribute(name){return name==='position'?positions:name==='uv'?uvs:null;}};
-const mesh={name:'engraving-glyph-glow',isMesh:true,visible:true,userData:{},
-  matrixWorld:{getMaxScaleOnAxis:()=>1},geometry,
-  material:{visible:true,opacity:.8,map:{image,flipY:true}},
-  updateWorldMatrix(){},getWorldPosition(v){return v.set(1.5,1,1.5);}};
-const scene={traverse(cb){cb(mesh);}};mesh.parent=scene;
-function draw(){draws.length=0;return win.__probeGlyphMasks(scene,deps);}
-const lit=draw();
-assert.equal(lit.found,1,'real additive engraving layer is discovered');
-assert.equal(lit.drawn,1,'engraving gets a visible darkness exemption');
-assert.equal(lit.triangles,1,'three screen-projected glyph vertices form one alpha mask triangle');
-assert.equal(draws.filter(d=>d.kind==='image').length,1,'texture alpha is the sole Kanthic darkness mask');
-assert.equal(draws.find(d=>d.kind==='image').mode,'destination-out','atlas alpha clears only the engraved pixels');
-assert.equal(draws.find(d=>d.kind==='image').alpha,.8,'authored emissive intensity controls the exemption strength');
-assert(!draws.some(d=>d.kind==='gradient'||d.kind==='fill'),'Kanthic glyphs create no radial reveal or colored light halo');
-const transform=draws.find(d=>d.kind==='transform').args;
-assert(Math.abs(transform[0]-1.25)<1e-6&&Math.abs(transform[3]-1.25)<1e-6,
-  'UV atlas scales to the actual triangle in screen pixels');
-assert(Math.abs(transform[4]-110)<1e-6&&Math.abs(transform[5]-110)<1e-6,
-  'cutout is positioned on the wall glyph, not around its center');
-mesh.visible=false;
-assert.equal(draw().drawn,0,'hidden wall sections must not cut through darkness');
-mesh.visible=true;
-mesh.material.map.image=null;
-assert.equal(draw().drawn,0,'unloaded or disposed atlases make no fake light');
-mesh.material.map.image=image;
-positions.array[0]=-30;positions.array[3]=-30;positions.array[6]=-30;
-assert.equal(draw().drawn,0,'engraving behind the camera cannot project a giant mask');
-positions.array[0]=1;positions.array[3]=3;positions.array[6]=1;
-mesh.name='ruin-ladder-rune-glow';mesh.userData.ruinLadderRuneGlow=true;
-mesh.material.map.wrapS=1000;mesh.material.map.wrapT=1000;
-uvs.array[5]=-4; // Long etched ladder strips must repeat the PNG many times, not stop at the first tile.
-const ladder=draw();
-assert.equal(ladder.drawn,1,'repeat-wrapped ladder rune is exposed through Kanthic darkness');
-assert(draws.some(d=>d.kind==='tiles'&&d.mode==='destination-out'),'the rune shape repeats using the image alpha');
-assert(!draws.some(d=>d.kind==='image'||d.kind==='gradient'||d.kind==='fill'),'rune repetition emits no radial halo or separate lighting');
-assert.equal(draws.filter(d=>d.kind==='pattern').length,1,'the PNG is converted into a repeating mask pattern once');
-draw();
-assert.equal(draws.filter(d=>d.kind==='pattern').length,0,'the image pattern stays cached across overlay redraws');
-mesh.name='engraving-glyph-glow';delete mesh.userData.ruinLadderRuneGlow;
-mesh.material.map.wrapS=undefined;mesh.material.map.wrapT=undefined;uvs.array[5]=0;
-
-context.globalAlpha=.6; // The darkness compositor may run inside an inherited canvas opacity.
-const pulsed=draw();
-assert.equal(pulsed.examined,1,'one visible triangle costs exactly one unit of the work budget');
-assert(Math.abs(draws.find(d=>d.kind==='image').alpha-.48)<1e-8,'glyph pulse multiplies, rather than replaces, the existing canvas opacity');
-assert.equal(context.globalAlpha,.6,'glyph mask restores the caller\'s alpha');
-context.globalAlpha=1;
-win.RuinRoomSystem={lightAllowed:()=>true,withLightClip(){}}; // A sealed room can skip the draw callback entirely.
-assert.equal(draw().drawn,0,'room clipping must reject the glyph');
-assert.equal(win.__probeGlyphMasks(scene,deps).examined,0,'a rejected callback cannot reuse a previous mesh triangle count');
-delete win.RuinRoomSystem;
-const repeatedTriangles=1002;
-const originalPositions=positions.array,originalUvs=uvs.array,originalPositionCount=positions.count,originalUvCount=uvs.count;
-positions.array=new Float32Array(repeatedTriangles*9);uvs.array=new Float32Array(repeatedTriangles*6);
-for(let n=0;n<repeatedTriangles;n++){
-  positions.array.set([1,1,1,3,1,1,1,1,3],n*9);
-  uvs.array.set([0,1,1,1,0,0],n*6);
+const api=win.CloudForestFog,canvas={width:500,height:500,style:{visibility:''}};
+const deps={lctx:{canvas},getCurrentArea:()=>area,getPlayerWorldY:()=>0,getSceneTransAlpha:()=>fade};
+win.__glyphTest(deps,()=>paintCount++);
+function glyph(x,y=1,halfWidth=1,halfHeight=1){
+  const mesh=new Mesh({boundingBox:{min:new Vec(x-halfWidth,y-halfHeight,0),max:new Vec(x+halfWidth,y+halfHeight,2)},boundingSphere:{center:new Vec(x,y,1),radius:1}}, {map:{},visible:true,depthTest:true,opacity:1});
+  mesh.name='engraving-glyph-glow';mesh.updateWorldMatrix=()=>{};return mesh;
 }
-positions.count=repeatedTriangles*3;uvs.count=repeatedTriangles*3;
-const capped=draw();
-assert.equal(capped.examined,960,'Kanthic bounds inspected geometry, not merely triangles actually painted');
-assert.equal(capped.triangles,960,'at most 960 textured triangles are submitted in one darkness refresh');
-assert.equal(draws.filter(d=>d.kind==='image').length,960,'overlapping faces cannot bypass the work budget');
-positions.array=originalPositions;uvs.array=originalUvs;positions.count=originalPositionCount;uvs.count=originalUvCount;
-
-tradition='hronal'; // Non-Kanthic traditions preserve their existing soft atmospheric engraving glow.
-assert.equal(draw().drawn,1,'other traditions still display wall patterns');
-assert(draws.some(d=>d.kind==='gradient'),'Hronal retains the prior soft engraved-glow treatment');
-assert(!draws.some(d=>d.kind==='image'),'the Kanthic-only correction does not change Hronal engraving rendering');
-console.log('Kanthic glyph-only darkness, repeat-wrapped ladder runes, no wall wash, UV projection, hidden surfaces, near plane, and other ruins: PASS');
+const scene=new Scene(),a=glyph(1),b=glyph(7),shaft=glyph(12),high=glyph(13,20),broad=glyph(5,1,3);
+const ladder=glyph(2);ladder.name='ladder';ladder.userData={ruinLadderRuneGlow:true};
+for(const mesh of [a,b,shaft,high,ladder,broad])scene.add(mesh);
+const calls=[],camera=new Camera(),renderer={autoClear:true,autoClearColor:true,autoClearDepth:true,autoClearStencil:true,localClippingEnabled:false,render(s,c){assert.equal(this.autoClear,false,'preserve world depth for both draws');assert.equal(this.autoClearDepth,false,'Color backgrounds must not force depth clears');assert.equal(this.autoClearColor,false);assert.equal(this.autoClearStencil,false);assert.equal(c.layers.mask,1<<7,'auxiliary passes never trigger the base-world x-ray replay');const visible=s.children.filter(o=>o.visible);if(s.name==='kanthic_room_glyph_depth'){assert.equal(this.localClippingEnabled,true);assert(visible.every(o=>o.material.clippingPlanes.length>=4));}calls.push(visible);}};
+function frame(now,direct=false){
+  calls.length=0;
+  assert.equal(api.prepareKanthicGlyphFrame(scene,now),true);
+  assert([a,b,shaft,high,ladder,broad].every(m=>!m.visible),'off-room glow and duplicate base-pass glow sleep');
+  const beforeRenderPaints=paintCount;
+  const result=api.renderKanthicGlyphFrame(renderer,camera,scene,direct);
+  assert.equal(paintCount,beforeRenderPaints,'lighting and potential surface repair must finish before the world depth is bound');
+  api.endKanthicGlyphFrame();
+  assert([a,b,shaft,high,ladder,broad].every(m=>m.visible),'render-only visibility restores');
+  assert.equal(renderer.autoClear,true);assert.equal(renderer.autoClearDepth,true);assert.equal(renderer.autoClearColor,true);assert.equal(renderer.autoClearStencil,true);assert.equal(renderer.localClippingEnabled,false);assert.equal(camera.layers.mask,0xffffffff,'camera mask restores');
+  assert([a,b,shaft,high,ladder,broad].every(m=>m.material.clippingPlanes===undefined),'borrowed materials restored');
+  return result;
+}
+assert.equal(frame(2000),true);
+assert.equal(calls.length,2,'one darkness quad plus one room-only depth draw');
+assert.equal(calls[1].length,3,'occupied room, ladder and shared wall are submitted with fragment clipping');
+assert(calls[1].every(p=>p.material.depthTest));
+assert.equal(canvas.style.visibility,'hidden','do not apply the same darkness twice');
+assert.equal(api.getDebugState().ruinEngravingGlowMasks.textureUploads,1);
+frame(2010);
+assert.equal(api.getDebugState().ruinEngravingGlowMasks.textureUploads,1,'unchanged canvas is not uploaded again');
+assert.equal(api.getDebugState().ruinEngravingGlowMasks.scans,1,'unchanged chamber does not traverse the scene');
+region='room:b';assert.equal(frame(2020,true),true);
+assert.equal(api.getDebugState().ruinEngravingGlowMasks.scans,1,'room transitions use the cached ownership index');
+assert.equal(calls[1].length,2);assert(calls[1].some(p=>p.material===b.material));assert.equal(depthCount,1);
+region='shaft';assert.equal(frame(2030),true);
+assert.equal(calls[1].length,2,'shaft includes the tall wall even when its center is above the player');
+assert.equal(calls[1][0].material,shaft.material);
+region=null;assert.equal(frame(2040),false);assert.equal(calls.length,0);
+assert.equal(canvas.style.visibility,'','unassigned corridor uses ordinary darkness and no GPU glyph work');
+region='room:a';fade=1;assert.equal(frame(2050),false);assert.equal(canvas.style.visibility,'');
+fade=0;frame(2060);
+const normalRender=renderer.render;renderer.render=function(s,c){if(s.name==='kanthic_room_glyph_depth')throw Error('injected depth failure');normalRender.call(this,s,c);};
+assert.equal(frame(2065),false);assert.equal(api.getDebugState().ruinEngravingGlowMasks.lastError,'injected depth failure');
+renderer.render=normalRender;assert.equal(frame(2066),true);
+area='farm';assert.equal(api.prepareKanthicGlyphFrame(scene,2070),false);assert.equal(canvas.style.visibility,'');
+area='map_i_dev_random_ruin';tradition='hronal';assert.equal(api.prepareKanthicGlyphFrame(scene,2080),false);
+const rooms=require('../docs/js/ruin-room-system.js');
+let player={x:2,z:2},py=0;
+const session=rooms.mount({layout:{shaft:{x:10,z:10,w:10,d:10},rooms:[
+  {id:'ground',x:0,z:0,w:5,d:5,y:0},{id:'upper',x:0,z:0,w:5,d:5,y:16}
+]},getPlayerPosition:()=>player,getPlayerY:()=>py});
+assert.equal(rooms.activeGlyphRegion(),'room:ground');
+py=16;assert.equal(rooms.activeGlyphRegion(),'room:upper','overlapping stories have separate owners');
+assert(rooms.glyphRegionBounds('room:upper').minY>rooms.glyphRegionBounds('room:ground').maxY);
+player={x:12,z:12};assert.equal(rooms.activeGlyphRegion(),'shaft');
+py=0;assert.equal(rooms.activeGlyphRegion(),'shaft','the vertical shaft is one region');
+player={x:7,z:7};assert.equal(rooms.activeGlyphRegion(),null,'unassigned corridors are not the shaft');
+session.dispose();assert.equal(rooms.activeGlyphRegion(),null);assert.equal(rooms.glyphRegionBounds('shaft'),null);
+const pipeline=fs.readFileSync('docs/js/world-render-pipeline.js','utf8');
+assert(pipeline.includes('prepareKanthicGlyphFrame?.(activeScene,now,camera)'));
+assert(pipeline.includes('endKanthicGlyphFrame?.()'));
+assert.equal((pipeline.match(/renderKanthicGlyphFrame\?\.\(/g)||[]).length,2,'both outline paths share the depth pass');
+assert(!source.includes('ruinGlowRaycaster')&&!source.includes('drawRuinGlyphSilhouette'),'remove the expensive and inaccurate Canvas2D glyph reconstruction');
+console.log('Kanthic glyphs: occupied room/shaft, depth-preserving render, no cross-room masks, cached uploads, cleanup and direct-render parity OK');

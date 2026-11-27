@@ -11,15 +11,17 @@ class Canvas {
   set width(v){this._width=v;this.pixels=new Uint8ClampedArray(v*this._height*4);}
   get height(){return this._height;}
   set height(v){this._height=v;this.pixels=new Uint8ClampedArray(this._width*v*4);}
-  getContext(){
+  getContext(_kind,options){
+    if (!this.contextInitialized) { this.contextInitialized=true; this.firstContextOptions=options; }
     const canvas=this;
     return {
       globalCompositeOperation:'source-over',
       save(){this._composite=this.globalCompositeOperation;},
       restore(){this.globalCompositeOperation=this._composite;},
       createImageData(w,h){return {width:w,height:h,data:new Uint8ClampedArray(w*h*4)};},
+      clearRect(){canvas.pixels.fill(0);},
       putImageData(image){canvas.pixels.set(image.data);},
-      getImageData(){return {data:new Uint8ClampedArray(canvas.pixels),width:canvas.width,height:canvas.height};},
+      getImageData(){canvas.readbacks=(canvas.readbacks||0)+1;return {data:new Uint8ClampedArray(canvas.pixels),width:canvas.width,height:canvas.height};},
       drawImage(source,dx=0,dy=0,w=source.width,h=source.height){
         for(let y=0;y<h;y++)for(let x=0;x<w;x++){
           const tx=Math.floor(dx+x),ty=Math.floor(dy+y);
@@ -45,6 +47,28 @@ assert(Cut,'the shared cutout module loads with no Three.js dependency');
 const SIZE=Cut.SIZE,at=(x,y)=>y*SIZE+x;
 const alpha=(canvas,x,y)=>canvas.pixels[at(x,y)*4+3];
 function setPixel(canvas,x,y,a){canvas.pixels.set([88,66,44,a],at(x,y)*4);}
+// Sparse requests can overlap, touch or contain malformed authored runs.
+// Every valid requested pixel must still be negotiated exactly once.
+{
+  const pixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  for(const i of [10,11,12,13,14,15,16,17,18,19,20,21])pixels[i*4+3]=255;
+  const mask=runs=>({size:SIZE,runs});
+  const request=mask([[14,4],[10,5],[-2,4],[39999,3],[18,0]]);
+  const whisker=mask([[16,5],[20,2]]);
+  const allowed=mask([[11,2]]);
+  const cover=mask([[17,2]]);
+  const p=Cut.partitionBeardHood(request,allowed,pixels,pixels,whisker,cover,'painted');
+  assert.equal(p.requested,12);
+  assert.equal(p.approvedPixels,6);
+  assert.equal(p.refusedPixels,6);
+  assert.equal(p.whiskerWins,4);
+  assert.equal(p.topCoverWins,2);
+  assert.equal(p.topCoverWhiskers,2);
+  assert.deepEqual(Array.from(p.approved.slice(10,22)),[0,1,1,0,0,0,1,0,0,1,1,1]);
+  assert.equal(Cut.partitionBeardHood(null,null,pixels,pixels,null,null,'painted').requested,0);
+  assert.equal(Cut.partitionBeardHood(null,null,pixels,pixels,null,null,'silhouette').approvedPixels,12);
+  assert.equal(Cut.partitionBeardHood(null,mask([]),pixels,pixels,null,null,'silhouette').refusedPixels,12);
+}
 const beard=new Canvas(),hood=new Canvas();
 for(let y=75;y<=85;y++)for(let x=90;x<=115;x++)setPixel(beard,x,y,255);
 for(let y=70;y<=90;y++)for(let x=82;x<=122;x++)setPixel(hood,x,y,255);
@@ -202,11 +226,25 @@ assert(alpha(ringHood,60,94)>=128,'hood cloth ring stretches exactly to the left
 assert.equal(alpha(ringHood,100,94),0,'central face opening remains transparent');
 assert.equal(alpha(ringHood,100,35),ringBefore[at(100,35)*4+3],
   'pixels far from both tuft corners retain original cloth');
+// An immutable source is reusable for both real warps and no-op stretches.
+const ringSource={width:SIZE,height:SIZE,data:ringBefore.slice()};
+const sharedWarp=new Canvas();sharedWarp.pixels.set(ringBefore);
+const warped=Cut.stretchHoodToRoots(sharedWarp,roots,{maxStretch:36,retainUnchangedImageData:true,pristineHoodImageData:ringSource});
+assert.deepEqual(warped,ringResult);
+assert.deepEqual(sharedWarp.pixels,ringHood.pixels);
+assert.equal(sharedWarp.readbacks||0,0);
+assert.deepEqual(ringSource.data,ringBefore,'warping must not mutate cached cloth');
+assert.equal(warped.unchangedImageData,undefined,'a real warp must still be reread before negotiation');
+const sharedNoMove=new Canvas();sharedNoMove.pixels.set(ringBefore);
+const noMoveResult=Cut.stretchHoodToRoots(sharedNoMove,[{x:115,y:94}],{maxStretch:36,retainUnchangedImageData:true,pristineHoodImageData:ringSource});
+assert.equal(noMoveResult.unchangedImageData,ringSource);
+assert.equal(sharedNoMove.readbacks||0,0);
 const noMove=new Canvas();noMove.pixels.set(ringBefore);
-const inside=Cut.stretchHoodToRoots(noMove,[{x:115,y:94}],{maxStretch:36});
+const inside=Cut.stretchHoodToRoots(noMove,[{x:115,y:94}],{maxStretch:36,retainUnchangedImageData:true});
 assert.equal(inside.insideRing,1,'tuft already inside the ring does not stretch the hood');
 assert.equal(inside.stretched,0,'no active deformation for interior tuft');
 assert.deepEqual(Array.from(noMove.pixels),Array.from(ringBefore),'inside ring leaves hood exactly unchanged');
+assert.deepEqual(inside.unchangedImageData.data,ringBefore,'no-op stretch transfers exact readback');
 // Previously the cap acted as a hard gate: e.g. 17px -> no deformation,
  // 18px -> full deformation. It must now move smoothly, even below 1px.
 const partialRoot={x:140.5,y:94.5};
@@ -215,7 +253,8 @@ const needed=originalPlan.moves[0].requestedLength;
 assert(needed>4,'test has a substantial original tuft-to-ring distance');
 function stretchedCopy(limit){
   const copy=new Canvas();copy.pixels.set(ringBefore);
-  const result=Cut.stretchHoodToRoots(copy,[partialRoot],{maxStretch:limit});
+  const result=Cut.stretchHoodToRoots(copy,[partialRoot],{maxStretch:limit,retainUnchangedImageData:true});
+  if(result.moves.length) assert.equal(result.unchangedImageData,undefined,'real warp must reread the canvas');
   return {copy,result};
 }
 const none=stretchedCopy(0);
@@ -560,6 +599,51 @@ assert.equal(whiskerOnly.whiskerWins,1,'whisker override is counted independentl
 
 
 const approved=Cut.negotiateBeardHood(sampleBeard,sampleHood,requestMask,permission,{includeMasks:true});
+// Cached pristine beard pixels are read-only, even when the hood refuses
+// a request and the surviving beard must receive a new inward black edge.
+const cachedBeardCanvas=new Canvas(),cachedHoodCanvas=new Canvas();
+cachedBeardCanvas.pixels.set(originalBeard); cachedHoodCanvas.pixels.set(originalHood);
+const pristine=cachedBeardCanvas.getContext().getImageData();
+let beardReadbacks=0;
+const originalContext=cachedBeardCanvas.getContext.bind(cachedBeardCanvas);
+cachedBeardCanvas.getContext=()=>{
+  const ctx=originalContext();
+  ctx.getImageData=()=>{beardReadbacks++;throw Error('cached beard unexpectedly read');};
+  return ctx;
+};
+const cachedNegotiation=Cut.negotiateBeardHood(cachedBeardCanvas,cachedHoodCanvas,requestMask,permission,
+  {includeMasks:true,beardImageData:pristine});
+assert.equal(beardReadbacks,0);
+assert.deepEqual(cachedNegotiation,approved);
+assert.deepEqual(cachedBeardCanvas.pixels,sampleBeard.pixels);
+assert.deepEqual(cachedHoodCanvas.pixels,sampleHood.pixels);
+assert.deepEqual(pristine.data,originalBeard,'cached input survives rejected pixels and outlines unchanged');
+// Readback transferred from an unchanged hood: parity even with refused edges.
+const transferredBeard=new Canvas(),transferredHood=new Canvas();
+transferredBeard.pixels.set(originalBeard);transferredHood.pixels.set(originalHood);
+const hoodRead=transferredHood.getContext().getImageData();
+const hoodContext=transferredHood.getContext.bind(transferredHood);
+let hoodReads=0;
+transferredHood.getContext=()=>{const ctx=hoodContext();ctx.getImageData=()=>{hoodReads++;throw Error('unexpected hood read');};return ctx;};
+const transferred=Cut.negotiateBeardHood(transferredBeard,transferredHood,requestMask,permission,{includeMasks:true,beardImageData:pristine,unchangedHoodImageData:hoodRead});
+assert.equal(hoodReads,0);
+const sharedHood={width:SIZE,height:SIZE,data:originalHood.slice()};
+for(const allow of [permission,null,{size:SIZE,runs:[]}]){
+  const b=new Canvas(),h=new Canvas(),expectedB=new Canvas(),expectedH=new Canvas();
+  b.pixels.set(originalBeard);expectedB.pixels.set(originalBeard);
+  h.pixels.set(originalHood);expectedH.pixels.set(originalHood);
+  const expected=Cut.negotiateBeardHood(expectedB,expectedH,requestMask,allow,{includeMasks:true});
+  const actual=Cut.negotiateBeardHood(b,h,requestMask,allow,{includeMasks:true,pristineHoodImageData:sharedHood});
+  assert.deepEqual(actual,expected);
+  assert.deepEqual(h.pixels,expectedH.pixels);
+  assert.deepEqual(b.pixels,expectedB.pixels);
+  assert.equal(h.readbacks||0,0);
+  assert.deepEqual(sharedHood.data,originalHood,'shared cloth stays pristine after every permission mode');
+}
+
+assert.deepEqual(transferred,approved);
+assert.deepEqual(transferredHood.pixels,sampleHood.pixels);
+assert.deepEqual(transferredBeard.pixels,sampleBeard.pixels);
 assert.equal(approved.requested,6,'only beard pixels under actual opaque hood need arbitration');
 assert.equal(approved.approvedPixels,3,'hood author allows three removal pixels');
 assert.equal(approved.refusedPixels,3,'hood author protects three conflict pixels');
@@ -617,6 +701,105 @@ assert.equal(Cut.countMask(Cut.deformHoodPermissionMask(allAllowed,[anchorMove])
   'explicit full-permission masks remain fully allowed during stretching');
 
 const portrait=fs.readFileSync('docs/js/portrait-utils.js','utf8');
+// Execute the actual renderer negotiation block and actual bounded cache
+// helpers against the same synthetic pixels. This covers cross-portrait hits,
+// logical size edits, tinted source replacement, animations and editor bypass.
+const pixelCacheSource=portrait.slice(portrait.indexOf('class PortraitPixelCache'),portrait.indexOf('const IMG_CACHE'));
+const negotiationCacheSource=portrait.slice(portrait.indexOf('const _BEARD_HOOD_RESULT_CACHE'),portrait.indexOf('window.__portraitPixelCacheDebug'));
+const negotiationBlock=portrait.slice(portrait.indexOf('  const cutoutApi = window.PortraitBeardHoodCutout;'),portrait.indexOf('  const drawNegotiatedBeard'));
+assert(negotiationBlock.includes('negotiateBeardHood'));
+class TestImage extends Canvas {
+  constructor(url,pixels){super();this.currentSrc=url;this.complete=true;this.naturalWidth=this.width;this.naturalHeight=this.height;this.pixels.set(pixels);}
+}
+const buildCacheFixture=new Function('Canvas','Image','Cut',`
+  let PORTRAIT_CW=200,PORTRAIT_CH=200,PORTRAIT_L=80;
+  const window={PortraitBeardHoodCutout:Cut};
+  const document={createElement:()=>new Canvas()};
+  const _imageForTint=(image,key,tint)=>tint?.image||image;
+  const getPortraitTintingConfig=()=>({cacheEnabled:true});
+  ${pixelCacheSource}
+  ${negotiationCacheSource}
+  function render(config){
+    PORTRAIT_L=config.layerSize??80;
+    const canvas=new Canvas(),facialHair={},hood={},resolvedFighter={};
+    const renderOptions=config.renderOptions||{};
+    const facialHairLayers=[{layer:{url:'beard',pixelDye:config.pixelDye},tint:config.tint}];
+    const hoodLayers=[{layer:{url:'hood'}}];
+    const imgMap=new Map([['beard',config.beard],['hood',config.hood]]);
+    const resolveBeardHoodAuthoring=()=>({mask:config.request,roots:config.roots||[],requestMode:null});
+    const resolveHoodBeardPolicy=()=>({mode:'painted',mask:config.permission});
+    const hiddenCosmeticGroups=new Set();
+    const resolveXform=()=>({ax:0,ay:0,sx:config.sx??1,sy:1});
+    const imageForTint=config.customTint||_imageForTint;
+    const layerImageOverrides=config.imageOverrides||null;
+    const staticDeform=config.staticDeform??null,emoteDeformedPts=config.emote?[[0,0]]:null;
+    const speciesId='test',gender='male',nowMs=1,breathingPhaseOffset=0,seatId='npc';
+    const breathingComposer=window.portraitBreathingComposer={
+      getInterpolatedPoints:()=>config.animated?[[0,0]]:null,
+      getAnimData:()=>({gridCols:4,gridRows:6})
+    };
+    function drawEmoteLayers(layers,ctx,prepared){
+      for(const entry of layers)ctx.drawImage(prepared?.get(entry)?.image||imageForTint(imgMap.get(entry.layer.url),entry.layer.url,entry.tint));
+    }
+    function drawBreathingLayers(layers,ctx,preparedBreathing,prepared){
+      drawEmoteLayers(layers,ctx,prepared);
+      if(preparedBreathing?.points)ctx.putImageData({data:new Uint8ClampedArray(200*200*4)});
+    }
+    ${negotiationBlock}
+    return {beard:negotiatedBeard,hood:negotiatedHood,stats:negotiation,error:negotiationError};
+  }
+  return {render,snapshot:()=>({..._beardHoodPerf,result:_BEARD_HOOD_RESULT_CACHE.snapshot(),source:_BEARD_HOOD_SOURCE_CACHE.snapshot(),cloth:_BEARD_HOOD_CLOTH_CACHE.snapshot()})};
+`)(Canvas,TestImage,Cut);
+const fixtureConfig={beard:new TestImage('beard.png',originalBeard),hood:new TestImage('hood.png',originalHood),request:requestMask,permission};
+const firstResult=buildCacheFixture.render(fixtureConfig);
+assert(!firstResult.error);
+assert.deepEqual(firstResult.beard.pixels,sampleBeard.pixels);
+assert.deepEqual(firstResult.hood.pixels,sampleHood.pixels);
+assert.equal(firstResult.beard.firstContextOptions.willReadFrequently,true,'CPU context selected on first acquisition');
+assert.equal(firstResult.hood.firstContextOptions.willReadFrequently,true);
+const firstBeardPixels=firstResult.beard.pixels.slice(),firstHoodPixels=firstResult.hood.pixels.slice();
+firstResult.stats.approvedPixels=-1; // Debug snapshot must not mutate the shared stats.
+const secondResult=buildCacheFixture.render(fixtureConfig);
+assert.equal(secondResult.beard,firstResult.beard,'exact still result reused across independent portrait targets');
+assert.equal(secondResult.hood,firstResult.hood);
+assert.equal(secondResult.stats.approvedPixels,approved.approvedPixels);
+assert.equal(buildCacheFixture.snapshot().hits,1);
+const animated=buildCacheFixture.render({...fixtureConfig,animated:true});
+assert.notEqual(animated.hood,firstResult.hood,'animated cloth cannot reuse a still result');
+assert.equal(animated.beard.readbacks||0,0,'animated hood still reuses pristine beard readback');
+assert.deepEqual(firstResult.beard.pixels,firstBeardPixels);
+assert.deepEqual(firstResult.hood.pixels,firstHoodPixels);
+const differentPolicy=buildCacheFixture.render({...fixtureConfig,permission:{size:SIZE,runs:[]}});
+assert.equal(differentPolicy.stats.approvedPixels,0,'new policy renegotiates rather than reusing old holes');
+assert.notEqual(differentPolicy.hood,firstResult.hood);
+assert.equal(differentPolicy.hood.readbacks||0,0,'policy change reuses the pristine hood pixels');
+const otherBeard=new TestImage('other-beard.png',originalBeard);
+const otherResult=buildCacheFixture.render({...fixtureConfig,beard:otherBeard});
+assert.equal(otherResult.hood.readbacks||0,0,'different beard reuses the same hood readback');
+assert.deepEqual(otherResult.hood.pixels,firstHoodPixels,'previous cutout holes cannot leak into another result');
+assert.equal(buildCacheFixture.snapshot().clothReads,1);
+assert.equal(buildCacheFixture.snapshot().clothReadHits,2);
+assert.equal(animated.hood.readbacks,1,'animated cloth still reads current pixels');
+const changedCloth=buildCacheFixture.render({...fixtureConfig,hood:new TestImage('hood.png',originalHood)});
+assert.equal(changedCloth.hood.readbacks,1,'replacement image identity invalidates cloth readback');
+assert.equal(buildCacheFixture.render({...fixtureConfig,staticDeform:[[1,0]]}).hood.readbacks,1,'static deformation changes invalidate cloth readback');
+assert.notEqual(buildCacheFixture.render({...fixtureConfig,layerSize:90}).hood,firstResult.hood,'logical layer-size edits invalidate the cache');
+const tintedImage=new Canvas(); tintedImage.pixels.set(originalBeard); tintedImage.pixels[at(110,80)*4]=17;
+const tinted=buildCacheFixture.render({...fixtureConfig,tint:{image:tintedImage}});
+assert.equal(tinted.beard.pixels[at(110,80)*4],17,'new tint uses the exact resolved art');
+assert.notEqual(tinted.beard,firstResult.beard);
+assert.notEqual(buildCacheFixture.render({...fixtureConfig,customTint:image=>image}).hood,firstResult.hood,'custom editor tint bypasses shared cache');
+assert.notEqual(buildCacheFixture.render({...fixtureConfig,renderOptions:{beardHoodCutoutMaskOverride:requestMask}}).hood,firstResult.hood,'editor mask override bypasses the result cache');
+assert.notEqual(buildCacheFixture.render({...fixtureConfig,pixelDye:true}).hood,firstResult.hood,'pixel-dye side effects cannot be cached away');
+for(let n=0;n<40;n++)buildCacheFixture.render({...fixtureConfig,layerSize:100+n});
+const cacheStats=buildCacheFixture.snapshot();
+assert(cacheStats.result.estimatedBytes<=cacheStats.result.budgetBytes);
+assert(cacheStats.source.estimatedBytes<=cacheStats.source.budgetBytes);
+assert(cacheStats.cloth.estimatedBytes<=cacheStats.cloth.budgetBytes);
+assert(cacheStats.cloth.evictions>0,'pristine cloth cache remains bounded');
+assert(cacheStats.result.evictions>0&&cacheStats.source.evictions>0,'both caches remain bounded');
+assert.deepEqual(firstResult.beard.pixels,firstBeardPixels,'eviction does not mutate pixels still referenced by a caller');
+
 // Exercise the actual cosmetic policy resolver, not just its string markers.
 const policySource=portrait.slice(portrait.indexOf('function resolveHoodBeardPolicy('),
   portrait.indexOf('\nfunction portraitOptionFromJson(',portrait.indexOf('function resolveHoodBeardPolicy(')));
@@ -788,7 +971,7 @@ assert(beardBelow>=0 && beardBelow<beardDraw && beardDraw<hoodDraw && hoodDraw<f
 assert(portrait.includes('!hiddenCosmeticGroups.has(facialHair)')
   && portrait.includes('facialHairLayers.length && hoodLayers.length'),
   'no active beard or a facewrap never performs two-way arbitration');
-assert(portrait.includes('drawEmoteLayers(facialHairLayers, beardScratch.getContext')
+assert(portrait.includes('drawEmoteLayers(facialHairLayers, beardCtx')
   && portrait.includes('const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch')
   && portrait.includes('ctx.drawImage(negotiatedHood'),
   'beard and hood are negotiated offscreen and composite back only at their original positions');
@@ -797,7 +980,7 @@ assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('r
   'gameplay resolves automatic, painted and permissive hood policy from cosmetic JSON');
 assert(portrait.includes('hoodWhiskerMask')&&portrait.includes('variantHoodWhiskerMasks')
   && portrait.includes('whiskerMask,')
-  && portrait.includes('requestMode:beardAuthoring.requestMode});'),
+  && portrait.includes('requestMode:beardAuthoring.requestMode,beardImageData,unchangedHoodImageData:stretch.unchangedImageData,'),
   'gameplay resolves priority whiskers and artwork-based requests independently');
 assert(portrait.includes('const exactSharedArt=key===keys[0]')
   && portrait.includes('option.variantHoodCutoutMasks'),

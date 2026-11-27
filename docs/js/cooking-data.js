@@ -64,7 +64,8 @@
     "fishing": "Fishing",
     "foraging": "Foraging",
     "cooking": "Cooking",
-    "mining": "Mining"
+    "mining": "Mining",
+    "feySight": "Fey-sight"
   },
   "effectPrefixVariants": {
     "strength": [
@@ -570,6 +571,17 @@
         "Root",
         "Crop"
       ]
+    },
+    "feyHeftroot": {
+      "id": "feyHeftroot",
+      "name": "Fey Heftroot",
+      "categories": ["starchVegetable", "vegetable", "crop"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "feySight",
+      "tags": ["Root", "Crop", "Fey"],
+      "description": "A heftroot left by a Big Rootledoot. Its Fey-sight lasts until a fey reward is received."
     },
     "garlink": {
       "id": "garlink",
@@ -2024,15 +2036,14 @@
     {
       "id": "spicyNoodles",
       "name": "Spicy Noodles",
-      "description": "Spicy noodles cooked from flour or uncooked noodle base, with vegetables and spice.",
+      "description": "Basic noodles cooked with vegetables and spice.",
       "baseOutputName": "Spicy Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodle Base / Flour",
+          "label": "Basic Noodles",
           "accepts": [
-            "noodleBase",
-            "flour"
+            "noodleBase"
           ],
           "required": true
         },
@@ -2061,15 +2072,14 @@
     {
       "id": "cheesyNoodles",
       "name": "Cheesy Noodles",
-      "description": "Comfort food made from flour or uncooked noodle base with cheese.",
+      "description": "Comfort food made from basic noodles and cheese.",
       "baseOutputName": "Cheesy Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodle Base / Flour",
+          "label": "Basic Noodles",
           "accepts": [
-            "noodleBase",
-            "flour"
+            "noodleBase"
           ],
           "required": true
         },
@@ -2332,15 +2342,14 @@
     {
       "id": "fishNoodles",
       "name": "Fish Noodles",
-      "description": "Flour or uncooked noodles, fish or mollusk, and broth make a seafood noodle soup.",
+      "description": "Basic noodles, fish or mollusk, and broth make a seafood noodle soup.",
       "baseOutputName": "Fish Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodle Base / Flour",
+          "label": "Basic Noodles",
           "accepts": [
-            "noodleBase",
-            "flour"
+            "noodleBase"
           ],
           "required": true
         },
@@ -2371,15 +2380,14 @@
     {
       "id": "meatNoodles",
       "name": "Meat Noodles",
-      "description": "Flour or uncooked noodles cooked with meat and spice or pungent paste.",
+      "description": "Basic noodles cooked with meat and spice or pungent paste.",
       "baseOutputName": "Meat Noodles",
       "slots": [
         {
           "id": "noodles",
-          "label": "Noodle Base / Flour",
+          "label": "Basic Noodles",
           "accepts": [
-            "noodleBase",
-            "flour"
+            "noodleBase"
           ],
           "required": true
         },

@@ -77,7 +77,7 @@
   followGroup.id = 'handShoulderFollowGroup';
   followGroup.innerHTML = `
     <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Hand elbow-targeting by animation pose</div>
-    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side aims toward the pose-authored elbow. Elbow coordinates are edited in the active Neutral/Windup/Strike pose panel; there is no arm-length projection, reach clamp, joint-limit solve, or runtime midpoint calculation. The two checkboxes only choose which hand-local hinges may rotate.</div>
+    <div class="help" style="margin-bottom:7px"><b>This rotates the HAND, never the weapon.</b> The wrist-facing side follows the pose-authored elbow or shoulder only beyond its anatomical leeway. Elbow coordinates are edited in the active Neutral/Windup/Strike pose panel; there is no arm-length projection or runtime midpoint calculation. The white paper arm shows the target direction; the magenta line shows the measured proximal hand axis. The checkboxes choose which hand-local hinges may rotate.</div>
     ${PHASES.map(phase => `
       <div class="field" data-hand-shoulder-phase="${phase}">
         <label>${phase[0].toUpperCase() + phase.slice(1)} hand follow</label>

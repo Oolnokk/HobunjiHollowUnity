@@ -319,7 +319,7 @@ renderWindow.Combat.deps.player.perpState = null;
 // implementation, under a negative-scale portrait parent.
 const petRuntimeSource = fs.readFileSync('docs/js/shoulder-pet-attachment-runtime.js', 'utf8');
 const petOrientationSource = between(petRuntimeSource,
-  '    function worldQuaternionWithoutReflection(node) {',
+  '    function worldQuaternionWithoutReflection(node, out = new THREE.Quaternion()) {',
   '    const SHOULDER_PET_HALF_TURN_QUATERNION =');
 const shoulderOrientation = new Function('THREE', 'window',
   petOrientationSource + '\nreturn worldQuaternionWithoutReflection;'

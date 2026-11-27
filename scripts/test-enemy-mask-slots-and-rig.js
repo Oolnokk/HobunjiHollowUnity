@@ -341,7 +341,7 @@ context.smoothstep01 = (value) => {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
 };
-for (const name of ['headScaleGateAtPixel', 'headScaleWeightAt'])
+for (const name of ['neckBlendWeight', 'headScaleGateAtPixel', 'headScaleWeightAt'])
   vm.runInContext(extract(avatarSource, name), context);
 near(
   context.headScaleWeightAt(0.1, 0.1, 1, 50, { left: 40, right: 60 }, 0.4),

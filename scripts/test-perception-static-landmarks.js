@@ -36,6 +36,8 @@ const ctx = {
 ctx.window = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('docs/js/player-tile-events.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('docs/js/perception-mask-renderer.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync('docs/js/perception-info-lists.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('docs/js/perception-mode.js', 'utf8'), ctx);
 ctx.PerceptionMode.init({
   THREE: ctx.THREE,

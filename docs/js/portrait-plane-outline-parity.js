@@ -23,134 +23,9 @@
   const avatarApi = global.PNGPlaneAvatar;
   if (!THREE || !avatarApi?.buildSinglePlaneAvatarModel || avatarApi.buildSinglePlaneAvatarModel.__hobunjiPortraitOutlineParityWrapped) return;
 
-  const mirrorShoulderPerchWithPortrait = true; // Fixed runtime behavior: authored shoulder pixels follow the flipped portrait; no shoulder presentation settings are exposed.
-
-
-  // The shared source-pixel resolver in png-plane-avatar.js is also a render-parity
-  // path: it must reproduce the SkinnedMesh shader's deformation on the CPU before
-  // converting the result to world space. The old implementation multiplied a
-  // local portrait point by bone.matrixWorld * boneInverse and then called
-  // localToWorld() on that already-world-transformed result, effectively applying
-  // the player's world transform twice. That is why a shoulder perch near the
-  // player could resolve tens of world units away. Reproduce Three.js r128's
-  // actual skinning sequence instead: bindMatrix -> weighted bone matrices ->
-  // bindMatrixInverse -> mesh localToWorld.
-  function installSkinnedPixelCpuParity() {
-    if (avatarApi.__hobunjiSkinnedPixelCpuParityInstalled) return;
-
-    let pixelPositionScratch = null; // Lazily allocated once from the active Three.js objects, including module-based editor previews.
-    function resolvePosition(avatarRoot, sourcePixel, out = null) {
-      const portraitRoot = avatarApi.resolveSkinnedPortraitRoot?.(avatarRoot) || avatarRoot;
-      const rig = portraitRoot?.userData?.neckRig;
-      const skinnedPlane = rig?.skinnedPlane;
-      const skeleton = skinnedPlane?.skeleton;
-      if (!rig?.available || !skinnedPlane?.isSkinnedMesh || !skeleton?.bones?.length) return null;
-
-      const sourceCanvas = portraitRoot.userData?.sourceCanvas;
-      const pixelWidth = Number(sourceCanvas?.naturalWidth || sourceCanvas?.width);
-      const pixelHeight = Number(sourceCanvas?.naturalHeight || sourceCanvas?.height);
-      const modelWidth = Number(portraitRoot.userData?.portraitModelWidth);
-      const modelHeight = Number(portraitRoot.userData?.portraitModelHeight);
-      const pixelX = Number(sourcePixel?.x);
-      const pixelY = Number(sourcePixel?.y);
-      if (![pixelWidth, pixelHeight, modelWidth, modelHeight, pixelX, pixelY].every(Number.isFinite)
-        || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
-
-      const renderedPixelX = mirrorShoulderPerchWithPortrait && avatarApi.getPortraitsFlipped?.()
-        ? pixelWidth - pixelX
-        : pixelX; // Toggle off preserves the authored source X exactly as it behaved before portrait-aware perch mirroring.
-      const localPoint = out || new THREE.Vector3(); // Optional caller-owned output avoids per-frame vector allocations.
-      localPoint.set(
-        -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
-        modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
-        0,
-      );
-      const blendHeight = Math.max(
-        modelHeight * .012,
-        Number(skinnedPlane.geometry?.userData?.blendHeight) || modelHeight * .30,
-      );
-      const neckY = Number(rig.neckLocal?.y) || 0;
-      const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
-      let headWeight = t * t * (3 - 2 * t);
-
-      // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
-      // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
-      // exactly as the renderer does before evaluating the skinning shader.
-      portraitRoot.updateWorldMatrix?.(true, false); // Pose callers may have changed an ancestor facing/scale before the render traversal.
-      portraitRoot.updateMatrixWorld?.(true);
-      skinnedPlane.updateMatrixWorld?.(true);
-      skeleton.update?.();
-
-      pixelPositionScratch ||= { // Reused across sequential pixel queries; every caller keeps its own returned/output vector.
-        bindPoint: localPoint.clone(), deformed: localPoint.clone(), bonePoint: localPoint.clone(), boneMatrix: skinnedPlane.bindMatrix.clone(),
-      };
-      const { bindPoint, deformed, bonePoint, boneMatrix } = pixelPositionScratch; // Shared internal scratch never escapes this resolver.
-      bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
-      deformed.set(0, 0, 0);
-      const splineLayout = skeleton.bones.length > 8; // Current skeleton: spline nodes 0-6, then head-turn (7) and head-scale (8). Legacy rigs: body 0, neck 1, head 2.
-      const neckBone = splineLayout ? 7 : 1, headBone = splineLayout ? 8 : 2;
-      const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > headBone
-        ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
-      headWeight = Math.max(headWeight, headScaleWeight);
-      const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 };
-      spline.a = 0; spline.b = 0; spline.wb = 0;
-      if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline); // Same shares the portrait skin uses.
-      const bodyWeight = 1 - headWeight;
-      for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
-        const weight = i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
-          : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0);
-        if (!weight) continue;
-        if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
-          boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
-        } else {
-          const bone = skeleton.bones[i];
-          const boneInverse = skeleton.boneInverses?.[i];
-          if (!bone || !boneInverse) continue;
-          bone.updateWorldMatrix?.(true, false);
-          boneMatrix.multiplyMatrices(bone.matrixWorld, boneInverse);
-        }
-        bonePoint.copy(bindPoint).applyMatrix4(boneMatrix);
-        deformed.addScaledVector(bonePoint, weight);
-      }
-      localPoint.copy(deformed).applyMatrix4(skinnedPlane.bindMatrixInverse);
-      return skinnedPlane.localToWorld(localPoint);
-    }
-
-    function resolveFrame(avatarRoot, sourcePixel) {
-      const center = resolvePosition(avatarRoot, sourcePixel);
-      if (!center) return null;
-      const pixelX = Number(sourcePixel?.x);
-      const pixelY = Number(sourcePixel?.y);
-      if (![pixelX, pixelY].every(Number.isFinite)) return null;
-      const left = resolvePosition(avatarRoot, { x: pixelX - 1, y: pixelY });
-      const right = resolvePosition(avatarRoot, { x: pixelX + 1, y: pixelY });
-      const down = resolvePosition(avatarRoot, { x: pixelX, y: pixelY + 1 });
-      const up = resolvePosition(avatarRoot, { x: pixelX, y: pixelY - 1 });
-      if (!left || !right || !down || !up) return null;
-
-      const tangent = right.clone().sub(left);
-      const vertical = up.clone().sub(down);
-      if (tangent.lengthSq() < 1e-10 || vertical.lengthSq() < 1e-10) return null;
-      tangent.normalize();
-      vertical.addScaledVector(tangent, -vertical.dot(tangent));
-      if (vertical.lengthSq() < 1e-10) return null;
-      vertical.normalize();
-      const normal = tangent.clone().cross(vertical).normalize();
-      const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
-      return {
-        position: center,
-        quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
-        tangent,
-        vertical,
-        normal,
-      };
-    }
-
-    avatarApi.resolveSkinnedPixelWorldPosition = resolvePosition;
-    avatarApi.resolveSkinnedPixelWorldFrame = resolveFrame;
-    avatarApi.__hobunjiSkinnedPixelCpuParityInstalled = true;
-  }
-  installSkinnedPixelCpuParity();
+  // PNGPlaneAvatar owns source-pixel deformation and attachment-frame sampling.
+  // Do not replace its resolver here: a second implementation can drift from
+  // the actual portrait weights and from Animation Author previews.
 
   const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = globalThis.HobunjiRenderLayers?.PNG_OCCLUDER ?? 4; // Mirrors js/png-plane-outline-occluder.js's LAYER (game.js's _markPngPlane/depth replay).
   const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->depth-replay sequence without accepting old frames.
@@ -240,6 +115,14 @@
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
     };
 
+    // This pair only changes this mesh's matrix and restores it afterwards.
+    // Advertise the exact pair, never a custom wrapper or an unknown prior
+    // after-hook, so private water passes may safely prune unrelated branches.
+    const parity = mesh.__hobunjiXrayBoundParity;
+    if (parity?.hook === mesh.onBeforeRender &&
+        (!previousAfter || previousAfter === THREE.Object3D?.prototype?.onAfterRender)) {
+      parity.localRestoreHook = mesh.onAfterRender;
+    }
     mesh.userData.__hobunjiPortraitOutlineParity = true;
     return true;
   }

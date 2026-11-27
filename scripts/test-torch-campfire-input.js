@@ -14,8 +14,8 @@ const findBlocksCode = read('docs/js/dev-ruin-find-blocks.js'); // Four-block ro
 
 assert.match(game, /activeTool === 'adventuring'[\s\S]{0,190}button\.dataset\.action !== toolActions\.adventuring\[slot - 1\]/,
   'equipped torch actions must not be marked as contextual attack blockers');
-assert.match(game, /return \[adventuringToolActionButtons\(\)\[0\], nearbyActions\[0\]\]/,
-  'campfire must leave Swing Torch on Action 1');
+assert.match(game, /if \(activeTool === 'adventuring'\) return adventuringToolActionButtons\(\)/,
+  'campfire must leave both held torch actions reserved');
 assert.match(game, /campfireActionPresses\.delete\(actionId\)/,
   'keyboard and controller Action 2 holds must pair with their original release');
 assert.match(game, /_campfireMenuPress = act === 'campfire_menu'/,

@@ -680,7 +680,7 @@
     const material = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true, opacity: 0.85, depthWrite: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: true, depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, material);
     meleeTrailStats.created++;
@@ -699,6 +699,20 @@
     meleeTrailStats.disposed++;
   }
 
+  const COMBAT_VFX_RANGE_TILES = 24; // Same local visual budget as other wilderness emitters; gameplay damage is never gated here.
+  function shouldPresentCombatVfx(actor, scene = null) {
+    const player = deps?.player;
+    if (!actor || !player || actor === player) return true;
+    const area = deps.getCurrentArea?.();
+    if (area && actor.areaId && actor.areaId !== area) return false;
+    const activeScene = deps.getActiveScene?.();
+    if (scene && activeScene && scene !== activeScene) return false;
+    const tile = Number(deps.TILE);
+    const dx = Number(actor.x) - Number(player.x), dy = Number(actor.y) - Number(player.y);
+    if (!(tile > 0) || !Number.isFinite(dx + dy)) return true; // Fail open for isolated preview/editor hosts.
+    return dx * dx + dy * dy <= (tile * COMBAT_VFX_RANGE_TILES) ** 2;
+  }
+
   function spawnMeleeTrail(opts = {}) {
     const actor = opts.actor;
     const target = opts.target || null;
@@ -709,7 +723,7 @@
     if (opts.debug !== false) rememberMeleeColliderDebug(collider);
     if (opts.debugOnly) return null; // A multi-colored enemy trail uses several visual lanes but one full-cone hitbox.
     const scene = opts.scene || actor?.scene || deps?.getActiveScene?.();
-    if (!scene) return null; // Do not allocate GPU resources when a world or scene is unloading.
+    if (!scene || !shouldPresentCombatVfx(actor, scene)) return null; // Distant NPC swipes need no GPU resources; debug hitboxes remain independent.
 
     const mesh = pooledMeleeTrailMeshes.pop() || createMeleeTrailMesh(); // Reuse the same topology, GPU buffer and shader instead of uploading on every attack.
     if (mesh.visible === false) meleeTrailStats.reused++;
@@ -940,7 +954,7 @@
     windupPoseProgress,
     windupCurve,
     writeMeleeTrailRibbon,
-    spawnMeleeTrail,
+    spawnMeleeTrail, shouldPresentCombatVfx,
     isStaggered,
     beginStagger,
     update,
@@ -1147,7 +1161,7 @@
     (Number(entity?.maxHealth) || 0) - RS.getAffliction(entity, "bleedingHealth"));
 
   RS.applyDamage = function drunkenAwareApplyDamage(entity, amount, opts = {}) {
-    if (!(amount > 0)) return 0;
+    if (!(amount > 0) || (window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0;
     entity.lastAttackReceivedAt = performance.now();
     let finalDamage = Number(amount) || 0;
     if (opts.heavy) {
@@ -1161,28 +1175,26 @@
     const convertible = Math.min(getDrunk(entity, DRUNK_HEALTH_ID), finalDamage, availableBleedingCapacity(entity));
     if (convertible > 0) {
       removeDrunk(entity, DRUNK_HEALTH_ID, convertible);
-      original.addAffliction(entity, "bleedingHealth", convertible);
+      const added = original.addAffliction(entity, "bleedingHealth", convertible); // Actual converted Bleeding buildup.
+      RS.showAttackEffect?.(entity, 'bleedingHealth', added, opts);
     }
 
     const remaining = Math.max(0, finalDamage - convertible);
-    const enhanced = RS.resolveEnhancedResourceTransaction?.(entity, "health", remaining, { kind: "damage", reason: opts.reason || "damage" })
-      || { ordinaryRemaining: remaining }; // Drunken Health converts first, then Resolute/Mirrored Health absorb what would otherwise reach real Health.
+    const transaction = RS.resolvePlanarHealthTransaction(entity, remaining, opts); // Drunken conversion first, then the shared planar and enhanced Health transaction.
     const before = Number(entity.health) || 0;
-    if (enhanced.ordinaryRemaining > 0) entity.health = round1(clamp(before - enhanced.ordinaryRemaining, 0, original.getEffectiveMax(entity, "health")));
+    if (transaction.ordinaryRemaining > 0) entity.health = round1(clamp(before - transaction.ordinaryRemaining, 0, original.getEffectiveMax(entity, "health")));
+    if (entity === window.Combat?.deps?.player && opts.attacker?.rootledoot && entity.health <= 0) window.Rootledoots?.noteDown?.(opts.attacker, Math.max(0, transaction.ordinaryRemaining - before)); // Actual excess after damage conversion/absorption, before Health clamp.
     const lost = round1(before - (Number(entity.health) || 0));
+    RS.settleSoulweight(entity, lost, transaction);
 
-    if (opts.afflictionBonuses) {
-      const attackPower = RS.attackPowerForAttack?.(opts) ?? 12; // Drunken Health conversion cannot make status effects damage-scaled again.
-      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (RS.AFFLICTIONS[id] && mul > 0) RS.addAffliction(entity, id, attackPower * mul);
-      }
-    }
+    RS.applyAttackAfflictions?.(entity, opts); // The live alcohol adapter uses the same attack-power, alias and attacker-specific perk calculation as ordinary damage.
     if (opts.fixedAfflictionBuildup) {
       for (const [id, value] of Object.entries(opts.fixedAfflictionBuildup)) {
-        if (RS.AFFLICTIONS[id] && Number.isFinite(value) && value > 0) RS.addAffliction(entity, id, value); // Preserve authored fixed on-hit effects through Drunken Health's specialized damage path.
+        if (RS.AFFLICTIONS[id] && Number.isFinite(value) && value > 0) RS.addAttackAffliction(entity, id, value, opts); // Preserve authored fixed on-hit effects through Drunken Health's specialized damage path.
       }
     }
     enforceDrunkenCaps(entity);
+    RS.showAttackEffect?.(entity, 'health', lost, opts);
     if (lost > 0) {
       window.dispatchEvent(new CustomEvent("hobunji-resource-change", {
         detail: { entity, delta: -lost, reason: opts.reason || "damage", immediate: true }
@@ -1339,6 +1351,10 @@
       const stars = Math.max(1, Math.min(5, Math.round(Number(serving?.stars) || 3)));
       const healthAmount = profile.health * (HEALTH_QUALITY_MULTIPLIERS[stars] || 1);
       const result = RS.addDrunkenness(player, profile.footing, healthAmount, { source: key, label: def?.label || key, stars });
+      if (def?.cookingPrimaryEffect === 'feySight' && (!serving || serving.bottleFinished)) { // One bottle's processed buff, not four full buffs from its four swigs.
+        const stacks=window.CookingSystem?.ingredientEffectTotals?.(def,stars)?.feySight;
+        if(stacks>0)window.CookingSystem?.grantFeySight?.(stacks);
+      }
       lastDrink = {
         key, label: def?.label || key,
         footingAdded: result.footingAdded,
@@ -1532,8 +1548,7 @@
     scene.add(devDeps.reticleWavyGroup);
   }
 
-  function skipBlackoutTime(severityPercent) {
-    if (!calendarDeps?.calendar) return 0;
+  function blackoutSkipMinutes(severityPercent) {
     const linear = Math.max(BLACKOUT_MIN_SKIP_MINUTES, severityPercent * BLACKOUT_MINUTES_PER_PERCENT);
     // Diminishing returns above the soft cap, then a hard ceiling — severity
     // keeps mattering for wander distance even past this point, it just
@@ -1542,7 +1557,11 @@
     const softened = linear <= BLACKOUT_TIME_SOFT_CAP_MINUTES
       ? linear
       : BLACKOUT_TIME_SOFT_CAP_MINUTES + (linear - BLACKOUT_TIME_SOFT_CAP_MINUTES) * 0.15;
-    const skippedMinutes = Math.min(BLACKOUT_TIME_HARD_CAP_MINUTES, Math.round(softened));
+    return Math.min(BLACKOUT_TIME_HARD_CAP_MINUTES, Math.round(softened));
+  }
+
+  function applyBlackoutMinutes(skippedMinutes) {
+    if (!calendarDeps?.calendar) return 0;
     const morning = Number(calendarDeps.MORNING_HOUR) || 6;
     const night = Number(calendarDeps.NIGHT_HOUR) || 22;
     const playableMinutesPerDay = Math.max(60, (night - morning) * 60);
@@ -1554,6 +1573,11 @@
     }
     calendar.time01 = Math.max(0, total);
     return skippedMinutes;
+  }
+
+  function skipBlackoutTime(severityPercent) {
+    if (!calendarDeps?.calendar) return 0;
+    return applyBlackoutMinutes(blackoutSkipMinutes(severityPercent));
   }
 
   function performBlackoutTravel(severityPercent, stars) {
@@ -1616,11 +1640,34 @@
     // below sees the true severity even well past 100%.
     const effectivePercent = Math.max(1, Number(severityPercent) || 0);
     const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
-    const skippedMinutes = skipBlackoutTime(effectivePercent);
-    const travel = performBlackoutTravel(effectivePercent, safeStars);
-    lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes, travel, at: performance.now() };
-    devDeps?.showToast?.(`🍺 Blackout — ${skippedMinutes} minutes passed.`, true);
-    return lastBlackout;
+    const finishBlackout = skippedMinutes => {
+      const travel = performBlackoutTravel(effectivePercent, safeStars);
+      lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes, travel, at: performance.now() };
+      devDeps?.showToast?.(`${source === 'rootledoot' ? '✨' : '🍺'} Blackout — ${skippedMinutes} minutes passed.`, true);
+      return lastBlackout;
+    };
+
+    // Co-op: a forced skip knocks the player out. Another player has 60 s to revive them,
+    // otherwise the time skip happens (longest queued skip wins; see js/time-consensus.js).
+    // The wander travel and toast run for this player once the skip is applied.
+    const tc = window.TimeConsensus;
+    const me = devDeps?.player;
+    if (tc?.shouldGate() && me) {
+      const minutes = blackoutSkipMinutes(effectivePercent);
+      const gate = tc.knockOut(me, {
+        kind: 'blackout', source, minutes,
+        run: () => { applyBlackoutMinutes(minutes); }, // Only called when THIS skip is the longest queued one.
+        onResolved: resolution => { finishBlackout(resolution.winner.minutes); }, // Everyone wakes after whichever skip won.
+        onRevived: by => { devDeps?.showToast?.(`${by?.name || 'A friend'} brought you round. No time passes.`, true); },
+      });
+      if (gate.state === 'waiting') {
+        devDeps?.showToast?.(`${source === 'rootledoot' ? '✨' : '🍺'} You are out cold. A friend has ${Math.round(tc.REVIVE_WINDOW_MS / 1000)}s to revive you, or time passes.`, false);
+        lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes: 0, travel: null, pendingRevive: true, at: performance.now() };
+      }
+      return lastBlackout;
+    }
+
+    return finishBlackout(skipBlackoutTime(effectivePercent));
   }
 
   RS.addDrunkenness = function addDrunkenness(entity, footingAmount, healthAmount, opts = {}) {
@@ -1767,6 +1814,7 @@
       return RS.addDrunkenness(player, fake.footing, fake.health * (HEALTH_QUALITY_MULTIPLIERS[safeStars] || 1), { source: `debug:${profile}`, stars: safeStars });
     },
     triggerBlackout(percent, stars) { return triggerBlackout(percent, "debug", stars); },
+    triggerFeyBlackout(percent) { return triggerBlackout(percent, 'rootledoot', 3); }, // Same time-skip and collision-safe travel, no drunkenness mutation.
     clear() {
       const player = window.Combat?.deps?.player;
       if (!player) return;

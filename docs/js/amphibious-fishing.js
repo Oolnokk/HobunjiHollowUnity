@@ -214,7 +214,7 @@
     const ref = stopReason === 'target' ? state.lungeContact : null; // First living target the moving cone caught.
     if (!ref) return false; // Ran out of travel or hit terrain; animalAttacks.update lowers the hop.
     const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true, attacker: c };
-    if (state.targets.some(target => target.isPlayer && target.ref === ref)) deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
+    if (state.targets.some(target => target.isPlayer && target.ref === ref)) (window.DamageAuthority ? window.DamageAuthority.hit(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts) : deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts));
     else deps.damageCreature(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
     deps.playCreatureClawHit?.(c);
     return false;
@@ -273,7 +273,7 @@
     RS.AFFLICTIONS.scentMarkedHealth ||= {
       name: 'Scent-marked Health', resource: 'health', extend: 'currentBack', priority: 61, recovers: false,
       family: 'offensiveDebuff', tags: ['scent', 'amphibious'],
-      desc: 'Animal attacks, including companion attacks, consume this mark for bonus damage (up to one normal hit). Wild animals and enemy animal companions prioritize marked opponents until the scent is spent. It fades slowly.'
+      desc: 'Animal attacks, including companion attacks, consume this mark for bonus damage (up to one normal hit). Wild animals and animal companions prioritize marked opponents until the scent is spent. It fades slowly.'
     };
 
     const originalApplyDamage = RS.applyDamage.bind(RS);
@@ -301,14 +301,10 @@
         scentDamageDebug.last = { attacker: opts?.attacker?.id || opts?.attacker?.creatureKey || 'animal', spent };
       }
       if (!opts.amphibiousFish) {
-        // Keep ordinary affliction perks/flat buildup/heavy behavior in the central damage path;
-        // only scale coefficient-based buildup back to this attack's ORIGINAL damage.
-        const adjusted = opts.afflictionBonuses && spent > 0
-          ? Object.fromEntries(Object.entries(opts.afflictionBonuses).map(([id, multiplier]) =>
-            [id, multiplier * baseAmount / (baseAmount + spent)])) : opts.afflictionBonuses;
+        // The central ResourceSystem now bases status buildup on independent Attack Power.
+        // Do not divide coefficients by the scent damage increase: doing so would reduce unrelated status buildup.
         const combinedAmount = Math.min(baseAmount + spent, skirmishBudget); // Clamp again after 0.1-unit affliction rounding to maintain nonlethal wildlife Health.
-        return originalApplyDamage(entity, combinedAmount,
-          adjusted === opts.afflictionBonuses ? opts : { ...opts, afflictionBonuses: adjusted });
+        return originalApplyDamage(entity, combinedAmount, opts);
       }
       // Fish Leap retains its existing special Wounded Health cap/buildup semantics,
       // while sharing exactly the same scent payout with every other animal.

@@ -26,9 +26,14 @@
 //   propBatchesOff  still wilderness props (tents, camp furniture, berry
 //                   bushes, ore-rock stones...) drawn one mesh at a time
 //                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
+//   brickLodOff     far brick walls/path chunks drawn with the full 70-triangle
+//                   brick again (instanced-brick-lod.js)
 //   denseWallBatchesOff
 //                   the Cloud Forest dense wall drawn as one instanced mesh per
 //                   chunk part again (dense-forest-wall-batches.js)
+//   denseWallLodOff
+//                   far Cloud Forest wall chunks drawn with full-detail bark
+//                   and vines again (dense-forest-wall-batches.js distance LOD)
 //   denCollisionEveryTile
 //                   creature pathfinding looks up every den's collision shape
 //                   for every tile again, instead of once per game-loop tick
@@ -166,9 +171,12 @@
 
   // painterly-postprocess.js renders its filter passes from inside the
   // composite draw; label them by scene so they are not lumped in with it.
-  function passLabel(pipeline, scene) {
+  function passLabel(pipeline, scene, renderer) {
     const pass = pipeline.currentPass?.() || 'unknown';
-    if (pass === 'composite' && scene && scene.name !== 'world_render_composite') return 'painterly filter';
+    if (pass === 'composite' && scene) {
+      if (scene.name !== 'world_render_composite') return 'painterly filter';
+      if (renderer?.getRenderTarget?.()) return 'outline precomposite'; // Distinguish the new offscreen draw from canvas presentation.
+    }
     return pass;
   }
 
@@ -261,12 +269,12 @@
           const start = performance.now();
           synced.overheadMs += start - idleStart;
           synced.syncs++;
-          const key = passKey(passLabel(pipeline, ctx?.scene));
+          const key = passKey(passLabel(pipeline, ctx?.scene, ctx?.renderer));
           const syncedEntry = synced.passes[key] || (synced.passes[key] = { ms: 0, renders: 0 });
           return { start, syncedEntry };
         }
         if (!breakdown) return { start: performance.now() };
-        const key = passKey(passLabel(pipeline, ctx?.scene));
+        const key = passKey(passLabel(pipeline, ctx?.scene, ctx?.renderer));
         const entry = breakdown.passes[key] || (breakdown.passes[key] = { ms: 0, draws: 0, triangles: 0, renders: 0, gpu: [] });
         return { start: performance.now(), entry, key, query: gpuTimer && !(ctx?.depth > 0) ? gpuTimer.begin() : null }; // Timer queries cannot nest: a render inside a render is CPU-timed only.
       },
@@ -309,6 +317,10 @@
       // The paint filter only runs on the outline composite, so outlinesOff also drops it;
       // this isolates its own cost.
       variants.push({ id: 'painterlyOff', apply: () => painterly.setMode('off'), undo: () => painterly.setMode(painterlyBefore) });
+      if (typeof painterly.setOutlineFirst === 'function' && pipeline.getGeneratedOutlineMode?.() === 'screen') {
+        const before = painterly.getOutlineFirst(); // Restore exact diagnostic order after each window.
+        variants.push({ id: before ? 'paintBeforeDepthOutlines' : 'paintAfterDepthOutlines', apply: () => painterly.setOutlineFirst(!before), undo: () => painterly.setOutlineFirst(before) });
+      }
     }
     if (resolution && resolutionBefore !== '0.5') {
       variants.push({ id: 'halfResolution', apply: () => setResolution(resolution, '0.5'), undo: () => setResolution(resolution, resolutionBefore) });
@@ -325,6 +337,11 @@
         && vegetationCull.snapshot().lastCullables > 0) {
       variants.push({ id: 'fadedTreesDrawn', apply: () => vegetationCull.setHideFadedOut(false), undo: () => vegetationCull.setHideFadedOut(true) });
     }
+    const foliage = window.FoliageGenerator; // Compare the same scene with native matrix composition.
+    if (typeof foliage?.setIdentityTreeMatrixFastPath === 'function') {
+      const before = foliage.identityTreeMatrixStats().enabled;
+      variants.push({ id: before ? 'identityTreeMatricesOff' : 'identityTreeMatricesOn', apply: () => foliage.setIdentityTreeMatrixFastPath(!before), undo: () => foliage.setIdentityTreeMatrixFastPath(before) });
+    }
     const treeInstancer = window.WildernessTreeInstancer;
     if (typeof treeInstancer?.setEnabled === 'function' && vegetationCull?.snapshot?.().lastCullables > 0) {
       const instancingBefore = treeInstancer.enabled?.() === true; // Toggled per window without persisting.
@@ -336,9 +353,26 @@
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
     }
+    const instanceBounds = window.InstancedMeshBounds;
+    if (typeof instanceBounds?.setSceneScopedEnabled === 'function') {
+      const before = instanceBounds.snapshot().sceneScopedEnabled;
+      variants.push({ id: before ? 'globalInstanceRegistry' : 'sceneInstanceRegistry', apply: () => instanceBounds.setSceneScopedEnabled(!before), undo: () => instanceBounds.setSceneScopedEnabled(before) });
+    }
+    const brickLod = window.InstancedBrickLod;
+    if (typeof brickLod?.setEnabled === 'function' && brickLod.enabled() && brickLod.snapshot().farMeshes > 0) {
+      variants.push({ id: 'brickLodOff', apply: () => brickLod.setEnabled(false), undo: () => brickLod.setEnabled(true) });
+    }
     const wallBatches = window.DenseForestWallBatches;
+    if (typeof wallBatches?.setStaticMatrixEnabled === 'function' && wallBatches.staticMatrixSnapshot().enrolled > 0
+        && activeScene?.getObjectByName?.('AuthoredCloudForestDenseChunk_0')) {
+      const before = wallBatches.staticMatrixSnapshot().enabled; // Restore actual user preference, independent of batching.
+      variants.push({ id: before ? 'staticWallMatricesOff' : 'staticWallMatricesOn', apply: () => wallBatches.setStaticMatrixEnabled(!before), undo: () => wallBatches.setStaticMatrixEnabled(before) });
+    }
     if (typeof wallBatches?.setEnabled === 'function' && wallBatches.snapshot?.().enabled === true && wallBatches.snapshot().batches > 0) {
       variants.push({ id: 'denseWallBatchesOff', apply: () => wallBatches.setEnabled(false), undo: () => wallBatches.setEnabled(true) });
+      if (wallBatches.snapshot().lodEnabled === true && wallBatches.snapshot().lodFarTrees > 0) {
+        variants.push({ id: 'denseWallLodOff', apply: () => wallBatches.setLodEnabled(false), undo: () => wallBatches.setLodEnabled(true) });
+      }
     }
     const tiles = window.GridTileAccessors;
     if (typeof tiles?.setDenStateMemoEnabled === 'function' && tiles.denStateMemoEnabled?.() === true) {
@@ -352,7 +386,45 @@
     if (typeof dualWield?.setLeanSyncEnabled === 'function' && dualWield.leanSyncEnabled?.() === true) {
       variants.push({ id: 'dualWieldFullSync', apply: () => dualWield.setLeanSyncEnabled(false), undo: () => dualWield.setLeanSyncEnabled(true) });
     }
+    // Compare all three generated-outline modes while keeping the offscreen
+    // composite, painterly, X-ray color and target highlights unchanged.
+    if (outlinesBefore === true && typeof pipeline?.setGeneratedOutlineMode === 'function') {
+      const outlineBefore = pipeline.getGeneratedOutlineMode();
+      for (const [id, mode] of [['shellOutlines','shell'],['screenDepthOutlines','screen'],['generatedOutlinesOff','none']]) {
+        variants.push({ id, apply: () => pipeline.setGeneratedOutlineMode(mode), undo: () => pipeline.setGeneratedOutlineMode(outlineBefore) });
+      }
+    }
+    const waterHierarchy = window.XrayHierarchy; // Preserve exact bounds/wet-tile authoring choice after A/B.
+    if (typeof waterHierarchy?.set === 'function') {
+      const before = waterHierarchy.get('portrait.waterTint');
+      if (before !== 'off') variants.push({ id: 'portraitWaterTintOff', apply: () => waterHierarchy.set('portrait.waterTint','off'), undo: () => waterHierarchy.set('portrait.waterTint',before) });
+    }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setWaterOnlyBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().waterOnlyBranchPruneEnabled;
+      variants.push({ id: before ? 'waterOnlyPruneOff' : 'waterOnlyPruneOn', apply: () => heldOrder.setWaterOnlyBranchPruneEnabled(!before), undo: () => heldOrder.setWaterOnlyBranchPruneEnabled(before) });
+    }
+    if (typeof heldOrder?.setMixedWaterBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().mixedWaterBranchPruneEnabled;
+      variants.push({ id: before ? 'mixedWaterPruneOff' : 'mixedWaterPruneOn', apply: () => heldOrder.setMixedWaterBranchPruneEnabled(!before), undo: () => heldOrder.setMixedWaterBranchPruneEnabled(before) });
+    }
+    if (typeof heldOrder?.setReplayRegistryMemoEnabled === 'function') {
+      const before = heldOrder.snapshot().replayRegistryMemoEnabled;
+      variants.push({ id: before ? 'replayRegistryMemoOff' : 'replayRegistryMemoOn', apply: () => heldOrder.setReplayRegistryMemoEnabled(!before), undo: () => heldOrder.setReplayRegistryMemoEnabled(before) });
+    }
+    if (typeof heldOrder?.setSlowClassificationFallbackEnabled === 'function') {
+      const before = heldOrder.snapshot().slowClassificationFallbackEnabled;
+      variants.push({ id: before ? 'slowClassificationFallbackOff' : 'slowClassificationFallbackOn', apply: () => heldOrder.setSlowClassificationFallbackEnabled(!before), undo: () => heldOrder.setSlowClassificationFallbackEnabled(before) });
+    }
+    if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
+      const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
+      variants.push({ id: localBefore ? 'fullXrayRange' : 'localXrayRing', apply: () => heldOrder.setLocalReplayRingEnabled(!localBefore), undo: () => heldOrder.setLocalReplayRingEnabled(localBefore) });
+    }
+    const shadowPolicy = window.ShadowMapRefreshThrottle;
+    if (typeof shadowPolicy?.setShadowRenderingEnabled === 'function') {
+      const shadowBefore = shadowPolicy.snapshot().shadowRenderingEnabled;
+      variants.push({ id: shadowBefore ? 'shadowsOff' : 'shadowsOn', apply: () => shadowPolicy.setShadowRenderingEnabled(!shadowBefore), undo: () => shadowPolicy.setShadowRenderingEnabled(shadowBefore) });
+    }
     if (typeof heldOrder?.setGearParticlesOnceEnabled === 'function' && heldOrder.snapshot?.().gearParticlesOnceEnabled !== false) {
       variants.push({ id: 'gearParticlesEveryPass', apply: () => heldOrder.setGearParticlesOnceEnabled(false), undo: () => heldOrder.setGearParticlesOnceEnabled(true) });
     }
@@ -497,7 +569,7 @@
       syncedPasses: syncedRows,
       syncedTotalMsPerFrame: syncedRows ? round2(syncedRows.reduce((sum, p) => sum + p.msPerFrame, 0)) : null,
       syncOverheadMs: syncedRows ? round2(syncOverheadMs) : null,
-      painterly: painterly?.snapshot ? (({ mode, internalSize }) => ({ mode, internalSize }))(painterly.snapshot() || {}) : null,
+      painterly: painterly?.snapshot ? (({ mode, internalSize, outlineFirst, outlinedFrames }) => ({ mode, internalSize, outlineFirst, outlinedFrames }))(painterly.snapshot() || {}) : null,
       rounds,
       framesPerWindow,
       device: {
@@ -527,7 +599,7 @@
       ...Object.entries(lastReport.variants).map(([id, v]) => `${id.padEnd(14)}: ${v.fps} fps (avg ${v.avgFrameMs} ms, p90 ${v.p90FrameMs} ms), render CPU ${v.renderCpuMs} ms${v.renderGpuMs != null ? `, GPU ${v.renderGpuMs} ms` : ''}${v.trianglesPerFrame != null ? `, ${Math.round(v.trianglesPerFrame / 1000)}k tris` : ''}`),
       `default render by pass (CPU ms${gpuTimer ? ' | GPU ms' : ''} / draws / k triangles per frame): ${passes.map(p => `${p.pass} ${p.msPerFrame}${p.gpuMsPerFrame != null ? `|${p.gpuMsPerFrame}` : ''}ms/${p.drawsPerFrame}d/${(p.trianglesPerFrame / 1000).toFixed(1)}kt`).join('; ')}; between draws (scopes, hooks, replay bookkeeping) ${lastReport.betweenDrawsMsPerFrame}ms`,
       ...(syncedRows ? [`default render by pass, synced CPU+GPU ms per frame (own window, total ${lastReport.syncedTotalMsPerFrame} ms, sync overhead ${lastReport.syncOverheadMs} ms removed): ${syncedRows.map(p => `${p.pass} ${p.msPerFrame}ms`).join('; ')}`] : []),
-      `weather: rain planes ${lastReport.weather.raining ? 'on' : 'off'}, mist ${lastReport.weather.mist ? 'on' : 'off'}; painterly ${lastReport.painterly?.mode ?? 'n/a'}${lastReport.painterly?.internalSize ? ` @ ${lastReport.painterly.internalSize}` : ''}`,
+      `weather: rain planes ${lastReport.weather.raining ? 'on' : 'off'}, mist ${lastReport.weather.mist ? 'on' : 'off'}; painterly ${lastReport.painterly?.mode ?? 'n/a'}${lastReport.painterly?.internalSize ? ` @ ${lastReport.painterly.internalSize}` : ''}${lastReport.painterly?.outlineFirst == null ? '' : `; order=${lastReport.painterly.outlineFirst ? 'outline-first' : 'paint-first'}, outlined frames=${lastReport.painterly.outlinedFrames ?? 0}`}`,
       `native renders/frame ${lastReport.lastFrame?.nativeRenders ?? '?'}, buffer ${lastReport.device.drawingBuffer?.join('x') ?? '?'} @ dpr ${lastReport.device.devicePixelRatio}, context antialias=${lastReport.device.context?.antialias} preserveDrawingBuffer=${lastReport.device.context?.preserveDrawingBuffer}, GPU timing ${gpuTimer ? 'on' : 'unavailable'}${lastReport.device.gpu ? `, ${lastReport.device.gpu}` : ''}`,
       `characters ${JSON.stringify(Object.fromEntries(Object.entries(lastReport.characters || {}).filter(([, n]) => n)))}`,
       ...(lastReport.heldReplays ? [(h => `held/x-ray replays per frame: scissored ${h.scissoredPerFrame}, fullscreen ${h.fullscreenPerFrame} (last reasons held=${h.lastHeldFullscreenReason} shell=${h.lastShellFullscreenReason}); last scissor coverage ${h.lastCoverage}, culled/kept ${h.lastCulled}/${h.lastKept}, held meshes ${h.heldMeshes}`)(lastReport.heldReplays)] : []),

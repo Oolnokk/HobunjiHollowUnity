@@ -70,6 +70,8 @@ jobs:
           node scripts/test-fall-system.js
           node scripts/test-player-jump.js
           node scripts/test-ruin-sarcophagus-proximity.js
+          node scripts/test-ruin-wall-coffins.js
+          node scripts/test-ruin-themed-skeletons.js
           node scripts/test-find-the-blocks.js
           node scripts/test-ruin-composer-playable.js
           node scripts/test-kanthic-shaft-firelight.js

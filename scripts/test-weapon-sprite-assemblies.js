@@ -78,6 +78,12 @@ vm.runInNewContext(source, {
   location: { href: 'https://example.test/game.html', pathname: '/game.html' },
 });
 const api = window.HobunjiWeaponSpriteAssemblies; // Public debug and authoring API.
+assert.equal(api.easeIdleHeadYaw(0,1,0),0);
+assert.ok(api.easeIdleHeadYaw(0,1,1/60)>0&&api.easeIdleHeadYaw(0,1,1/60)<.1);
+assert.ok(api.easeIdleHeadYaw(Math.PI-.1,-Math.PI+.1,1/60)>Math.PI-.1);
+assert.ok(Math.abs(api.bodyYawRate(.1,Math.PI-.1,-Math.PI+.1)-2)<1e-10,'turn speed crosses the yaw wrap without a kick');
+assert.equal(api.bodyYawRate(.1,0,Math.PI),0,'a facing reset does not drag the flail');
+assert.equal(api.bodyYawRate(0,0,.2),0,'a paused redraw does not drive turn drag');
 assert.ok(api);
 // Exercise the real head-only spin math: one fixed shaft pivot, constant rope length, and zero allocations.
 const shaftDirection = { x: 0, y: -1, z: 0 }; // Unchanged source direction along the currently held shaft.
@@ -202,6 +208,15 @@ const reverse = simulate(body(0, -8), 1, 0.5, 60, 0); // Mirrored attacks produc
 assert(Math.abs(reverse.direction.x + free.direction.x) < 1e-10);
 const resting = simulate(body(), 1, 2); // Hanging motionless is a stable equilibrium.
 assert.deepEqual(resting, body());
+const sleeping=body(); sleeping.equilibriumSkips=0;
+api.stepPendulum(sleeping,{x:0,y:0,z:0},1,1/60);
+assert.deepEqual(sleeping.direction,body().direction);
+assert.deepEqual(sleeping.angularVelocity,body().angularVelocity);
+assert(sleeping.equilibriumSkips>0,'exact equilibrium avoids physical substeps');
+const awake=body(); awake.equilibriumSkips=0;
+api.stepPendulum(awake,{x:.000001,y:0,z:0},1,1/60);
+assert.equal(awake.equilibriumSkips,0,'even the smallest nonzero lateral torque must integrate');
+assert.notEqual(awake.angularVelocity.z,0);
 const short = body(0.4), long = body(0.4); // Torque/inertia produces acceleration proportional to 1 / lever length.
 pendulum(short, still, 1, 1 / 240, 9.81, 0);
 pendulum(long, still, 2, 1 / 240, 9.81, 0);
@@ -287,3 +302,105 @@ async function checkEnemyWeaponCleanup() {
 }
 
 checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Idle head movement retains logical yaw through settling and camera re-clamps.
+{
+  const motion={yaw:null,leanX:0,leanZ:0,perp:null,side:0},dead=40*Math.PI/180;
+  for(let i=0;i<60;i++)api.stepIdleHeadMotion(motion,4,0,1/60,0,dead);
+  assert.ok(Math.abs(motion.yaw-Math.PI/2)<1e-10);
+  assert.ok(motion.leanX>.5&&motion.leanX<=dead);assert.equal(motion.leanZ,0);
+  const yaw=motion.yaw,rendered=api.clampIdleHeadYaw(motion,yaw,0,dead);
+  assert.ok(Math.abs(Math.abs(rendered-Math.PI/2)-dead)<1e-9);
+  for(let i=0;i<180;i++)api.stepIdleHeadMotion(motion,0,0,1/60,0,dead);
+  assert.equal(motion.leanX,0);assert.equal(motion.leanZ,0);assert.equal(motion.yaw,yaw);
+  assert.equal(api.clampIdleHeadYaw(motion,yaw,Math.PI/2,dead),yaw);
+  api.stepIdleHeadMotion(motion,0,-100,1,0,dead);assert.ok(Math.abs(motion.leanZ)<=dead);assert.equal(motion.yaw,Math.PI);
+  const before=motion.yaw;api.stepIdleHeadMotion(motion,100,0,0,0,dead);assert.equal(motion.yaw,before);
+  const bounds={minX:-.3,maxX:.5,maxY:.1,drop:.7};
+  assert.equal(api.tiltedHeadDrop(bounds,{x:0,y:0,z:0,w:1}),.7);
+  const theta=.3,tilted=api.tiltedHeadDrop(bounds,{x:0,y:0,z:Math.sin(theta/2),w:Math.cos(theta/2)});
+  assert.ok(Math.abs(tilted-(.3*Math.sin(theta)+.7*Math.cos(theta)))<1e-10);
+}
+
+// Strike-return tip motion is a one-shot fallback, never a competitor to locomotion.
+{
+  const dead=40*Math.PI/180,dt=.02;
+  const make=()=>({yaw:null,leanX:0,leanZ:0,tipReady:false,tipX:0,tipY:0,tipZ:0,returnX:0,returnZ:0,previousAttack:false,previousProgress:0,sawStrike:false,source:'initial'});
+  const advance=(m,attacking,p,x,z,bx=0,bz=0,time=dt)=>api.advanceIdleHeadMotion(m,attacking,p,.3,.7,{x,y:1,z},bx,bz,time,0,dead);
+  const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-10);
+  const recovery=m=>{advance(m,false,0,0,0);advance(m,true,.4,0,0);advance(m,true,.8,.06,0);advance(m,true,.98,.12,0);};
+  const a=make();recovery(a);advance(a,false,0,.12,0);
+  near(a.yaw,Math.PI/2);assert.equal(a.source,'strike-return');assert.ok(a.leanX>.4&&a.leanX<=dead);
+  for(let i=0;i<200;i++)advance(a,false,0,.12,0);
+  assert.equal(a.leanX,0);near(a.yaw,Math.PI/2);
+  advance(a,false,0,.12,.1);near(a.yaw,Math.PI/2);assert.equal(a.leanZ,0,'ordinary idle tip movement cannot retrigger');
+  const b=make();recovery(b);advance(b,false,0,.12,.08,0,4);
+  near(b.yaw,0);assert.equal(b.source,'locomotion');assert.ok(b.leanZ>0);assert.equal(b.leanX,0);
+  const c=make();recovery(c);advance(c,false,0,.12,-.08);near(c.yaw,Math.PI);assert.equal(c.source,'strike-return');
+  advance(c,false,0,.2,-.08,4,0);near(c.yaw,Math.PI/2);assert.equal(c.source,'locomotion');
+  const d=make();advance(d,false,0,0,0);advance(d,true,.1,.02,0);advance(d,false,0,.08,0);assert.equal(d.leanX,0,'cancelled windup is not a strike');
+  const e=make();recovery(e);advance(e,false,0,20,0);assert.equal(e.leanX,0,'teleport does not inject a strike impulse');
+  const g=make();recovery(g);advance(g,false,0,.12,0,0,0,0);assert.equal(g.previousAttack,true);advance(g,false,0,.12,0);assert.equal(g.source,'strike-return');
+  const h=make();recovery(h);advance(h,true,.05,.18,0);advance(h,false,0,.24,0);assert.equal(h.leanX,0,'new windup clears old recovery');
+}
+
+// Audit: true horizontal normal keeps the requested yaw even under maximal diagonal lean.
+{
+  const vec=()=>({set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}});
+  for(const yaw of [-2,-.7,0,.9,2.8])for(const heading of [-2,-.2,1.1,3]){
+    const u=vec(),n=vec(),lean=.69;
+    api.leanHeadBasis(Math.sin(heading),Math.cos(heading),lean,yaw,u,n);
+    assert.ok(Math.abs(u.x*n.x+u.y*n.y+u.z*n.z)<1e-10);
+    assert.ok(Math.abs(Math.atan2(n.x,n.z)-yaw)<1e-10);
+    assert.ok(Math.abs(Math.acos(u.y)-lean)<1e-10);
+  }
+  const m={yaw:2,leanX:.4,leanZ:.1,returnX:1,returnZ:2,previousAttack:true,sawStrike:true,tipReady:true,previousProgress:.9,renderedYaw:1,perp:0,side:1};
+  api.resetIdleHeadMotion(m,true);
+  assert.equal(m.yaw,null);assert.equal(m.leanX,0);assert.equal(m.returnX,0);assert.equal(m.previousAttack,false);
+  api.advanceIdleHeadMotion(m,false,0,.3,.7,{x:4,y:1,z:2},0,0,0,.2,.7);
+  assert.equal(m.tipReady,true);assert.equal(m.yaw,.2);assert.equal(m.tipX,4);
+  api.advanceIdleHeadMotion(m,false,0,.3,.7,{x:4,y:1,z:2},0,0,.016,.2,.7);
+  assert.equal(m.leanX,0);assert.equal(m.yaw,.2);
+}
+
+{ // A slack tether never pushes a grounded head.
+  const t={grounded:false}, d={x:0,y:-1,z:0};
+  const step=(x,z,available=.3,length=1,y=0)=>({...api.resolveGroundSlack(t,d,length,available,{x,y,z})});
+  const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
+  const first=step(0,0);close(first.y,-.3);close(first.x,0);
+  assert.ok(api.canPinGroundHead(t,{x:.4,y:0,z:.2},1,.3),'a slack head must retain its prior visible orientation');
+  assert.equal(api.canPinGroundHead(t,{x:1.4,y:0,z:.2},1,.3),false,'taut dragging can rotate the head');
+  const slack=step(.4,.2);close(slack.x+.4,0);close(slack.z+.2,0);
+  assert.ok(Math.hypot(slack.x,slack.y,slack.z)<1);
+  const taut=step(1.4,.2);close(Math.hypot(taut.x,taut.y,taut.z),1);
+  const back=step(1,.2);close(back.x+1,taut.x+1.4);close(back.z,taut.z);
+  const rotated=step(1,.4);close(rotated.x,back.x);close(rotated.z+.4,back.z+.2);
+  const lifted=step(1,.4,1.1);assert.equal(lifted.grounded,false);close(lifted.y,-1);
+  const reset=step(10,10);close(reset.x,0);close(reset.z,0);
+  const verticalReset=step(10.2,10,.3,1,4);close(verticalReset.x,0);close(verticalReset.z,0);
+  const tangent={grounded:false};api.resolveGroundSlack(tangent,d,1,1,{x:0,y:0,z:0});
+  assert.equal(tangent.grounded,true,'exact vertical floor contact is pinned, not treated as airborne');
+  const rightHand={grounded:false};api.resolveGroundSlack(rightHand,d,1,.3,{x:2,y:0,z:0});
+  const leftHand={grounded:false};api.resolveGroundSlack(leftHand,d,1,.3,{x:-2,y:0,z:0});
+  api.resolveGroundSlack(rightHand,d,1,.3,{x:2.2,y:0,z:0});
+  api.resolveGroundSlack(leftHand,d,1,.3,{x:-1.8,y:0,z:0});
+  close(rightHand.x+2.2,2);close(leftHand.x-1.8,-2);
+  // The offhand may be unpinned while the hidden shared pendulum points up.
+  const kicked={x:0,y:1,z:0}, off={grounded:false};
+  const shared={dualWieldReplicas:[{},{}]}, root=shared.dualWieldReplicas[1];
+  const states=new Map([[shared.dualWieldReplicas[0],{groundTrail:{grounded:true}}]]);
+  const trail=off,sharedPhysics=shared,maxReach=1,available=.4;
+  // Evaluate the actual production seed predicate and use its chosen direction.
+  const seedSource=source.slice(source.indexOf('      const peers=sharedPhysics?.dualWieldReplicas;'),source.indexOf('      resolveGroundSlack(trail,seedOffhand'));
+  const seed=vm.runInNewContext(seedSource+';seedOffhand',{sharedPhysics,trail,root,states,maxReach,available});
+  assert.equal(seed,true,'grounded main hand permits an independent offhand ground seed');
+  api.resolveGroundSlack(off,seed?d:kicked,1,.4,{x:2,y:0,z:0});
+  assert.equal(off.grounded,true);close(off.y,-.4);close(off.x,0);
+  assert.equal(kicked.y,1,'shared pendulum is not mutated by the offhand');
+  const unreachable=step(10,10,-2,1,4);close(unreachable.y,1);close(Math.hypot(unreachable.x,unreachable.y,unreachable.z),1);
+  for(const [x,y,target] of [[0,1,.3],[.2,1,.5],[.5,1,.1],[.5,0,.1],[0,1,0]]){
+    const scale=api.slackConnectorScale(x,y,target,{});
+    assert.ok(scale.x>0&&scale.x<=1&&scale.y>0&&scale.y<=1);
+    assert.ok(Math.abs(Math.hypot(x*scale.x,y*scale.y)-target)<2e-6);
+  }
+}

@@ -14,6 +14,8 @@
   });
 
   let lastImpact = null; // Copied by Pixel Probe so mobile testing does not need a console.
+  let lastCreditedImpact = null; // Unrelated NPC impacts must not overwrite the last player/pet collision report.
+  const creditedMotion = { begun: 0, cancelled: 0, resolved: 0 }; // Event-only counts expose shoves that never hit an obstacle.
 
   function finite(value, fallback = 0) {
     const number = Number(value);
@@ -33,21 +35,25 @@
     };
   }
 
-  function begin(entity, speedPxS, durationS) {
+  function begin(entity, speedPxS, durationS, popupCredit = false) {
     if (!entity) return null;
     if (Math.abs(finite(speedPxS)) > 0 && entity.onPerch && !entity.onBranch) window.PerchSupport?.release?.(entity, 'knocked from perch'); // Branch-compatible perches are released by the game's authoritative branch knockback path, avoiding double ledge damage.
     const speed = Math.max(0, Math.abs(finite(speedPxS)));
     const duration = Math.max(0, finite(durationS));
+    if (entity._knockbackCollisionImpact?.popupCredit && !entity._knockbackCollisionImpact.resolved) creditedMotion.cancelled++; // A replacement ends the earlier shove.
     entity._knockbackCollisionImpact = { // Used only while this knockback is in flight to measure the actual lost travel at first collision.
       startX: finite(entity.x),
       startY: finite(entity.y),
       intendedPx: speed * duration,
       resolved: false,
+      popupCredit: popupCredit === true, // Captured at shove creation; never inherited by unrelated movement.
     };
+    if (popupCredit === true) creditedMotion.begun++;
     return entity._knockbackCollisionImpact;
   }
 
   function cancel(entity) {
+    if (entity?._knockbackCollisionImpact?.popupCredit && !entity._knockbackCollisionImpact.resolved) creditedMotion.cancelled++;
     if (entity) entity._knockbackCollisionImpact = null;
   }
 
@@ -95,7 +101,7 @@
 
     if (effects.health > 0) {
       const result = hooks.dealHealthDamage?.(entity, effects.health, descriptor) || null;
-      const applied = Math.max(0, finite(result?.applied, effects.health));
+      const applied = Math.max(0, finite(result?.applied)); // A rejected or missing damage hook must never report imaginary Health loss.
       if (applied > 0) appliedEffects.health = applied;
       lethal = result?.lethal === true;
     }
@@ -117,10 +123,21 @@
       resource?.enforceCaps?.(entity);
     }
 
+    let popupCount = 0; // Counts successfully spawned numbers, distinct from applied gameplay effects.
+    if (meta.popupCredit === true) {
+      for (const [id, amount] of Object.entries(appliedEffects)) {
+        if (window.WorldPopupText?.showCombatEffect?.(entity, id, amount, true, 'impact') != null) popupCount++;
+      }
+      if (popupCount > 0) window.WorldPopupText?.showImpactCallout?.(entity); // One callout for the complete applied collision payload.
+    }
+
     const tile = Math.max(0.001, finite(tilePx, 1));
     lastImpact = {
       at: Date.now(),
       mode: meta.mode || 'horizontal',
+      popupCredit: meta.popupCredit === true, // Existing mobile impact diagnostics.
+      popupCount,
+      target: String(entity.name || entity.id || entity.def?.label || 'actor'),
       label: descriptor?.label || descriptor?.kind || 'unspecified collision',
       kind: descriptor?.kind || 'fallback',
       bladedHazard: descriptor?.bladedHazard === true,
@@ -135,6 +152,7 @@
       effects: Object.fromEntries(Object.entries(effects).map(([key, value]) => [key, Math.round(value * 10) / 10])),
       appliedEffects: Object.fromEntries(Object.entries(appliedEffects).map(([key, value]) => [key, Math.round(value * 10) / 10])),
     };
+    if (meta.popupCredit === true) { creditedMotion.resolved++; lastCreditedImpact = lastImpact; }
     if (meta.clearState !== false) entity._knockbackCollisionImpact = null;
     return lastImpact;
   }
@@ -144,7 +162,7 @@
     if (!state || state.resolved) return null;
     const measure = impactStrength(entity, tilePx);
     state.resolved = true;
-    return applyResolvedImpact(entity, descriptor, tilePx, hooks, measure.deficitTiles, measure, { mode: 'horizontal' });
+    return applyResolvedImpact(entity, descriptor, tilePx, hooks, measure.deficitTiles, measure, { mode: 'horizontal', popupCredit: state.popupCredit });
   }
 
   function resolveStrength(entity, descriptor, strengthTiles, tilePx, hooks = {}, meta = {}) {
@@ -214,5 +232,6 @@
     coolBurningOnDodge,
     extinguishInWater,
     debugSnapshot,
+    debugCreditSnapshot: () => ({ ...creditedMotion, lastImpact: lastCreditedImpact ? { ...lastCreditedImpact, effects: { ...lastCreditedImpact.effects }, appliedEffects: { ...lastCreditedImpact.appliedEffects } } : null }),
   };
 })();

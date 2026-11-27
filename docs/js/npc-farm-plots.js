@@ -126,13 +126,14 @@
       if (!window.RomanceSystem?.spouseTownVisitNow?.(npcId)) return true;
     }
     if (window.NpcFollowing?.isCompanion?.(npcId)) return true;
+    if (plot?.family && window.RomanceFamily?.isFamilyWorkUnavailable?.(npcId)) return true; // Held or following young children cannot execute claims.
     if (plot?.family && window.RomanceFamily?.isAssignedToVat?.(npcId)) return true; // Vat work takes priority over a farm-plot claim.
     if (plot?.family && window.RomanceSystem?.activeSpouseOuting?.()?.npcId === npcId) return true; // Release live farm claims while the spouse accompanies a player-accepted outing.
     if (plot?.family && window.RomanceSystem?.getSpouse?.()?.npcId === npcId && window.RomanceFamily?.spouseHoldingEgg?.()) return true; // Egg care in bed also suspends in-flight fieldwork.
     return false;
   }
   function activeWorker(plot, role) {
-    return lineupOf(plot, role).find(id => !unavailable(id, plot)) || null;
+    return lineupOf(plot, role).find(id => !unavailable(id, plot) && (!plot.family || !familyClaims.has(id))) || null; // A backup may cover a primary worker's other assigned chore.
   }
   function inHours(plot) {
     const hour = num(window.CalendarSystem?.getHour?.(), 12);
@@ -204,6 +205,84 @@
   }
 
   const JOB_PRIORITY = { harvest: 0, seed: 1, till: 2, dig: 0 };
+  const familyClaims = new Map(); // One additional chore claim per worker, shared by the existing scheduler tick.
+  const choreOwners = new Map(); // Stable resource/station key -> worker id; prevents simultaneous collection.
+  const choreCache = new Map(); // Per-worker job scan cached for half a second.
+  const CHORE_HOURS = [8, 17]; // Same default as player farm plots.
+  const CHORE_PRIORITY = { livestockCollect: 0, livestockFeed: 1, livestockPet: 2, processingCollect: 0, processingLoad: 1 };
+  function releaseFamilyClaim(id) {
+    const claim = familyClaims.get(id);
+    if (claim && choreOwners.get(claim.key) === id) choreOwners.delete(claim.key);
+    familyClaims.delete(id);
+  }
+  function invalidateFamilyChores() { familyClaims.clear(); choreOwners.clear(); choreCache.clear(); }
+  function familyChoreAssignments(id) {
+    const config = window.RomanceFamily?.familyChores?.();
+    if (!config) return null;
+    const livestock = config.livestock === id;
+    const processing = Object.entries(config.processing || {}).filter(([, assignment]) => assignment?.workerId === id);
+    return (livestock || processing.length) && window.RomanceFamily?.usefulnessInfo?.(id) ? { livestock, processing } : null;
+  }
+  function familyChoreJobs(id, assignments) {
+    const now = Date.now(), cached = choreCache.get(id);
+    if (cached && now - cached.at < TICK_MS) return cached.jobs;
+    const jobs = assignments.livestock ? (window.FarmAnimals?.familyJobs?.() || []) : [];
+    for (const [stationId, assignment] of assignments.processing) {
+      const job = window.FarmProduction?.familyJob?.(stationId, assignment.inputKey);
+      if (job) jobs.push(job);
+    }
+    choreCache.set(id, { at: now, jobs });
+    return jobs;
+  }
+  function familyChoreHours() { const hour = num(window.CalendarSystem?.getHour?.(), 12); return hour >= CHORE_HOURS[0] && hour < CHORE_HOURS[1]; }
+  function familyChoreTarget(rec, walker) {
+    const id = rec.id, assignments = familyChoreAssignments(id);
+    if (!assignments || !familyChoreHours() || walker?._doorstepVisitor || unavailable(id, { family: true })) { releaseFamilyClaim(id); return null; }
+    const jobs = familyChoreJobs(id, assignments);
+    let claim = familyClaims.get(id);
+    let job = claim && jobs.find(candidate => candidate.key === claim.key && candidate.job === claim.job && candidate.itemKey === claim.itemKey && candidate.inputKey === claim.inputKey);
+    if (!job) {
+      releaseFamilyClaim(id); claim = null;
+      let score = Infinity;
+      const here = walker?.root?.position;
+      for (const candidate of jobs) {
+        if (choreOwners.has(candidate.key)) continue;
+        const dist = walker?.area === 'farm' && here ? Math.hypot(here.x - candidate.c - .5, here.z - candidate.r - .5) : 1000;
+        const next = (CHORE_PRIORITY[candidate.job] ?? 9) * 100 + dist;
+        if (next < score) { score = next; job = candidate; }
+      }
+      if (!job) return null;
+    }
+    if (!claim || claim.c !== job.c || claim.r !== job.r) {
+      const spot = standSpot({ area: 'farm', tiles: [] }, job, walker);
+      claim = { ...job, standC: spot.c, standR: spot.r, workedS: 0, ageS: 0 };
+      familyClaims.set(id, claim); choreOwners.set(job.key, id);
+    }
+    return { area: 'farm', c: claim.standC, r: claim.standR, pose: 'stand', id: 'family-chore:' + claim.key,
+      activity: claim.activity, rotY: (-Math.atan2(claim.r - claim.standR, claim.c - claim.standC) + Math.PI / 2) * 180 / Math.PI };
+  }
+  function tickFamilyChores(dt) {
+    for (const [id, previous] of [...familyClaims]) { // Snapshot iteration: a moving target may replace its claim.
+      const walker = deps.findWalker?.(id);
+      const target = familyChoreTarget({ id }, walker), claim = familyClaims.get(id);
+      if (!target || !claim || previous !== claim) continue;
+      claim.ageS += dt;
+      // A claim made during schedule planning is not proof that this NPC actually chose farmwork (newborn care, bed, outings can override it).
+      const active = walker && (!('currentScheduleTarget' in walker) || walker.currentScheduleTarget?.id === target.id);
+      const at = active && walker.area === 'farm' && walker.root && Math.hypot(walker.root.position.x - (claim.standC + .5), walker.root.position.z - (claim.standR + .5)) <= .8;
+      if (at) claim.workedS += dt;
+      else claim.workedS = 0; // Require continuous actual attendance; never complete phantom jobs from another map.
+      if (claim.workedS >= 3) {
+        releaseFamilyClaim(id);
+        const assignments = familyChoreAssignments(id); // Revalidate actual assignment immediately before mutation.
+        const assignment = assignments?.processing.find(([stationId]) => stationId === claim.stationId)?.[1];
+        const ok = claim.source === 'livestock' ? assignments?.livestock && window.FarmAnimals?.applyFamilyJob?.(claim, id)
+          : assignment && window.FarmProduction?.applyFamilyJob?.(claim, assignment.inputKey, id);
+        choreCache.clear(); // Fresh stock/resource state for the next claim.
+        if (ok) { window.RomanceFamily?.awardWork?.(id, claim.job); debug.jobsDone++; debug.lastJob = { worker: id, job: claim.job, key: claim.key, at: Date.now() }; }
+      } else if (claim.ageS > 180) releaseFamilyClaim(id);
+    }
+  }
   function pickJob(npcId, walker, { familyOnly = false } = {}) {
     const here = walker?.root?.position;
     let best = null;
@@ -261,7 +340,14 @@
 
   // ── Schedule override ─────────────────────────────────────────────────
   function targetFor(rec, { familyOnly = false } = {}) {
-    if (!rec?.id || !workerIds.has(rec.id)) return null;
+    if (!rec?.id) return null;
+    if (familyOnly) {
+      const walker = deps?.findWalker?.(rec.id) || null;
+      if (walker?._doorstepVisitor || unavailable(rec.id, { family: true })) { releaseClaim(rec.id); releaseFamilyClaim(rec.id); return null; }
+      const chore = familyChoreTarget(rec, walker);
+      if (chore) { releaseClaim(rec.id); return chore; } // A worker can never own two jobs at once.
+    }
+    if (!workerIds.has(rec.id)) return null;
     // This provider is registered before the festival and flood-shelter providers.
     // Town chores must release their workers so those higher-priority social/safety
     // schedules can take over. Family plots remain governed by the family routine.
@@ -318,8 +404,10 @@
   }
 
   function tick() {
-    if (!deps || !plotsById.size) return;
+    if (!deps) return;
     const dt = TICK_MS / 1000;
+    if (familyClaims.size) tickFamilyChores(dt);
+    if (!plotsById.size) return; // Family chores also work without a crop plot.
     const raining = !!deps.isRaining?.();
     if (raining) rainShower();
     const townInterrupted = !!(window.WaterSystem?.isTownFloodEmergency?.() || window.FestivalSystem?.festivalHours?.());
@@ -448,6 +536,7 @@
     if (!scene || !window.THREE) return null;
     if (!v) v = { group: new window.THREE.Group(), tiles: new Map() };
     v.group.name = 'npc_farm_plots';
+    (v.group.userData ||= {}).hobunjiStaticBatchGroup = true; // FarmTileRenderBatches merges its tagged soil/trench/water tiles per 8x8 cell for the world render only.
     scene.add(v.group);
     visuals.set(areaId, v);
     for (const o of v.tiles.values()) o.sig = null; // Re-add everything into the (possibly rebuilt) scene.
@@ -485,6 +574,7 @@
       const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'trench') || assets.pitMat; // Same PNG shade-fill as the player's trenches.
       const pit = new THREE.Mesh(worldUvSoilGeometry(assets.pit, c, r, trenchMask), material);
       pit.userData.ownGeometry = true; // disposeTile releases this tile's offset UV buffer.
+      pit.userData.hobunjiStaticBatchable = true; // Static tile: drawn merged by FarmTileRenderBatches (js/farm-tile-render-batches.js).
       pit.position.set(c + 0.5, y, r + 0.5);
       objects.push(pit);
       if (s.water) {
@@ -494,12 +584,15 @@
         const z0 = trenchMask & 1 ? -0.5 : -0.4, z1 = trenchMask & 4 ? 0.5 : 0.4; // Extend water to any open north/south edge.
         water.scale.set((x1 - x0) / 0.8, (z1 - z0) / 0.8, 1); // Shared 0.8 plane spans a continuous channel, not isolated puddles.
         water.position.set(c + 0.5 + (x0 + x1) / 2, y + 0.046, r + 0.5 + (z0 + z1) / 2);
+        water.userData.hobunjiStaticBatchable = true; // Merged per cell by FarmTileRenderBatches (js/farm-tile-render-batches.js).
+        water.userData.hobunjiStaticBatchFlat = true; // Transparent but never overlaps another plot's water: safe to draw as one.
         objects.push(water);
       }
     } else {
       const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'tilled') || assets.tilledMat; // Reuse the authored canvas soil material, not a flat brown box.
       const patch = new THREE.Mesh(worldUvSoilGeometry(assets.patch, c, r), material);
       patch.userData.ownGeometry = true; // Always free this tile's own shifted UV geometry.
+      patch.userData.hobunjiStaticBatchable = true; // Static tile: drawn merged by FarmTileRenderBatches (js/farm-tile-render-batches.js).
       patch.position.set(c + 0.5, y, r + 0.5);
       objects.push(patch);
       if (s.crop) {
@@ -511,7 +604,10 @@
         }
       }
     }
-    for (const object of objects) v.group.add(object);
+    for (const object of objects) {
+      v.group.add(object);
+      window.HobunjiCropSpriteArt?.registerPlaceholder?.(object); // Only authored billboard crop anchors are accepted.
+    }
     v.tiles.set(key, { objects, sig });
   }
 
@@ -544,20 +640,22 @@
   function restore(saved) {
     states = saved && typeof saved === 'object' && saved.states && typeof saved.states === 'object' ? JSON.parse(JSON.stringify(saved.states)) : {};
     rainedToday = saved?.rainedToday === true;
-    claims.clear(); claimedKeys.clear();
+    claims.clear(); claimedKeys.clear(); invalidateFamilyChores();
     for (const v of visuals.values()) for (const key of [...v.tiles.keys()]) disposeTile(v, key);
     syncedVersion = 0;
   }
 
   const api = {
+    registersCropSpritePlaceholders: true, // Both gameplay crop producers now notify the sprite bridge.
     init, registerMap, registerFarmPlots, isManagedTile, onNewDay, serialize, restore,
-    targetFor, tick,
+    targetFor, tick, invalidateFamilyChores, invalidateFamilyChoreJobs: () => choreCache.clear(), // A completed production queue invalidates cached job discovery without dropping active claims.
     plots: () => [...plotsById.values()],
     snapshot: () => ({
       plots: [...plotsById.values()].map(p => ({ id: p.id, area: p.area, kind: p.kind, managed: p.managed, tiles: p.tiles.length, hours: p.hours })),
       claims: [...claims].map(([npc, c]) => ({ npc, ...c })),
       drawn: Object.fromEntries([...visuals].map(([areaId, v]) => [areaId, { tiles: v.tiles.size, meshes: v.group.children.length, attached: !!v.group.parent }])),
-      debug: { ...debug },
+      familyChores: [...familyClaims].map(([worker, claim]) => ({ worker, ...claim })), // Existing Dev Companion plot diagnostics include new chores.
+      debug: { ...debug, latestChange: 'Assigned livestock and production chores share the family scheduler' },
     }),
     _test: { states: () => states, applyJob, jobsFor, pickJob, seedForTile, onNewDay, tick, rainShower },
   };

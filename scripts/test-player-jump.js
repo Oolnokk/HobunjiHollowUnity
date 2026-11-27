@@ -676,4 +676,44 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert.equal(h.player._freeJump?.phase,'supported','dodging along a raised gallery does not erase supported motion');
   assert.equal(h.player.physicalFeetY,2,'the raised gallery maintains physical elevation throughout the dodge');
 }
+
+{
+  // Run the actual resource compositor through the native airborne and raised-support sweeps.
+  const setup = (inputX, wind, yaw = 0, rotated = false, blocked = false) => {
+    const h = harness({ start: { x: 3.5, z: 3.5 }, heightBlocked: blocked ? (x => x > 3.5) : null });
+    vm.runInContext(read('docs/js/combat/resource-system.js'), vm.createContext({ window: h.window, performance: { now: () => 1000 } }));
+    const rs = h.window.ResourceSystem;
+    Object.assign(h.player, { maxHealth: 100, stamina: 100, maxStamina: 100, footing: 100, maxFooting: 100 });
+    rs.initEntity(h.player);
+    h.window.GameRandom.random = () => 0;
+    if (wind) rs.addAffliction(h.player, 'windblownStamina', wind);
+    h.window.FeyIllusions = { movementRotationRad: () => yaw };
+    h.input.x = inputX; h.input.rotationApplied = rotated;
+    assert(h.window.PlayerJump.start());
+    h.advance(.2);
+    return { dx: h.player.x - 3.5 * TILE, dy: h.player.y - 3.5 * TILE, footing: h.player.footing, height: h.player.physicalFeetY, h, rs };
+  };
+  const base = setup(1, 0);
+  const withWind = setup(1, 100);
+  const against = setup(-1, 100);
+  const idle = setup(0, 100);
+  const demented = setup(1, 100, Math.PI / 2);
+  const shoulder = setup(1, 100, Math.PI / 2, true);
+  const blocked = setup(1, 100, 0, false, true);
+  const near = (a,b) => assert(Math.abs(a-b) < 1e-6, a + ' != ' + b);
+  near(withWind.dx, base.dx * 1.75); near(against.dx, -base.dx * .25);
+  near(idle.dx, base.dx * .75); near(idle.footing, 100);
+  near(withWind.footing, 97); near(against.footing, 100);
+  near(demented.dx, idle.dx); near(demented.dy, base.dx); near(demented.footing, 100);
+  near(shoulder.dx, withWind.dx); near(shoulder.dy, 0);
+  near(withWind.height, base.height); // Statuses never alter jump height or gravity.
+  near(blocked.dx, 0); near(blocked.footing, 100);
+  const weighted = setup(0, 0);
+  weighted.rs.addAffliction(weighted.h.player, 'weightlessStamina', 50);
+  weighted.h.input.x = 1;
+  const x = weighted.h.player.x;
+  weighted.h.advance(.2);
+  near(weighted.h.player.x-x, base.dx*2);
+}
+
 console.log('player-jump ok');

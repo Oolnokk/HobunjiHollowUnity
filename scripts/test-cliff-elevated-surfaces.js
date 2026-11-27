@@ -95,7 +95,11 @@ assert(html.indexOf('cell-grid-3d.js')<html.indexOf('cliff-elevated-surfaces.js'
 assert(html.includes('dynamic-surfaces.js?v='),'the main game must load DynamicSurfaces, not just the isolated test harness');
 assert(html.indexOf('dynamic-surfaces.js?v=')<html.indexOf('cliff-elevated-surfaces.js'),'the dynamic surface registry exists before any wilderness balcony mount');
 const ruinScripts = []; // Capture the scripts the production ruin bootstrap would insert at parse time.
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../docs/js/dev-random-ruin-bootstrap.js'), 'utf8'), {
+const ruinBootstrap = fs.readFileSync(path.join(__dirname, '../docs/js/dev-random-ruin-bootstrap.js'), 'utf8');
+const dynamicSurfaceUrl = /dynamic-surfaces\.js\?v=[\w-]+/; // Both entry points must resolve to the same cached registry implementation.
+assert.equal(html.match(dynamicSurfaceUrl)?.[0],ruinBootstrap.match(dynamicSurfaceUrl)?.[0],
+  'the early game loader must use the same dynamic surfaces version as the ruin fallback');
+vm.runInNewContext(ruinBootstrap, {
   window: climbWindow,
   document: { readyState: 'loading', write: script => ruinScripts.push(script) },
 });

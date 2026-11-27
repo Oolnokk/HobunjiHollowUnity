@@ -4,6 +4,10 @@ Open `docs/tools/enemy-loadout-editor/index.html` on a static server or a commit
 
 The workshop calls the real BanditCombat, MinionCombat, MaskboundGuardianCombat and HarlyaoLichCombat factories in an isolated scene. It loads the current game catalog rather than keeping a second weapon/material table. Tribe equipment and Avenger mounts come from the authored camp configs. Cultural weapon rules use the same trust-giver NPC database and bridge as the game.
 
+## Ruin skeletons and Rootledoots
+
+The library includes Hronal, Tothal and Kanthic minions and solitary coffin guards, plus the small, medium and Big Rootledoot. All are built by the actual game factories. Rotate the preview to inspect back stalagmites and rear oil/frost art; the facts show exact health and weapon enchantments. The viewer does not simulate dungeon ground hazards or encounter rewards. Big Rootledoot uses the live modular weapon composition and Fey enchantment emitter. History retains the exact rolled weapon and wardrobe.
+
 ## Authoring
 
 Select an enemy, choose a difficulty, Town Value and seed, then roll. Replay seed reproduces the visual/combat roll; generated smith item identifiers and timestamps remain per-instance. Roll 8 creates a comparison strip. Clicking an earlier card restores its stored roster and definition rather than rolling it again. History retains up to 32 records.

@@ -4,7 +4,7 @@
   const scriptUrls = [
     "js/festival-ancestor-figures.js?v=20261122keyghostAudit2",
     "js/festival-props.js?v=20261118blossomPng25v3",
-    "js/festival-wheel-dance-runtime.js?v=20261118pairedContinuity2",
+    "js/festival-wheel-dance-runtime.js?v=20261126bedNpcOnly1",
     "js/npc-festival-dance.js?v=20261020hd350a73",
     "js/npc-shared-meals.js?v=20261021hdde83ea",
     "js/festival-potluck-contest.js?v=20261122perception1",
@@ -14,7 +14,7 @@
     "js/festival-blossom-petals.js?v=20261119petalFallAudit2",
     "js/festival-blossom-hunt.js?v=20261122blossomTrunkOutlines2",
     "js/festival-blossom-start-cue.js?v=20261119swatchDecal3",
-    "js/festival-blossom-ceremony.js?v=20261119h8503bae",
+    "js/festival-blossom-ceremony.js?v=20261126h6301742",
     "js/festival-system.js?v=20261122perception2",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",
     "js/festival-ui.js?v=20261118fiveBlossomsUI1"

@@ -31,15 +31,44 @@ class Mesh {
     this.userData = {};
     this.position = { set() {} };
     this.scale = { set() {} };
-    this.quaternion = {};
+    this.quaternion = new Quaternion();
+    this.matrixRefreshes = 0;
+    this.updateMatrixWorld = () => { this.matrixRefreshes++; };
   }
 }
 class Group {
-  constructor() { this.children = []; this.userData = {}; }
+  constructor() { this.children = []; this.userData = {}; this.matrixWorld = new Matrix4(); }
   add(child) { this.children.push(child); child.parent = this; }
 }
+// Small translation/basis math fixture executes the actual rope hook, not just
+// construction. Distinct camera/parent orientations must invalidate its cache.
+class Vector3 {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);}
+  set(x,y,z){Object.assign(this,{x,y,z});return this;}
+  copy(v){return this.set(v.x,v.y,v.z);}
+  equals(v){return this.x===v.x&&this.y===v.y&&this.z===v.z;}
+  setFromMatrixPosition(m){return this.set(m.x,m.y,m.z);}
+  applyMatrix4(m){return this.set(this.x+m.x,this.y+m.y,this.z+m.z);}
+  lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
+  normalize(){const n=Math.sqrt(this.lengthSq())||1;return this.set(this.x/n,this.y/n,this.z/n);}
+  crossVectors(a,b){return this.set(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x);}
+}
+let inversions=0;
+class Matrix4 {
+  constructor(){this.x=this.y=this.z=0;this.elements=[];}
+  copy(m){this.x=m.x;this.y=m.y;this.z=m.z;return this;}
+  equals(m){return this.x===m.x&&this.y===m.y&&this.z===m.z;}
+  invert(){inversions++;this.x=-this.x;this.y=-this.y;this.z=-this.z;return this;}
+  makeBasis(r,u,n){this.facing=Math.atan2(n.x,n.z);return this;}
+}
+class Quaternion {
+  constructor(){this.facing=0;}
+  copy(q){this.facing=q.facing;return this;}
+  equals(q){return this.facing===q.facing;}
+  setFromRotationMatrix(m){this.facing=m.facing;return this;}
+}
 const THREE = { PlaneGeometry, MeshBasicMaterial: Material, Mesh, Group,
-  Vector3: class {}, Matrix4: class {}, DoubleSide: 2, ClampToEdgeWrapping: 1001,
+  Vector3, Matrix4, Quaternion, DoubleSide: 2, ClampToEdgeWrapping: 1001,
   sRGBEncoding: 3001, LinearFilter: 1006 };
 const texture = {
   image: { width: 50, height: 120 },
@@ -87,6 +116,27 @@ assert.equal(rope.material.alphaTest, 0.35, 'rope uses the solid PNG coverage th
 assert.equal(rope.userData.hobunjiHeldObjectPlane, true, 'rope registers for the held overlay');
 assert.equal(rope.userData.hobunjiWeaponAssemblyPart, true, 'rope stays in authored assembly order');
 assert.equal(rope.userData.noOutline, true, 'rope keeps its authored PNG outline');
+const camera={matrixWorld:new Matrix4(),getWorldPosition(out){return out.setFromMatrixPosition(this.matrixWorld);}};
+camera.matrixWorld.z=10;
+rope.onBeforeRender(null,null,camera);
+assert.equal(inversions,1);
+const initialFacing=rope.quaternion.facing;
+rope.onBeforeRender(null,null,camera);
+assert.equal(inversions,1,'same replay camera and carrier skip inversion');
+assert.equal(rope.matrixRefreshes,2,'leaf matrices still refresh in each native pass');
+assert.equal(rope.userData.ropeFacingReuses,1);
+camera.matrixWorld.x=10;
+rope.onBeforeRender(null,null,camera);
+assert.notEqual(rope.quaternion.facing,initialFacing,'camera change updates billboard');
+assert.equal(inversions,2);
+ropeGroup.matrixWorld.x=10;
+rope.onBeforeRender(null,null,camera);
+assert.equal(rope.quaternion.facing,initialFacing,'moving carrier updates billboard');
+assert.equal(inversions,3);
+rope.quaternion.facing=123;
+rope.onBeforeRender(null,null,camera);
+assert.equal(rope.quaternion.facing,initialFacing,'external quaternion change restores correct facing');
+assert.equal(inversions,4);
 
 const isLegacyHeldPlane = functionBetween(compositor, 'isLegacyHeldPlane', 'forEachMaterial',
   { LEGACY_HELD_RENDER_ORDER: 1.5 });

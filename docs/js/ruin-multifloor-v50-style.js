@@ -62,7 +62,7 @@
       if(effect)flames.push(effect);
       else addMesh(group,'sconce-flame-fallback',flameGeo,fire,0,.29,.69); // Authoring previews without the particle module still show a flame.
       const source={x:0,y:0,z:0,anchor:group,story,floorY:grid.levelToY(story*o.spacing),
-        radius:tower?4.0:3.4,strength:tower?.48:.42,color:[255,121,41],active:true}; // Small, constantly lit guide pools; full illumination must be earned from braziers.
+        radius:tower?1.05:0.85,strength:tower?.32:.26,color:[255,121,41],active:true}; // Darkness restricts ordinary Kanthic sconces to a tiny local fire pool; completed braziers keep their earned glow.
       lights.push(source);return group;
     }
     const wallNormals=[{side:'N',dx:0,dz:1},{side:'E',dx:-1,dz:0},

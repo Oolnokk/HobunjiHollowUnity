@@ -706,6 +706,16 @@
     }
   }
 
+  // Only the meshes the placed tree itself would draw: a climb branch its roll
+  // hid stays hidden, and a baked tree's THREE.LOD contributes its full-detail
+  // level only (instancing every level drew all of them on top of each other).
+  function forEachDrawnTreeMesh(object, visit) {
+    if (!object || object.visible === false) return;
+    if (object.isMesh) visit(object);
+    if (object.isLOD && object.levels?.length) { forEachDrawnTreeMesh(object.levels[0].object, visit); return; }
+    for (const child of object.children || []) forEachDrawnTreeMesh(child, visit);
+  }
+
   function instanceDenseShadewoodForest(scene, entries) {
     const FG = window.FoliageGenerator;
     if (!FG?.buildShadewoodMesh || !entries.length || typeof THREE === 'undefined') return { chunks: 0, instances: 0 };
@@ -718,6 +728,7 @@
     }
 
     let chunkCount = 0, instanceCount = 0;
+    const partGeometries = new Set(); // Shared variant parts whose far-distance twins are built now, not on the first far frame.
     for (const list of chunkMap.values()) {
       const buckets = new Map();
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -729,10 +740,11 @@
         tree.rotation.y += e.yaw;
         tree.scale.multiplyScalar(e.scale);
         tree.updateMatrixWorld(true);
-        tree.traverse(o => {
-          if (!o?.isMesh || !o.geometry || !o.material) return;
+        forEachDrawnTreeMesh(tree, o => {
+          if (!o.geometry || !o.material) return;
           const material = Array.isArray(o.material) ? o.material[0] : o.material;
           if (!material) return;
+          partGeometries.add(o.geometry);
           let byMaterial = buckets.get(o.geometry);
           if (!byMaterial) buckets.set(o.geometry, byMaterial = new Map());
           let matrices = byMaterial.get(material);
@@ -776,9 +788,16 @@
       group.userData.skipOcclusionFade = true;
       group.userData.cullSphere = { x: cx, z: cz, radius: xzRadius, xzRadius };
       scene.add?.(group);
+      // All placement is in instance buffers. Owner contract: before adding
+      // any leaf TRS/manual-matrix/update-hook writer, invalidate its branch.
+      // Density, layer, fade, visibility and instance-buffer edits do not move it.
+      window.DenseForestWallBatches?.enrollStaticMatrixBranch?.(group);
       if (Array.isArray(scene.items) && !scene.items.includes(group)) scene.items.push(group);
       chunkCount++;
     }
+    // dense-forest-wall-batches.js draws chunks beyond its LOD distance with
+    // these lighter bark tubes (FoliageGenerator.liteTreeGeometry).
+    if (typeof FG.liteTreeGeometry === 'function') for (const geometry of partGeometries) FG.liteTreeGeometry(geometry);
     return { chunks: chunkCount, instances: instanceCount };
   }
 

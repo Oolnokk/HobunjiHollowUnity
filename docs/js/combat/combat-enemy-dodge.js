@@ -105,11 +105,14 @@
     const candidates = [preferredSign, -preferredSign].map(sign => ({ x: -dy / length * sign, y: dx / length * sign, sign }));
     candidates.push({ x: dx / length, y: dy / length, sign: 0 }); // Backward escape is the fallback when both lateral lanes are obstructed.
     let best = null; // Furthest collision-safe candidate wins, favoring a full lateral dodge when available.
-    for (const candidate of candidates) {
+    for (const rawCandidate of candidates) {
+      const intent = window.ResourceSystem?.movementIntent?.(entity, rawCandidate.x, rawCandidate.y) || rawCandidate; // AI dodge intent is world-space and has not yet inherited Demented yaw.
+      const candidate = { ...rawCandidate, x: intent.x, y: intent.y }; // The exact tested bearing is committed once, just like a player dodge.
+      const motion = window.ResourceSystem?.composeMovement?.(entity, candidate.x * travelPx, candidate.y * travelPx, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: travelPx }); // Pure preview: no Footing or coordinate writes.
       const swept = deps.sweptMove(
         entity.x, entity.y,
-        entity.x + candidate.x * travelPx,
-        entity.y + candidate.y * travelPx,
+        entity.x + (motion?.x ?? candidate.x * travelPx),
+        entity.y + (motion?.y ?? candidate.y * travelPx),
         (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32),
       );
       const clearDistance = Math.hypot(swept.x - entity.x, swept.y - entity.y); // Measures real terrain clearance for this direction.
@@ -166,18 +169,24 @@
   function updateActiveDodge(entity, dt, targetPlayer) {
     const state = entity._enemyDodge;
     if (!state) return null;
-    state.remainingS = Math.max(0, state.remainingS - dt);
+    const travelDt = Math.min(Math.max(0, dt), state.remainingS); // Never travel or incur wind costs after the committed dodge duration expires.
+    state.remainingS = Math.max(0, state.remainingS - travelDt);
     entity.dodgeT = state.remainingS;
     const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(entity, 'dodgeLungeDistance') ?? 1; // Same Heavy distance percentage used when this dodge direction was chosen.
     const dodgeSpeedPxS = tuning.speedPxS * heavyDistanceMul; // Reduced speed over the unchanged dodge duration produces the intended shorter total dodge.
-    const desiredX = entity.x + entity.dodgeDirX * dodgeSpeedPxS * dt; // Per-frame dodge endpoint resolved through the normal creature terrain sweep.
-    const desiredY = entity.y + entity.dodgeDirY * dodgeSpeedPxS * dt; // Per-frame dodge endpoint resolved through the normal creature terrain sweep.
+    const motion = window.ResourceSystem?.composeMovement?.(entity, entity.dodgeDirX * dodgeSpeedPxS * travelDt, entity.dodgeDirY * dodgeSpeedPxS * travelDt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: dodgeSpeedPxS * travelDt, dt: travelDt });
+    const dx = motion?.x ?? entity.dodgeDirX * dodgeSpeedPxS * travelDt, dy = motion?.y ?? entity.dodgeDirY * dodgeSpeedPxS * travelDt;
+    const desiredX = entity.x + dx, desiredY = entity.y + dy;
     const swept = deps.sweptMove(entity.x, entity.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
-    const stepPx = Math.hypot(swept.x - entity.x, swept.y - entity.y); // Actual traveled distance drives the existing creature footstep cadence.
+    const actualX = swept.x - entity.x, actualY = swept.y - entity.y; // Collision-accepted movement is the actual velocity, not the blocked requested vector.
+    const stepPx = Math.hypot(actualX, actualY); // Actual traveled distance drives the existing creature footstep cadence.
+    if(entity.ruinSkeletonTheme==='kanthic')window.MinionCombat?.trailMovement?.(entity,entity.x,entity.y,swept.x,swept.y,'dodge',deps.TILE);
     entity.x = swept.x;
     entity.y = swept.y;
-    entity.vx = entity.dodgeDirX * dodgeSpeedPxS;
-    entity.vy = entity.dodgeDirY * dodgeSpeedPxS;
+    entity.vx = travelDt > 0 ? actualX / travelDt : 0;
+    entity.vy = travelDt > 0 ? actualY / travelDt : 0;
+    if (motion?.wind) window.ResourceSystem?.commitMovement?.(entity, motion, Math.min(1, stepPx / Math.max(.00001, Math.hypot(dx, dy))), window.Combat?.deps?.movementFootingDepleted);
+    if (entity.prone) { finishDodge(entity); return { handled: true, moving: false, aimAngle: entity.facing || 0 }; }
     deps.tickCreatureFootsteps?.(entity, stepPx);
     const progress = state.durationS > 0 ? 1 - state.remainingS / state.durationS : 1; // Full-body roll progress for the readable dodge animation.
     if (entity.avatarRef?.group?.rotation) entity.avatarRef.group.rotation.z = progress * Math.PI * 2 * state.spinSign;

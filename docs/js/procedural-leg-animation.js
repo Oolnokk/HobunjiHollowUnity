@@ -510,10 +510,13 @@
     const rowLeft = new Int32Array(height).fill(width);
     const rowRight = new Int32Array(height).fill(-1);
     let top = height, bottom = -1;
+    let opaqueTop = height, opaqueBottom = -1; // Ignore faint antialiasing when identifying the lower waist region.
     for (let y = 0; y < height; y++) {
       const rowOffset = y * width * 4;
       for (let x = 0; x < width; x++) {
-        if (data[rowOffset + x * 4 + 3] <= alphaThreshold) continue;
+        const alpha = data[rowOffset + x * 4 + 3];
+        if (alpha >= 128) { opaqueTop = Math.min(opaqueTop, y); opaqueBottom = y; }
+        if (alpha <= alphaThreshold) continue;
         if (x < rowLeft[y]) rowLeft[y] = x;
         if (x > rowRight[y]) rowRight[y] = x;
         if (y < top) top = y;
@@ -535,7 +538,17 @@
       Math.abs(row - verticalCenter) < Math.abs(best - verticalCenter) ? row : best, widestRows[0]);
     const left = rowLeft[sampleRow], right = rowRight[sampleRow];
     const split = (left + right) / 2;
+    // The lowest tenth of the isolated torso includes both ends of a curved hem.
+    // Use actual pixel edges, not the widest body row or clothing silhouette.
+    let beltLeft = width, beltRight = -1;
+    const beltTop = Math.max(opaqueTop, opaqueBottom - Math.max(1, Math.ceil((opaqueBottom - opaqueTop + 1) * .10)) + 1);
+    for (let y = beltTop; y <= opaqueBottom; y++) for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] < 128) continue;
+      beltLeft = Math.min(beltLeft, x); beltRight = Math.max(beltRight, x);
+    }
+    const beltBounds = beltRight > beltLeft ? { left: beltLeft / width, right: (beltRight + 1) / width } : null; // Normalized raw portrait coordinates.
     return {
+      beltBounds,
       canvasWidth: width, canvasHeight: height,
       leftMedian: (left + split) / 2,
       rightMedian: (split + right) / 2,
@@ -558,6 +571,7 @@
   // General-purpose (not just for this one scan) so future once-per-
   // species/gender checks have somewhere to live instead of re-deriving
   // their own caching each time.
+  const handlesByLegRoot = new WeakMap(); // Author preview resolves the real procedural rig once, without a second skeleton.
   const _speciesGenderSession = new Map(); // "species::gender" -> {}
   function speciesGenderSession(speciesId, gender) {
     const key = `${speciesId}::${gender}`;
@@ -586,6 +600,56 @@
   // family only) a pair of forward/backward teardrop-toe "V"s, mirroring the
   // reference tool's primitive anatomy. Used for any species without a
   // configured GLB (today: kenkari, rakako'an).
+  // Cache the unscaled, unparented shoe envelope at construction, never during animation.
+  // A conservative box includes toes/claws and the full GLB, unlike a sphere radius.
+  function cacheFootGroundSupport(THREE, foot) {
+    const box = new THREE.Box3();
+    if (!box.setFromObject) return foot; // Geometry-free solver harnesses retain their supplied contact radius.
+    box.setFromObject(foot); // Foot is still at the identity origin; bounds are shoe-local.
+    if (box.isEmpty()) return foot;
+    foot.userData.groundSupportBox = box;
+    // The Animation Author uses an older Three.js where Box3's precise flag is ignored.
+    // Project actual vertices onto X at construction, using the existing updated matrices.
+    let minX = Infinity, maxX = -Infinity;
+    foot.traverse?.(mesh => {
+      const vertices = mesh.isMesh && mesh.geometry?.attributes?.position, e = mesh.matrixWorld?.elements;
+      if (!vertices?.getX || !vertices.getY || !vertices.getZ || !e) return;
+      const bounds = mesh.geometry.boundingBox; // Axis-aligned transforms can reuse the already-computed exact geometry extrema.
+      const axes = [e[0], e[4], e[8]], axis = axes.findIndex(value => Math.abs(value) > 1e-12);
+      if (bounds && axis >= 0 && axes.every((value, i) => i === axis || Math.abs(value) <= 1e-12)) {
+        const key = ['x', 'y', 'z'][axis], a = bounds.min[key] * axes[axis] + e[12], b = bounds.max[key] * axes[axis] + e[12];
+        minX = Math.min(minX, a, b); maxX = Math.max(maxX, a, b);
+        return;
+      }
+      for (let i = 0; i < vertices.count; i++) {
+        const x = e[0] * vertices.getX(i) + e[4] * vertices.getY(i) + e[8] * vertices.getZ(i) + e[12];
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      }
+    });
+    foot.userData.cuffWidthX = Number.isFinite(maxX - minX) && maxX > minX ? maxX - minX : box.max.x - box.min.x; // Neutral shoe width, not animated AABB.
+    foot.userData.contactRadiusY = Math.max(0, -box.min.y); // Neutral ankle height, before age or authored axes.
+    return foot;
+  }
+
+  function rolledSoleOffset(box, scale, roll, yRatio) {
+    if (!box || Math.abs(roll) < 1e-9) return 0;
+    const y = Math.cos(roll) * scale.y, z = -Math.sin(roll) * scale.z; // Vertical row of the foot's explicit roll.
+    const bottom = y * (y >= 0 ? box.min.y : box.max.y) + z * (z >= 0 ? box.min.z : box.max.z);
+    return (box.min.y * scale.y - bottom) * yRatio; // Convert the scaled support delta into the existing floor-relative IK units.
+  }
+
+  function transformedFootBottomY(box, e) {
+    // Minimum of a linear transform over the cached local box, without a Box3 allocation or scene traversal.
+    return e[13] + e[1] * (e[1] >= 0 ? box.min.x : box.max.x)
+      + e[5] * (e[5] >= 0 ? box.min.y : box.max.y)
+      + e[9] * (e[9] >= 0 ? box.min.z : box.max.z);
+  }
+
+  function groundSafeDepthFactor(desired, cameraY, bottomY, floorY) {
+    if (cameraY <= bottomY) return desired; // Moving away from a low camera cannot sink a sole.
+    return Math.max(1, Math.min(desired, (cameraY - floorY) / (cameraY - bottomY))); // Preserve as much pants bias as the actual ground clearance allows.
+  }
+
   function buildFallbackFoot(THREE, options) {
     const { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex } = options;
     const group = new THREE.Group();
@@ -646,6 +710,20 @@
     group.userData.material = material;
     markOutline(group);
     return group;
+  }
+
+  // Full Character Scale's isolated lineup can display anatomy from the
+  // opposite model-forward convention. Mirror only the Z of the *visual*
+  // subtree, not the leg-root, hip, IK chain, or anatomical X handedness.
+  // This must work for fallback feet now and asynchronously loaded GLBs later.
+  function alignPreviewFootFacing(THREE, foot, reverseDepth) {
+    if (!reverseDepth || !foot?.children?.length) return foot;
+    const visual = new THREE.Group(); // Carries preview-only depth reversal without changing leg targets or gameplay feet.
+    visual.name = 'full_scale_preview_foot_facing';
+    for (const child of [...foot.children]) visual.add(child);
+    visual.scale.z = -1; // Reverse forward/backward geometry, keep left/right and ankle roll exactly as authored.
+    foot.add(visual);
+    return foot;
   }
 
   const _glbSceneCache = new Map(); // glb path -> Promise<THREE.Object3D>
@@ -802,6 +880,58 @@
     return mesh;
   }
 
+  const legHandlesByScaleParent = new WeakMap(); // Object3D transform parent -> affected leg handles; used only when proportions change.
+  function registerScaleHandle(handle) {
+    const parents = []; // Cached ancestor membership supports O(depth) teardown on disposal.
+    for (let parent = handle.group?.parent; parent; parent = parent.parent) {
+      let handles = legHandlesByScaleParent.get(parent);
+      if (!handles) { handles = new Set(); legHandlesByScaleParent.set(parent, handles); }
+      handles.add(handle);
+      parents.push(parent);
+    }
+    handle.scaleRegistrationParents = parents;
+  }
+  function unregisterScaleHandle(handle) {
+    for (const parent of handle.scaleRegistrationParents || []) {
+      const handles = legHandlesByScaleParent.get(parent);
+      handles?.delete(handle);
+      if (handles?.size === 0) legHandlesByScaleParent.delete(parent);
+    }
+    handle.scaleRegistrationParents = null;
+  }
+  function alignPortraitWithLegs(parent, handle) {
+    if (!parent || !handle) return false;
+    const desired = Number(handle.standingPosteriorY) - Number(handle.restPosteriorY); // Parent-local additional leg reach, with feet remaining at floor Y=0.
+    if (!Number.isFinite(desired)) return false;
+    let portrait = handle.portraitNode; // The portrait is a stable mesh per rig; caching avoids walking its entire hierarchy on every size edit.
+    if (!portrait?.parent) {
+      portrait = null;
+      parent.traverse?.(node => {
+        if (portrait || node === parent) return;
+        if (node.userData?.neckRig?.available && node.position) portrait = node; // Never reposition the floor root that owns both feet.
+      });
+      handle.portraitNode = portrait;
+    }
+    if (!portrait) return false;
+    portrait.userData ||= {};
+    const previous = Number(portrait.userData.hobunjiLegLengthPortraitOffsetY) || 0; // Remembers our offset so unrelated action animations are not wiped on later slider updates.
+    if (Math.abs(desired - previous) <= 1e-9) return true;
+    let betweenY = 1; // Converts parent-floor-relative delta into the actual portrait parent's coordinates when wrappers carry a uniform species scale.
+    for (let current = portrait.parent; current && current !== parent; current = current.parent) betweenY *= Number(current.scale?.y) || 1;
+    portrait.position.y += (desired - previous) / (Math.abs(betweenY) > 1e-6 ? betweenY : 1);
+    portrait.userData.hobunjiLegLengthPortraitOffsetY = desired;
+    portrait.updateMatrix?.();
+    return true;
+  }
+  function syncScaleForParent(parent, legRatio) {
+    const handles = legHandlesByScaleParent.get(parent); // O(affected characters); never scan the town's other NPC rigs.
+    if (!handles) return;
+    for (const handle of handles) {
+      handle.setLegLengthMultiplier(legRatio); // Live hip-to-foot adjustment preserves authored leg length.
+      alignPortraitWithLegs(parent, handle); // Portrait tracks the matching hip contact point.
+    }
+  }
+
   // Attaches a procedural feet pair under `parent` (the avatar's own
   // floor-anchored root/playerMesh — NOT the billboard plane child, which
   // sits modelHeight/2 above it). Returns a handle with update()/dispose(),
@@ -834,6 +964,9 @@
     } : null; // Frozen per-avatar values drive only the walking branch of update; lunge/airborne/seated continue normally.
     const modelWidth = Number(options.modelWidth) || 0.9;
     const modelHeight = Number(options.modelHeight) || modelWidth;
+    const fixedPosterior=Number.isFinite(options.posteriorYOverride); // Keep instance anatomy fixed even if a shared species-scale refresh runs later.
+    const stanceDropMax=Number.isFinite(options.stanceDropMax)?Math.max(0,options.stanceDropMax):Infinity; // Instance-specific clearance prevents short exposed bodies sinking into terrain.
+    const gaitReachLimit=Number.isFinite(options.gaitReachLimit)&&options.gaitReachLimit>0?options.gaitReachLimit:Infinity; // Optional short-legged gait cap, cached for the existing solver.
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
     const footHeightFraction = Number(c.footHeightFraction) || 0.11;
     const sizeBalanceMultiplier = Number(c.sizeBalanceMultiplier) > 0 ? Number(c.sizeBalanceMultiplier) : 1; // Enlarges every fallback/imported foot toward the shared hand/foot midpoint.
@@ -841,7 +974,11 @@
     // (proceduralFeet.footScale) on top of this base formula — defaults to
     // 1 (formula unchanged) for any species/gender without an authored
     // entry.
-    const radius = modelHeight * footHeightFraction * 0.5 * footScaleMultiplierForSpecies(speciesId, gender) * sizeBalanceMultiplier;
+    const initialFootScale = footScaleMultiplierForSpecies(speciesId, gender); // Original species multiplier, retained so later slider updates never compound scale.
+    let ageFootScale = 1; // Preview age factor is composed with the independent adult foot size and sole contact.
+    let footSizeScale = initialFootScale; // Current multiplier used by fallback feet and any asynchronously arriving GLB.
+    const limbModelHeight = Number(options.limbModelHeight ?? options.drunkBodyRoot?.userData?.limbModelHeight) || modelHeight; // Geometry fit only; posture and IK still use body dimensions.
+    const radius = limbModelHeight * footHeightFraction * 0.5 * initialFootScale * sizeBalanceMultiplier;
     const isKenkariFamily = KENKARI_FAMILY.has(speciesId);
     const sphereScaleXZ = isKenkariFamily ? 0.6 : 1;
     const sphereScaleY = isKenkariFamily ? 1 : 0.75;
@@ -854,7 +991,9 @@
     const root = new THREE.Group();
     root.name = `${options.name || 'avatar'}_procedural_feet`;
 
-    const posteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY));
+    const restPosteriorY = Number.isFinite(options.posteriorYOverride)?options.posteriorYOverride:posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY)); // Authored original hip height, in the parent/foot-root's floor-relative frame.
+    let posteriorY = restPosteriorY; // Live hip height, lengthened independently of the portrait and never used to scale a foot mesh.
+    let legLengthMultiplier = 1; // Relative to portrait Y scale, so old rigScaleY still scales portrait and legs together.
     const posteriorX = posteriorXForSpecies(speciesId, gender); // Used to recenter the legs and to locate the seated surface in this avatar-local frame.
     // Hunched characters (js/character-spine.js) plant their feet farther apart and take longer strides to carry the stooped upper body. Fixed per avatar.
     const spineGait = window.HobunjiCharacterSpine?.resolve({ speciesId, gender, spine: options.spine, profile: options.profile }) || null; // The legs also inherit species hunch, not only explicit per-enemy spine.
@@ -927,7 +1066,7 @@
       rightRoll: 0,
       // Retained for getStandingPoseDebug() so gait scaling can be checked in-game/mobile without devtools.
       gaitLegLength: 0,
-      bodyScaleX: 1, bodyScaleY: 1, extremityYRatio: 1, // Cached whole-body aspect for anatomical stride and grounded foot contacts.
+      bodyScaleX: 1, bodyScaleY: 1, extremityYRatio: 1, extremityXRatio: 1, // Cached body compensation for gait, soles, and cuff width.
       gaitFullStride: 0,
       gaitStrideLength: 0,
       gaitCadenceHz: 0,
@@ -945,6 +1084,10 @@
       stanceDrop: 0, // Damped hip lowering actually applied: the hips sink while the feet stay planted, so the knees fold instead of the legs shortening.
       disposed: false,
     };
+
+    let externalFootTargets = null; // Optional per-foot world coordinates, owned by a grapple/mount/cutscene until cleared.
+    let externalFootExtendedReach = false; // Opt-in: Headtaker feet must reach the real portrait surface; other users retain fixed walking limb length.
+    let externalFootDeepFold = false; // Opt-in: petite partners fold knees around a spouse posterior without changing regular grounded gait.
 
     const motionScratch = new THREE.Vector3(); // Reused for world/local foot placement during lunges.
     const motionDirection = new THREE.Vector3(); // World-space lunge heading, independent of billboard rotation.
@@ -1028,9 +1171,60 @@
     }
 
     function standingLegLength() {
-      const leftLength = Math.max(0.001, posteriorY - state.leftContactY); // Used with rightLength to drive stride from the left leg's actual standing anatomy.
-      const rightLength = Math.max(0.001, posteriorY - state.rightContactY); // Keeps stride current if a fallback foot is replaced by a GLB with a different contact height.
+      const leftLength = Math.max(0.001, posteriorY - state.leftContactY); // Uses the resized hip-to-ankle span, not the unmodified portrait height.
+      const rightLength = Math.max(0.001, posteriorY - state.rightContactY); // Rechecks sole contact height after asynchronous foot/GLB replacement.
       return (leftLength + rightLength) * 0.5;
+    }
+
+    function setLegLengthMultiplier(multiplier, contactChanged = false) {
+      if (state.disposed) return posteriorY;
+      const raw = Number(multiplier); // Ratio of authored leg length to portrait Y, both in canonical world-size units.
+      const next = fixedPosterior ? 1 : Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1;
+      if (!contactChanged && Math.abs(next - legLengthMultiplier) <= 1e-9) return posteriorY; // Width/head/age changes must not re-solve both bones or rebuild pants.
+      legLengthMultiplier = next;
+      const contact = (state.leftContactY + state.rightContactY) * .5; // Feet remain planted: leg growth moves the hip, not the shoe geometry.
+      posteriorY = contact + (restPosteriorY - contact) * legLengthMultiplier;
+      for (const side of ['left', 'right']) {
+        legChains[side].hip.position.y = posteriorY;
+        if (state[side]) applyLegChain(side); // Contact changes still re-solve the real joints once.
+      }
+      state.anatomyRevision++; // Pants cuff bindings refresh only when hip proportion or sole contact actually changes.
+      return posteriorY;
+    }
+
+    function setFootScaleMultiplier(multiplier, meshChanged = false) {
+      if (state.disposed) return footSizeScale;
+      const raw = Number(multiplier); // Independent hand/foot authored setting; zero and non-finite values are rejected.
+      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.1, Math.min(4, raw)) : initialFootScale;
+      if (!meshChanged && Math.abs(next - footSizeScale) <= 1e-9) return footSizeScale; // Repeated identical slider inputs need no foot transforms or leg IK.
+      footSizeScale = next;
+      const relative = footSizeScale / initialFootScale * ageFootScale; // Relative to the foot geometry's original shipped multiplier.
+      for (const side of ['left', 'right']) {
+        const foot = state[side];
+        if (!foot) continue;
+        const base = foot.userData.hobunjiFootScaleBase ||= {
+          x: foot.scale.x, y: foot.scale.y, z: foot.scale.z,
+          contactRadiusY: Number(foot.userData.contactRadiusY) || 0,
+        }; // Preserves GLB handedness, sole height and existing generated fallback dimensions across repeat edits.
+        foot.scale.set(base.x * relative, base.y * relative, base.z * relative); // Uniform size only; leg length and contact direction are separate.
+        foot.userData.contactRadiusY = base.contactRadiusY * relative;
+        const key = side === 'left' ? 'leftContactY' : 'rightContactY';
+        const resizedContact = foot.userData.contactRadiusY * state.extremityYRatio;
+        state[`${side}Target`].y += resizedContact - state[key]; // Do not reset the current stride/pose when sizing an idle or walking foot.
+        state[key] = resizedContact;
+      }
+      setLegLengthMultiplier(legLengthMultiplier, true); // Sole contact changed even if the leg-size slider did not; refresh IK once.
+      return footSizeScale;
+    }
+
+    function setAgeFootScaleMultiplier(multiplier, bodyRatio = 1) {
+      const raw = Number(multiplier); // Separate authoring stage; never overwrite the authored adult size.
+      const authored = Number.isFinite(raw) && raw > 0 ? Math.max(.01, Math.min(20, raw)) : 1;
+      const next = authored * (Number.isFinite(bodyRatio) && bodyRatio > 0 ? bodyRatio : 1); // Editor correction from the preview body mean to the gameplay stage height.
+      if (state.disposed || Math.abs(next - ageFootScale) <= 1e-9) return ageFootScale;
+      ageFootScale = next;
+      setFootScaleMultiplier(footSizeScale, true); // Reuse the sole-contact/IK owner and the original per-mesh baseline.
+      return ageFootScale;
     }
 
     // Solves the leg chain for `side` ('left'/'right') from that leg's own
@@ -1050,6 +1244,12 @@
       chain.thighGuide.position.y = -thighLength * 0.5;
       chain.calfGuide.scale.set(1, calfLength, 1);
       chain.calfGuide.position.y = -calfLength * 0.5;
+    }
+
+    const groundedSolveTarget = new THREE.Vector3(); // Reused corrected ankle target; the gait phase and uncorrected swing lift remain untouched.
+    function usesFloorContact() {
+      return state.motionMode === 'idle' || state.motionMode === 'walk' || state.motionMode === 'run'
+        || state.motionMode === 'maskbound-lurch' || state.motionMode === 'lunge';
     }
 
     const footLevel = new THREE.Quaternion(), footRoll = new THREE.Quaternion(), footAxisX = new THREE.Vector3(1, 0, 0); // Scratch for levelling and restoring feet to their complete neutral orientation.
@@ -1092,9 +1292,17 @@
       const chain = legChains[side];
       const target = state[`${side}Target`];
       if (!mesh || !chain || !target || !window.LegBones) return;
+      const support = mesh.userData.groundSupportBox; // Construction-time sole envelope; absent for geometry-free test rigs.
+      const grounded = usesFloorContact() && !externalFootTargets && !state.hoverEnabled && !!support;
+      const lift = grounded ? rolledSoleOffset(support, mesh.scale, state[`${side}Roll`], state.extremityYRatio) : 0;
+      mesh.userData.groundSoleOffsetY = lift; // Existing mobile diagnostics report the additional support height.
+      const contactY = state[`${side}ContactY`]; // Neutral support height in the same frame as the gait target.
+      const solvedY = grounded ? Math.max(contactY, target.y) + lift : target.y; // A landing, resized foot or lunge onto raised ground may retain a stale below-floor target.
+      const solveTarget = solvedY === target.y ? target : groundedSolveTarget.copy(target); // Do not accumulate corrections into animation state.
+      solveTarget.y = solvedY;
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
-        hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
+        hip: chain.hip.position, foot: solveTarget, bendDegX: bend.x, bendDegZ: bend.z,
         foldMaxLength: state.lungeActive ? standingLegLength() : state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : state.stanceDrop > 0.0001 ? standingLegLength() : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between. A lowered stance keeps the full bone length and bends the knees.
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
@@ -1102,8 +1310,8 @@
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
       chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
       mesh.position.set(0, -solved.calfLength, 0);
-      if (state.stanceDrop > 1e-4) {
-        // A sunk stance folds the shin well off vertical; the sole stays flat on the floor by undoing the shin's world tilt (then the stride roll).
+      if (grounded || state.stanceDrop > 1e-4) {
+        // Grounded feet keep their authored stride roll but no longer inherit shin pitch/bend; the precalculated sole support now matches the IK target.
         footLevel.copy(solved.thighQuaternion).multiply(solved.calfLocalQuaternion).invert();
         mesh.quaternion.copy(footLevel).multiply(footRoll.setFromAxisAngle(footAxisX, state[`${side}Roll`]));
       } else {
@@ -1118,7 +1326,7 @@
     // feet are lifted toward them: applyLegChain's fixed-length fold then bends the knees instead of shortening the legs. Raising
     // the group (rather than counter-moving it at render time) keeps everything skinned to these joints, i.e. the pants, in the same frame.
     function applyStanceDrop(drop) {
-      const clamped = Math.max(0, Math.min(drop, standingLegLength() * state.stanceDropLimitFraction)); // Normal stances cap at 55%; an explicit paired kneel may bend deeper.
+      const clamped = Math.max(0, Math.min(drop, stanceDropMax, standingLegLength() * state.stanceDropLimitFraction)); // Normal stances cap at 55%; an explicit paired kneel may bend deeper.
       if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(root.position.y - clamped) < 1e-6) return;
       state.stanceDrop = clamped;
       root.position.y = clamped;
@@ -1167,14 +1375,10 @@
     }
 
     const surfaceForRole = makeSurfaceRoleResolver(THREE, speciesId, options.bodyColors);
-    const partProfileKey = `${speciesId}::${gender}`; // Stable key avoids allocating lookup strings during joint animation.
-    const partAxes = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes; // Optional authored foot-only axes leave hips, leg lengths, and stance positions untouched.
-
-    // Depth push for the feet (see PantsGarmentRenderer): worn pants must always draw over the feet, but must also be pure 3D proximity against
-    // the avatar's own planes, so the garment cannot carry a depth pull of its own. Instead each foot mesh is scaled about the CAMERA for its
-    // draw: the screen image is identical (a uniform scale about the eye changes nothing in projection) but the foot is `footDepthPush` farther,
-    // so the pants win the depth test over it. Done in onBeforeRender (three derives modelViewMatrix after it) and undone in onAfterRender.
-    const pushCamera = new THREE.Vector3();
+    const partScale = window.HobunjiCharacterRigScale; // Shared authored axes for geometry and the fallback foot's contact radius.
+    const footAxes = () => partScale?.partScaleAxesFor?.(speciesId, gender, 'foot');
+    // Move the foot farther from the camera during its draw so pants retain their depth ordering.
+    const pushCamera = new THREE.Vector3(); // Shared scratch camera position for the temporary depth offset.
     const rootScaleY = () => { const e = root.matrixWorld.elements; return Math.hypot(e[4], e[5], e[6]) || 1; }; // World size of one root-local unit.
     function installFootDepthPush(foot) {
       foot.traverse(mesh => {
@@ -1185,19 +1389,32 @@
         mesh.onBeforeRender = function footDepthPushBefore(renderer, scene, camera, ...rest) {
           before.call(this, renderer, scene, camera, ...rest);
           pushed = false;
+          foot.userData.groundDepthFactor = 1; // Clear old diagnostic values when no bias is applied this draw.
           if (!(state.footDepthPush > 0) || !camera?.isPerspectiveCamera || (externalFootTargets && externalFootExtendedReach)) return; // Exact-contact grapple soles must NOT be pushed behind the victim's opaque portrait by the normal pants-depth overlay.
           const e = this.matrixWorld.elements;
           pushCamera.setFromMatrixPosition(camera.matrixWorld);
-          const dx = e[12] - pushCamera.x, dy = e[13] - pushCamera.y, dz = e[14] - pushCamera.z;
+          const fe = foot.matrixWorld.elements; // One shared projection factor for every material/submesh of this shoe.
+          const dx = fe[12] - pushCamera.x, dy = fe[13] - pushCamera.y, dz = fe[14] - pushCamera.z;
           const distance = Math.hypot(dx, dy, dz);
           if (distance < 1e-3) return;
-          for (let i = 0; i < 16; i++) saved[i] = e[i];
           // The base push covers how far a foot bulges past the portrait plane; the feet also sit fore/aft of that plane (stance split, stride), so the
           // push grows with their displacement and pants cover the feet from the back as well as the front.
           const fore = Math.max(Math.abs(state.leftTarget.z), Math.abs(state.rightTarget.z)) * rootScaleY();
-          const k = 1 + (state.footDepthPush + fore) / distance;
-          for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) e[i] *= k;
-          e[12] = pushCamera.x + dx * k; e[13] = pushCamera.y + dy * k; e[14] = pushCamera.z + dz * k;
+          let k = 1 + (state.footDepthPush + fore) / distance;
+          const support = foot.userData.groundSupportBox; // Cached envelope already includes claws and imported GLB geometry.
+          if (support && usesFloorContact() && !externalFootTargets && !state.hoverEnabled) {
+            const bottom = transformedFootBottomY(support, fe); // Actual world-scale foot depth, including authored/age axes.
+            k = groundSafeDepthFactor(k, pushCamera.y, bottom, root.matrixWorld.elements[13]);
+          }
+          foot.userData.groundDepthFactor = k; // Mobile parity probe; 1 means no camera-relative depth displacement.
+          if (k <= 1 + 1e-9) return;
+          for (let i = 0; i < 16; i++) saved[i] = e[i];
+          for (let column = 0; column < 12; column += 4) {
+            e[column] *= k; e[column + 1] *= k; e[column + 2] *= k;
+          }
+          e[12] = pushCamera.x + (e[12] - pushCamera.x) * k;
+          e[13] = pushCamera.y + (e[13] - pushCamera.y) * k;
+          e[14] = pushCamera.z + (e[14] - pushCamera.z) * k;
           pushed = true;
         };
         // Scaling uniformly around a perspective camera changes depth but
@@ -1214,14 +1431,28 @@
       });
     }
 
+    const childLimbMetadata = options.childLimbVisualModifiers
+      || window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.(options.npcRecord || options.profile?.npcRecord)
+      || parent.userData?.hobunjiChildLimbVisualModifiers
+      || (parent.children || []).find(node => node.userData?.hobunjiChildLimbVisualModifiers)?.userData?.hobunjiChildLimbVisualModifiers
+      || null; // Attach-time child limb lookup only; no recurring scans.
+    const childFootFactor = Number(childLimbMetadata?.foot) > 0 ? Number(childLimbMetadata.foot) : 1;
     function installFootAxes(foot) {
       installFootDepthPush(foot);
-      window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes, true); // Shared uniform hand/foot average through moving leg joints.
-      if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
+      partScale?.installPartScaleAxes?.(THREE, foot, parent, footAxes, true);
+      if (childFootFactor !== 1 && foot?.scale?.multiplyScalar) {
+        foot.scale.multiplyScalar(childFootFactor); // Scale final GLB visuals and sphere fallbacks equally.
+        if (Number.isFinite(foot.userData?.contactRadiusY)) foot.userData.contactRadiusY *= childFootFactor;
+        foot.updateMatrix?.();
+      }
     }
 
-    const leftFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
-    const rightFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
+    const leftFallback = alignPreviewFootFacing(THREE,
+      buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth); // Corrects the isolated author lineup, not shared gameplay leg transforms.
+    const rightFallback = alignPreviewFootFacing(THREE,
+      buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth);
+    cacheFootGroundSupport(THREE, leftFallback);
+    cacheFootGroundSupport(THREE, rightFallback);
     leftFallback.name = 'left_foot';
     rightFallback.name = 'right_foot';
     legChains.left.calf.add(leftFallback);
@@ -1230,8 +1461,11 @@
     installFootAxes(rightFallback);
     state.left = leftFallback;
     state.right = rightFallback;
-    state.leftContactY = leftFallback.userData.contactRadiusY;
-    state.rightContactY = rightFallback.userData.contactRadiusY;
+    const initialAxes = footAxes(), initialBodyFactors = partScale?.bodyScaleFactorsFor?.(parent); // Same independent part axes used by the live mesh.
+    state.extremityYRatio = (initialAxes?.y || 1) / (initialBodyFactors?.y || 1);
+    state.extremityXRatio = (initialAxes?.x || 1) / (initialBodyFactors?.x || 1);
+    state.leftContactY = leftFallback.userData.contactRadiusY * state.extremityYRatio;
+    state.rightContactY = rightFallback.userData.contactRadiusY * state.extremityYRatio;
     placeIdleTarget('left', state.leftContactY);
     placeIdleTarget('right', state.rightContactY);
 
@@ -1261,6 +1495,10 @@
         buildGlbFoot(THREE, footConfig, { speciesId, targetHeight, surfaceForRole }),
       ]).then(([leftMesh, rightMesh]) => {
         if (state.disposed) { disposeObjectResources(leftMesh); disposeObjectResources(rightMesh); return; }
+        alignPreviewFootFacing(THREE, leftMesh, options.previewReverseFootDepth); // Async replacement preserves the exact same preview convention as temporary feet.
+        alignPreviewFootFacing(THREE, rightMesh, options.previewReverseFootDepth);
+        cacheFootGroundSupport(THREE, leftMesh);
+        cacheFootGroundSupport(THREE, rightMesh);
         leftMesh.name = 'left_foot';
         rightMesh.name = 'right_foot';
         leftMesh.scale.x *= -1; // mirrors handedness for the left foot from a single authored mesh
@@ -1276,9 +1514,14 @@
         state.right = rightMesh;
         state.leftContactY = leftMesh.userData.contactRadiusY * state.extremityYRatio;
         state.rightContactY = rightMesh.userData.contactRadiusY * state.extremityYRatio;
+        setFootScaleMultiplier(footSizeScale, true); // Async GLB swap needs a fresh baseline even when the slider percentage itself is unchanged.
         state.anatomyRevision++;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
+        if (typeof options.onFootVisualsReplaced === 'function') {
+          try { options.onFootVisualsReplaced({ left: leftMesh, right: rightMesh, root }); }
+          catch (error) { console.warn('[ProceduralLegAnimation] foot replacement callback failed:', error); }
+        } // Runs only on real GLB replacement, not every frame.
         window.HobunjiFeetOutlineParity?.refreshRig?.(root); // Register the final visible meshes for water/outline passes regardless of load duration.
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] foot GLB load failed for "${speciesId}" (${footConfig.glb}):`, error);
@@ -1297,6 +1540,7 @@
       const portraitSize = Number(options.portraitSize) || 200;
       cachedTorsoScan(speciesId, gender, options.profile, portraitSize).then(scan => {
         if (state.disposed || !scan) return;
+        state.torsoBeltBounds = scan.beltBounds; // Cached isolated torso result for the garment's next anatomy rebind.
         const scannedLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
         const scannedRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
         // The scan's own left/right medians can land asymmetrically around
@@ -1317,6 +1561,16 @@
     }
 
     parent.add(root);
+    const explicitLegRatio=Number.isFinite(options.legLengthRatioOverride)?options.legLengthRatioOverride:null; // An instance-specific posterior must not be overwritten by its donor species' leg scale.
+    let authoredLegRatio = explicitLegRatio??window.HobunjiCharacterRigScale?.legLengthRatioFor?.(speciesId, gender); // Species/gender default includes legacy Height migration.
+    for (let owner = parent; owner; owner = owner.parent) {
+      const scaleState = owner.userData?.hobunjiCharacterRigScaleState; // A hostile's explicit parent scale can differ from species defaults.
+      if (!scaleState) continue;
+      authoredLegRatio = (Number(scaleState.legLength) || Number(scaleState.factor?.y) || 1)
+        / (Number(scaleState.factor?.y) || 1);
+      break;
+    }
+    if (Number.isFinite(Number(explicitLegRatio??authoredLegRatio))) setLegLengthMultiplier(explicitLegRatio??authoredLegRatio); // Initial spawn honors the CURRENT parent scale, not a possibly different default.
 
     function applyPose(side, contactY, idleX, pose, response, dt) {
       const target = state[`${side}Target`];
@@ -1537,9 +1791,6 @@
       return true;
     }
 
-    let externalFootTargets = null; // Optional per-foot world coordinates, owned by a grapple/mount/cutscene until cleared.
-    let externalFootExtendedReach = false; // Opt-in: Headtaker feet must reach the real portrait surface; other users retain fixed walking limb length.
-    let externalFootDeepFold = false; // Opt-in: petite partners fold knees around a spouse posterior without changing regular grounded gait.
     function setExternalFootTargets(targets, options = null) {
       externalFootTargets = targets?.left && targets?.right ? targets : null;
       externalFootExtendedReach = !!(externalFootTargets && options?.allowExtendedReach);
@@ -1559,26 +1810,35 @@
       return true;
     }
 
-    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
-      dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
-      if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
+    function syncFootBodyScale(grounded, solveImmediately = false) {
       if (state.disposed) return;
-      if (!externalFootTargets) prepareLegSolve(); // Normal gait/seat/hover recovers the prior clean solved frame before damping.
       const bodyFactors = window.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(parent); // The scale owner can be several joints above the feet.
       state.bodyScaleX = Number(bodyFactors?.x) > 0 ? Number(bodyFactors.x) : 1;
       state.bodyScaleY = Number(bodyFactors?.y) > 0 ? Number(bodyFactors.y) : 1;
-      const footYRatio = (state.bodyScaleX + state.bodyScaleY) / (2 * state.bodyScaleY); // Body Y times this ratio equals the uniform arithmetic mean.
+      const axes = footAxes(); // Share the existing profile lookup for both axes.
+      state.extremityXRatio = (axes?.x || 1) / state.bodyScaleX;
+      const footYRatio = (axes?.y || 1) / state.bodyScaleY; // Sole contact uses authored Y independently of body height.
       if (Math.abs(footYRatio - state.extremityYRatio) > 1e-9) {
         state.extremityYRatio = footYRatio;
         const nextLeftContactY = (Number(state.left?.userData?.contactRadiusY) || 0) * footYRatio; // Resized sole height: used to keep an already planted left foot grounded.
         const nextRightContactY = (Number(state.right?.userData?.contactRadiusY) || 0) * footYRatio; // Matching right-foot correction without changing step lift.
-        if (!externalFootTargets && !state.lungeActive && !seatedPose && !suppressed && !state.hoverEnabled && !motion?.airborne) {
+        if (grounded) {
           state.leftTarget.y += nextLeftContactY - state.leftContactY;
           state.rightTarget.y += nextRightContactY - state.rightContactY;
         }
         state.leftContactY = nextLeftContactY;
         state.rightContactY = nextRightContactY;
+        if (solveImmediately || Math.abs(legLengthMultiplier - 1) > 1e-9)
+          setLegLengthMultiplier(legLengthMultiplier, true); // The contact changed with the portrait aspect even though the authored leg percentage did not.
       }
+    }
+
+    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
+      dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
+      if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
+      if (state.disposed) return;
+      if (!externalFootTargets) prepareLegSolve(); // Normal gait/seat/hover recovers the prior clean solved frame before damping.
+      syncFootBodyScale(!externalFootTargets && !state.lungeActive && !seatedPose && !suppressed && !state.hoverEnabled && !motion?.airborne);
       if (externalFootTargets) {
         if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
           state.motionMode = 'external-portrait-contact';
@@ -1613,7 +1873,7 @@
       const stanceDropAllowed = !suppressed && !state.hoverEnabled && !motion?.airborne; // Mounts, hover and falls own the whole-body pose.
       state.stanceDropAllowed = stanceDropAllowed;
       if (motion?.lunging || !stanceDropAllowed) { if (legChains.left.hip.rotation.y || legChains.right.hip.rotation.y) syncHipYaw(); }
-      const wantedDrop = stanceDropAllowed ? state.stanceDropTarget : 0;
+      const wantedDrop = stanceDropAllowed ? Math.min(state.stanceDropTarget,stanceDropMax) : 0;
       if (wantedDrop > 0 || state.stanceDrop > 0) {
         const eased = damp(state.stanceDrop, wantedDrop, wantedDrop > state.stanceDrop ? 12 : 9, dt);
         applyStanceDrop(wantedDrop === 0 && eased < modelHeight * 0.0005 ? 0 : eased); // Snaps the last sliver home so the standing pose is restored exactly.
@@ -1672,7 +1932,7 @@
       const gaitTarget = isGaiting ? Math.sqrt(speedRatio) : 0;
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
-      const gaitLegLength = standingLegLength(); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
+      const gaitLegLength = Math.min(standingLegLength(),gaitReachLimit); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
       const requestedRun = lurch ? 0.15 : motion?.combat ? 1 : motion?.allowSpeedRun ? smoothstep01((speedRatio - 0.42) / 0.28) : 0; // Wooden puppets never turn into ordinary humanoid sprints.
       state.runBlend = damp(state.runBlend, isGaiting ? requestedRun : 0, 9, dt);
       state.motionMode = isGaiting ? (lurch ? 'maskbound-lurch' : requestedRun > 0.5 ? 'run' : 'walk') : 'idle';
@@ -1716,6 +1976,7 @@
     function dispose() {
       if (state.disposed) return;
       state.disposed = true;
+      unregisterScaleHandle(handle); // Remove all registrations on despawn or editor exit.
       externalFootTargets = null;
       externalFootDeepFold = false;
       portraitGuides?.dispose();
@@ -1743,8 +2004,9 @@
       const rightBounds = footBoundsInRoot(state.right);
       const currentLegLength = standingLegLength(); // Shown in mobile-facing diagnostics so stride scaling can be verified without a console.
       return {
-        lastChange: 'Extended-reach portrait contacts bypass pants foot-depth push and retain exact anatomical targets',
+        lastChange: 'Scaled sole envelopes drive grounded ankle height; pants depth push cannot sink a grounded shoe below its floor',
         motionMode: state.motionMode,
+        instancePosteriorFixed: fixedPosterior, gaitReachLimit: Number.isFinite(gaitReachLimit)?gaitReachLimit:null, stanceDropMax: Number.isFinite(stanceDropMax)?stanceDropMax:null, // Mobile diagnostics for short-legged actors.
         footOrientation: {
           rootYawDeg: root.rotation.y * 180 / Math.PI,
           leftHipYawDeg: legChains.left.hip.rotation.y * 180 / Math.PI,
@@ -1762,6 +2024,7 @@
         }, // Existing mobile diagnostics expose the applied reach and its anatomical limits.
         coordinateSpace: 'avatar-floor-relative',
         floorY: 0,
+        groundSupport: { left: { offsetY: state.left?.userData.groundSoleOffsetY ?? 0, depthFactor: state.left?.userData.groundDepthFactor ?? 1 }, right: { offsetY: state.right?.userData.groundSoleOffsetY ?? 0, depthFactor: state.right?.userData.groundDepthFactor ?? 1 } }, // Per-foot support and projection correction for mobile checks.
         posteriorY,
         hover: {
           enabled: state.hoverEnabled,
@@ -1815,8 +2078,15 @@
       publishSolvedLegPose(side); // Recorded ragdoll samples share the authoritative solved baseline.
     }
 
-    return {
-      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets, releaseExternalFootTargets,
+    const handle = {
+      group: root, update, dispose, applyRecordedLegPose, setLegLengthMultiplier, setFootScaleMultiplier, setAgeFootScaleMultiplier,
+      syncPreviewFootContact: () => syncFootBodyScale(true, true), // Static editor rigs need current contact without advancing or resetting their gait.
+      get standingPosteriorY() { return posteriorY; }, // Consumers such as chair/pants positioning read the live hip, not an outdated creation-time value.
+      restPosteriorY, // Preview and game diagnostics can compare current leg length with its original source anatomy.
+      get standingFootContactY() { return (state.leftContactY + state.rightContactY) * .5; }, // Author height/beltline conversion measures real sole-contact height; no scene traversal or extra update pass.
+      get legLengthMultiplier() { return legLengthMultiplier; },
+      get footScaleMultiplier() { return footSizeScale; },
+ getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets, releaseExternalFootTargets,
       hasExternalFootTargets: () => !!externalFootTargets, // Cliff crawl must not overwrite a live grapple/mount/paired-action leg contact.
       captureMotionState: () => ({ // Render-scoped cliff IK must not persist its temporary foot targets into the next gait solve.
         leftTarget: state.leftTarget.clone(), rightTarget: state.rightTarget.clone(),
@@ -1862,14 +2132,35 @@
         return stance;
       },
       setHoverMode, isHoverMode,
-      standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
       anatomyRevision: () => state.anatomyRevision,
+      getTorsoBeltBounds: () => state.torsoBeltBounds || null,
+      getFootWidthScaleX: () => state.extremityXRatio, // O(1) read of the existing leg-scale sync, no profile lookup or ancestor walk.
+      getFootWidthX: side => { // Neutral leg-root units; never inspect animated world-space bounds.
+        const foot = state[side];
+        const width = Number(foot?.userData?.cuffWidthX) || 0;
+        return width * Math.abs(Number(foot?.scale?.x) || 1) * state.extremityXRatio;
+      },
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
+    handlesByLegRoot.set(root, handle);
+    registerScaleHandle(handle); // Once per new rig, no per-frame/scale global loop.
+    alignPortraitWithLegs(parent, handle); // Spawn with an already-authored independent leg length leaves portrait and hips attached immediately.
+    return handle;
   }
 
   window.ProceduralLegAnimation = {
     attach,
+    handleForGroup: group => {
+      let node = group?.getObjectByName?.('left_thigh') || group; // Walk the actual leg ancestry, even if the author supplied its enclosing avatar.
+      while (node) {
+        const handle = handlesByLegRoot.get(node);
+        if (handle) return handle;
+        node = node.parent;
+      }
+      return null;
+    },
+    syncScaleForParent, // Shared scale runtime notifies already-attached feet when portrait/leg ratios diverge.
+    alignPortraitWithLegs, // Preview and game use exactly the same floor-relative hip/portrait reconnection.
     worldQuaternionWithoutScale, // Scale-independent orientation shared with the climb renderer.
     setShowBones: (visible) => { showLegBoneGuides = !!visible; },
     get showBones() { return showLegBoneGuides; },

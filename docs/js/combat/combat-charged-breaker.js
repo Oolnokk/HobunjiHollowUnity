@@ -54,7 +54,7 @@
     lastRelease: null,
   }; // Used by mobile-friendly diagnostics without requiring console access.
 
-  function now() { return performance.now() / 1000; }
+  function now() { return (window.SimClock ? window.SimClock.now() : performance.now()) / 1000; } // Shared sim clock (js/sim-clock.js).
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function lerp(a, b, t) { return a + (b - a) * t; }
 
@@ -158,7 +158,7 @@
     let paidChargeCost = 0; // Actual ordinary/enhanced/debt Stamina consumed, used for diagnostics only.
     let paidChargeBaseline = 0; // Cumulative pre-ResourceSystem cost committed, independent of perk and trinket multipliers.
     let staminaRegenBlocked = false; // Tracks ownership of this hold's composable regeneration blocker.
-    let furiousRawProgressBonus = 0; // Added to the renderer's raw windup clock; grows only from segments actually funded by Furious Stamina.
+    let furiousTempo = 1; // Snapshot at hold start; charge timing and release use the same reserve level.
 
     function setHoldStaminaRegenBlocked(blocked) {
       const next = !!blocked;
@@ -202,8 +202,8 @@
       startedMounted = window.Mounts?.rideState === 'mounted';
       paidChargeCost = 0;
       paidChargeBaseline = 0;
-      furiousRawProgressBonus = 0;
-      window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, raw => raw + furiousRawProgressBonus);
+      furiousTempo = window.ResourceSystem?.attackTempoMultiplier?.(window.Combat.deps?.player, 'offensiveHeldCharge') ?? 1;
+      window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, raw => raw * furiousTempo);
       resetChargeGlowMilestones();
       debugState = {
         ...debugState,
@@ -331,7 +331,7 @@
         LUNGE_DIRECT_FLIGHT_MAX,
         poseCharge,
       );
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo * furiousTempo));
       const strikeS = STRIKE_S * timeScale;
       window.FeyIllusions?.setActionDuration?.(deps.player, strikeS); // Final paid pose slice follows the actual partial-Windup→Strike timeline.
 
@@ -384,6 +384,7 @@
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used by Mirrored Health for post-mitigation damage only.
             const impactDamage = mounted ? Math.round(damage * (window.Mounts?.mountedMeleeDamageMultiplier?.() || 1)) : damage; // Impact resolves from actual collision-tested speed, not charge pose alone.
             deps.damageCreature(c, impactDamage, deps.player.x, deps.player.y, knockbackPxS, {
+              attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
               abilityId: 'chargedBreaker', // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               heavy: true,
@@ -447,7 +448,7 @@
       setGlow(poseCharge);
 
       const effects = currentEffects(); // Single mastery snapshot funds this hold step and determines its mounted speed ceiling.
-      const payment = commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker (charging)', Math.max(0.001, dt)); // Per-frame paid charge slices rotate the camera as gradually as Stamina is expended. // Unchanged pose spends nothing.
+      commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker (charging)', Math.max(0.001, dt)); // Per-frame paid charge slices rotate the camera as gradually as Stamina is expended. // Unchanged pose spends nothing.
       if (startedMounted) {
         const efficiency = Math.max(0.05, Number(shapeStats.efficiency) || 1); // Mirror the payment's authored cost denominator.
         const fullCost = chargeCostForPose(1, 1 + (Number(effects.stats.staminaCostMul) || 0)) / efficiency
@@ -464,11 +465,7 @@
         window.Mounts?.setMountedCombatWindupBoost?.(MOUNT_CHARGE_BOOST_OWNER, (2.4 + poseCharge * 0.8) * masteryScale * gustScale, funded);
         debugState.mountedBoostPaidFraction = funded;
       }
-      const tempo = Math.max(1, Number(payment?.tempoMultiplier) || 1);
-      if (tempo > 1 && MAX_CHARGE_S > 0) {
-        furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)) / MAX_CHARGE_S; // Keep Furious acceleration on the original visible-pose clock.
-      }
-      const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).length > 0;
+      const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).some(entry => !entry.def?.requiresBeneficialTransaction || entry.benefitsTransaction);
       if (deps.player.stamina <= 0 && !hasEnhancedStamina) releaseNow(heldSeconds, true);
     }
 

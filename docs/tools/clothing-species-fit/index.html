@@ -45,6 +45,9 @@
           <button data-mode="transform" class="active">Base transform</button>
           <button data-mode="body">Grid only</button>
           <button data-mode="fit">Species fit</button>
+          <button data-mode="quad">Quad corners</button>
+          <button data-mode="hole">Hood hole</button>
+          <button data-mode="pin">Pin outline</button>
           <button data-mode="preview">Preview</button>
           <button data-mode="protect">Protect pixels</button>
           <button data-mode="headband">Band spline</button>
@@ -61,6 +64,7 @@
           <label class="small"><input id="showMeshes" type="checkbox" checked> grids</label>
         </div>
         <div class="row"><label class="small"><input id="match3D" type="checkbox" checked> Match 3D portrait in 2D</label></div>
+        <div class="row"><label class="small"><input id="showHair" type="checkbox"> Hair, eyes &amp; beard on preview character</label></div>
         <div id="match3DStatus" class="small" aria-live="polite">Preparing game-matched front portrait…</div>
         <div class="small">When enabled, the 2D canvas shows the same front portrait texture used by the 3D rig, projected onto the editable 6×6 canvas. Turn off to inspect uncolored original PNG pixels. Grid coordinates and PNG exports remain unchanged. Procedural neck, hands, and feet appear only in 3D.</div>
         <div class="field"><label for="opacity">Warped garment opacity</label><input id="opacity" type="range" min="0" max="1" step=".05" value=".78"></div>
@@ -79,6 +83,44 @@
         <div class="field"><label for="translateY">Translate Y (px)</label><div class="row"><input id="translateY" type="range" min="-120" max="120" step="0.25" value="0"><input id="translateYNumber" type="number" min="-120" max="120" step="0.25" value="0" aria-label="Translate Y pixels"></div></div>
         <div class="row"><button id="resetTransform">Reset base transform</button></div>
         <div class="small">Saved separately for body and headwear per species+gender. In Base Transform mode, drag the canvas to reposition the selected art.</div>
+      </section>
+
+      <section id="hoodHoleSection" hidden>
+        <h2>Hood opening deform</h2>
+        <div class="small">Uses the beard mask tool's hood-opening detection. In <b>Hood hole</b> mode, drag the yellow opening corners. The opening follows the quad and every layer of the hood moves together; cloth between the opening rim (cyan; bright cyan shows where it will end up) and the hood outline (dashed magenta) follows with the falloff below, so the outline never moves.</div>
+        <div class="row"><label class="small"><input id="holeEnabled" type="checkbox"> apply hood-opening deform</label></div>
+        <div class="field"><label for="holeRate">Falloff rate with distance from the opening (0 = even spread to the outline, higher = concentrated around the hole)</label><div class="row"><input id="holeRate" type="range" min="0" max="12" step="0.05" value="1.5"><input id="holeRateNumber" type="number" min="0" max="12" step="0.05" value="1.5" aria-label="Falloff rate"></div></div>
+        <div class="field" id="holeTrimField"><label for="holeTrimFollow">Trim follows the opening (0 = moves like the base cloth, 1 = rides along with the hole, uncovering the base where it moves away)</label><div class="row"><input id="holeTrimFollow" type="range" min="0" max="1" step="0.01" value="1"><input id="holeTrimFollowNumber" type="number" min="0" max="1" step="0.01" value="1" aria-label="Trim follow"></div></div>
+        <div class="row"><label class="small"><input id="holeLayerColors" type="checkbox" checked> colour each layer while editing the opening</label></div>
+        <div id="holeLegend" class="hole-legend" aria-label="Hood layers"></div>
+        <div class="row"><button type="button" id="holeReset">Reset opening corners</button></div>
+        <div id="holeStatus" class="small" aria-live="polite"></div>
+      </section>
+
+      <section id="pinSection" hidden>
+        <h2>Pinned outline</h2>
+        <div class="small">In <b>Pin outline</b> mode the item is shown untransformed. Paint along the parts of its silhouette that must not move; the brush snaps to the outline pixels it covers (red). After the fit and hood-hole deform, pinned pixels return to exactly where they are in the original art and the cloth around them follows smoothly. Saved per item.</div>
+        <div class="field"><label for="pinBrush">Brush radius (sprite px)</label><div class="row"><input id="pinBrush" type="range" min="1" max="12" step="0.5" value="3"><input id="pinBrushNumber" type="number" min="1" max="12" step="0.5" value="3" aria-label="Pin brush radius"></div></div>
+        <div class="field"><label for="pinSigma">Falloff radius around pinned pixels (sprite px)</label><div class="row"><input id="pinSigma" type="range" min="2" max="40" step="0.5" value="8"><input id="pinSigmaNumber" type="number" min="2" max="40" step="0.5" value="8" aria-label="Pin falloff radius"></div></div>
+        <div class="row"><label class="small"><input id="pinErase" type="checkbox"> erase pins</label><button type="button" id="pinClear">Clear pins</button></div>
+        <div class="row"><button type="button" id="pinCopyRear">Copy front pins to rear</button></div>
+        <div class="small">Switch the headwear view to <b>Back</b> to see and paint the rear art's pins (shown mirrored, as the game shows it from behind).</div>
+        <div id="pinStatus" class="small" aria-live="polite"></div>
+      </section>
+
+      <section id="recipeSection">
+        <h2>Fit recipes</h2>
+        <div class="small">A recipe is a saved base transform + 6×6 deformation. Apply it to the current item, or to several items at once (one ZIP). Library recipes come from <code>config/clothing-fit-recipes/</code>.</div>
+        <div class="field"><label for="recipeSelect">Recipe</label><select id="recipeSelect"></select></div>
+        <div id="recipeInfo" class="small" aria-live="polite">Loading recipes…</div>
+        <div class="row"><label class="small"><input id="recipeUseSpecies" type="checkbox" checked> switch to the recipe's starting/target species</label></div>
+        <div class="row"><button type="button" id="recipeApply">Apply to current item</button><button type="button" id="recipeDownload">Download recipe JSON</button></div>
+        <div class="field"><label>Apply to these items and export one ZIP</label><div id="recipeGarments" style="max-height:140px;overflow:auto;border:1px solid #334155;border-radius:6px;padding:4px"></div></div>
+        <div class="row"><button type="button" id="recipeBatch">Apply to ticked items &amp; export</button></div>
+        <div class="field"><label for="recipeName">Save current fit as recipe</label><input id="recipeName" placeholder="Recipe name"></div>
+        <div class="field"><label for="recipeDescription">Description (optional)</label><input id="recipeDescription" placeholder="What the recipe does"></div>
+        <div class="row"><button type="button" id="recipeSave">Save recipe</button><button type="button" id="recipeImport">Import recipe JSON</button><button type="button" id="recipeDelete">Delete saved</button><input id="recipeFile" type="file" accept=".json,application/json" hidden></div>
+        <div id="recipeStatus" class="small" aria-live="polite"></div>
       </section>
 
       <section>
@@ -217,7 +259,7 @@
       </details>
     </aside>
 
-    <main class="panel">
+    <main class="panel previews">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:7px">
         <div><h2 style="margin:0">2D front portrait / fitting canvas</h2><div id="label" class="small"></div></div>
         <div class="legend">

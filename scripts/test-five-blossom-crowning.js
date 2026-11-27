@@ -391,6 +391,25 @@ async function main(){
   assert(audience.every(target=>target.r>=0 && target.r<49.5),'even a 100-person audience stays inside the town south edge');
   const frontRow = audience.filter(target=>target.r === Math.min(...audience.map(entry=>entry.r))); // NPC ids are alphabetically sorted before slot assignment, not in their generated numeric order.
   assert(Math.abs((Math.min(...frontRow.map(target=>target.c))+Math.max(...frontRow.map(target=>target.c)))/2-(Number(stage.col)+1.5))<0.01,'the large front audience rank centers on the stage');
+  // Co-op: other players join the audience after the villagers, in the same ranks, then go back.
+  ctx.performance=ctx.performance||{now:()=>1000};load('docs/js/actor-registry.js');load('docs/js/time-consensus.js');load('docs/js/shared-cutscene.js');
+  const reg=W.ActorRegistry,hostPlayer={x:5,y:5,health:100},guestA={x:640,y:640,health:100,areaId:'cave'},guestB={x:700,y:700,health:100,areaId:'farm'};
+  reg.registerPlayer(hostPlayer,{local:true});reg.registerPlayer(guestA,{playerId:'ga'});reg.registerPlayer(guestB,{playerId:'gb'});
+  W.SharedCutscene.init({tilePx:64});
+  W.SharedCutscene.begin({id:'five-blossoms-crowning',area:'town',controller:hostPlayer});
+  const village=Array.from({length:6},(_,i)=>({rec:{id:'v_'+i},area:'town',root:{position:{x:0,z:0}}}));
+  assert.equal(W.FestivalBlossomCeremony.arrangeCrowd(stage,village),6);
+  const villagerSlots=village.map(w=>W.FestivalBlossomCeremony.__test.scheduleOverride(w.rec));
+  assert(W.SharedCutscene.isInCrowd(guestA)&&W.SharedCutscene.isInCrowd(guestB),'both guests, whichever area they were in, joined the audience');
+  assert.equal(guestA.areaId,'town');assert.equal(guestB.areaId,'town');
+  const taken=new Set(villagerSlots.map(t=>t.c.toFixed(2)+','+t.r.toFixed(2)));
+  for(const g of [guestA,guestB]){const key=((g.x/64-0.5).toFixed(2))+','+((g.y/64-0.5).toFixed(2));assert(!taken.has(key),'a guest never stands on a villager\'s spot');taken.add(key);}
+  assert(Math.abs(guestA.angle-(-Math.PI/2))<1e-9,'guests face north at the stage like the villagers (rotY 180)');
+  assert.equal(guestA._crowdSlot.pose,'stand');
+  W.SharedCutscene.end();
+  assert.deepEqual([guestA.x,guestA.y,guestA.areaId],[640,640,'cave'],'a guest is put back exactly where they were');
+  assert.equal(guestA._inCutscene,false);
+  reg.unregisterPlayer(guestA);reg.unregisterPlayer(guestB);reg.unregisterPlayer(hostPlayer);
   console.log('Five Blossoms crowning: picked Pack items, world-year first finder, player/farmhand stage ceremony, crowd, temporary hood removal, real species-aware hat art and saved-crown migration, later awards, persistence, duplicate lockout passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

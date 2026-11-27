@@ -160,7 +160,7 @@ assert.equal(selectStance('weapon', 'hatchet', {}), lightPose);
 // Run the production sync ordering with a matrix owner that marks its bake.
 assert.match(visualSource, /function syncAssemblyLayers\(/, 'the shared flail/layer duplicate renderer remains installed');
 const syncStart = visualSource.indexOf('  function syncNow(');
-const syncEnd = visualSource.indexOf('  function transformSocketForHand(', syncStart);
+const syncEnd = visualSource.indexOf('\n  }', syncStart) + '\n  }'.length; // Stop at syncNow itself; adjacent wrist helpers are not part of this function.
 for (const editor of [true, false]) {
   const operations = [];
   class Vector { clone() { return new Vector(); } copy() { return this; } set() { return this; } multiplyScalar() { return this; } }

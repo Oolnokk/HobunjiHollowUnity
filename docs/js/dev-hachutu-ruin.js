@@ -552,7 +552,7 @@
     try{
       const enemy=await combat.makeEntity({troopType:record.troop,tier:titan?4:2,x:record.x*tile,y:record.z*tile,
         zoneId:MAP,scene:owner.context.scene,grid:owner.context.grid,cols:owner.context.cols,rows:owner.context.rows,
-        extra:{state:'chase',homeX:record.x*tile,homeY:record.z*tile,hachutuRuin:true}});
+        extra:{state:'chase',homeX:record.x*tile,homeY:record.z*tile,hachutuRuin:true,isMaskboundTitan:titan}});
       if(!enemy)return null;
       if(owner.ended||session!==owner||owner.deps?.getCurrentArea?.()!==MAP){retireEntity(enemy,owner);return null;}
       if(titan)applyTitanStats(enemy);

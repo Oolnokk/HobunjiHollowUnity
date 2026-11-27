@@ -808,7 +808,9 @@
   function update() {
     const now = performance.now() / 1000; // Shared active-effect clock.
     const before = activeEffects.length; // Used to refresh the shared buff bar only on expiry.
-    activeEffects = activeEffects.filter(effect => effect.expiresAt > now);
+    let anyExpired = false; // Scan first so the common no-expiry frame allocates no filtered array.
+    for (let i = 0; i < activeEffects.length; i++) { if (!(activeEffects[i].expiresAt > now)) { anyExpired = true; break; } }
+    if (anyExpired) activeEffects = activeEffects.filter(effect => effect.expiresAt > now);
     const expired = before !== activeEffects.length;
     if (expired) window.EffectBuffBar?.refresh(true);
     // An expiry always forces an immediate re-check (rare, and the recipeId

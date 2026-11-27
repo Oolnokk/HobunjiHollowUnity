@@ -5,6 +5,7 @@
 
   const SPRITES = 'assets/creaturesprites/'; // Resolves each authored PNG against the repository selected in the Animation Author.
   const FLYING_ASPECT = 1000 / 1617; // Shared authored canvas aspect used by the three native flying species.
+  const MOOT_MODEL_WIDTH = 1.7 * (1295 / 1617); // Keep the original art scale in standalone Moot previews.
   const entries = Object.freeze({ // Rig picker metadata and compositor configuration; not gameplay creature definitions.
     puktuk: {
       label: 'Puktuk', modelWidth: 2.1, spriteAspect: 0.43636,
@@ -22,7 +23,7 @@
     },
     'voorg-ass-herd-mother': { label: 'Voorg-ass Herd-Mother', mirrorOf: 'voorg-ass', modelWidth: 1.5 },
     moot: {
-      label: 'Moot', modelWidth: 1.7,
+      label: 'Moot', modelWidth: MOOT_MODEL_WIDTH, spriteAspect: 920 / 1295,
       prefix: 'moot', baseColor: '#9CBD9E', baseShadeReferenceHex: '#9CBD9E',
       baseRecolorKeyHex: '#9CBD9E', baseRecolorHueTolerance: 20,
       baseRecolorMinSaturationRatio: 0.45, fullBaseRecolor: false,
@@ -31,7 +32,7 @@
       patternRecolorKeys: { overcoat: { hex: '#9CBD9E', hueTolerance: 20, minSaturationRatio: 0.45 } }, // Preserve authored black/grey/ivory regions when tinting the coat.
       clipPatternsToBase: ['overcoat'], // The standalone preview must not draw overcoat's oversized black background over the scene.
     },
-    'moot-herd-mother': { label: 'Moot Herd-Mother', mirrorOf: 'moot', modelWidth: 1.7 }, // Runtime variant shares Moot animation assets and genotype preview.
+    'moot-herd-mother': { label: 'Moot Herd-Mother', mirrorOf: 'moot' }, // Runtime variant shares Moot animation assets and genotype preview.
     tzatzul: {
       label: 'Tzatzul', modelWidth: 2.2, spriteAspect: FLYING_ASPECT, defaultFrame: 'perched',
       prefix: 'tzatzul', base: {
