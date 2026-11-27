@@ -28,6 +28,7 @@
   let baseMatrixCaptures = 0; // Diagnostic count of visible foot matrices captured by this adapter.
   let lockedWaterMaskDraws = 0; // Diagnostic count of foot-water stencil draws forced to the captured visible matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
+  let lockedScreenMaskDraws = 0; // Counts screen-outline mask draws using the visible limb pose.
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
   let missedOutlineSnapshots = 0; // Outline/water-mask draws where no recent visible matrix was available.
   let waterOccludedTaggedMeshes = 0; // Diagnostic count of current-or-former foot meshes explicitly registered for water occlusion.
@@ -54,6 +55,7 @@
       && camera?.layers?.mask === ((1 << FOOT_WATER_MASK_LAYER) >>> 0)
     ) return 'water-mask';
     if (!scene?.overrideMaterial) return null;
+    if (material?.userData?.hobunjiScreenOutlineMask === true) return 'screen-mask';
     if (isShellMaterial(material)) return 'shell';
     if (isMaterialIdMaterial(material)) return 'material-id';
     return null;
@@ -174,6 +176,9 @@
       } else if (passKind === 'shell') {
         rigState.lockedShellDraws++;
         lockedShellDraws++;
+      } else if (passKind === 'screen-mask') {
+        rigState.lockedScreenMaskDraws++;
+        lockedScreenMaskDraws++;
       } else {
         rigState.lockedMaterialIdDraws++;
         lockedMaterialIdDraws++;
@@ -256,6 +261,7 @@
       baseMatrixCaptures: 0, // Visible foot draws captured for this leg rig.
       lockedWaterMaskDraws: 0, // Foot-water stencil draws that reused the exact visible foot matrix.
       lockedShellDraws: 0, // Shell draws that reused the exact visible foot matrix.
+      lockedScreenMaskDraws: 0, // Screen mask draws that reused the visible limb matrix.
       lockedMaterialIdDraws: 0, // Material-ID draws that reused the exact visible foot matrix.
       missedOutlineSnapshots: 0, // Outline/water-mask draws without a recent visible matrix to reuse.
     };
@@ -290,10 +296,11 @@
         baseMatrixCaptures,
         lockedWaterMaskDraws,
         lockedShellDraws,
+        lockedScreenMaskDraws,
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
-        latestChange: 'Foot shell outline draws use a depth push-back so inflated back faces no longer layer over the foot.',
+        latestChange: 'Screen depth masks reuse the visible foot pose without applying the shell-only depth push-back.',
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
       };
     },

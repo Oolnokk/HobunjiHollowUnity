@@ -134,7 +134,10 @@ window.HobunjiCharacterRigScaleDefaults={uploadedScaleRestoreValues:{[entry.key]
 window.HobunjiCharacterDimensions={dimensionsFor(species){return {body:{width:species==='mashtzarr'?2:1},height:species==='mashtzarr'?1.6:1,factors:{modelHeight:1}};}};
 api.configure([entry,other],entry);
 api.setAgeMode('baby');
-assert.equal(api.individualAgeValues(other).head,.5489999999999999,'latest uploaded Mashtzarr female head is visible in actual editor state');
+assert.equal(api.individualAgeValues(other).head,.65,'the editor uses the shared 65% baby head preset');
+api.setAgeMode('toddler');
+assert.equal(api.individualAgeValues(other).head,.65,'the editor uses the shared 65% toddler head preset');
+api.setAgeMode('baby');
 const otherBefore=api.individualAgeValues(other).width;
 api.editIndividualAge('width','123.4');
 assert.equal(api.individualAgeValues(entry).width,1.234,'selected identity has its own width');

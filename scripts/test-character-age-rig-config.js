@@ -67,7 +67,9 @@ for (const mode of ['baby', 'toddler']) {
   const row = plain(v3.api.profileFor(mode, 'mao-ao', 'male'));
   assert.deepEqual(row, { ...v2Row, head: .65, adultReference: { x: 1.2, y: 1.5 } });
   assert.equal(v3.api.relativeProfile(row, { x: .6, y: .75, head: .7 }).head, .65, 'old adult head reference cannot enlarge migrated head');
-  assert.equal(v3.api.relativeProfile(row, { x: .6, y: .75, head: .7 }).width, .88, 'frozen body reference survives');
+  const relative = v3.api.relativeProfile(row, { x: .6, y: .75, head: .7 });
+  assert.ok(Math.abs(relative.width - .88) < 1e-12, 'frozen body width survives');
+  assert.ok(Math.abs(relative.height - .74) < 1e-12, 'frozen body height survives');
   assert.deepEqual(plain(v3.api.effectiveValues()[mode]), { ...override[mode], head: .65, widthConvergence: 0, heightConvergence: 0 });
 }
 assert.deepEqual(plain(v3.api.profileFor('child', 'mao-ao', 'male')), v2Row, 'older child profile untouched');
