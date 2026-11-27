@@ -163,6 +163,10 @@ assert.equal(FakeAudio.plays, 6, 'named bandage loop plus swing, melee impact, b
   assert.equal(FakeAudio.lastPlayed.playbackRate,0.65);
   assert.equal(FakeAudio.lastPlayed.preservesPitch,false);
   assert.equal(FakeAudio.plays,before+5,'fire uses the torch recording once');
+  combatSfx.enabled = false;
+  for (const cue of ['sharp','blunt','fire']) api.playCollisionImpactSfx(cue,0,0,'farm');
+  assert.equal(FakeAudio.plays,before+5,'combat mute suppresses all three environmental cues');
+  combatSfx.enabled = true;
 }
 
 // In headless/mobile native fallback, the first lowered-pitch slash must finish before the second begins.
