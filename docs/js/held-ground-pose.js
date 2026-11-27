@@ -365,10 +365,19 @@
     const anchorY=e[1]*spec.x-e[5]*contractedZ(-spec.y,gripZ,segments,amount,spec.x)+e[13];
     return anchorY-scale*(spec.headDrop+Math.hypot(spec.spanX,spec.spanY*lightScale));
   }
+  // Enchantment motes (combat/weapon-enchantment-vfx.js) are camera-facing sprites in one marked group parented to
+  // the haft plane. They are attached a moment after the weapon is equipped, so treating them as a drawing child
+  // made a solve that had worked fail with 'unsupported-assembly' ever after and left the raw stance on screen.
+  // Only the marked group with nothing but sprites is exempt; any real mesh or PNG overlay stays solid.
+  function isEnchantmentVfxChild(child){
+    if(child?.userData?.weaponEnchantmentVfx!==true)return false;
+    for(const node of child.children||[])if(!node.isSprite)return false;
+    return true;
+  }
   function hasDrawingHaftChildren(plane,allowDual=false){
     const copies=global.HobunjiDualWieldWeaponVisuals;
     const assemblies=global.HobunjiWeaponSpriteAssemblies;
-    for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child)&&!(allowDual&&copies?.isOwnedChild?.(plane,child))&&!assemblies?.isGroundNonSolidChild?.(plane,child))return true;
+    for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child)&&!(allowDual&&copies?.isOwnedChild?.(plane,child))&&!assemblies?.isGroundNonSolidChild?.(plane,child)&&!isEnchantmentVfxChild(child))return true;
     return false;
   }
   function constrainWeapon(holder,mesh,context) {

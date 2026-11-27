@@ -376,3 +376,14 @@ canonical.children.push({visible:true});assert.equal(preview.hasDrawingHaftChild
 
 assert.ok(assemblies.includes('const fixedScale=sharedSource?(sharedSource.fixedRopeScale??1)'),'dual flail heads inherit the permanent source rope fit');
 assert.ok(assemblies.includes('const profile=sharedSource?sharedSource.groundProfile:'),'dual flail heads use the same clearance profile');
+
+// Enchantment mote groups are emitter-only and never make the haft "drawing"; real overlays still do.
+{
+  const hdc=context.window.HeldGroundPose.hasDrawingHaftChildren;
+  const motes={userData:{weaponEnchantmentVfx:true},children:[{isSprite:true},{isSprite:true}]};
+  assert.equal(hdc({children:[motes]}),false,'marked sprite-only enchantment group is non-solid');
+  assert.equal(hdc({children:[{userData:{},children:[{isSprite:true}]}]}),true,'unmarked group stays solid');
+  assert.equal(hdc({children:[{userData:{weaponEnchantmentVfx:true},children:[{isSprite:true},{isMesh:true}]}]}),true,'marked group containing a mesh stays solid');
+  assert.equal(hdc({children:[motes,{userData:{},children:[]}]}),true,'a real overlay beside the motes still counts');
+  console.log('held ground pose: enchantment mote children are non-solid');
+}
