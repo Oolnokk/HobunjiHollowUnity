@@ -154,7 +154,8 @@
     p.x = actor.x / deps.TILE; p.z = actor.y / deps.TILE;
     const surface = deps.surfaceY(area, Math.floor(p.x), Math.floor(p.z));
     if (Number.isFinite(surface)) p.y = recovered ? surface : p.y + (surface - p.y) * (1 - Math.exp(-13.4 * dt));
-    const moved = !recovered && Math.hypot(actor.x - beforeX, actor.y - beforeY) > 0.001;
+    const distanceMoved = recovered ? 0 : Math.hypot(actor.x - beforeX, actor.y - beforeY); // Shared motion threshold and gait speed.
+    const moved = distanceMoved > 0.001;
     if (moved) {
       entry.heading = Math.atan2(actor.y - beforeY, actor.x - beforeX); // The actual detour, not the unobstructed target direction.
       if (toddler) {
@@ -166,7 +167,7 @@
       }
     }
     entry.movedLastFrame = moved;
-    walker._moveSpeedTiles = moved && dt > 0 ? Math.hypot(actor.x - beforeX, actor.y - beforeY) / deps.TILE / dt : 0;
+    walker._moveSpeedTiles = moved && dt > 0 ? distanceMoved / deps.TILE / dt : 0;
     if (toddler) {
       walker.legs?.update?.(dt, walker._moveSpeedTiles, false); // Normal procedural NPC feet, not the infant crawl.
       if (moved) walker._tickFootsteps?.(walker._moveSpeedTiles * dt);
