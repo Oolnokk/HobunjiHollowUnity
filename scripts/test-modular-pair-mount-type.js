@@ -1,4 +1,4 @@
-// Pair-local opposite-type mounting; one authored head line in all modes.
+// Pair-local direct destination mounting; one authored head line in all modes.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const window={}; // Runtime-only fixture, no browser needed.
 for(const path of ['docs/config/modular-weapons.js','docs/js/modular-weapons.js'])vm.runInNewContext(fs.readFileSync(path,'utf8'),{window,console});
@@ -8,10 +8,10 @@ s.mounts=[{type:'tang',start:{x:100,y:100},end:{x:100,y:150}},{type:'eye',start:
 for(const [key,normal,opposite] of [['dagger-sword','tang','eye'],['warhammer','eye','tang']]){
   const head=draft.heads[key]; // Exercise both directions with unchanged original source endpoints.
   head.alternativeMounts=[{id:'discard-me',type:'blade',start:{x:1,y:2},end:{x:3,y:4}}];
-  for(const mode of ['normal','opposite','both']){
+  for(const mode of ['auto','tang','eye','both']){
     s.overrides[key]={disallow:false,mountTypeMode:mode,headMountId:'discard-me',headMountBySocket:{0:'discard-me'}};
     const cfg=api.replace(draft),shaft=cfg.shafts[shaftKey],part=cfg.heads[key],values=api.settings(shaftKey,key);
-    const expected=mode==='both'?['tang','eye']:[mode==='normal'?normal:opposite];
+    const expected=mode==='both'?['tang','eye']:[mode==='auto'?normal:mode];
     assert.deepEqual(Array.from(api.matchingMounts(shaft,part),m=>m.type),expected);
     assert.equal(api.isDisallowed(shaftKey,key),false);
     assert.equal(part.alternativeMounts,undefined,'Obsolete alternate lines are discarded');
@@ -26,15 +26,38 @@ for(const [key,normal,opposite] of [['dagger-sword','tang','eye'],['warhammer','
   }
 }
 s.mounts=s.mounts.filter(m=>m.type==='tang');
-s.overrides.warhammer={disallow:false,mountTypeMode:'normal'};
+s.overrides.warhammer={disallow:false,mountTypeMode:'auto'};
 let cfg=api.replace(draft);
 assert.equal(api.isDisallowed(shaftKey,'warhammer'),true);
 assert.equal(api.attachmentRig(cfg.shafts[shaftKey],cfg.heads.warhammer,api.settings(shaftKey,'warhammer')).children.length,0);
-s.overrides.warhammer.mountTypeMode='opposite';
+s.overrides.warhammer.mountTypeMode='tang';
 cfg=api.replace(draft);
 assert.equal(api.isDisallowed(shaftKey,'warhammer'),false);
 assert.equal(api.settings('dagger','warhammer').mountTypeMode,undefined,'No leakage into other pairs');
 s.overrides.warhammer.disallow=true;
 api.replace(draft);
 assert.equal(api.isDisallowed(shaftKey,'warhammer'),true,'Explicit exclusion wins');
+// Old relative choices survive migration as literal destinations.
+for(const [key,target] of [['dagger-sword','eye'],['warhammer','tang']]){
+  s.overrides[key]={mountTypeMode:'opposite',disallow:false};
+  api.replace(draft);
+  assert.equal(api.settings(shaftKey,key).mountTypeMode,target);
+}
+s.overrides.warhammer.mountTypeMode='normal';api.replace(draft);
+assert.equal(api.settings(shaftKey,'warhammer').mountTypeMode,'auto');
+// Reported pair: two shipped arrows overlap; select the actual tang by index.
+const pk='pick-shovel',hk='porakaneki-greatclub',pick=draft.shafts[pk];
+pick.overrides[hk]={mountTypeMode:'both',disallow:false};
+cfg=api.replace(draft);
+let rig=api.attachmentRig(cfg.shafts[pk],cfg.heads[hk],api.settings(pk,hk));
+assert.equal(rig.children.length,1);
+assert.equal(api.matchingMounts(cfg.shafts[pk],cfg.heads[hk]).length,1);
+pick.overrides[hk].mountTypeMode='tang';cfg=api.replace(draft);
+rig=api.attachmentRig(cfg.shafts[pk],cfg.heads[hk],api.settings(pk,hk));
+assert.equal(rig.children[0].index,1);
+pick.mounts[1].start={x:295,y:656};pick.mounts[1].end={x:375,y:656};
+cfg=api.replace(draft);
+const distinct=api.attachmentRig(cfg.shafts[pk],cfg.heads[hk],api.settings(pk,hk));
+assert.notDeepEqual(distinct.children[0].children[0].worldMatrix,rig.children[0].children[0].worldMatrix);
+assert.equal(api.rigidMountAssignments(cfg.shafts[pk],cfg.heads[hk],{mountTypeMode:'both'}).length,2);
 console.log('Pair mount type override tests passed.');

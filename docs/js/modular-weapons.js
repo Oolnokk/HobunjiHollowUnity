@@ -456,7 +456,7 @@
       result[key] = key.startsWith('flip') ? raw?.[key] === true
         : finite(raw?.[key], key.startsWith('scale') ? 1 : 0, key.startsWith('scale') ? 0.05 : -2400, key.startsWith('scale') ? 8 : 2400);
     }
-    if (['normal','opposite','both'].includes(raw?.mountTypeMode)) result.mountTypeMode = raw.mountTypeMode; // Pair-specific compatibility, not a new head mounting arrow.
+    if (['auto','tang','eye','both','normal','opposite'].includes(raw?.mountTypeMode)) result.mountTypeMode = raw.mountTypeMode; // Pair-specific compatibility, not a new head mounting arrow.
     if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
     if (raw?.flailHeadAnchor && Number.isFinite(raw.flailHeadAnchor.x) && Number.isFinite(raw.flailHeadAnchor.y)) {
       result.flailHeadAnchor = point(raw.flailHeadAnchor); // Pair-local contact on a hanging rigid head, never the original rigid mounting line.
@@ -581,11 +581,36 @@
     return { start, end, length: Math.hypot(end.x - start.x, end.y - start.y),
       explicitMount: !!rope, recipeId: head.flailAssembly || shaft.flailAssembly };
   }
-  function matchesRigidMount(shaft, head, mount, values) {
-    const required = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : ''; // Keep the original head arrow, regardless of the socket's type.
-    if (!required || !['tang','eye'].includes(mount?.type)) return false; // Rope/chain attachment remains separate.
-    const mode = (values || shaft?.overrides?.[headKeys.get(head)] || {}).mountTypeMode; // Only an explicit pair override changes compatibility.
-    return mode==='both' || (mode==='opposite' ? mount.type!==required : mount.type===required);
+  function defaultRigidMountType(head) {
+    return head?.mount?.type==='blade'?'tang':head?.mount?.type==='weight'?'eye':'';
+  }
+  function normalizeMountTypeMode(mode,head) {
+    if (['auto','tang','eye','both'].includes(mode)) return mode;
+    if (mode==='normal') return 'auto';
+    if (mode==='opposite') {
+      const type=defaultRigidMountType(head); // Migrate old relative choices to their literal destination.
+      return type==='tang'?'eye':type==='eye'?'tang':'auto';
+    }
+    return undefined;
+  }
+  function rigidMountMode(shaft,head,values) {
+    return normalizeMountTypeMode(values?.mountTypeMode ?? shaft?.overrides?.[headKeys.get(head)]?.mountTypeMode,head);
+  }
+  function matchesRigidMount(shaft,head,mount,values) {
+    const required=defaultRigidMountType(head); // Original source arrow remains authoritative.
+    if(!required || (mount?.type!=='tang' && mount?.type!=='eye'))return false;
+    const mode=rigidMountMode(shaft,head,values);
+    return mode==='both' || mount.type===(mode==='tang'||mode==='eye'?mode:required);
+  }
+  function rigidMountAssignments(shaft,head,values) {
+    const seen=new Set(); // Same directed local geometry means the same region, parent and fitted head.
+    return (shaft?.mounts || []).flatMap((mount,index)=>{
+      if(!matchesRigidMount(shaft,head,mount,values))return [];
+      const key=[mount.start.x,mount.start.y,mount.end.x,mount.end.y].join(':');
+      if(seen.has(key))return [];
+      seen.add(key);
+      return [{mount,index}]; // Preserve authored index for editor guides.
+    });
   }
   function matchingMounts(shaft, head, values) {
     const mounts = shaftMounts(shaft); // Rig-adjusted geometry for ordinary head/haft fitting.
@@ -602,7 +627,7 @@
         * (Number(template?.flail?.chain?.scaleY ?? template?.flail?.chain?.scale) || 1);
       return [{ type: 'rope', start, end: { x: start.x, y: start.y + length }, authored: true }];
     }
-    return mounts.filter(mount => matchesRigidMount(shaft,head,mount,values)); // Same predicate used by the actual fitting rig.
+    return rigidMountAssignments(shaft,head,values).map(entry=>mounts[entry.index]); // Same predicate used by the actual fitting rig.
   }
   function renderingMounts(shaft, head) {
     const compatible = matchingMounts(shaft, head); // Only same-kind arrows are valid for newly crafted combinations.
@@ -898,6 +923,8 @@
       shaft.overrides = {};
       for (const [head, pair] of Object.entries(raw.overrides || {})) if (Object.hasOwn(next.heads, head)) {
         shaft.overrides[head] = cleanTransform(pair, true);
+        const mode=normalizeMountTypeMode(pair?.mountTypeMode,next.heads[head]); // Preserve previous pair choices through import.
+        if(mode)shaft.overrides[head].mountTypeMode=mode;
         if (typeof pair?.disallow === 'boolean') shaft.overrides[head].disallow = pair.disallow;
       }
       for (const [head, pair] of Object.entries(shipped || {})) {
@@ -906,7 +933,7 @@
           shaft.overrides[head].disallow = pair.disallow;
         }
         if (pair.mountTypeMode && !Object.hasOwn(raw.overrides?.[head] || {},'mountTypeMode')) {
-          (shaft.overrides[head] ||= {}).mountTypeMode = pair.mountTypeMode; // Older imports inherit explicitly shipped pair settings.
+          (shaft.overrides[head] ||= {}).mountTypeMode = normalizeMountTypeMode(pair.mountTypeMode,next.heads[head]); // Older imports inherit explicitly shipped pair settings.
         }
         if (pair.layerOrder && !shaft.overrides[head]?.layerOrder) {
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
@@ -1020,9 +1047,8 @@
           worldMount:{type:'rope',start:rigPoint(shaft,mount.start),end:rigPoint(shaft,mount.end)}
         })) }; // The Tool Hub attachment replaces ANY modular-head mount, even for old flails without a rope line.
     }
-    const compatible = (shaft?.mounts || []).map((mount,index)=>({mount,index}))
-      .filter(entry=>matchesRigidMount(shaft,head,entry.mount,values)); // Same predicate as Foundry compatibility.
-    const mode=values?.mountTypeMode || shaft?.overrides?.[headKeys.get(head)]?.mountTypeMode; // Explicit choices never silently fall back.
+    const compatible = rigidMountAssignments(shaft,head,values); // Same deduplicated selection as Foundry.
+    const mode=rigidMountMode(shaft,head,values); // Explicit choices never silently fall back.
     const selected = compatible.length || mode ? compatible : (shaft?.mounts || []).map((mount,index)=>({mount,index})).filter(entry=>entry.mount.type!=='rope').slice(0,1); // Retain legacy saved-weapon fallback for untouched pairs only.
     const children = selected.map(({ mount, index }) => {
       const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
@@ -1039,14 +1065,14 @@
     }); // Rig owns every fitted head primitive and tang/eye fitting as descendants, not just transformed coordinates.
     return { kind: 'attachmentRig', parent, children, shaftOutsideRig: true };
   }
-  function compositionFrame(shaft, head, bounds, values, bridgeOps = [], junctionImages = {}) {
+  function compositionFrame(shaft, head, bounds, values, bridgeOps = [], junctionImages = {}, rig = attachmentRig(shaft,head,values)) {
     let left = 0, top = 0, right = 450, bottom = 1204; // Neutral shaft footprint is preserved for existing held poses.
     const shaftArt=shaftArtTransform(shaft);
     if (shaftArt.enabled) for(const x of [0,450]) for(const y of [0,1204]){
       const p=duplicatePoint({x,y},shaftArt);
       left=Math.min(left,p.x);top=Math.min(top,p.y);right=Math.max(right,p.x);bottom=Math.max(bottom,p.y);
     } // Opt-in shaft artwork may extend outside its fixed, original 450x1204 footprint.
-    for (const mount of attachmentRig(shaft, head, values).children) {
+    for (const mount of rig.children) {
       for (const primitive of mount.children) {
         const matrix = primitive.worldMatrix; // Same parent*child transform that the canvas renderer uses.
         for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
@@ -1133,9 +1159,10 @@
     const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
     const task = Promise.all([loadImage(shaft.sprite, base), flail ? Promise.resolve(null) : loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
+      const rig=flail?null:attachmentRig(shaft,head,values); // Compute once for bounds, painting and preview provenance.
       const frame = flail ? { left: 0, top: 0, width: 450, height: 1204 }
         : compositionFrame(shaft, head, visibleBounds(headImage), values,
-          rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList)); // Animated heads are separate Three.js planes; the base keeps its 450×1204 authored socket coordinates.
+          rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList),rig); // Animated heads are separate Three.js planes; the base keeps its 450×1204 authored socket coordinates.
       let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
       if (pixelScale < 1) {
         const padding = Math.ceil(4 / pixelScale); // Retain several bitmap pixels of outline clearance even after extreme downsampling.
@@ -1145,6 +1172,10 @@
       const canvas = document.createElement('canvas'); // Bitmap resolution may shrink for extreme authoring; the donor frame and world scale never change.
       canvas.width = Math.max(1, Math.ceil(frame.width * pixelScale)); canvas.height = Math.max(1, Math.ceil(frame.height * pixelScale));
       canvas.modularFrame = frame;
+      if(global.ModularWeaponsKeepReference && rig){
+        canvas.modularAttachmentRig=rig; // Editor-only diagnostics identify the exact painted rig.
+        canvas.modularMountTypeMode=rigidMountMode(shaft,head,values)||'auto';
+      }
       const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
       const paint = componentPainter(canvas); // Rasterize and outline each independent primitive at final bitmap resolution.
       ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
@@ -1181,7 +1212,6 @@
         }
       }
       function paintHeads() {
-        const rig = attachmentRig(shaft, head, values); // Explicit parent -> mounting lines -> head primitives hierarchy.
         const needsParent = rig.parent.a !== 1 || rig.parent.d !== 1 || rig.parent.e !== 0 || rig.parent.f !== 0;
         const drawChildren = (context, eraseShaft = false) => {
           context.save(); // Parent is active ONLY around rig children, never around paintHaft().
@@ -1298,7 +1328,7 @@
     if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
     if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, matchesRigidMount,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, matchesRigidMount, rigidMountAssignments, rigidMountMode,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanShorteningBands, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
