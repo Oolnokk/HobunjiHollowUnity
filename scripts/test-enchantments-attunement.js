@@ -1555,20 +1555,53 @@ console.log('Planar enchantments through live Drunken Health adapter passed');
   }
   // Every integer percentage bucket is sampled at its midpoint; verify exact distributions, not just minimum/maximum.
   for(const [source,difficulty,expected] of [
-    ['captain',5,[85,15,0,0,0]],['captain',6,[70,30,0,0,0]],['captain',7,[55,45,0,0,0]],['captain',8,[40,60,0,0,0]],
-    ['coffin','cave',[0,75,20,5,0]],['coffin','hole',[0,60,35,5,0]],['coffin','lich',[0,45,50,5,0]],
-    ['ruinChest','cave',[0,83,15,2,0]],['ruinChest','hole',[0,72,25,3,0]],['ruinChest','lich',[0,61,35,4,0]],
-    ['final',4,[0,0,0,90,10]]
+    ['captain',5,[90,10,0,0,0]],['captain',6,[75,25,0,0,0]],['captain',7,[60,40,0,0,0]],['captain',8,[45,55,0,0,0]],
+    ['coffin','cave',[0,87,12,1,0]],['coffin','hole',[0,74,24,2,0]],['coffin','lich',[0,61,36,3,0]],
+    ['ruinChest','cave',[0,87,12,1,0]],['ruinChest','hole',[0,74,24,2,0]],['ruinChest','lich',[0,61,36,3,0]],
+    ['final',4,[0,0,0,96,4]]
   ]){
     const actual=[0,0,0,0,0];
     for(let i=0;i<100;i++)actual[ES.formulaNumber(source,difficulty,()=>(i+.5)/100)-1]++;
     same(actual,expected,source+' '+difficulty+' exact formula distribution');
   }
-  assert.equal(ES.formulaNumber('coffin','cave',()=>.049999),4);
-  assert.equal(ES.formulaNumber('coffin','lich',()=>.05),3);
-  assert.equal(ES.formulaNumber('final',4,()=>.099999),5);
-  assert.equal(ES.formulaNumber('final',4,()=>.1),4);
+  assert.equal(ES.formulaNumber('coffin','cave',()=>.009999),4);
+  assert.equal(ES.formulaNumber('coffin','lich',()=>.03),3);
+  assert.equal(ES.formulaNumber('final',4,()=>.039999),5);
+  assert.equal(ES.formulaNumber('final',4,()=>.04),4);
   assert.equal(ES.formulaNumber('common',4,()=>0),1,'unclassified ordinary weapons cannot grant rare formulas');
   gear=originalGear;
   console.log('Enchantment formula identity, source weights, migration and applied ranks passed');
+}
+
+ // Exercise the actual chest open path with both category outcomes and bonus drops.
+{
+  const rewardContext = {
+    THREE:{}, DynamicSurfaces:{addBeforeRenderClient(){}}, DevSpawner:{init(){}},
+    performance:{now:()=>0}, GameRandom:{random:()=>.25},
+    ArtifactCollection:{ARTIFACTS:{coin:{}},rollArtifacts:()=>({coin:1})},
+    TrinketSystem:{DEFINITIONS:{a:{id:'a',source:'harlyaoRuin'},b:{id:'b',source:'harlyaoRuin'}},
+      claimLoot(gained){for(const key of Object.keys(gained))if(key.startsWith('trinket_')){trinkets.push([key,gained[key]]);delete gained[key];}return [];}},
+    LootRolling:{rollLootPool:()=>({coin:1,trinket_a:3,trinket_b:1}),getLootPools:()=>({dungeonChest_tier1:{entries:[{itemKey:'trinket_a',chance:.1},{itemKey:'trinket_b',chance:.1}]}})},
+    HarlyaoRelics:{makeRelic(_shape,_origin,source,tier){return {source,tier};},grantBoundRelic(relic){weapons.push(relic);return 'bound';}},
+    DevRandomRuin:{getRuntimeContext:()=>({tier:'hole'})}
+  };
+  const weapons=[],trinkets=[],materials=[];
+  rewardContext.window=rewardContext;
+  vm.createContext(rewardContext);
+  vm.runInContext(fs.readFileSync('docs/js/dev-random-ruin-dungeon-chests.js','utf8'),rewardContext);
+  rewardContext.DevSpawner.init({grantLoot:gained=>(materials.push({...gained}),[])});
+  const open=rewardContext.DevRandomRuinDungeonChests.open;
+  for(const boss of [false,true])for(const secret of [false,true])for(const roll of [.25,.75]){
+    weapons.length=trinkets.length=materials.length=0;
+    rewardContext.GameRandom.random=()=>roll;
+    const chest={id:'reward',tier:1,tierName:'Test',poolId:'dungeonChest_tier1',culture:'harlyao',boss,secret};
+    assert.equal(open(chest,{bonusDrops:4}),true);
+    assert.equal(weapons.length+trinkets.length,1);
+    assert.equal(chest.equipmentReward,roll<.5?'weapon':'trinket');
+    if(roll<.5){assert.equal(weapons[0].source,boss?'final':'ruinChest');assert.equal(weapons[0].tier,'hole');}
+    else assert.equal(trinkets[0][1],1);
+    assert.equal(materials[0].coin,5,'bonus drops keep ordinary materials');
+    assert.equal(open(chest),false,'opened chest cannot grant again');
+  }
+  console.log('Ruin chest single equipment reward and bonus separation passed');
 }
