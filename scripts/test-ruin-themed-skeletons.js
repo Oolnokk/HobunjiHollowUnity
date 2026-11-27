@@ -30,6 +30,10 @@ const fixture=data=>({width:w,height:h,getContext:()=>({getImageData:()=>({data}
 const footprint=m.ruinTorsoFootprint(fixture(body),fixture(head),1,1);
 assert.ok(footprint&&footprint.width>.75&&footprint.top>.04&&footprint.bottom<-.40);
 let shoulder=false;for(let z=-.5;z<=.5;z+=.1)for(let x=-.5;x<=.5;x+=.1){const root=footprint.project(x,z),px=Math.floor((.5-(root.x+footprint.x))*w),py=Math.floor((.5-(footprint.y-root.z))*h);assert.equal(body[(py*w+px)*4+3],255);assert.equal(head[(py*w+px)*4+3],0);if(py<60)shoulder=true;}assert.ok(shoulder);
+// Confirm individual roots use actual sampled rear-surface displacement, not a guessed shared bone.
+const verts=[[.1,-.015,.2],[.1,.4,.2],[-.2,-.015,-.1]],anchors=new Float32Array([.1,-.015,.2,.1,-.015,.2,-.2,-.015,-.1]);let samples=0;
+const geo={userData:{iceGrowthAnchors:anchors},attributes:{position:{count:3,getX:i=>verts[i][0],getY:i=>verts[i][1],getZ:i=>verts[i][2],setXYZ:(i,...v)=>{verts[i]=v;}}},computeBoundingBox(){},computeBoundingSphere(){}};
+assert.equal(m.seatRuinSpikeGeometry(geo,{x:0,y:0},1,1,(u,v)=>{samples++;return {x:u-.5+.04,y:.5-v-.03,z:.1};}),2);assert.equal(samples,2);assert.ok(Math.abs(verts[0][0]-.14)<1e-6&&Math.abs(verts[0][1]-.085)<1e-6&&Math.abs(verts[0][2]-.23)<1e-6);assert.ok(Math.abs(verts[1][1]-.5)<1e-6);
 // Exercise both actual attachment branches, with stand-in scene nodes so this also runs without WebGL.
 class Node {
   constructor(){this.children=[];this.userData={};this.rotation={x:0};this.position={x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}};this.layers={disable(){}};}

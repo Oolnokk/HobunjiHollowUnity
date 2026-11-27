@@ -101,6 +101,17 @@
     let h=Math.imul(x+1,374761393)^Math.imul(y+1,668265263)^seed; // Deterministic portrait grain.
     h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;
   }
+  function coarseRuinTexture(w,h,seed){
+    const cell=Math.max(4,Math.round(Math.min(w,h)/14)),cols=Math.ceil(w/cell)+1,rows=Math.ceil(h/cell)+1; // Low-frequency texture samples, computed once per baked canvas.
+    const grid=new Float32Array(cols*rows);
+    for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)grid[y*cols+x]=noise(x,y,seed);
+    return (x,y)=>{
+      const gx=x/cell,gy=y/cell,ix=Math.floor(gx),iy=Math.floor(gy);let u=gx-ix,v=gy-iy;
+      u=u*u*(3-2*u);v=v*v*(3-2*v); // Smooth patches instead of a visible square grid or fine-grained speckling.
+      const i=iy*cols+ix,a=grid[i]*(1-u)+grid[i+1]*u,b=grid[i+cols]*(1-u)+grid[i+cols+1]*u;
+      return a*(1-v)+b*v;
+    };
+  }
   function ruinInkMask(data,w,h){
     const ink=new Uint8Array(w*h); // Protect only actual black/near-black source texels, not their neighboring colored pixels.
     for(let p=0;p<ink.length;p++){
@@ -111,7 +122,7 @@
   }
   function paintRuinPixels(roster,data,w,h,overlay=null,sharedMask=null){
     const theme=roster.ruinSkeletonTheme,seed=roster.ruinSkeletonSeed; // The same immutable source mask protects portraits and pants.
-    const ink=ruinInkMask(data,w,h);
+    const ink=ruinInkMask(data,w,h),coarse=theme==='kanthic'?null:coarseRuinTexture(w,h,seed);
     let mask=null,outline=null;
     if(theme==='kanthic'){
       if(!overlay)throw new Error('Oil texture unavailable');
@@ -132,8 +143,7 @@
         const a=overlay[i+3]/255;
         for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;
       }else{
-        const x=p%w,y=Math.floor(p/w),cell=Math.max(4,Math.round(Math.min(w,h)/16)); // Broad, low-frequency patches, no per-pixel grain.
-        const broad=noise(Math.floor(x/cell),Math.floor(y/cell),seed);
+        const x=p%w,y=Math.floor(p/w),broad=coarse(x,y); // Smooth broad patches, no per-pixel grain.
         if(theme==='hronal'){
           const gray=(data[i]*.25+data[i+1]*.6+data[i+2]*.15)*(.22+broad*.14); // Charcoal is a 70% opacity layer over original color.
           data[i]=data[i]*.3+Math.min(data[i],gray)*.7;data[i+1]=data[i+1]*.3+Math.min(data[i+1],gray*.85)*.7;data[i+2]=data[i+2]*.3+Math.min(data[i+2],gray*.75)*.7;
@@ -200,13 +210,14 @@
   function seatRuinSpikeGeometry(geometry,footprint,width,height,sample){
     const anchors=geometry.userData?.iceGrowthAnchors,positions=geometry.attributes?.position;
     if(!sample||!positions||anchors?.length!==positions.count*3)return 0;
-    const shifts=new Map(); // One sample per crystal, not per vertex, using the rear mesh's real skin deformation.
+    const shifts=new Map();let seated=0; // One sample per crystal, not per vertex, using the rear mesh's real skin deformation.
     for(let i=0;i<positions.count;i++){
       const k=i*3,x=anchors[k],z=anchors[k+2],key=x+','+z;
       let shift=shifts.get(key);
       if(!shift){
         const localX=footprint.x+x,localY=footprint.y-z;
         const point=sample(.5+localX/width,.5-localY/height);
+        if(point)seated++;
         shift=point?{x:point.x-localX,y:point.y-localY,z:point.z}:{x:0,y:0,z:0};
         shifts.set(key,shift);
       }
@@ -216,7 +227,7 @@
     }
     positions.needsUpdate=true;geometry.computeBoundingBox();geometry.computeBoundingSphere();
     if(geometry.userData.iceFullPositions)geometry.userData.iceFullPositions.set(positions.array);
-    return shifts.size;
+    return seated;
   }
   function attachRuinBackSpikes(THREE,avatar,roster){
     const carrier=avatar.backPortraitMesh||avatar.backPlane,width=avatar.modelWidth,height=avatar.modelHeight;
@@ -377,7 +388,7 @@
     shamblingFootingFraction: SHAMBLING_FOOTING_FRACTION,
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
-    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,paintRuinPants,paintRuinPixels,ruinTorsoFootprint,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
+    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,paintRuinPants,paintRuinPixels,ruinTorsoFootprint,seatRuinSpikeGeometry,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
     makeEntity,
     makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });

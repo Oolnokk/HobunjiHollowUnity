@@ -179,7 +179,10 @@ const server = http.createServer((request, response) => {
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
     await page.addScriptTag({url:'/docs/js/combat/combat-minion.js'});
+    await page.addScriptTag({url:'/docs/js/character-spine.js'});
     await page.addScriptTag({url:'/docs/js/png-plane-avatar.js'});
+    await page.addScriptTag({url:'/docs/js/tool-metal-recolor.js'});
+    await page.evaluate(()=>{const base=document.createElement('base');base.href='/docs/';document.head.prepend(base);}); // Real authored oil texture resolves just as in gameplay.
     await page.addScriptTag({url:'/docs/js/faceted-rocks.js'});
     const skeletonResult=await page.evaluate(async()=>{
       const T=THREE,canvas=document.createElement('canvas');canvas.width=canvas.height=100;
@@ -189,6 +192,8 @@ const server = http.createServer((request, response) => {
       const garment=document.createElement('canvas');garment.width=48;garment.height=48;
       const gc=garment.getContext('2d');gc.fillStyle='#ac885f';gc.fillRect(3,3,42,42);gc.fillStyle='#000';gc.fillRect(3,3,42,2);
       const bytes=Array.from(gc.getImageData(0,0,48,48).data); // Shared garment source must remain byte-identical.
+      const oily=await window.MinionCombat.paintRuinPants({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:7},garment),oilBytes=oily.getContext('2d').getImageData(0,0,48,48).data;
+      const originalAfterOil=gc.getImageData(0,0,48,48).data;const kanthicPants=oily!==garment&&oilBytes.some((v,i)=>v!==bytes[i])&&bytes.every((v,i)=>v===originalAfterOil[i]);
       for(const theme of ['hronal','tothal']){
         const themed=await window.MinionCombat.paintRuinPants({ruinSkeletonTheme:theme,ruinSkeletonSeed:7},garment);
         const after=themed.getContext('2d').getImageData(0,0,48,48).data;
@@ -208,20 +213,19 @@ const server = http.createServer((request, response) => {
         group.updateMatrixWorld(true);const layer=group.getObjectByName('ruin-skeleton-back-stalagmites');
         if(!layer){results.push({theme,missing:true});continue;}
         const mesh=layer.children[0],positions=mesh.geometry.attributes.position,point=new T.Vector3(),anchors=mesh.geometry.userData.iceGrowthAnchors;
-        let baseInside=avatar.ruinBackSpikeInfo.seated>0,baseVertices=0,maxZ=-Infinity;
+        let baseInside=avatar.ruinBackSpikeInfo.seated>0,baseVertices=positions.count,maxZ=-Infinity;
         for(let i=0;i<positions.count;i++){
-          point.fromBufferAttribute(positions,i);const ground=point.y<-.014;point.applyMatrix4(mesh.matrixWorld);
+          point.fromBufferAttribute(positions,i);point.applyMatrix4(mesh.matrixWorld);
           maxZ=Math.max(maxZ,point.z);
-          if(ground)baseVertices++; // Geometry is displaced to the actual skin, so the old rectangular world-space bounds are deliberately no longer applicable.
         }
         const before=layer.getWorldPosition(new T.Vector3());hammer.position.x+=20;group.updateMatrixWorld(true);
         const unaffected=before.distanceTo(layer.getWorldPosition(new T.Vector3()))<1e-8;
         const attached=layer.parent===portrait;const surface=theme!=='hronal'||mesh.userData.facetedRock===true;
-        dispose();results.push({theme,baseInside,baseVertices,attached,unaffected,surface,maxZ,pants,pantsInk,pantsEffect,disposed:layer.parent===null});
+        dispose();results.push({theme,baseInside,baseVertices,attached,unaffected,surface,maxZ,pants,pantsInk,pantsEffect,kanthicPants,disposed:layer.parent===null});
       }
       return results;
     });
-    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>.25&&result.pants&&result.pantsInk&&result.pantsEffect&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
+    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>.25&&result.pants&&result.pantsInk&&result.pantsEffect&&result.kanthicPants&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
     await page.evaluate(() => {
       window.__iceFireTargets = new Map(); // The real composer registers its fire targets through this minimal existing contract.
       window.__iceSolids = new Map(); // Collision callback truthiness is checked both frozen and melting.
