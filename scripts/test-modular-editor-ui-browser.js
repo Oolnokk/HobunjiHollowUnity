@@ -149,6 +149,71 @@ async function ready(page) {
     assert.match(confirmation, /Kylie/);
     assert.equal(await page.evaluate(() => Object.values(window.ModularWeapons.getConfig().shafts.kylie.overrides)
       .flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length), 1, 'Bulk placement does not add Kylie recipes');
+    // Actual dropdown -> persisted runtime -> composed bitmap on a shipped explicitly excluded rigid pair.
+    await page.locator('#shaft').selectOption('dagger');
+    await page.locator('#head').selectOption('warhammer');
+    await page.locator('#pair-workflow').evaluate(panel=>{panel.open=true;});
+    assert.equal(await page.locator('#disallow').isChecked(),true,'Shipped dagger/warhammer is explicitly excluded');
+    await page.locator('#pair-mount-type').selectOption('auto');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.rigKind==='incompatible'
+      && document.querySelector('#flail-preview')?.dataset.mountTypeMode==='auto');
+    const incompatiblePixels=await page.locator('#preview').evaluate(canvas=>canvas.toDataURL());
+    await page.locator('#pair-mount-type').selectOption('tang');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.rigKind==='rigid'
+      && document.querySelector('#flail-preview')?.dataset.mountTypeMode==='tang'
+      && document.querySelector('#flail-preview')?.dataset.mountSockets==='0:tang');
+    assert.notEqual(await page.locator('#preview').evaluate(canvas=>canvas.toDataURL()),incompatiblePixels,
+      'Actual composed head appears on the opposite haft socket even while excluded from forging');
+    assert.match(await page.locator('#flail-preview-status').innerText(),/Preview only: not forgeable/);
+    assert.equal(await page.evaluate(()=>window.ModularWeapons.isDisallowed('dagger','warhammer')),true);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts.dagger.overrides.warhammer.mountTypeMode),'tang');
+    await page.locator('#disallow').uncheck();
+    assert.equal(await page.evaluate(()=>window.ModularWeapons.isDisallowed('dagger','warhammer')),false);
+    await page.locator('#disallow').check(); // Restore explicit exclusion.
+    await page.locator('#pair-mount-type').selectOption('auto');
+    // Reproduce the reported Pick-Shovel / Spiked Wooden Head with deliberately distinct destination arrows.
+    await page.evaluate(()=>{
+      const api=window.ModularWeapons,draft=JSON.parse(JSON.stringify(api.getConfig()));
+      const shaft=draft.shafts['pick-shovel']; // Change only test draft geometry so the bitmap must change.
+      shaft.mounts[1].start={x:295,y:656};shaft.mounts[1].end={x:375,y:656};
+      shaft.overrides['porakaneki-greatclub']={mountTypeMode:'eye',disallow:false,layerOrder:'head-over-haft'};
+      api.replace(draft,true);
+    });
+    await page.reload({waitUntil:'domcontentloaded',timeout:30000});await ready(page);
+    await page.locator('#shaft').selectOption('pick-shovel');
+    await page.locator('#head').selectOption('porakaneki-greatclub');
+    await page.locator('#pair-workflow').evaluate(panel=>{panel.open=true;});
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.mountSockets==='0:eye'
+      && document.querySelector('#flail-preview')?.dataset.mountTypeMode==='eye');
+    const sleevePixels=await page.locator('#preview').evaluate(canvas=>canvas.toDataURL());
+    await page.locator('#pair-mount-type').selectOption('tang');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.mountSockets==='1:tang'
+      && document.querySelector('#flail-preview')?.dataset.mountTypeMode==='tang');
+    assert.notEqual(await page.locator('#preview').evaluate(canvas=>canvas.toDataURL()),sleevePixels,'Actual unguided bitmap changes when switching to a distinct tang');
+    assert.match(await page.locator('#pair-mount-type-status').innerText(),/#2 tang/);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts['pick-shovel'].overrides['porakaneki-greatclub'].mountTypeMode),'tang');
+    // Reproduce the user's actual quota error at the storage boundary, not a mocked compositor.
+    await page.evaluate(()=>{
+      const original=Storage.prototype.setItem; // Preserve writes unrelated to this draft.
+      window.__restoreDraftStorage=()=>{Storage.prototype.setItem=original;delete window.__restoreDraftStorage;};
+      Storage.prototype.setItem=function(key,value){
+        if(key==='hobunji.modularWeapons.v5')throw new DOMException('Test quota exceeded','QuotaExceededError');
+        return original.call(this,key,value);
+      };
+    });
+    const tangPixels=await page.locator('#preview').evaluate(canvas=>canvas.toDataURL());
+    await page.locator('#pair-mount-type').selectOption('both');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.mountSockets==='0:eye,1:tang');
+    assert.notEqual(await page.locator('#preview').evaluate(canvas=>canvas.toDataURL()),tangPixels,'Quota failure does not block the updated bitmap');
+    assert.equal(await page.locator('#draft-storage-warning').isVisible(),true);
+    assert.match(await page.locator('#draft-storage-error').innerText(),/quota exceeded/i);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts['pick-shovel'].overrides['porakaneki-greatclub'].mountTypeMode),'tang','Previous persisted draft survives');
+    await page.evaluate(()=>window.__restoreDraftStorage());
+    await page.locator('#draft-storage-retry').click();
+    assert.equal(await page.locator('#draft-storage-warning').isHidden(),true);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts['pick-shovel'].overrides['porakaneki-greatclub'].mountTypeMode),'both','Retry saves live draft after capacity returns');
+    await page.locator('#assembly-elements').evaluate(panel=>{panel.open=true;});
+    await page.locator('#assembly-mount-elements .assembly-element-row').nth(1).getByRole('button',{name:'Select line'}).click(); // Restore the source workspace after the persistence reload.
     // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.
     await page.locator('#shaft').selectOption('grapple-flail');
     await page.locator('#head').selectOption('fishing-mace'); // Allowed axial mace head; hammers are deliberately excluded by the authored matrix.

@@ -200,6 +200,28 @@ function assertWrapperInteropStable(loadOrder) {
   assert.doesNotThrow(() => windowObject.ProceduralHandAttachments.attach(), `${loadOrder.join(' -> ')} stabilized wrapper chain must still call through to the base attachment`);
 }
 
+// Real secondary-span wrapper must forward weights to the constraint owner,
+// never blend its output again. Direct offhand placements are full grips.
+for (const pathname of ['/index.html', '/tools/attack-animation-editor/index.html']) {
+  const { windowObject, registered } = buildFixture({ withScheduler: true, pathname });
+  const calls = []; // Records the exact arguments entering the final pose owner.
+  const socket = { position: new Vector3(), quaternion: new Quaternion() };
+  windowObject.ProceduralHandAttachments.attach = () => ({
+    blendsGripBeforeShoulderAim: true,
+    group: { getObjectByName() { return socket; } },
+    placeHandWorld(...args) { calls.push(args); return true; },
+  });
+  registered.get('hand-tool-grips-install').fn();
+  const rig = windowObject.ProceduralHandAttachments.attach();
+  const p = new Vector3(1, 2, 3), q = new Quaternion(), calibration = {};
+  for (const influence of [0, 0.5, 1, undefined]) {
+    assert.equal(rig.placeHandWorld('left', p, q, calibration, influence), true);
+    assert.deepEqual(calls.pop(), ['left', p, q, calibration, influence ?? 1]);
+  }
+  rig.placeHandWorld('right', p, q, calibration, 0.5);
+  assert.deepEqual(calls.pop(), ['right', p, q, calibration, 1]);
+}
+
 assertWrapperInteropStable(['forearm', 'grips']);
 assertWrapperInteropStable(['grips', 'forearm']);
 

@@ -812,6 +812,7 @@
       }
     }
 
+    const rightWristBasis = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(RIGHT_SHOULDER_AXIS_TWIST_DEG)); // Fixed visual twist used by the wrist constraint.
     const tempParentQuaternion = new THREE.Quaternion();
     function placePaperHandGuideWorld(worldPosition, worldQuaternion) {
       if (!showPaperHandGuide || !worldPosition || !worldQuaternion) {
@@ -938,6 +939,15 @@
       setSideVisible,
       useIdlePose,
       applyToolCalibration,
+      copyGripWristBasis(side, out, calibrationSide = side) {
+        // The rendered hand includes model alignment and the right-hand half-turn.
+        // Expose its rotational basis read-only; grip/model calibration remain separately owned.
+        const rec = sockets[calibrationSide]; // Both hands use the same selected model calibration; the source side can already be placed.
+        if (!rec || !out) return null;
+        out.copy(rec.calibration.quaternion);
+        if (side === 'right') out.multiply(rightWristBasis);
+        return out;
+      },
       refreshModelProfile,
       setPaperHandGuideVisible, // Public only so the standalone editor can lazily toggle its locked x-ray reference.
       placePaperHandGuideWorld, // Frame driver supplies the UNCALIBRATED primary-grip frame so calibration sliders move the GLB against this fixed scaffold.

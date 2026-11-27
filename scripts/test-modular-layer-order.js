@@ -27,7 +27,15 @@ async function run() {
       }; };
       const pointOnBitmap = (x,y) => ({x:matrix.a*x + matrix.c*y + matrix.e,y:matrix.b*x+matrix.d*y+matrix.f});
       const ctx = {
-        drawImage(image, x=0, y=0) {
+        drawImage(image, x=0, y=0, ...rest) {
+          if (image?.drawnPixels && rest.length===6) { // The real compositor inks a component on a scratch bitmap and copies a 1:1 crop.
+            for(const sample of image.drawnPixels){
+              canvas.operations.push('paint:'+sample.kind);
+              canvas.drawnPixels.push({kind:sample.kind,origin:pointOnBitmap(sample.origin.x,sample.origin.y),
+                ...(sample.axis?{axis:pointOnBitmap(sample.axis.x,sample.axis.y)}:{})});
+            }
+            return;
+          }
           canvas.operations.push('paint:' + (image?.key || 'unknown'));
           if (image?.key === 'head' || image?.key === 'haft') {
             canvas.drawnPixels.push({kind:image.key, origin:pointOnBitmap(200,100),
@@ -37,9 +45,12 @@ async function run() {
             canvas.drawnPixels.push({kind:'junction', origin:pointOnBitmap(x+(image.width||0)/2,y+(image.height||0)/2)});
           }
         },
-        getImageData() {
-          const data = new Uint8ClampedArray(450 * 1204 * 4); // One opaque head pixel for real bounds math.
-          data[(100 * 450 + 200) * 4 + 3] = 255;
+        getTransform() { return {...matrix}; }, // Canvas CTM used by the isolated component rasterizer.
+        clearRect() { canvas.drawnPixels.length=0; }, // Scratch bitmap is reused, not accumulated across components.
+        getImageData(x=0,y=0,w=canvas.width,h=canvas.height) {
+          const data = new Uint8ClampedArray(w*h*4); // Match the requested subrectangle, not an entire source image.
+          if(w===450&&h===1204)data[(100*450+200)*4+3]=255;
+          else if(w>0&&h>0)data[3]=255; // A visible sample for a small source or component crop.
           return { data };
         },
         save() { canvas.operations.push('save'); saved.push({...matrix}); },
@@ -65,6 +76,29 @@ async function run() {
   }
   const api = window.ModularWeapons;
   const config = api.getConfig();
+  // Exact rendered attachment provenance and raster positions, including coincident arrows and a distinct destination.
+  window.ModularWeaponsKeepReference=true;
+  const pickDraft=JSON.parse(JSON.stringify(config)),pickKey='pick-shovel',spikeKey='porakaneki-greatclub';
+  const runMountMode=async(mode)=>{
+    (pickDraft.shafts[pickKey].overrides[spikeKey] ||= {}).mountTypeMode=mode;
+    api.replace(pickDraft);
+    const bitmap=await api.compose(pickKey,spikeKey);
+    assert.equal(bitmap.modularMountTypeMode,mode);
+    return { sockets:Array.from(bitmap.modularAttachmentRig.children,c=>c.index+':'+c.type),
+      samples:bitmap.drawnPixels.filter(p=>p.kind==='head').map(p=>({
+        x:bitmap.modularFrame.left+p.origin.x*bitmap.modularFrame.width/bitmap.width,
+        y:bitmap.modularFrame.top+p.origin.y*bitmap.modularFrame.height/bitmap.height
+      })) };
+  };
+  const sleeveFit=await runMountMode('eye'),tangFit=await runMountMode('tang');
+  assert.deepEqual(sleeveFit.sockets,['0:eye']);assert.deepEqual(tangFit.sockets,['1:tang']);
+  assert.deepEqual(sleeveFit.samples,tangFit.samples,'Overlapping directed arrows produce identical artwork but different provenance');
+  assert.equal((await runMountMode('both')).samples.length,1,'Both draws only one head at coincident lines');
+  pickDraft.shafts[pickKey].mounts[1].start={x:295,y:656};
+  pickDraft.shafts[pickKey].mounts[1].end={x:375,y:656};
+  assert.notDeepEqual((await runMountMode('tang')).samples,sleeveFit.samples,'Selecting the distinct destination moves the actual painted primitive');
+  assert.equal((await runMountMode('both')).samples.length,2);
+  window.ModularWeaponsKeepReference=false;api.replace(config); // Leave other layer-order tests on their shipped fixtures.
   assert.equal(api.settings('dagger', 'fishing-spear').layerOrder, 'haft-over-head', 'Default is haft in the foreground.');
   assert.equal(config.shafts.dagger.overrides['fishing-spear']?.layerOrder, 'haft-over-head', 'Every pair has an explicitly curated shipped layer.');
   function paints(canvas) { return canvas.operations.filter(op => op.startsWith('paint:')); }

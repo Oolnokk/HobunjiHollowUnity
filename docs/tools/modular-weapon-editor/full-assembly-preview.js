@@ -245,7 +245,15 @@
     if(showGuides) {ctx.save();ctx.scale(canvas.width/frame.width,canvas.height/frame.height);
       ctx.translate(-frame.left,-frame.top);
       for(const mount of mounts) {
-        line(ctx,mount.start,mount.end,'#f5c5ff',[6,5]);dot(ctx,mount.start,'#ffe39c',4);
+        const color=mount.type==='eye'?'#72e6ff':'#ffe39c'; // Authoring colors distinguish the exact destination.
+        line(ctx,mount.start,mount.end,color,[6,5]);dot(ctx,mount.start,color,4);
+        const angle=Math.atan2(mount.end.y-mount.start.y,mount.end.x-mount.start.x);
+        ctx.save();ctx.strokeStyle=color;ctx.lineWidth=3;ctx.beginPath();
+        ctx.moveTo(mount.end.x-12*Math.cos(angle-.55),mount.end.y-12*Math.sin(angle-.55));
+        ctx.lineTo(mount.end.x,mount.end.y);
+        ctx.lineTo(mount.end.x-12*Math.cos(angle+.55),mount.end.y-12*Math.sin(angle+.55));ctx.stroke();
+        if(Number.isInteger(mount.index)){ctx.font='bold 14px system-ui';ctx.fillStyle=color;ctx.fillText('#'+(mount.index+1)+' '+(mount.type==='eye'?'SLEEVE':'TANG'),mount.start.x+9,mount.start.y+14);}
+        ctx.restore();
       }
       ctx.restore();}
     canvas.dataset.rigKind='rigid';

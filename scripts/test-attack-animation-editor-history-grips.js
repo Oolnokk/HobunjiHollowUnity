@@ -129,7 +129,7 @@ assert.match(shoulderAim, /localWristProximalAxis = new THREE\.Vector3\(0, 1, 0\
 assert.match(shoulderAim, /localGripAxis = new THREE\.Vector3\(1, 0, 0\)/, 'shoulder follow must expose the grip-axis local X hinge');
 assert.match(shoulderAim, /localPalmNormalAxis = new THREE\.Vector3\(0, 0, -1\)/, 'shoulder follow must expose the corrected local -Z palm-normal hinge');
 assert.match(shoulderAim, /palmNormal:\s*Math\.atan2\(x, y\)/, 'the -Z hinge must pair with the matching angle sign');
-assert.match(shoulder, /wrist-facing side aims toward the pose-authored elbow/i, 'editor must explain that the hand targets the authored elbow rather than the shoulder');
+assert.match(shoulder, /wrist-facing side follows the pose-authored elbow or shoulder only beyond its anatomical leeway/i, 'editor explains elbow targeting, shoulder fallback, and anatomical leeway');
 assert.match(attachments, /lockedReference = true/, 'paper hand must identify itself as a locked reference, not an animatable rig');
 assert.match(attachments, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper hand must remain locked to the raw weapon target before downstream hand layers');
 assert.match(driver, /placePaperHandGuideWorld\?\.\(primarySocket\.position, primarySocket\.quaternion\)[\s\S]*handSocketAfterGripMode\(record, primarySocket\)/, 'paper reference must be placed before Grip Mode moves the socket');

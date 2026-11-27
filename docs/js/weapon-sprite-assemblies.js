@@ -42,8 +42,24 @@
     return new URL('../' + String(path || '').replace(/^\/+/, ''), scriptUrl).href;
   }
 
-  function textureFor(THREE, path) {
+  function textureFor(THREE, path, outlined = false) {
     const url = imageUrl(path);
+    if (outlined && global.ModularWeapons?.outlinedImage) {
+      const key = 'modular-outline:' + url; // Distinct variant preserves nonmodular source textures.
+      if (!images.has(key)) {
+        const pending = textureFor(THREE, path).then(source => {
+          const image = global.ModularWeapons.outlinedImage(source.image);
+          if (image === source.image) return source;
+          const variant = source.clone(); // Preserve the canonical texture filters and color space.
+          if (variant.source && THREE.Source) variant.source = new THREE.Source(image); // Modern Three clones share Source; do not overwrite the original.
+          else variant.image = image; // Legacy Three textures store image directly.
+          variant.needsUpdate = true;
+          return variant;
+        }).catch(error => { images.delete(key); throw error; });
+        images.set(key,pending);
+      }
+      return images.get(key);
+    }
     if (!images.has(url)) {
       const pending = new Promise((resolve, reject) => {
         new THREE.TextureLoader().load(url, tex => {
@@ -441,7 +457,7 @@
       const chainTex = isRope ? null : await textureFor(THREE, f.chain.sprite);
       const ropeTexture = isRope ? await textureFor(THREE, f.chain.sprite || 'assets/objectsprites/rope_long.png') : null; // Original PNG shared with traversable ruin ropes.
       if (state.dead) return;
-      const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
+      const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite, f.head.modularOutline === true)));
       if (state.dead) return;
       const authoredRopeScale = connectorAxisScale(f.chain, 'scaleY'); // Width and head scale are never inferred from a mount line.
       const requestedLength = Number(f.chain.mountLengthPx); // Present only on a modular rope mount, never an ordinary authored flail.
