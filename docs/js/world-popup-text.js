@@ -1130,22 +1130,38 @@
     const halfFovTan = Math.tan(((Number(camera.fov) || 42) * Math.PI / 180) / 2);
     const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
     let rowLayouts = null; // Allocate only if a live row needs layout; damage numbers and emojis do not.
+    // Anchor transforms are identical for a root/mode within this update. Keep the cached base
+    // separate from the animated offset, and never carry it into the next frame.
+    const anchors = state.active.length > 1 ? new Map() : null; // Share actor matrix work in multi-hit bursts.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       if (event.mode === 'iconEffect') {
         if (!updateIconEffect(event, camera, cameraRight, now)) {
           state.active.splice(index, 1);
           dispose(event);
+          anchors?.clear(); // Icon onDispose callbacks may change the actor's pose.
         }
         continue;
       }
       const progress = event.interactionPrompt ? 0 : Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
-      const center = popupAnchorWorld(event.root, event.mode);
+      let center;
+      if (anchors) {
+        let modes = anchors.get(event.root);
+        if (!modes) { modes = new Map(); anchors.set(event.root, modes); }
+        if (!modes.has(event.mode)) modes.set(event.mode, popupAnchorWorld(event.root, event.mode));
+        const base = modes.get(event.mode);
+        if (base) {
+          const scratch = _updateScratch.popupCenter ||= new state.deps.THREE.Vector3(); // Mutable per-event offset, not the cached anchor.
+          scratch.copy(base);
+          center = scratch;
+        }
+      } else center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
         finishedRewards.push(event); // Also covers a player root lost during a scene change.
         rowLayouts?.delete(event.root); // Remaining rows retain the original same-frame compaction behavior.
         dispose(event);
         state.active.splice(index, 1);
+        anchors?.delete(event.root); // Re-evaluate surviving rows if disposal changes this root.
         continue;
       }
       // Interaction prompts are world-anchored, so a camera pushed against a
@@ -1256,7 +1272,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Local player/companion combat numbers reuse authored damage popup animations.',
+      latestChange: 'Combat popups share each actor/mode anchor per frame; offsets and fades remain independent.',
       lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
