@@ -48,7 +48,13 @@ async function update(){await w.BanditCamps._simpleHydra.update(.016)}
   assert.equal(replaced.areaId,area,'same-count replacement refresh remains throttled');
   clock+=2100;await update();
   assert.equal(replaced.areaId,'map_i_tothal_storm_tent_'+area,'equal-size replacements are picked up at the next bounded refresh');
+  const elsewhere=actor('elsewhere');elsewhere.areaId=otherArea;actors.push(elsewhere);clock+=10;await update();
+  assert.equal(elsewhere.areaId,otherArea,'camp identity alone must not pull an actor out of another zone');
+  const moved=actor('moved');actors.push(moved);clock+=10;await update();
+  assert(moved._tothalTentShelter);moved.areaId='map_i_real_cave';moved.x=42;moved.y=43;
   storm=0;clock+=20;await update();
+  assert.equal(moved.areaId,'map_i_real_cave','cleanup never overwrites a legitimate relocation');
+  assert.equal(moved.x,42);assert.equal(moved.y,43);assert.equal(moved._tothalTentShelter,undefined);
   assert.equal(first.areaId,area);assert.equal(first.avatarRef.group.visible,true);
   assert.equal(first.groundShadow.visible,false,'shadow keeps its own original visibility');
   assert.equal(first._banditToolHolder.visible,false,'unequipped melee tool stays hidden');

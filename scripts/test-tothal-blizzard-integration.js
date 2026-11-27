@@ -60,6 +60,20 @@ const zones=['map_western_slope','map_northern_cliffs','map_southern_cloud_fores
     assert.equal(target.tothalBlizzardShelter,true,'even unscheduled NPCs shelter');
     assert(target.area.startsWith('map_i_'),'NPC has a real indoor destination');
   }
+  // Physical location must take priority over a scheduled town errand.
+  const indoor={rec:{id:'town'},area:'map_i_farmhouse',root:{position:{x:2.5,z:3.5}}};
+  walkers[0]=indoor;
+  const far={id:'remote'};
+  // Reinit also proves stale doorway and town assignments cannot outlive a world.
+  win.NpcActivityPlanner.resolveNpcTarget=rec=>rec.id==='remote'
+    ? {area:'map_northern_cliffs',c:4,r:4} : {area:'town',c:10,r:5};
+  links.map_northern_cliffs={toArea:'map_i_den_cliff',exit:{c:5,r:5},spawn:{c:1,r:1}};
+  win.NpcScheduling.init({npcWalkers:walkers,calendar:{day:28,time01:.5},
+    buildingScenes:new Map([['map_i_house',{transitions:[{target:'exit_building',col:1,row:1}]}]]),
+    isBuildingArea:a=>a.startsWith('map_i_'),normalizeNpcArea:a=>a||'farm',
+    getCurrentArea:()=> 'farm',loadBuildingScene(){}});
+  assert.equal(win.NpcScheduling.resolveNpcScheduleTarget(indoor.rec).area,'map_i_farmhouse','already indoors outside town: do not route into the storm');
+  assert.equal(win.NpcScheduling.resolveNpcScheduleTarget(far).area,'map_i_den_cliff','missing walker uses the scheduled region rather than default farm');
   storm=0;
   for(const w of walkers)assert.equal(win.NpcScheduling.resolveNpcScheduleTarget(w.rec)?.tothalBlizzardShelter,
     undefined,'normal schedule resumes when the storm dissipates');

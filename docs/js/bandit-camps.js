@@ -811,7 +811,7 @@
     const prior = c?._tothalTentShelter; // Exact pre-storm draw visibility, position and area for this bandit.
     if (!prior) return;
     delete c._tothalTentShelter;
-    if (c.health <= 0 || c.tzatzulCapturedBy) return; // Dead or carried bandits must never teleport during cleanup.
+    if (c.health <= 0 || c.tzatzulCapturedBy || c.areaId !== 'map_i_tothal_storm_tent_' + prior.zoneId) return; // Cleanup owns only its temporary interior, never another system's real relocation.
     c.areaId = prior.areaId;
     c.x = camp?.homeX ?? prior.x; c.y = camp?.homeY ?? prior.y; // A regenerated/removed camp must not strand the actor in a fake interior.
     c.state = 'idle';
@@ -840,7 +840,7 @@
         restoreTothalBanditResident(c, camp); // Restore even when its former camp no longer exists.
         continue;
       }
-      if (!camp || c.health <= 0 || c.tzatzulCapturedBy) continue; // Never steal a captured fighter or restore a corpse.
+      if (!camp || c.areaId !== zoneId || c.health <= 0 || c.tzatzulCapturedBy) continue; // Only shelter living exterior residents of this zone, not relocated or captured actors.
       if (storm && !c._tothalTentShelter) {
         c._tothalTentShelter = {
           zoneId, areaId: c.areaId, x: c.x, y: c.y, state: c.state,

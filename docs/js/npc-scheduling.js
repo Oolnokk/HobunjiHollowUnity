@@ -25,7 +25,13 @@
   // instead of waiting out a real (or simulated) day/night cycle — see
   // jumpTime/forceNpcToTestStation/forceNpcToRedirectedTestStation.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; walkerIndexById.clear(); walkerIndexList = null; walkerIndexAtMs = -Infinity; } // Clear cached actor references on world reload.
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    walkerIndexById.clear(); walkerIndexList = null; walkerIndexAtMs = -Infinity;
+    tothalShelterAssignments.clear(); // Do not retain a prior world's generated doorway references.
+    floodShelterAssignmentsByNpcId.clear(); floodShelterTownAreaCache.clear();
+    floodShelterTownBuildingLinks = null; floodShelterEmergencyWasActive = false;
+  }
 
   function shouldDeferCavernLoad(area) {
     // Cave residents keep their logical schedule while unseen; generating their heavy SDF interior belongs to player entry, not an ambient NPC station lookup.
@@ -421,12 +427,18 @@
     const shelterLinks = _townBuildingShelterLinks();
     if (!shelterLinks.length) return normalTarget;
     const walker = walkerForNpcId(rec?.id); // Includes anyone actually outdoors without rescanning all NPCs.
+    const storm = (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01; // Town shelter is not a destination for residents currently in another region.
+    if (storm && walker?.area && !_areaBelongsToTown(walker.area, shelterLinks)) {
+      floodShelterAssignmentsByNpcId.delete(rec?.id);
+      return normalTarget;
+    }
     let assignment = floodShelterAssignmentsByNpcId.get(rec?.id);
 
     if (!assignment) {
       const targetArea = deps.normalizeNpcArea(normalTarget.area || '');
-      const walkerArea = deps.normalizeNpcArea(walker?.area || '');
-      const townExposed = _areaBelongsToTown(targetArea, shelterLinks) || _areaBelongsToTown(walkerArea, shelterLinks);
+      const walkerArea = walker?.area ? deps.normalizeNpcArea(walker.area) : null;
+      const walkerInTown = !!walkerArea && _areaBelongsToTown(walkerArea, shelterLinks);
+      const townExposed = storm && walkerArea ? walkerInTown : _areaBelongsToTown(targetArea, shelterLinks) || walkerInTown;
       if (!townExposed) return normalTarget;
 
       // Already indoors in a town building → shelter in place. Routing them to
@@ -665,8 +677,8 @@
     if (!target && walker?.root && Number.isFinite(walker.root.position?.x) && Number.isFinite(walker.root.position?.z))
       target = { area: walker.area, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, activity: 'Seeking blizzard shelter' };
     if (!target) return null;
-    const walkerArea = deps.normalizeNpcArea(walker?.area || '');
-    if (walkerArea.startsWith('map_i_') && Number.isFinite(walker?.root?.position?.x) && Number.isFinite(walker?.root?.position?.z)) {
+    const walkerArea = walker?.area ? deps.normalizeNpcArea(walker.area) : null; // Missing actors use their scheduled area, not normalizeNpcArea's farm fallback.
+    if (walkerArea?.startsWith('map_i_') && Number.isFinite(walker?.root?.position?.x) && Number.isFinite(walker?.root?.position?.z)) {
       return { area: walkerArea, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5,
         pose: 'stand', activity: 'Sheltering from Tothal blizzard', obligation: 'critical',
         plannerSource: 'tothal-blizzard', tothalBlizzardShelter: true }; // Already inside: never send anyone back into the snow.
@@ -676,16 +688,20 @@
     let assignment = tothalShelterAssignments.get(rec.id);
     if (!assignment || assignment.area !== area) {
       const links = window.NpcPathfinding?.areaLinksFrom?.(area, { warmBuildings: false }) || []; // Reuse authored door graph without eagerly generating cave interiors.
-      const doorways = links.filter(link => String(link.toArea || '').startsWith('map_i_')
-        && Number.isFinite(link.exit?.c) && Number.isFinite(link.exit?.r)
-        && Number.isFinite(link.spawn?.c) && Number.isFinite(link.spawn?.r));
       const anchor = walkerArea === area && Number.isFinite(walker?.root?.position?.x)
         ? { c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5 }
         : { c: target.c, r: target.r }; // Choose the nearest real doorway to where this NPC actually is.
-      if (!doorways.length || !Number.isFinite(anchor.c) || !Number.isFinite(anchor.r)) return target;
-      doorways.sort((a,b) => Math.hypot(a.exit.c-anchor.c,a.exit.r-anchor.r)
-        - Math.hypot(b.exit.c-anchor.c,b.exit.r-anchor.r));
-      assignment = { area, link: doorways[0] };
+      if (!Number.isFinite(anchor.c) || !Number.isFinite(anchor.r)) return target;
+      let closest = null, best = Infinity; // Single pass through the authored door graph; no sorting or intermediate array.
+      for (const link of links) {
+        if (!String(link.toArea || '').startsWith('map_i_') || !Number.isFinite(link.exit?.c) || !Number.isFinite(link.exit?.r)
+            || !Number.isFinite(link.spawn?.c) || !Number.isFinite(link.spawn?.r)) continue;
+        const dx = link.exit.c - anchor.c, dy = link.exit.r - anchor.r;
+        const distance = dx * dx + dy * dy;
+        if (distance < best) { best = distance; closest = link; }
+      }
+      if (!closest) return target;
+      assignment = { area, link: closest };
       tothalShelterAssignments.set(rec.id, assignment);
     }
     const link = assignment.link; // NpcPathfinding owns transitions and routes to the indoor spawn.
@@ -696,7 +712,11 @@
 
   function resolveNpcScheduleTarget(rec) {
     const overrideTarget = resolveTargetOverride(rec);
-    if (overrideTarget) return applyTothalWildernessShelter(rec, applyTownFloodShelter(rec, overrideTarget));
+    if (overrideTarget) {
+      // Preserve main's normal override precedence outside the Tothal event.
+      if ((window.TothalBlizzard?.currentState?.()?.storm || 0) <= 0.01) return overrideTarget;
+      return applyTothalWildernessShelter(rec, applyTownFloodShelter(rec, overrideTarget));
+    }
     const visitor = getVisitorPresence(rec); // Used to make visitor absence override agenda/free-time fallbacks.
     if (visitor) {
       const hasWalker = hasExistingNpcWalker(rec); // Used to distinguish an arrival spawn from an existing visitor's departure walk.
