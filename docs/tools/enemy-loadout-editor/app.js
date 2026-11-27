@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261127ruinSkeletonAudit3';
+import { EnemyPreview } from './preview.js?v=20261127ruinViewer1';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -1130,7 +1130,7 @@ function renderPools() {
         def.chance,
       );
     }
-    if (state.kind === 'harlyao-skeleton')
+    if (state.kind.startsWith('harlyao-skeleton'))
       $('poolPanel').prepend(
         el(
           'p',
@@ -1312,6 +1312,8 @@ function showRecord(record) {
       fact('Combat perks (' + def.combatPerkPointsSpent + ' points)', Object.entries(def.combatPerks || {}).map(([id, rank]) => (window.PerkSystem?.TREES.combat.find(p => p.id === id)?.name || id) + ' ' + rank).join(' · '), true),
     ] : []),
     fact('Weapon', def.weaponKey),
+    ...(record.roster.ruinSkeletonTheme?[fact('Ruin tradition',record.roster.ruinSkeletonTheme)]:[]),
+    ...(record.roster.enchantedWeapon||record.captainArmament?[fact('Enchantments', [...(record.roster.enchantedWeapon||record.captainArmament).enchantments.base,...Object.values((record.roster.enchantedWeapon||record.captainArmament).enchantments.flourishes||{})].map(id=>window.EnchantmentSystem?.DEFINITIONS?.[id]?.displayName||id).join(' · '),true)]:[]),
     fact('Ranged', def.rangedWeaponKey),
     fact('Outfit', record.roster.equippedCosmetics.join(', '), true),
     fact('Mount', record.mountSpecies),

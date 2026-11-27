@@ -282,6 +282,8 @@
     if (opts.enemyLoadoutKind || opts.extra?.enemyLoadoutKind)
       return opts.enemyLoadoutKind || opts.extra.enemyLoadoutKind;
     const extra = opts.extra || {};
+    if (extra.ruinSkeletonTheme && !extra.isHarlyaoDemolitionist) return 'harlyao-skeleton:'+extra.ruinSkeletonTheme+(extra.ruinWallCoffin?':coffin':'');
+    if (extra.rootledoot) return 'rootledoot:'+rank;
     if (extra.isGhoulShadowknight) return 'ghoul:shadowknight'; // Special mine ghouls have their own Workshop rule; with none, they inherit the base Ghoul rule (see ruleFor).
     if (extra.mineWyrmWitchType) return 'ghoul:wyrm-witch:' + extra.mineWyrmWitchType;
     if (extra.maskboundTroop) return 'maskbound:' + extra.maskboundTroop;
@@ -326,7 +328,9 @@
   const ruleFor = (kind) => {
     const own = documentData.rules[kind];
     if (own) return own.enabled === false ? {} : own;
-    const base = String(kind).startsWith('ghoul:') ? documentData.rules.ghoul : null; // Special ghoul variants inherit the base Ghoul rule until they get their own.
+    const base = String(kind).startsWith('ghoul:') ? documentData.rules.ghoul
+      : String(kind).startsWith('harlyao-skeleton:') ? documentData.rules['harlyao-skeleton']
+      : String(kind).startsWith('rootledoot:') ? documentData.rules['bandit:'+String(kind).split(':')[1]] : null; // Special ghoul variants inherit the base Ghoul rule until they get their own.
     return base && base.enabled !== false ? base : {};
   };
   function configFor(kind, config, rank, random) {

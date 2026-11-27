@@ -21,7 +21,7 @@ const files = [
   'js/rig-transform-dump.js?v=20261029rigdump1',
   'config/portrait-mouth-points.js?v=20261029a',
   'js/furniture-light-registry.js?v=20261119h1454e19',
-  'js/tool-metal-recolor.js?v=20261127-ruin-skeletons',
+  'js/tool-metal-recolor.js?v=20261127ruinViewer1',
   'js/weapon-layer-effects.js?v=20261115torchWick2', // Marker-pixel scanning shared with the flail fuel sprites (the guardians' flame headband emitters).
   'config/weapon-sprite-assemblies.js?v=20261126staffClearance1', // Layered weapon recipes (the Torch-Flail chain and brazier, the Torch-Staff's marker recolor and fire), shared with the game.
   'js/weapon-sprite-assemblies.js?v=20261126h4ed79f8', // Their runtime: held weapons get the same layers, recolor and fire as in the game.
@@ -30,13 +30,18 @@ const files = [
   'js/repo-pattern-library.js?v=20261111h873ccf1',
   'js/pattern-authoring.js?v=20261124patternNestAudit5',
   'js/furniture-pattern-surfaces.js?v=20261124patternNestAudit2',
+  'config/natural-surface-materials.js?v=20261027h1fb8ced',
+  'js/natural-surface-materials.js?v=20261027h1fb8ced',
+  'js/surface-stretch-uv-furniture.js?v=20261126hd96f961',
+  'js/faceted-rocks.js?v=20261120h4dacd76',
+  'js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1',
   'js/metal-armor-system.js?v=20261124patternNestAudit2',
   'js/town-mine.js?v=20261028a',
   'js/npc-movement-head-target.js?v=20261028a',
   'js/leg-bones.js?v=20261028a',
   'js/procedural-leg-animation.js?v=20261126exactSeamsAudit1',
   'js/procedural-feet-outline-parity.js?v=20261119hd0d609c',
-  'js/png-plane-outline-occluder.js?v=20261119hb8fcec5',
+  'js/png-plane-outline-occluder.js?v=20261126weaponDepthParity1',
   'js/weather-fx.js?v=20261109htzizw1',
   'js/emissive-light-orbs.js?v=20261104hc955306',
   'js/sprite-recolor.js?v=20261126he9d2fa1', // Garment tint (pants/clothing dye) needs SpriteRecolor.recolorImageData.
@@ -52,7 +57,7 @@ const files = [
   'js/creature-genetics-render.js?v=20261124sharedBodyColors2',
   'config/modular-weapons.js?v=20261118captainWarCleaver2',
   'js/modular-weapons.js?v=20261119sideTangSweep2',
-  'js/held-action-animations.js?v=20261126fixedWeaponSize1',
+  'js/held-action-animations.js?v=20261126exactGrip4',
   'js/combat/shared-attack-pose.js?v=20261126flailHeadLean1',
   'js/combat/attack-pose-templates.js?v=20261115h01bf772',
   'js/combat/melee-pose-spacing.js?v=20261028a',
@@ -66,19 +71,19 @@ const files = [
   'js/combat/combat-counter-shield.js?v=20261126planarRebase1',
   'js/combat/ranged-weapons.js?v=20261126spiritHealAudit1',
   'js/alchemy-system.js?v=20261125idleGate2',
-  'js/combat/enemy-loadout-rules.js?v=20261101playerhead3',
-  'js/combat/combat-bandit.js?v=20261127ruinSkeletonAudit3',
+  'js/combat/enemy-loadout-rules.js?v=20261127ruinViewer1',
+  'js/combat/combat-bandit.js?v=20261127ruinViewer1',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
   'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
-  'js/combat/combat-minion.js?v=20261127ruinSkeletonAudit2',
+  'js/combat/combat-minion.js?v=20261127ruinViewer1',
   'js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6',
   'js/combat/combat-animal-attacks.js?v=20261126h583b393', // Real animal special registry underlies the shared attachment system.
   'js/combat/combat-attach.js?v=20261126h901bb94', // One owner for attach/detach, dodge interruption and victim targeting.
   'js/combat/combat-maskbound-headtaker.js?v=20261126neckPlanarIntegration1', // Actual Headtaker animation and head throw, not a fabricated preview-only pose.
   'js/combat/combat-lich.js?v=20261118pursuitRetreat1',
-  'js/combat/combat-enchantments.js?v=20261127ruinSkeletonAudit2', // Enchantment definitions and the particle vocabulary, for the Shadowknights' enchanted weapons.
+  'js/combat/combat-enchantments.js?v=20261127ruinViewer1', // Enchantment definitions and the particle vocabulary, for the Shadowknights' enchanted weapons.
   'js/combat/weapon-enchantment-vfx.js?v=20261117flailEnchants1',
-  'js/combat/ghoul-special-variants.js?v=20261127ruinSkeletonAudit3',
+  'js/combat/ghoul-special-variants.js?v=20261127ruinViewer1',
   'js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1',
   'js/combat/combat-special-liches.js?v=20261118combatOrbit1', // Workshop loads the shipped boss runtime, not a copied test implementation.
   'js/rig-transform-layers.js?v=20261122hc3370fb', // Shared owner registry precedes both body and drunken gait composers.
@@ -87,8 +92,11 @@ const files = [
   'js/drunk-prone-composition-bridge.js?v=20261119h8e395a6',
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
   'js/weapon-trust-bandit-loadouts.js?v=20261125enemyClassAudit1',
+  'js/bandit-captain-armaments.js?v=20261127ruinViewer1',
+  'js/wilderness-encounter-runtime.js?v=20261124shared2',
+  'js/rootledoot-encounter.js?v=20261127ruinViewer1',
   'js/combat/ranged-weapon-archetypes.js?v=20261125deepAudit1',
-  'tools/enemy-loadout-editor/source-data.js?v=20261122hSourceHealth1',
+  'tools/enemy-loadout-editor/source-data.js?v=20261127ruinViewer1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
@@ -336,6 +344,7 @@ export class EnemyPreview {
     window.DialogueContent.init({ getNpcRecords: () => this.data.npcs });
     window.HarlyaoLichCombat.installWrappers();
     window.BanditCombat.init(this.dependencies);
+    window.BanditCaptainArmaments.init(this.dependencies); // Isolated tool catalog; no saved inventory or game loot operations.
     window.WeaponToolStances.init(this.dependencies);
     await window.WeaponToolStances.reloadConfig();
     window.ProceduralHandAttachments?.installGameRuntime(
@@ -425,7 +434,7 @@ export class EnemyPreview {
     const load = async (sprite, recolor) => {
       if (recolor)
         return window.ToolMetalRecolor.getRecoloredCanvas(
-          new URL(sprite, document.baseURI).href,
+          window.ModularWeapons.decode(sprite)?sprite:new URL(sprite, document.baseURI).href, // Composed weapon keys are not HTTP image URLs.
           {
             targetHex: metal.hex,
             verdigrisHex: metal.verdigrisHex || '#3FAF9F',
@@ -452,11 +461,12 @@ export class EnemyPreview {
         if (group.visible === false) group.visible = true; // A successful image load may recover a previously hidden placeholder.
         def._imgW = image.naturalWidth || image.width;
         def._imgH = image.naturalHeight || image.height;
-        plane.geometry.dispose();
-        plane.geometry = new THREE.PlaneGeometry(
-          0.5,
-          (0.5 * def._imgH) / def._imgW,
-        );
+        if(def.modular){
+          window.ModularWeapons.fitPlaneGeometry(plane.geometry,image,0.5); // Reuse the live composite's calibrated grip frame.
+        }else{
+          plane.geometry.dispose();
+          plane.geometry = new THREE.PlaneGeometry(0.5,(0.5 * def._imgH) / def._imgW);
+        }
         group.userData.unloadedTexture = texture;
         // The game builds a weapon mesh only after its texture has loaded; here the real image arrives after the mesh, so the layered assembly
         // (flail chain and brazier, staff marker recolor and fire) is set up now, against the real sprite, replacing the one made on the blank placeholder.
@@ -612,6 +622,7 @@ export class EnemyPreview {
       seed,
       roster: copy(a.rosterRecord),
       definition: copy(a.def),
+      captainArmament:a._banditCaptainArmament?copy(a._banditCaptainArmament):null, // Preserve the rolled modular weapon when reviewing history.
       rigScale: a.avatarRef.rigScale || null,
       renderedBodyScale: a.avatarRef.group?.scale ? {x:a.avatarRef.group.scale.x,y:a.avatarRef.group.scale.y,z:a.avatarRef.group.scale.z} : null, // Mobile-readable verification of the real body planes' parent scale.
       bodyColor3: a.rosterRecord?.appearance?.bodyColors?.C?.hex || a.avatarRef.profile?.bodyColors?.C?.hex || null, // The same color the generated tomb consumes.
@@ -649,11 +660,13 @@ export class EnemyPreview {
           rosterOverride: copy(record.roster),
           defOverride: copy(record.definition),
           avatarRigScale: record.rigScale,
+          previewCaptainArmament:record.captainArmament?copy(record.captainArmament):null,
         },
       );
       if (!c) throw Error('Saved enemy could not be rebuilt');
       // Restore definitions after class initialization, without re-rolling saved equipment.
       c.def = copy(record.definition);
+      c.health=c.maxHealth=c.def.maxHealth;c.stamina=c.maxStamina=c.def.maxStamina; // Avoid multiplying already-final saved Health twice.
       await Promise.all(this.textureTasks);
       this.replace(c);
       this.fit();
@@ -1165,7 +1178,10 @@ export class EnemyPreview {
         if (child.userData.loadedTexture)
           textures.add(child.userData.loadedTexture);
       }
+    const uniqueKey=actor._banditCaptainArmament?.key; // Workshop-owned modular cache entry.
+    window.BanditCaptainArmaments?.discard?.(actor);
     window.BanditCombat.discardEntity(actor);
+    if(uniqueKey){delete this.weaponTextures[uniqueKey];}
     for (const texture of textures) texture.dispose();
   }
   dispose() {

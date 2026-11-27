@@ -59,6 +59,29 @@ assert.ok(traced.every(p=>Number.isFinite(p.columnX)),'contact carries exact def
 assert.ok(!traced.some(p=>p.x===1&&p.z===1),'transparent lower corner is excluded');
 console.log('bounded bands and alpha contact: ok');
 
+// Height from the cached hull must match every original contact under live poses.
+const {bakeContact,projectedContactY}=context.window.HeldGroundPose;
+for(const vertices of [traced, traced.slice(0,1), traced.slice(0,2)]){
+  for(const amount of [0,.125,.5,1]){
+    for(const grip of [-.8,0,.6]){
+      const baked=bakeContact(vertices,bounded,grip,amount);
+      assert.ok(baked.hull.length>0&&baked.hull.length<=vertices.length);
+      const matrix={elements:Array(16).fill(0)};
+      matrix.elements[13]=.35;
+      for(let step=0;step<720;step++){
+        const theta=step*Math.PI/360;
+        matrix.elements[1]=Math.cos(theta)*.7;
+        matrix.elements[5]=Math.sin(theta)*1.3;
+        const expected=Math.min(...vertices.map(p=>matrix.elements[1]*p.x
+          -matrix.elements[5]*contractedZ(p.z,grip,bounded,amount,p.columnX)+.35));
+        assert.ok(Math.abs(projectedContactY(baked.hull,matrix)-expected)<1e-12);
+      }
+    }
+  }
+}
+assert.ok(bakeContact(traced,bounded,0,.5).hull.length<traced.length,'fitted hull drops redundant points');
+
+
 const candidate=context.window.HeldGroundPose.ropeFitCandidate;
 close(candidate(0,2,1,1,.3,.5),1);
 close(candidate(0,2,1,.5,.3,.5),.5);
@@ -79,14 +102,52 @@ assert.equal(preview.groundY(),0);
 const editor=fs.readFileSync('docs/tools/attack-animation-editor/index.html','utf8');
 assert.ok(editor.includes('js/held-ground-pose.js?'),'standalone page loads shared solver');
 assert.ok(editor.includes('configurePreview?.(THREE)'),'editor supplies module-scoped Three');
+assert.ok(editor.includes("{ id: 'nuhongan', label: 'Nuhongan' }"),'Nuhongan uses its own preview rig, not the Tletingan donor scale');
 assert.ok(editor.includes('solver.constrainWeapon(toolHolder,toolPlaneMesh,context)'),'editor runs real solver');
 assert.ok(editor.includes('applyWeaponGroundPreview();'),'applied pose reaches solver');
 assert.ok(editor.includes('previewAppliedGeometry()'),'Apply exits raw gizmo mode and focuses Neutral');
+// Execute the production hand-sync ordering helper with instrumented owners.
+const driver=fs.readFileSync('docs/js/procedural-hand-frame-driver.js','utf8');
+const prepareStart=driver.indexOf('  function prepareGroundPoseForSockets(');
+const prepareEnd=driver.indexOf('  function syncRigToTool(',prepareStart);
+assert.ok(prepareStart>=0&&prepareEnd>prepareStart);
+const syncBody=driver.slice(prepareEnd);
+assert.ok(syncBody.indexOf('prepareGroundPoseForSockets(record,')<syncBody.indexOf('const primarySocket = toolSocketWorld('),'prepare must precede the first canonical socket');
+{
+  const calls=[],player={},state={};let editorMode=false,enabled=true,slot='weapon',fresh=false,idle=null;
+  const holder={parent:{updateWorldMatrix(){calls.push('parent');}},updateMatrixWorld(){calls.push('bake');fresh=true;}};
+  const record={rig:{parent:player},avatarRoot:{userData:{}}};
+  const sandbox={
+    gameDeps:{playerMesh:player,toolHolder:holder},inAttackEditor:()=>editorMode,
+    toolGrips:{offhandIdleStateForTool(){calls.push('idle-state');return idle;}},
+    global:{HeldGroundPose:{enabled:()=>enabled,hasCurrentGripPose:()=>fresh},
+      WeaponToolStances:{getRuntimeState:()=>({activeSlot:slot})},
+      HobunjiDualWieldWeaponVisuals:{syncNow(){calls.push('dual-sync');fresh=true;return state;}}}
+  };
+  const prepare=vm.runInNewContext('('+driver.slice(prepareStart,prepareEnd).trim()+')',sandbox);
+  const run=(dual=null,solve={},owner=record,grip='melee')=>prepare(owner,holder,'weapon',grip,{},dual,solve);
+  assert.equal(run(),null);assert.equal(calls.join(','),'idle-state,parent,bake');
+  calls.length=0;run();assert.equal(calls.join(','),'idle-state','current frame avoids a duplicate bake');
+  calls.length=0;fresh=false;const solve={};run({},solve);
+  assert.equal(calls.join(','),'parent,dual-sync','dual owner bakes before socket sampling');
+  assert.equal(solve.dualWieldState,state);assert.equal(solve.dualWieldRecord,record);
+  assert.equal(solve.dualWieldSynced,true);assert.equal(solve.clearancePrepared,true);
+  calls.length=0;idle={blend:1};fresh=false;assert.equal(run(),idle);
+  assert.equal(calls.join(','),'idle-state,parent,dual-sync','invisible offhand follows the same fresh pose');
+  calls.length=0;editorMode=true;assert.equal(run(),undefined);editorMode=false;
+  enabled=false;assert.equal(run(),undefined);enabled=true;
+  slot='ranged';assert.equal(run(),undefined);slot='weapon';
+  assert.equal(run(null,{},record,'ranged'),undefined);
+  assert.equal(run(null,{}, {rig:{parent:{}},avatarRoot:{userData:{}}}),undefined);
+  assert.equal(calls.length,0,'non-player, editor, disabled and ranged paths perform no extra work');
+}
+const dualSource=fs.readFileSync('docs/js/dual-wield-weapon-visuals.js','utf8');
+assert.ok(dualSource.includes('(leanSync || solve?.clearancePrepared)'),'both hands consume the prepared copy state even with the lean A/B off');
 const author=fs.readFileSync('docs/js/weapon-geometry-author.js','utf8');
 assert.ok(author.includes('originalGeometryFor?.(plane?.geometry)'),'drawing retains source coordinates during compression');
 assert.ok(author.includes('weaponGeometryFitStatus'),'visible live diagnostic');
 let THREE;
-try{THREE=require('three');}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e;}
+try{THREE=require('three');}catch(e){if(e.code!=='MODULE_NOT_FOUND'||process.env.REQUIRE_THREE==='1')throw e;}
 if(THREE){
   // Actual Three transforms and buffer geometry, synthetic opaque sprite.
   // No browser/WebGL or gameplay singleton is needed to run the editor path.
@@ -111,8 +172,99 @@ if(THREE){
   delete ctx.lightReference;solver.constrainWeapon(holder,weapon,ctx);
   assert.equal(plane.geometry,fitted,'later frames retain physical length');
   close(solver.snapshot().shortening,result.shortening);
+  assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds,'live pose changes reuse the fitted hull');
+  const originalImage=plane.material.map.image;
+  plane.material.map.image={...originalImage};
+  solver.constrainWeapon(holder,weapon,ctx);
+  assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds+1,'replacing weapon artwork rebuilds the hull');
   solver.setPreviewEnabled(false);
   assert.equal(plane.geometry,source,'raw mode restores original geometry');
+  // The real grip is off-origin. Compare against the actual sprite matrix,
+  // not the solver's own pivot reconstruction (including a reflected root).
+  solver.setPreviewEnabled(true);
+  for(const sign of [1,-1]){
+    holder.position.set(.1,.35,0);holder.rotation.set(Math.PI/2,0,0);
+    weapon.position.set(.12,-.04,.17);weapon.scale.set(sign*1.2,1.2,1.2);
+    plane.rotation.z=-Math.PI/6;
+    const raw=new THREE.Vector3(.06,-.04,-.2);
+    const grip=raw.clone().multiplyScalar(1.2).add(weapon.position);
+    const point=new THREE.Vector3(raw.x,-raw.z,raw.y);
+    parent.updateMatrixWorld(true);
+    const before=point.clone().applyMatrix4(plane.matrixWorld);
+    const offOrigin={...ctx,itemKey:'offset-pivot',profile:null,allowFit:false,primary:{position:grip},basis:new THREE.Quaternion()};
+    assert.equal(solver.constrainWeapon(holder,weapon,offOrigin),true,'offset grip requires a correction');
+    parent.updateMatrixWorld(true);
+    const after=point.clone().applyMatrix4(plane.matrixWorld);
+    close(after.distanceTo(before),0);
+    close(solver.resolveGripLocal(holder,grip,new THREE.Vector3()).applyMatrix4(holder.matrixWorld).distanceTo(before),0);
+    close(solver.snapshot().gripPivotDrift,0);
+    assert.ok(solver.snapshot().finalMinY>=.035-1e-5);
+  }
+  weapon.position.set(0,0,0);weapon.scale.set(1,1,1);plane.rotation.z=0;
+  solver.setPreviewEnabled(false);
+  // A short character's second hand may have no reachable solution. The weapon is still never left buried: the
+  // ordinary pose is kept and the whole weapon is raised by a bounded amount (grip moves straight up) rather than
+  // swung into a different orientation.
+  solver.setPreviewEnabled(true);
+  holder.position.set(0,.25,0);holder.rotation.set(Math.PI/2,0,0);
+  parent.updateMatrixWorld(true);
+  const reachBlocked={...ctx,itemKey:'reach-blocked',profile:null,allowFit:false,secondary:{position:{x:0,y:0,z:.4}}};
+  const gripBefore=new THREE.Vector3().applyMatrix4(holder.matrixWorld);
+  assert.equal(solver.constrainWeapon(holder,weapon,reachBlocked),true);
+  parent.updateMatrixWorld(true);
+  const reachResult=solver.snapshot();
+  assert.ok(reachResult.finalMinY>=.035-1e-7,'unavailable secondary reach cannot suppress clearance');
+  assert.ok(reachResult.gripLift>0&&reachResult.gripLift<=.15+1e-6,'a bounded lift, not a different pose');
+  assert.ok(/lift|relaxed/.test(reachResult.clearanceStrategy),reachResult.clearanceStrategy);
+  const gripAfter=new THREE.Vector3().applyMatrix4(holder.matrixWorld);
+  close(gripAfter.clone().sub(gripBefore).distanceTo(new THREE.Vector3(0,reachResult.gripLift,0)),0);
+  // A grip already below ground cannot clear through a pivot alone. Within the lift limit the ordinary rotation is
+  // kept and only the residual is lifted; shortening is unchanged.
+  holder.position.set(0,-.08,0);holder.rotation.set(Math.PI/2,0,0);parent.updateMatrixWorld(true);
+  assert.equal(solver.constrainWeapon(holder,weapon,{...reachBlocked,secondary:null,itemKey:'below-ground'}),true);
+  parent.updateMatrixWorld(true);
+  const liftResult=solver.snapshot();
+  assert.ok(liftResult.gripLift>=.115-1e-6&&liftResult.gripLift<=.15+1e-6,'lift stays within the limit: '+liftResult.gripLift);
+  close(liftResult.shortening,0);
+  assert.ok(liftResult.finalMinY>=.035-1e-7);close(liftResult.gripPivotDrift,0);
+  // Beyond the limit the last-resort flat pose takes over, still front face up, and lifts only the residual.
+  holder.position.set(0,-.3,0);holder.rotation.set(Math.PI/2,0,0);parent.updateMatrixWorld(true);
+  assert.equal(solver.constrainWeapon(holder,weapon,{...reachBlocked,secondary:null,itemKey:'far-below-ground'}),true);
+  parent.updateMatrixWorld(true);
+  const deepResult=solver.snapshot(),deepFront=new THREE.Vector3(plane.matrixWorld.elements[8],plane.matrixWorld.elements[9],plane.matrixWorld.elements[10]).normalize();
+  assert.equal(deepResult.clearanceStrategy,'flat-plus-minimum-lift');
+  close(deepResult.gripLift,.335);assert.ok(deepFront.y>.999,'last resort keeps the front face up');
+  assert.ok(deepResult.finalMinY>=.035-1e-7);
+  solver.setPreviewEnabled(false);
+  // Real Three replay: weapon stance bakes a corrected world matrix, then
+  // restores authored locals as the runtime does. The occluder must not undo
+  // that correction by calling native updateWorldMatrix on the sprite.
+  {
+    const scene=new THREE.Scene();scene.add(parent);
+    const colorHolder=holder.position.clone(),colorQ=holder.quaternion.clone();
+    const colorMatrix=plane.matrixWorld.clone();
+    holder.__weaponToolStanceMatrixHook=true;
+    holder.position.y-=.75;holder.quaternion.identity();holder.updateMatrix();
+    const normalActor=new THREE.Group();scene.add(normalActor);
+    const normalPlane=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial());
+    normalActor.add(normalPlane);normalActor.position.y=2;
+    const windowLike={};
+    vm.runInNewContext(fs.readFileSync('docs/js/png-plane-outline-occluder.js','utf8'),{window:windowLike,THREE});
+    const depth=windowLike.PngPlaneOutlineOccluder;
+    depth.registerDepthMesh(plane);depth.registerDepthMesh(normalPlane);
+    const camera={layers:{mask:1,set(n){this.mask=1<<n;}}};
+    depth.init({camera,renderer:{render(sceneArg){
+      assert.equal(sceneArg.autoUpdate,false);
+      assert.ok(plane.matrixWorld.equals(colorMatrix),'actual weapon depth matrix exactly matches the visible corrected sprite');
+      close(normalPlane.matrixWorld.elements[13],2);
+    }}});
+    depth.renderDepth(scene);
+    assert.equal(depth.snapshot().bakedWeaponMatricesReused,1);
+    assert.ok(plane.matrixWorld.equals(colorMatrix),'later screen-outline pass inherits the same depth transform');
+    assert.equal(scene.autoUpdate,true);
+    delete holder.__weaponToolStanceMatrixHook;holder.position.copy(colorHolder);holder.quaternion.copy(colorQ);
+    scene.remove(parent);parent.updateMatrixWorld(true);
+  }
   // Two visible copies have distinct raw poses. Correct around each actual
   // grip, including the offhand offset, rather than either mesh's origin.
   solver.setPreviewEnabled(true);
@@ -134,15 +286,39 @@ if(THREE){
   const beforeRight=localRight.clone().applyMatrix4(mainMesh.matrixWorld);
   const beforeLeft=localLeft.clone().applyMatrix4(offMesh.matrixWorld);
   const holderBefore=holder.matrix.clone();
+  const hullBuilds=solver.snapshot().contactHullBuilds;
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   const d=solver.snapshot().dual;
+  assert.equal(solver.snapshot().contactHullBuilds,hullBuilds,'neither hand rebuilds the shared contact hull');
   assert.ok(d.right.angleDeg!==0&&d.left.angleDeg!==0,'independent corrective rotation');
   assert.ok(d.right.finalMinY>=.035-1e-5&&d.left.finalMinY>=.035-1e-5,'both weapons clear floor');
   close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);
   close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(beforeLeft),0);
+  close(d.right.gripPivotDrift,0);close(d.left.gripPivotDrift,0);
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
   assert.equal(offMesh.geometry,plane.geometry);
+  // Mirrored source planes are real dual-wield parents during Backhand.
+  // The parent has negative determinant but a uniform scale; the correction
+  // must retain each physical grip and clear the floor, not reject reflection.
+  holder.position.set(.1,.45,0);holder.rotation.set(Math.PI/2,0,0);
+  weapon.scale.x=-1;mainRoot.position.set(-.2,0,0);mainRoot.quaternion.identity();
+  offRoot.position.set(.3,0,.08);offRoot.rotation.set(0,0,.25);
+  parent.updateMatrixWorld(true);solver.constrainWeapon(holder,weapon,ctx);parent.updateMatrixWorld(true);
+  const mirroredInverse=plane.matrixWorld.clone().invert();
+  const mirrorRight=new THREE.Vector3().applyMatrix4(holder.matrixWorld).applyMatrix4(mirroredInverse);
+  const mirrorLeft=new THREE.Vector3(-.05,0,0).applyMatrix4(holder.matrixWorld).applyMatrix4(mirroredInverse);
+  const mirrorBeforeRight=mirrorRight.clone().applyMatrix4(mainMesh.matrixWorld);
+  const mirrorBeforeLeft=mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
+  const md=solver.snapshot().dual;
+  for(const side of ['right','left']){
+    assert.ok(md[side].angleDeg!==0&&md[side].finalMinY>=.035-1e-5,'mirrored '+side+' clears floor');
+    close(md[side].gripPivotDrift,0);
+  }
+  close(mirrorRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(mirrorBeforeRight),0);
+  close(mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(mirrorBeforeLeft),0);
+  weapon.scale.x=1;
   // Unsupported live basis must keep the fixed geometry, not lengthen copies.
   plane.rotation.x=0;parent.updateMatrixWorld(true);
   solver.constrainWeapon(holder,weapon,ctx);
@@ -164,6 +340,15 @@ if(THREE){
   solver.adjustHaftPoint(plane,sourceTip);solver.adjustHaftPoint(mainMesh,copyTip);
   close(sourceTip.distanceTo(copyTip),0);assert.ok(copyTip.y>-.8,'flexible copy anchor follows shortening');
   solver.setPreviewEnabled(false);assert.equal(mainMesh.geometry,source);assert.equal(offMesh.geometry,source);
+  // Runtime freshness is tied to the scheduler frame, not the last draw.
+  solver.configurePreview(null);w.THREE=THREE;w.XrayHierarchy={get:()=> 'rotation'};
+  let frame=10;w.RuntimeFrameScheduler={frameId:()=>frame};w.PlayerJump={heldPoseGroundY:()=>0,heldPoseGrounded:()=>true};
+  assert.equal(solver.hasCurrentGripPose(holder),false);
+  solver.constrainWeapon(holder,weapon,{...ctx,preview:false});
+  assert.equal(solver.hasCurrentGripPose(holder),true);
+  assert.equal(solver.hasCurrentGripPose(new THREE.Group()),false);
+  frame++;assert.equal(solver.hasCurrentGripPose(holder),false);
+  solver.clear();assert.equal(solver.hasCurrentGripPose(holder),false);
   console.log('held ground pose: actual Three preview and independent dual grip pivots passed');
 }
 
@@ -203,3 +388,101 @@ canonical.children.push({visible:true});assert.equal(preview.hasDrawingHaftChild
 
 assert.ok(assemblies.includes('const fixedScale=sharedSource?(sharedSource.fixedRopeScale??1)'),'dual flail heads inherit the permanent source rope fit');
 assert.ok(assemblies.includes('const profile=sharedSource?sharedSource.groundProfile:'),'dual flail heads use the same clearance profile');
+
+// Enchantment mote groups are emitter-only and never make the haft "drawing"; real overlays still do.
+{
+  const hdc=context.window.HeldGroundPose.hasDrawingHaftChildren;
+  const motes={userData:{weaponEnchantmentVfx:true},children:[{isSprite:true},{isSprite:true}]};
+  assert.equal(hdc({children:[motes]}),false,'marked sprite-only enchantment group is non-solid');
+  assert.equal(hdc({children:[{userData:{},children:[{isSprite:true}]}]}),true,'unmarked group stays solid');
+  assert.equal(hdc({children:[{userData:{weaponEnchantmentVfx:true},children:[{isSprite:true},{isMesh:true}]}]}),true,'marked group containing a mesh stays solid');
+  assert.equal(hdc({children:[motes,{userData:{},children:[]}]}),true,'a real overlay beside the motes still counts');
+  console.log('held ground pose: enchantment mote children are non-solid');
+}
+
+// Runtime (non-preview) behavior: a grounded pose is solved once and reused with the cheap relative correction; it
+// is solved again every frame while midair, and whenever the height above the floor or the stance really changes.
+if(THREE){
+  const rgba=new Uint8ClampedArray(4*16*4).fill(255);
+  const w={document:{createElement:()=>({getContext:()=>({drawImage(){},getImageData(){return {data:rgba};}})})}};
+  vm.runInNewContext(fs.readFileSync('docs/js/held-ground-pose.js','utf8'),{window:w});
+  const solver=w.HeldGroundPose;
+  let grounded=true,frame=1,floorY=0;
+  w.THREE=THREE;w.XrayHierarchy={get:()=> 'rotation'};w.RuntimeFrameScheduler={frameId:()=>frame};
+  w.PlayerJump={heldPoseGroundY:()=>floorY,heldPoseGrounded:()=>grounded};
+  const parent=new THREE.Group(),holder=new THREE.Group(),weapon=new THREE.Group();
+  parent.add(holder);holder.add(weapon);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(.5,2),new THREE.MeshBasicMaterial());
+  plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
+  const ctx={preview:false,rig:{parent},itemKey:'reuse',fitIdentity:'reuse',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile:null,allowFit:false};
+  const stance=(y,rx)=>{holder.position.set(0,y,0);holder.rotation.set(rx,0,0);holder.updateMatrix();parent.updateMatrixWorld(true);}; // What the stance owner restores each frame.
+  const step=()=>{frame++;const changed=solver.constrainWeapon(holder,weapon,ctx);parent.updateMatrixWorld(true);return {changed,g:solver.snapshot(),m:plane.matrixWorld.clone()};};
+  stance(.25,Math.PI/2);
+  const first=step();
+  assert.equal(first.changed,true);assert.equal(first.g.reused,false,'first grounded frame solves');
+  assert.ok(first.g.finalMinY>=.035-1e-7);
+  stance(.25,Math.PI/2);
+  const second=step();
+  assert.equal(second.g.reused,true,'next grounded frame reuses the solved pose');
+  for(let i=0;i<16;i++)assert.ok(Math.abs(second.m.elements[i]-first.m.elements[i])<1e-6,'reused pose equals the solved pose');
+  assert.equal(solver.snapshot().reuseHits,1);
+  stance(.25,Math.PI/2+.01); // A small stance wobble is still reused, applied relative to the new stance.
+  const wobble=step();assert.equal(wobble.g.reused,true);assert.ok(wobble.g.finalMinY>=.035-.02,'wobble stays about clear');
+  // Turning the player rotates the whole stance about the vertical; the correction is kept in the weapon's own
+  // frame, so it is reused exactly and matches a fresh solve of the turned stance.
+  const yawStance=(y,rx,yaw)=>{holder.position.set(0,y,0);holder.quaternion.setFromEuler(new THREE.Euler(rx,0,0)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),yaw));holder.updateMatrix();parent.updateMatrixWorld(true);};
+  stance(.25,Math.PI/2);step(); // Back to the solved stance.
+  yawStance(.25,Math.PI/2,.8);
+  const turned=step();assert.equal(turned.g.reused,true,'turning the player reuses the pose');
+  grounded=false;yawStance(.25,Math.PI/2,.8);const freshTurned=step();grounded=true;
+  for(let i=0;i<16;i++)assert.ok(Math.abs(turned.m.elements[i]-freshTurned.m.elements[i])<1e-5,'a reused pose after a turn equals a fresh solve');
+  grounded=false; // Midair: recalculated every frame.
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,false);
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,false,'still recalculated while midair');
+  grounded=true; // Landing re-solves once, then reuses again.
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,false,'landing solves again');
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,true);
+  stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,false,'a large stance change solves again');
+  stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,true);
+  floorY=.2;stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,false,'a real change in height above the floor solves again');
+  solver.clear();
+  console.log('held ground pose: grounded poses are solved once and reused; midair recalculates');
+}
+
+// Fallback chain over a deterministic sweep of low poses with a real Three sprite: every pose clears the floor,
+// the ordinary rotation is kept with a bounded lift before any flat pose, and a flat last resort keeps the front
+// face up and the weapon's heading. Case counts guard against a sweep that never reaches a branch.
+if(THREE){
+  const rgba=new Uint8ClampedArray(4*16*4).fill(255);
+  const w={document:{createElement:()=>({getContext:()=>({drawImage(){},getImageData(){return {data:rgba};}})})}};
+  vm.runInNewContext(fs.readFileSync('docs/js/held-ground-pose.js','utf8'),{window:w});
+  const solver=w.HeldGroundPose;solver.configurePreview(THREE);solver.setPreviewEnabled(true);
+  const parent=new THREE.Group(),holder=new THREE.Group(),weapon=new THREE.Group();
+  parent.add(holder);holder.add(weapon);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(.5,2),new THREE.MeshBasicMaterial());
+  plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
+  const ctx={preview:true,rig:{parent},itemKey:'sweep',fitIdentity:'sweep',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile:null,allowFit:false};
+  let seed=12345;const rnd=()=>{seed=(seed*1664525+1013904223)%4294967296;return seed/4294967296;};
+  const seen={};
+  for(let i=0;i<400;i++){
+    solver.clear();
+    holder.position.set(0,-.05+rnd()*.5,0);
+    holder.quaternion.setFromEuler(new THREE.Euler(rnd()*Math.PI*2,rnd()*Math.PI*2,rnd()*Math.PI*2));
+    parent.updateMatrixWorld(true);
+    const before=plane.matrixWorld.elements,heading0=new THREE.Vector2(before[4],before[6]).normalize();
+    solver.constrainWeapon(holder,weapon,{...ctx,itemKey:'sweep'+i});parent.updateMatrixWorld(true);
+    const result=solver.snapshot(),strategy=result.clearanceStrategy||result.reason;
+    seen[strategy]=(seen[strategy]||0)+1;
+    assert.ok(result.finalMinY>=.035-1e-6,'every pose clears the floor ('+strategy+')');
+    if(strategy==='radial-lift')assert.ok(result.gripLift<=.15+1e-6,'bounded lift: '+result.gripLift);
+    if(strategy==='flat-face-up'){
+      const e=plane.matrixWorld.elements,front=new THREE.Vector3(e[8],e[9],e[10]).normalize();
+      assert.ok(front.y>.999,'flat last resort keeps the front face up');
+      assert.ok(Math.abs(new THREE.Vector2(e[4],e[6]).normalize().dot(heading0)-1)<1e-6,'flat last resort keeps the weapon heading');
+      assert.ok(Math.abs(e[5])<1e-6,'sprite long axis is horizontal');
+    }
+  }
+  assert.ok((seen['radial-lift']||0)>=50,'sweep reaches the bounded-lift branch: '+JSON.stringify(seen));
+  assert.ok((seen['flat-face-up']||0)>=10,'sweep reaches the flat last resort: '+JSON.stringify(seen));
+  console.log('held ground pose: fallback chain keeps the ordinary rotation with a bounded lift first '+JSON.stringify(seen));
+}

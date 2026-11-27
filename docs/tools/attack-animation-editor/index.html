@@ -331,9 +331,9 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-ground-pose.js?v=20261126h5db8017"></script>
+<script src="../../js/held-ground-pose.js?v=20261127groundOnce2"></script>
 <script src="../../js/weapon-geometry-author.js?v=20261126fixedWeaponSize1"></script>
-<script src="../../js/held-action-animations.js?v=20261126fixedWeaponSize1"></script>
+<script src="../../js/held-action-animations.js?v=20261126exactGrip4"></script>
 <script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
@@ -827,6 +827,7 @@ const SPECIES_LIST = [
   { id: 'engh-sho', label: 'Engh-sho' },
   { id: 'kenkari', label: 'Kenkari' },
   { id: 'tletingan', label: 'Tletingan' },
+  { id: 'nuhongan', label: 'Nuhongan' }, // Preserve the smaller subspecies identity through the actual shared avatar builder.
   { id: 'rakakoan', label: "Rakako'an" },
   { id: 'mashtzarr', label: 'Mashtzarr' },
 ];
@@ -1997,7 +1998,7 @@ function updateGroundPreviewStatus(now){
   const number=n=>Number.isFinite(n)?n.toFixed(3):'—';
   const suspended=window.HobunjiWeaponSpriteAssemblies?.groundStatus?.(toolPlaneMesh);
   const text='Ground preview: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+' · fit '+(s.fitted?(100*s.shortening).toFixed(1)+'% band shortening':'not fitted')+
-    ' · rotation '+number(s.angleDeg)+'° · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'')+(suspended?' · rope '+(suspended.fittedScale*100).toFixed(1)+'% · '+(suspended.trailing?'trailing':suspended.reason)+' · head Y '+number(suspended.headMinY):'');
+    ' · rotation '+number(s.angleDeg)+'° · grip drift '+number(s.gripPivotDrift??(s.dual?.right?.gripPivotDrift!=null||s.dual?.left?.gripPivotDrift!=null?Math.max(s.dual?.right?.gripPivotDrift??0,s.dual?.left?.gripPivotDrift??0):null))+' · lift '+number(s.gripLift)+' · '+(s.clearanceStrategy||'')+' · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'')+(suspended?' · rope '+(suspended.fittedScale*100).toFixed(1)+'% · '+(suspended.trailing?'trailing':suspended.reason)+' · head Y '+number(suspended.headMinY):'');
   if(node.textContent!==text)node.textContent=text;
 }
 function applyPoseToRig(pose) {

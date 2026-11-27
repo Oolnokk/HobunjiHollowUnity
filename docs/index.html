@@ -37,7 +37,8 @@
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
   <script src="js/xray-hierarchy.js?v=20261127h36870ae"></script>
-  <script src="js/held-ground-pose.js?v=20261126h5db8017"></script>
+  <script src="js/held-ground-pose.js?v=20261127groundOnce2"></script>
+  <script src="js/held-ground-pose-trace.js?v=20261127trace1"></script> <!-- Diagnostic only: inert unless ?groundPoseTrace=1. -->
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
   <script src="js/geometry-auto-lod.js?v=20261124cpuAudit2"></script> <!-- Opt-in render-only idle-time optimization. -->
@@ -165,7 +166,7 @@
   <script src="js/color-fill.js?v=20261117h93b0e83"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261126h097bdbf"></script>
-  <script src="js/tool-metal-recolor.js?v=20261127-ruin-skeletons"></script>
+  <script src="js/tool-metal-recolor.js?v=20261127ruinViewer1"></script>
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261126voorg31merge1"></script>
@@ -198,7 +199,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261126fixedWeaponSize1"></script>
+  <script src="js/held-action-animations.js?v=20261126exactGrip4"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -380,7 +381,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261127-ruin-skeletons"></script>
+  <script src="js/bandit-camps.js?v=20261127ruinViewer1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -414,7 +415,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
-  <script src="js/persistent-ground-fire.js?v=20261127ruinSkeletonAudit2"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261127ruinViewer1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
   <script src="js/alchemy-flasks.js?v=20261119cheapGeometry1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
@@ -502,8 +503,8 @@
   <script src="js/npc-dialogue-entry-router.js?v=20261118hunundiTurnIn1"></script> <!-- Contextual turn-ins, story priority, favors and merchant entry. -->
   <script src="js/quest-progress-store.js?v=20261116decouple1"></script> <!-- Per-member active quest state; canonical game save still serializes. -->
   <script src="js/gear-member-transaction.js?v=20261116decouple1"></script> <!-- Atomic Garanki gear/inventory write via CharacterMetaSave. -->
-  <script src="js/harlyao-relics.js?v=20261126planarRebase1"></script>
-  <script src="js/fey-armament-quest.js?v=20261117feyQuest3"></script> <!-- Garanki/Jubmir Fey-knot investigation; member-scoped story quest. -->
+  <script src="js/harlyao-relics.js?v=20261127captainRegistration1"></script>
+  <script src="js/fey-armament-quest.js?v=20261127captainRegistration1"></script> <!-- Garanki/Jubmir Fey-knot investigation; member-scoped story quest. -->
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261022h0605f09"></script>
@@ -670,7 +671,7 @@
   <script src="config/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
   <script src="js/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
-  <script src="js/bandit-captain-armaments.js?v=20261126planarRebase1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
+  <script src="js/bandit-captain-armaments.js?v=20261127ruinViewer1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
   <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
@@ -929,7 +930,7 @@
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
-  <script src="js/png-plane-outline-occluder.js?v=20261124conditionalReplay2"></script>
+  <script src="js/png-plane-outline-occluder.js?v=20261126weaponDepthParity1"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <!-- Daily crop growth tick + water/ditch growth multiplier
@@ -2887,7 +2888,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261114posobj1754"></script>
+  <script src="js/fishing-minigame.js?v=20261127ruinViewer1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2897,7 +2898,7 @@
        during its own setup, mirroring window.Fishing above. -->
   <script src="js/kurraya-puzzle.js?v=20261110releaseGrid1"></script>
   <script src="js/instrument-pattern-loadout.js?v=20261118instrumentLoadout2"></script>
-  <script src="js/music-minigame.js?v=20261118instrumentLoadout2"></script>
+  <script src="js/music-minigame.js?v=20261127ruinViewer1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -3001,8 +3002,8 @@
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
-  <script src="js/rootledoot-encounter.js?v=20261126h43c635f"></script>
-  <script src="game.js?v=20261127ruinSkeletonAudit3"></script>
+  <script src="js/rootledoot-encounter.js?v=20261127ruinViewer1"></script>
+  <script src="game.js?v=20261127ruinViewer1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -12,6 +12,13 @@
     ['porakaneki:avenger', 'Porakaneki Avenger', 'Tribes'],
     ['mao-ao-skeleton', 'Mao’ao Skeleton', 'Undead'],
     ['harlyao-skeleton', 'Harlyao Skeleton', 'Undead'],
+    ...['hronal','tothal','kanthic'].flatMap(theme=>{
+      const name=theme[0].toUpperCase()+theme.slice(1);
+      return [['harlyao-skeleton:'+theme,name+' Skeleton','Ruin Skeletons'],['harlyao-skeleton:'+theme+':coffin',name+' Coffin Guard','Ruin Skeletons']];
+    }),
+    ['rootledoot:grunt','Rootledoot (Small)','Rootledoots'],
+    ['rootledoot:lieutenant','Rootledoot (Medium)','Rootledoots'],
+    ['rootledoot:captain','Big Rootledoot','Rootledoots'],
     ['harlyao-demolitionist', 'Harlyao Demolitionist', 'Undead'], // Ruin-only bomb carrier; future challenge encounters opt in through MinionCombat.makeDemolitionist.
     ['ghoul', 'Ghoul', 'Undead'],
     ['ghoul:shadowknight', 'Ghoul Shadowknight', 'Special Ghouls'], // Mine variants share the ghoul wardrobe/species; each can carry its own rule on top of the base Ghoul's.
@@ -170,8 +177,9 @@
     };
   }
   function defaults(kind, data) {
-    const rank = kind.startsWith('bandit:') ? kind.split(':')[1] : 'grunt';
-    const fixed = kind.startsWith('maskbound:')
+    const rootledoot=kind.startsWith('rootledoot:'),themed=kind.startsWith('harlyao-skeleton:'); // The same rank/species used by the shared factories.
+    const rank = kind.startsWith('bandit:')||rootledoot ? kind.split(':')[1] : 'grunt';
+    const fixed = rootledoot?'mao-ao':kind.startsWith('maskbound:')
       ? 'maskbound-guardian'
       : kind.startsWith('lich:')
         ? 'harlyao-skeleton'
@@ -186,7 +194,7 @@
       'mao-ao-skeleton',
       'harlyao-skeleton',
       'ghost-marcher',
-    ].includes(kind);
+    ].includes(kind)||themed;
     const special = kind.split(':').length === 3 && kind.startsWith('lich:') ? window.SpecialHarlyaoLiches?.DATA?.[kind.split(':')[1]] : null; // Workshop defaults are original shipped presets, not already-applied draft overrides.
     const lich = kind.startsWith('lich:')
       ? window.HarlyaoLichCombat.TYPE_DEFS[kind.split(':')[1]]
@@ -197,7 +205,7 @@
       (lich
         ? ['pickshovel']
         : minion
-          ? window.MinionCombat.defaultWeaponShapes
+          ? (kind.endsWith(':coffin')?window.MinionCombat.coffinWeaponShapes:window.MinionCombat.defaultWeaponShapes)
           : tribe
             ? kind.endsWith('avenger')
               ? tribe.avengers.weaponShapes
@@ -255,7 +263,7 @@
           items: { 'appearance::hat::basic_headband': 1 },
         },
       });
-    if (!tribe)
+    if (!tribe&&!rootledoot)
       clothing.pants = {
         chance: 1,
         items: { pants_basic: 1, draped_pants: 1 },
@@ -325,6 +333,16 @@
       extra: { enemyLoadoutKind: kind },
       ...options,
     };
+    if(kind.startsWith('harlyao-skeleton:')){
+      const [,theme,variant]=kind.split(':');
+      return window.MinionCombat.makeEntity({...shared,speciesId:'harlyao-skeleton',name:types.find(t=>t.id===kind).label,baseConfig:data.gang,
+        previewRuinTheme:theme,previewRuinWallCoffin:variant==='coffin'});
+    }
+    if(kind.startsWith('rootledoot:')){
+      const saved=options.previewCaptainArmament;
+      if(saved&&!window.BanditCaptainArmaments.registerDefinition(saved.key,saved))throw Error('Saved modular root weapon could not be restored');
+      return window.Rootledoots.makeCombatant(data.gang,kind.split(':')[1],tier,0,0,shared);
+    }
     if (kind.startsWith('maskbound:'))
       return window.MaskboundGuardianCombat.makeEntity({
         ...shared,

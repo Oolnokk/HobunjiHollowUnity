@@ -214,13 +214,14 @@
     const name = options.name || 'Minion'; // Display/roster name.
     const tier = Math.max(0, Math.round(Number(options.tier) || 0)); // Existing humanoid difficulty tier.
     const weaponShapes = Array.isArray(options.weaponShapePool) && options.weaponShapePool.length ? options.weaponShapePool : DEFAULT_WEAPON_SHAPES; // Validated again by BanditCombat.
-    const candidate=speciesId==='harlyao-skeleton'&&options.zoneId===RUIN_AREA?(window.DevRandomRuin?.getRuntimeContext?.()?.theme||window.DevRandomRuinLichThemes?.activeTheme?.()):null; // Ruin theme.
+    const preview=speciesId==='harlyao-skeleton'&&options.zoneId==='map_dev_arena'&&options.previewRuinTheme; // Workshop's isolated arena is the only explicit theme override.
+    const candidate=preview|| (speciesId==='harlyao-skeleton'&&options.zoneId===RUIN_AREA?(window.DevRandomRuin?.getRuntimeContext?.()?.theme||window.DevRandomRuinLichThemes?.activeTheme?.()):null);
     const theme=['hronal','tothal','kanthic'].includes(candidate)?candidate:null;
-    const wallCoffin=!!theme&&options.extra?.wallCoffin!=null; // Includes index zero.
+    const wallCoffin=!!theme&&(options.extra?.wallCoffin!=null||!!preview&&options.previewRuinWallCoffin===true); // Includes index zero.
     let roster=options.roster||rollRoster(speciesId,name);
     if(theme){
       roster={...roster,ruinSkeletonTheme:theme,ruinSkeletonSeed:roster.ruinSkeletonSeed??Math.floor(rng()*2147483647)};
-      if(wallCoffin)roster.enchantedWeapon=window.GhoulSpecialVariants?.rollEnchantedWeapon?.(rng,{singleBase:true,baseIds:COFFIN_BASES});
+      if(wallCoffin&&!(options.preserveRoster&&roster.enchantedWeapon))roster.enchantedWeapon=window.GhoulSpecialVariants?.rollEnchantedWeapon?.(rng,{singleBase:true,baseIds:COFFIN_BASES});
     } // Separation point: bandit clothing generation never runs. A supplied roster re-creates a specific skeleton (a lich raising its fallen).
     const entity = await combat.makeEntity({
       ...baseConfig,
@@ -235,6 +236,7 @@
       cols: options.cols,
       rows: options.rows,
       rosterOverride: roster,
+      preserveRoster:options.preserveRoster===true, // History uses the exact original portrait and enchantment roll.
       enemyClass: options.enemyClass || CLASS_ID,
       avatarRigScale: options.avatarRigScale || null, // Caller-authored puppet proportions travel through BanditCombat before collision sizes are computed.
       defOverride: { ...(options.defOverride || {}), rangedWeaponKey: null },
