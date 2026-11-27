@@ -169,6 +169,14 @@
     return runtime.connectedSpawnTiles({origin,reference:p,contains:(c,r)=>sameChunk(c,r,rec.chunk),
       eligible:(c,r)=>tileEligible(c,r)&&(Number(tileAt(c,r)?.elevTier)||0)===elevation});
   }
+  function makeCombatant(cfg,rank,tier,x,y,opts={}) {
+    const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot'; // Shared by live waves and the Workshop.
+    const roster={...opts.rosterOverride,name,appearance:{...opts.rosterOverride?.appearance,speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true}; // Restore the original Mao-ao humanoid anatomy with the Heftroot sprite and matching extremity colors.
+    const scale=big?1.35:rank==='lieutenant'?.82:.65;
+    return window.BanditCombat.makeEntity({...cfg,_rootledootWeaponPool:true},rank,tier,x,y,{...opts,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
+      avatarRigScale:opts.avatarRigScale||{x:scale,y:scale,head:1,offsetY:0},defOverride:{label:name,...opts.defOverride,rangedWeaponKey:null},
+      extra:{...opts.extra,rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
+  }
   async function spawnWave(rec) {
     if(!ownsScene(rec)||rec.building)return;
     rec.phase='combat';
@@ -187,13 +195,8 @@
       },
       canBegin:()=>canBeginAmbush(rec),
       create(rank,point,{cfg,tier}){
-        const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot';
         const x=(point.c+.5)*deps.TILE,y=(point.r+.5)*deps.TILE;
-        const roster={name,appearance:{speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true};
-        const scale=big?1.35:rank==='lieutenant'?.82:.65;
-        return window.BanditCombat.makeEntity(cfg,rank,tier,x,y,{zoneId:rec.zone,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
-          avatarRigScale:{x:scale,y:scale,head:1,offsetY:0},defOverride:{label:name},
-          extra:{rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
+        return makeCombatant(cfg,rank,tier,x,y,{zoneId:rec.zone});
       },
       validate:(actor,rank,point)=>tileEligible(point.c,point.r)&&(rank!=='captain'||!!actor._banditCaptainArmament),
       adopt(actor){rec.actors.add(actor);deps.hostiles.add(actor);},
@@ -316,7 +319,7 @@
   }
   function serialize(){return journal.serialize();}
   function restore(raw){reset('restore');journal.restore(raw);clock.reset();}
-  window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,serialize,restore,reset,
+  window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,makeCombatant,serialize,restore,reset,
     debugSnapshot:()=>({lastEvent,worldStamp:journal.stamp,checkedChunks:ledger.size,pendingRewards:pendingRewards.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot:defeat.snapshot().attributed,overkill:defeat.snapshot().deficit}),
     __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,connectedSpawnTiles,BASE_CHANCE,WAVES})});
   window.DevCompanion?.registerStateProvider?.('rootledoots',window.Rootledoots.debugSnapshot);

@@ -129,10 +129,11 @@
         const nearby=deps?.getSplashEntities?.(area,patch.x*tile,patch.z*tile,patch.radius*tile)||[];
         for(const actor of nearby){
           if(!actor||Number(actor.health)<=0)continue;
+          if(patch.source==='ruin-skeleton-lunge'&&actor.ruinSkeletonTheme==='hronal')continue; // Charred skeletons ignore their trails.
           if(Math.hypot(Number(actor.x)/tile-patch.x,Number(actor.y)/tile-patch.z)>patch.radius)continue;
           if(ruin){
             const feetY=actor.physicalFeetY??(actor===player?ruin.getPlayerSupportY?.()
-              :actor.shaftSupportY??actor.surfaceYOverride?.()??actor.avatarRef?.group?.position?.y); // Known feet height keeps fire damage on its own floor.
+              :actor.shaftSupportY??actor.surfaceYOverride?.()??actor.surfaceY??(actor.avatarRef?.group?.position?.y-(actor.halfHeight||0))); // Known feet height keeps fire damage on its own floor.
             if(Number.isFinite(feetY)&&Math.abs(feetY-patch.y)>.9)continue;
           }
           window.ResourceSystem?.addAffliction?.(actor,'burningHealth',5); // Uses ordinary water/roll extinguish behavior.

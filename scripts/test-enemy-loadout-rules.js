@@ -228,6 +228,17 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   assert.equal(calls.at(-1)[1].type, 'tothal');
   await source.spawn('harlyao-skeleton', 1, data);
   assert.equal(calls.at(-1)[0], 'MinionCombat');
+  for(const theme of ['hronal','tothal','kanthic'])for(const guard of [false,true]){
+    const id='harlyao-skeleton:'+theme+(guard?':coffin':'');
+    assert(source.types.some(type=>type.id===id),'missing themed Workshop row '+id);
+    await source.spawn(id,1,data);const opts=calls.at(-1)[1];
+    assert.equal(opts.previewRuinTheme,theme);assert.equal(opts.previewRuinWallCoffin,guard);assert.equal(opts.speciesId,'harlyao-skeleton');assert.equal(opts.zoneId,'map_dev_arena');
+  }
+  context.window.Rootledoots={makeCombatant:async(cfg,rank,tier,x,y,opts)=>{calls.push(['rootledoot',rank,opts]);return {_banditCaptainArmament:rank==='captain'?{origin:'Fey'}:null};}};
+  for(const rank of ['grunt','lieutenant','captain']){
+    const id='rootledoot:'+rank;assert(source.types.some(type=>type.id===id),'missing Rootledoot row '+rank);
+    await source.spawn(id,1,data);assert.equal(calls.at(-1)[1],rank);assert.equal(calls.at(-1)[2].zoneId,'map_dev_arena');
+  }
   const avenger = await source.spawn('porakaneki:avenger', 1, data);
   assert.equal(avenger.def.moveSpeed,140);
   assert.equal(avenger.def.chaseSpeed,210);

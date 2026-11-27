@@ -178,6 +178,85 @@ const server = http.createServer((request, response) => {
       'Ceiling ice must grow downward from the ceiling using real authored Furniture Editor facets and reversible growth');
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
+    await page.addScriptTag({url:'/docs/js/combat/combat-minion.js'});
+    await page.addScriptTag({url:'/docs/js/character-spine.js'});
+    await page.addScriptTag({url:'/docs/js/png-plane-avatar.js'});
+    await page.addScriptTag({url:'/docs/js/tool-metal-recolor.js'});
+    await page.evaluate(()=>{const base=document.createElement('base');base.href='/docs/';document.head.prepend(base);}); // Real authored oil texture resolves just as in gameplay.
+    await page.addScriptTag({url:'/docs/js/faceted-rocks.js'});
+    const skeletonResult=await page.evaluate(async()=>{
+      const T=THREE,canvas=document.createElement('canvas');canvas.width=canvas.height=100;
+      const ctx=canvas.getContext('2d');ctx.fillRect(20,5,60,55);ctx.fillRect(10,45,80,27);ctx.fillRect(39,60,22,34);
+      const head=document.createElement('canvas');head.width=head.height=100;head.getContext('2d').fillRect(20,5,60,55);
+      const torso=document.createElement('canvas');torso.width=torso.height=100;const tc=torso.getContext('2d');tc.fillRect(24,36,52,36);tc.fillRect(42,60,21,34);
+      const results=[];let referenceGrowth=null; // Same seed/mask must produce identical vertices, roots, skinning and material settings.
+      const garment=document.createElement('canvas');garment.width=48;garment.height=48;
+      const gc=garment.getContext('2d');gc.fillStyle='#ac885f';gc.fillRect(3,3,42,42);gc.fillStyle='#000';gc.fillRect(3,3,42,2);
+      const bytes=Array.from(gc.getImageData(0,0,48,48).data); // Shared garment source must remain byte-identical.
+      const oily=await window.MinionCombat.paintRuinPants({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:7},garment),oilBytes=oily.getContext('2d').getImageData(0,0,48,48).data;
+      const originalAfterOil=gc.getImageData(0,0,48,48).data;const kanthicPants=oily!==garment&&oilBytes.some((v,i)=>v!==bytes[i])&&bytes.every((v,i)=>v===originalAfterOil[i]);
+      for(const theme of ['hronal','tothal']){
+        const themed=await window.MinionCombat.paintRuinPants({ruinSkeletonTheme:theme,ruinSkeletonSeed:7},garment);
+        const after=themed.getContext('2d').getImageData(0,0,48,48).data;
+        const sourceAfter=gc.getImageData(0,0,48,48).data;const pants=themed!==garment&&bytes.every((v,i)=>v===sourceAfter[i]);
+        const inkIndex=(4*48+20)*4,bodyIndex=(20*48+20)*4;
+        const pantsInk=Array.from(after.slice(inkIndex,inkIndex+4)).every((v,i)=>v===bytes[inkIndex+i]);
+        const pantsEffect=theme==='hronal'?after[bodyIndex]<bytes[bodyIndex]:after[bodyIndex+2]>bytes[bodyIndex+2];
+        const group=new T.Group(),back=new T.Group(),hammer=new T.Group();
+        group.add(back,hammer);hammer.position.set(2,0,0);
+        const plain=new T.Mesh(new T.PlaneGeometry(1,1),new T.MeshBasicMaterial());plain.name='test-rear-portrait';
+        const rig=window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin(T,plain,{x:.5,y:.60},true,{width:1,height:1,sourceCanvas:canvas,headCanvas:head});
+        const portrait=rig.mesh;back.add(portrait);
+        rig.splineNodes[2].position.z+=.07;rig.splineNodes[3].position.y-=.025; // Genuine deformation before placement.
+        group.updateMatrixWorld(true);
+        const avatar={backPlane:back,backPortraitMesh:portrait,modelWidth:1,modelHeight:1,backCanvas:canvas,ruinRearTorsoCanvas:torso};
+        const dispose=window.MinionCombat.attachRuinBackSpikes(T,avatar,{ruinSkeletonTheme:theme,ruinSkeletonSeed:7});
+        group.updateMatrixWorld(true);const layer=group.getObjectByName('ruin-skeleton-back-stalagmites');
+        if(!layer){results.push({theme,missing:true});continue;}
+        const mesh=layer.children[0],positions=mesh.geometry.attributes.position,info=avatar.ruinBackSpikeInfo;
+        const sample=window.PNGPlaneAvatar.makePortraitSurfaceSampler(portrait);
+        let baseInside=mesh.isSkinnedMesh&&info.anchors.length>=8&&info.anchors.length<=18&&mesh.skeleton.bones.length===info.anchors.length;
+        for(let i=0;i<info.anchors.length;i++){const a=info.anchors[i],p=sample(a.u,a.v);baseInside&&=!!p&&p.distanceTo(mesh.skeleton.bones[i].position)<1e-5;}
+        const before=mesh.skeleton.bones.map(b=>({p:b.position.clone(),q:b.quaternion.clone()})),updates=info.poseUpdates;
+        hammer.position.x+=20;group.position.x+=3;group.updateMatrixWorld(true);
+        const unaffected=info.poseUpdates===updates&&before.every((b,i)=>b.p.distanceTo(mesh.skeleton.bones[i].position)<1e-7);
+        // A real spine bend changes both the root location and local normal while the weapon remains unrelated.
+        rig.splineNodes[2].rotation.x+=.55;rig.splineNodes[3].rotation.y+=.2;group.updateMatrixWorld(true);
+        const afterSample=window.PNGPlaneAvatar.makePortraitSurfaceSampler(portrait);let follows=info.poseUpdates>updates,turned=false,moved=false,aligned=true;
+        for(let i=0;i<info.anchors.length;i++){
+          const a=info.anchors[i],bone=mesh.skeleton.bones[i],p=afterSample(a.u,a.v);
+          follows&&=!!p&&p.distanceTo(bone.position)<1e-5;
+          moved||=before[i].p.distanceTo(bone.position)>.001;turned||=1-Math.abs(before[i].q.dot(bone.quaternion))>1e-5;
+          const tracker=window.PNGPlaneAvatar.makePortraitAnchorTracker(T,portrait,[a],window.PNGPlaneAvatar.getPortraitsFlipped());tracker.update();
+          aligned&&=new T.Vector3(0,0,1).applyQuaternion(bone.quaternion).dot(tracker.frames[0].normal)>.999;
+        }
+        const attached=layer.parent===portrait;
+        const growth={positions:Array.from(positions.array),normals:Array.from(mesh.geometry.attributes.normal.array),indices:Array.from(mesh.geometry.attributes.skinIndex.array),weights:Array.from(mesh.geometry.attributes.skinWeight.array),anchors:info.anchors,opacity:mesh.material.opacity,roughness:mesh.material.roughness,metalness:mesh.material.metalness,transparent:mesh.material.transparent,side:mesh.material.side,depthWrite:mesh.material.depthWrite,flatShading:mesh.material.flatShading,vertexColors:mesh.material.vertexColors};
+        const surface=!mesh.material.map&&!mesh.userData.facetedRock&&mesh.material.vertexColors===true;
+        const geometryParity=referenceGrowth===null||JSON.stringify(referenceGrowth)===JSON.stringify(growth);referenceGrowth=growth;
+        const dense=info.anchors.length>=8&&info.anchors.length<=18,poseUpdates=info.poseUpdates;
+        dispose();results.push({theme,baseInside,baseVertices:positions.count,attached,unaffected,surface,geometryParity,dense,follows,moved,turned,aligned,poseUpdates,pants,pantsInk,pantsEffect,kanthicPants,disposed:layer.parent===null});
+      }
+      return results;
+    });
+    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.geometryParity&&result.dense&&result.follows&&result.moved&&result.turned&&result.aligned&&result.pants&&result.pantsInk&&result.pantsEffect&&result.kanthicPants&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
+    const ownerMask=await page.evaluate(()=>{
+      const T=THREE,renderer=new T.WebGLRenderer({stencil:true,antialias:false}),scene=new T.Scene();
+      const target=new T.WebGLRenderTarget(64,64,{stencilBuffer:true}),camera=new T.OrthographicCamera(-1,1,1,-1,.1,10);
+      camera.position.z=3;camera.lookAt(0,0,0);renderer.setRenderTarget(target);renderer.setClearColor(0,1);
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=16;const ctx=canvas.getContext('2d');ctx.fillStyle='#0000ff';ctx.fillRect(0,0,8,16);
+      const texture=new T.CanvasTexture(canvas);texture.magFilter=texture.minFilter=T.NearestFilter;
+      const front=new T.Mesh(new T.PlaneGeometry(2,2),new T.MeshBasicMaterial({map:texture,alphaTest:.35,transparent:true}));scene.add(front);
+      const spike=new T.Mesh(new T.PlaneGeometry(2,2),new T.MeshBasicMaterial({color:0xff0000,side:T.DoubleSide}));spike.position.z=.2;scene.add(spike);
+      const unrelated=new T.Mesh(new T.PlaneGeometry(.25,.25),new T.MeshBasicMaterial({color:0x00ff00}));unrelated.position.set(-.5,.5,.3);unrelated.renderOrder=1;scene.add(unrelated);
+      const dispose=window.MinionCombat.installRuinFrontOcclusion(T,spike,front);
+      renderer.render(scene,camera);const read=(x,y)=>{const a=new Uint8Array(4);renderer.readRenderTargetPixels(target,x,y,1,1,a);return Array.from(a.slice(0,3));};
+      const masked=read(16,16),unmasked=read(48,16),other=read(16,48);
+      dispose();renderer.render(scene,camera);const restored=read(16,16);
+      const ok=masked[2]>200&&masked[0]<10&&unmasked[0]>200&&other[1]>200&&restored[0]>200;
+      for(const object of [front,spike,unrelated]){object.geometry.dispose();object.material.dispose();}texture.dispose();target.dispose();renderer.dispose();return {ok,masked,unmasked,other,restored};
+    });
+    assert(ownerMask.ok,'Owner-local front stencil failed: '+JSON.stringify(ownerMask));
     await page.evaluate(() => {
       window.__iceFireTargets = new Map(); // The real composer registers its fire targets through this minimal existing contract.
       window.__iceSolids = new Map(); // Collision callback truthiness is checked both frozen and melting.
