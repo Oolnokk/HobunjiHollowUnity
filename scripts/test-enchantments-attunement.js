@@ -1548,15 +1548,27 @@ console.log('Planar enchantments through live Drunken Health adapter passed');
   gear={enchantmentUnlocks:{base:{burning:true},flourish:{'sicced@tap1':true}}};
   same(ES.formulaIds('burning'),[1],'legacy learned enchantment grants exactly formula I');
   same(ES.formulaIds('sicced'),[1]);
-  for(const [source,difficulty,min,max] of [['captain',5,1,2],['captain',8,1,2],['ruin','cave',2,4],['ruin','hole',2,4],['ruin','lich',2,4],['final',4,4,5],['fey',1,1,5]]) {
+  for(const [source,difficulty,min,max] of [['captain',5,1,2],['captain',8,1,2],['coffin','cave',2,4],['coffin','hole',2,4],['coffin','lich',2,4],['ruinChest','cave',2,4],['ruinChest','hole',2,4],['ruinChest','lich',2,4],['final',4,4,5],['fey',1,1,5]]) {
     const results=Array.from({length:1000},(_,i)=>ES.formulaNumber(source,difficulty,()=>i/1000));
     assert.equal(Math.min(...results),min);
     assert.equal(Math.max(...results),max);
   }
-  assert.equal(ES.formulaNumber('captain',5,()=>.3),1);
-  assert.equal(ES.formulaNumber('captain',8,()=>.3),2);
-  assert.equal(ES.formulaNumber('ruin','cave',()=>.025),3);
-  assert.equal(ES.formulaNumber('ruin','lich',()=>.025),4);
+  // Every integer percentage bucket is sampled at its midpoint; verify exact distributions, not just minimum/maximum.
+  for(const [source,difficulty,expected] of [
+    ['captain',5,[85,15,0,0,0]],['captain',6,[70,30,0,0,0]],['captain',7,[55,45,0,0,0]],['captain',8,[40,60,0,0,0]],
+    ['coffin','cave',[0,75,20,5,0]],['coffin','hole',[0,60,35,5,0]],['coffin','lich',[0,45,50,5,0]],
+    ['ruinChest','cave',[0,83,15,2,0]],['ruinChest','hole',[0,72,25,3,0]],['ruinChest','lich',[0,61,35,4,0]],
+    ['final',4,[0,0,0,90,10]]
+  ]){
+    const actual=[0,0,0,0,0];
+    for(let i=0;i<100;i++)actual[ES.formulaNumber(source,difficulty,()=>(i+.5)/100)-1]++;
+    same(actual,expected,source+' '+difficulty+' exact formula distribution');
+  }
+  assert.equal(ES.formulaNumber('coffin','cave',()=>.049999),4);
+  assert.equal(ES.formulaNumber('coffin','lich',()=>.05),3);
+  assert.equal(ES.formulaNumber('final',4,()=>.099999),5);
+  assert.equal(ES.formulaNumber('final',4,()=>.1),4);
+  assert.equal(ES.formulaNumber('common',4,()=>0),1,'unclassified ordinary weapons cannot grant rare formulas');
   gear=originalGear;
   console.log('Enchantment formula identity, source weights, migration and applied ranks passed');
 }

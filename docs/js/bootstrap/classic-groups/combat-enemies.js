@@ -8,7 +8,7 @@
     "js/combat/enemy-loadout-rules.js?v=20261127ruinViewer1",
     "js/combat/npc-duel-staging.js?v=20261122h2eade76",
     "js/combat/combat-bandit.js?v=20261127rootRigAudit19",
-    "js/combat/ghoul-special-variants.js?v=20261127formulaProgress1",
+    "js/combat/ghoul-special-variants.js?v=20261127formulaProgress2",
     "js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1",
     "js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b",
     "js/combat/combat-minion.js?v=20261127rootCorsCrystalParity11",

@@ -420,9 +420,10 @@ head scale drives. `character-dimensions.js` accounts for it.
 Garanki studies a bound weapon when unbinding/re-registering it. Every enchantment has five distinct formulas; the number discovered determines its available level (I–V), independent of discovery order. Reapplying a learned enchantment upgrades that weapon to the highest known level using the normal service fee. Flourish-slot permissions remain independently learned. Level I retains the original effect and each additional level adds 25% numerical benefit (up to 2× at V); self-costs and planar alignment counts do not increase. Legacy saves and bound keys retain level/formula I.
 
 Formula roll per enchantment on a recovered weapon:
-- Bandit captains: I or II; II chance 10%, 25%, 40%, 55% at 5–8 stars.
-- Ruin wall-coffin skeletons and non-final Harlyao chests: II/III/IV; III chance 12/24/36%, IV chance 1/2/3% at cave/hole/lich rarity.
-- Lich corpses and final Harlyao chests: IV (96%) or V (4%).
+- Bandit captains: I or II; II chance 15%, 30%, 45%, 60% at 5–8 stars.
+- Solitary wall-coffin skeletons only: II/III/IV; III chance 20/35/50%, IV chance exactly 5% at every cave/hole/lich tier.
+- Non-final Harlyao chests: II/III/IV; III chance 15/25/35%, IV chance 2/3/4% at cave/hole/lich rarity. Normal ruin skeletons do not enter either reward pool.
+- Lich corpses and final Harlyao chests: IV (90%) or V (10%).
 - Ordinary relics: I. Fey weapons have a separate I–V pool; Boney prioritizes still-missing Fey research.
 
 The formula is part of the bound pack key, so pickup, custody, save/load and registration preserve its identity. Applied levels persist alongside the actual weapon enchantments and are visible in Garanki's services, the combat loadout and mobile diagnostics.

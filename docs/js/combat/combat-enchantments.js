@@ -329,12 +329,18 @@
   const formulaLevel=id=>formulaIds(id).length;
   function formulaNumber(source,difficulty,rng=rnd){
     const roll=Math.max(0,Math.min(.999999,rng())); // One independent roll per enchantment, only at loot generation.
-    if(source==='captain')return roll<.10+.15*Math.max(0,Math.min(3,(Number(difficulty)||5)-5))?2:1;
-    if(source==='ruin'){
-      const tier={cave:1,hole:2,lich:3}[difficulty]||Math.max(1,Math.min(3,Number(difficulty)||1));
-      return roll<.01*tier?4:roll<.13*tier?3:2;
+    const percent=roll*100; // Integer percentage cutoffs keep adjacent rarity bands explicit.
+    if(source==='captain'){
+      const stars=Math.max(5,Math.min(8,Math.floor(Number(difficulty)||5)));
+      return percent<15*(stars-4)?2:1;
     }
-    if(source==='final')return roll<.04?5:4;
+    if(source==='coffin'||source==='ruinChest'){
+      const tier={cave:1,hole:2,lich:3}[difficulty]||Math.max(1,Math.min(3,Math.floor(Number(difficulty)||1)));
+      const fourth=source==='coffin'?5:tier+1; // Solitary wall-coffin guards always have exactly 5% Formula IV; ordinary chests are less reliable.
+      const third=source==='coffin'?20+15*(tier-1):15+10*(tier-1); // Deeper ruins shift Formula II into III.
+      return percent<fourth?4:percent<fourth+third?3:2;
+    }
+    if(source==='final')return percent<10?5:4;
     if(source==='fey')return roll<.04?5:roll<.14?4:roll<.34?3:roll<.64?2:1;
     return 1;
   }
