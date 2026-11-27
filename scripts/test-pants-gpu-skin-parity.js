@@ -385,6 +385,28 @@ for (const meshBudget of ['npc', 'player']) {
     scene.add(hostile); hostile.add(actor.model); hostile.add(actor.legs);
     hostile.position.set(12000, 0, -9000); // Large shared world translations are valid.
     pants.update(); checkWidths();
+    // The faster relative-matrix reader must also match world-to-local
+    // sampling when the hostile and its sibling pivots rotate and scale.
+    hostile.rotation.set(.2, .8, -.4); hostile.scale.set(1.2, .85, 1.4);
+    actor.model.rotation.set(.1, .2, -.15); actor.legs.rotation.set(-.1, .5, .2);
+    actor.nodes.left.thigh.rotation.set(.6, .3, .1); actor.nodes.left.calf.rotation.set(-.7, .05, .04);
+    actor.nodes.right.thigh.rotation.set(-.3, -.2, -.1); actor.nodes.right.calf.rotation.set(.4, -.2, 0);
+    pants.update(true);
+    for (const side of ['left', 'right']) {
+      const boneSide = mirrored ? (side === 'left' ? 'right' : 'left') : side;
+      const { thigh, calf } = actor.nodes[boneSide];
+      const hip = actor.model.worldToLocal(new THREE.Vector3().setFromMatrixPosition(thigh.matrixWorld));
+      const knee = actor.model.worldToLocal(new THREE.Vector3().setFromMatrixPosition(calf.matrixWorld));
+      const ankle = actor.model.worldToLocal(new THREE.Vector3(0, -calf.userData.hobunjiCalfLength, 0).applyMatrix4(calf.matrixWorld));
+      for (const [joint, expected] of [['hip', hip], ['knee', knee], ['ankle', ankle]]) {
+        const actual = pants.scratch.bones3D[side][joint];
+        for (const axis of ['x', 'y', 'z']) assert(Math.abs(actual[axis] - expected[axis]) < 1e-8, 'relative matrix preserves world/local bone coordinate under rotated, scaled siblings');
+      }
+    }
+    hostile.rotation.set(0, 0, 0); hostile.scale.set(1, 1, 1);
+    actor.model.rotation.set(0, 0, 0); actor.legs.rotation.set(0, 0, 0);
+    for (const side of ['left', 'right']) { actor.nodes[side].thigh.rotation.set(0, 0, 0); actor.nodes[side].calf.rotation.set(0, 0, 0); }
+    pants.update();
     const oldPlane = actor.model.getObjectByName('frontPlane');
     const replacement = oldPlane.clone();
     actor.model.remove(oldPlane); actor.model.add(replacement);
