@@ -21,7 +21,9 @@ for (let story = 0; story < 3; story++) for (let i = 0; i < 12; i++) {
 for (const [tier, n] of [['cave', 2], ['hole', 4], ['lich', 6]]) assert.equal(Coffins.pick(sites, { seed: 3, tier }).length, n, tier + ' coffin count');
 
 const spawned = [], hostile = new Set(); let live = 0;
-window.Combat = { deps: { TILE: 64, hostileObjects: hostile } };
+const corpses = new Set(), retired=[];
+window.Combat = { deps: { TILE: 64, hostileObjects: hostile, corpseObjects:corpses } };
+window.BanditCombat={discardEntity(entity){retired.push(entity);}};
 const openingSounds = [], suppressedAlerts = []; // Verify each waking coffin emits two spatial cues and suppresses the duplicate late shriek.
 window.AudioSystem = { playObjectSfxKeyAt(key,x,z,area,y,opts) { openingSounds.push({key,x,z,area,y,earshot:opts.earshotTiles}); } };
 window.CombatVocalizations = { suppressSkeletonCoffinSpawnAlert(entity) { suppressedAlerts.push(entity); } };
@@ -58,7 +60,11 @@ const run = Coffins.mount({ THREE, sites, seed: 3, tier: 'lich', getPlayerY: () 
   assert.equal(spawned.length, 2, 'the next one opens once the last occupant is beaten');
   assert.equal(openingSounds.length,4,'the second coffin emits exactly its own two activation cues');
   assert.equal(suppressedAlerts.length,2,'each skeleton gets its own alert suppression');
+  hostile.delete(spawned[0]);corpses.add(spawned[0]); // First occupant is a still-unlooted corpse.
   run.dispose();
   assert.equal(hostile.size, 0, 'dispose retires every coffin skeleton');
+  assert.equal(corpses.size,0,'dispose removes the old corpse from its live registry');
+  assert.equal(retired.length,2,'both live and unlooted dead skeletons use shared rig/weapon disposal');
+  run.dispose();assert.equal(retired.length,2,'repeated teardown never disposes a removed or looted actor twice');
   console.log('ruin wall coffins: ok');
 })().catch(e => { console.error(e); process.exit(1); });

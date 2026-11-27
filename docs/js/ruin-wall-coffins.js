@@ -57,14 +57,23 @@
       c.lid.quaternion.copy(qa).multiply(q0);
       c.lid.position.set(c.rest.x+c.nx*.82*Math.sin(theta),hy+.82*Math.cos(theta),c.rest.z+c.nz*.82*Math.sin(theta));
     }
+    function retireSkeleton(entity,force=false){
+      if(!entity)return;
+      const combat=root.Combat?.deps,hostile=combat?.hostileObjects,corpses=combat?.corpseObjects; // Loot removes the corpse and disposes its rig; teardown must not dispose it a second time.
+      const owned=hostile?.has?.(entity)||corpses?.has?.(entity);
+      if(!force&&!owned)return;
+      hostile?.delete?.(entity);corpses?.delete?.(entity);
+      if(root.BanditCombat?.discardEntity){root.BanditCombat.discardEntity(entity);return;} // Shared owner also retires weapon holders, spikes, particle emitters and shadows.
+      entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);entity.groundShadow?.parent?.remove?.(entity.groundShadow);entity.avatarRef?.dispose?.();
+    }
     async function release(c){
       const tile=Number(root.Combat?.deps?.TILE)||64,hostile=root.Combat?.deps?.hostileObjects;
       const px=(c.site.x+c.nx*.5)*tile,pz=(c.site.z+c.nz*.5)*tile;
       try{
         const minion=await root.MinionCombat?.makeEntity?.({speciesId:'harlyao-skeleton',name:'Harlyao Skeleton',tier:1,x:px,y:pz,zoneId:mapId,weaponMetalKey:'nativeCopper',
-          extra:{homeX:px,homeY:pz,state:'chase',wallCoffin:c.index}});
+          extra:{homeX:px,homeY:pz,state:'chase',wallCoffin:c.index,ruinNoLoot:root.DevRandomRuin?.getRuntimeContext?.()?.noLoot===true}});
         if(!minion)return;
-        if(session!==api||(isActive&&!isActive())){hostile?.delete?.(minion);minion.avatarRef?.group?.parent?.remove?.(minion.avatarRef.group);minion.avatarRef?.dispose?.();return;}
+        if(session!==api||(isActive&&!isActive())){retireSkeleton(minion,true);return;}
         const DS=root.DynamicSurfaces,born=performance.now();
         minion.surfaceYOverride=()=>{ // Climbs up out of the dark opening over a second.
           const support=DS?.sampleSupport?.(minion.x/tile,minion.y/tile,{minY:c.site.floorY-2.5,maxY:c.site.floorY+1.2,pad:.02});
@@ -107,7 +116,7 @@
       if(session===api)session=null;
       for(const c of coffins){
         const e=c.skeleton;
-        if(e){root.Combat?.deps?.hostileObjects?.delete?.(e);e.avatarRef?.group?.parent?.remove?.(e.avatarRef.group);e.groundShadow?.parent?.remove?.(e.groundShadow);e.avatarRef?.dispose?.();}
+        retireSkeleton(e);
         c.lid.position.set(c.rest.x,c.rest.y,c.rest.z);c.lid.quaternion.copy(c.rest.q);
         c.wall.parent?.remove(c.wall);c.floor.parent?.remove(c.floor);c.wallMat.dispose();c.floorMat.dispose();
       }
