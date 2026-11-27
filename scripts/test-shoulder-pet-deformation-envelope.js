@@ -279,3 +279,22 @@ console.log('unavailable or blocked geometry holds the last verified pose instea
   }
 }
 console.log('camera-edge zone: body and head stay out of it, with side memory, with and without geometry');
+
+// Sorted broad phase must return the identical answer, including long slabs that start far below the pet.
+{
+  const owners=Array.from({length:180},(_,i)=>disk(.3,0,.025,-2+i*.01,-1.99+i*.01));
+  owners.push(disk(.3,0,.025,-2,1),disk(.3,0,.025,.2,.4));
+  owners.sort((a,b)=>a.y0-b.y0);
+  const pets=[disk(.3,0,.025,.2,.4)];
+  const baseline={a:[],b:[],pairs:[]}, fast={a:[],b:[],pairs:[],ownerSorted:true};
+  assert.equal(solveBodyYaw(owners,pets,0,fast),solveBodyYaw(owners,pets,0,baseline),'long overlapping slabs must not be skipped');
+  owners.splice(owners.findIndex(o=>o.y1===1),1);
+  baseline.ownerVisits=fast.ownerVisits=0;
+  assert.equal(solveBodyYaw(owners,pets,0,fast),solveBodyYaw(owners,pets,0,baseline));
+  assert.ok(fast.ownerVisits<baseline.ownerVisits/10,'skip vertically irrelevant owner patches');
+  for(let i=0;i<100;i++){
+    const owner=Array.from({length:40},()=>{const y=(rand()-.5)*2;return disk((rand()-.5)*.8,(rand()-.5)*.8,.02+rand()*.05,y,y+rand()*.6);}).sort((a,b)=>a.y0-b.y0);
+    const y=rand()-.5,pet=[disk(.3,0,.04,y,y+.1)],request=rand()*Math.PI*2-Math.PI,arcs=[.5,.1];
+    assert.equal(solveBodyYaw(owner,pet,request,{a:[],b:[],pairs:[],ownerSorted:true},arcs),solveBodyYaw(owner,pet,request,{a:[],b:[],pairs:[]},arcs),'sorted skip preserves exact arc order and result');
+  }
+}
