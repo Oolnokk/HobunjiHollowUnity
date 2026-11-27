@@ -534,20 +534,23 @@
     const { model, nodes, scratch } = handle;
     model.updateWorldMatrix?.(true, false);
     const inverseModel = scratch.inverseModel.copy(model.matrixWorld).invert();
-    for (const [side, thigh, calf] of [['left', nodes.leftThigh, nodes.leftCalf], ['right', nodes.rightThigh, nodes.rightCalf]]) {
-      thigh.updateWorldMatrix?.(true, false);
+    if (!Number.isFinite(inverseModel.elements[15]) || inverseModel.elements[15] === 0) return null; // Three returns a zero inverse for a singular owner.
+    for (const side of LEG_SIDES) {
+      const thigh = nodes[side + 'Thigh'], calf = nodes[side + 'Calf']; // The calf update already updates its thigh ancestor.
       calf.updateWorldMatrix?.(true, false);
-      const bones = scratch.bones3D[side];
-      scratch.point.setFromMatrixPosition(thigh.matrixWorld).applyMatrix4(inverseModel);
-      bones.hip.x = scratch.point.x; bones.hip.y = scratch.point.y; bones.hip.z = scratch.point.z;
-      scratch.point.setFromMatrixPosition(calf.matrixWorld).applyMatrix4(inverseModel);
-      bones.knee.x = scratch.point.x; bones.knee.y = scratch.point.y; bones.knee.z = scratch.point.z;
-      const calfLength = Number(calf.userData?.hobunjiCalfLength) > 0 ? Number(calf.userData.hobunjiCalfLength) : Math.abs(calf.position.y);
-      scratch.point.set(0, -calfLength, 0).applyMatrix4(calf.matrixWorld).applyMatrix4(inverseModel);
-      bones.ankle.x = scratch.point.x; bones.ankle.y = scratch.point.y; bones.ankle.z = scratch.point.z;
-      for (const [name, node] of [['thigh', thigh], ['calf', calf]]) { // The bone's orientation frame in avatar-local space (row-major 3x3), for twist.
-        const e = scratch.m4.multiplyMatrices(inverseModel, node.matrixWorld).elements, f = scratch.frames[side][name];
+      const bones = scratch.bones3D[side], frames = scratch.frames[side];
+      // Reuse each relative matrix for both joint position and twist. Avoid the
+      // original extra world/local point transformations and duplicate ancestor walk.
+      for (const name of BONE_NAMES) {
+        const isCalf = name === 'calf';
+        const e = scratch.m4.multiplyMatrices(inverseModel, (isCalf ? calf : thigh).matrixWorld).elements, f = frames[name];
+        const p = isCalf ? bones.knee : bones.hip;
+        p.x = e[12]; p.y = e[13]; p.z = e[14];
         for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) f[row * 3 + col] = e[col * 4 + row];
+        if (isCalf) {
+          const length = Number(calf.userData?.hobunjiCalfLength) > 0 ? Number(calf.userData.hobunjiCalfLength) : Math.abs(calf.position.y);
+          bones.ankle.x = p.x - e[4] * length; bones.ankle.y = p.y - e[5] * length; bones.ankle.z = p.z - e[6] * length;
+        }
       }
     }
     return scratch.bones3D;
@@ -633,9 +636,12 @@
     const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget));
     if (!data) return null;
     const dims = portraitDimensions(avatarGroup, plane); // Loose character-sized envelope, independent of map position.
-    const localPoseLimit = 8 * Math.max(dims.width, dims.height, 0.05); // Used only to reject grossly invalid local samples, not to limit animations.
+    const localPoseLimit = 8 * Math.max(dims.width, dims.height, 0.05); // Reject grossly invalid local samples, not normal animations.
+    if (!Number.isFinite(localPoseLimit) || !data.basePositions.every(value => Math.abs(value) <= localPoseLimit)) {
+      data.geometry.dispose?.(); return null; // Initial geometry validation happens once, before any GPU upload.
+    }
     const handle = {
-      localPoseLimit, invalidPoseFrames: 0, invalidRestSamples: 0, invalidWaistSamples: 0, // Existing mobile diagnostic snapshot exposes rejected inputs.
+      localPoseLimit, invalidPoseFrames: 0, invalidRestSamples: 0, invalidWaistSamples: 0, invalidCuffSamples: 0, // Existing mobile diagnostic snapshot exposes rejected inputs.
       name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       segments: segmentsForBudget(meshBudget), geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, beltFit: data.beltFit, torsoAlphaFit: torsoFit ? { source: torsoFit.source, row: torsoFit.row, width: torsoFit.width, authoredWidth: torsoFit.authoredWidth } : null, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
@@ -714,7 +720,7 @@
       applyFootDepthBias();
       return true;
     };
-    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,beltFitKind:handle.beltFit?.kind,beltWidthScale:handle.beltFit?.a,beltHorizontalShear:handle.beltFit?.c,torsoAlphaFit:handle.torsoAlphaFit,measuredFit:handle.measuredFit,invalidPoseFrames:handle.invalidPoseFrames,invalidRestSamples:handle.invalidRestSamples,invalidWaistSamples:handle.invalidWaistSamples,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
+    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,beltFitKind:handle.beltFit?.kind,beltWidthScale:handle.beltFit?.a,beltHorizontalShear:handle.beltFit?.c,torsoAlphaFit:handle.torsoAlphaFit,measuredFit:handle.measuredFit,invalidPoseFrames:handle.invalidPoseFrames,invalidRestSamples:handle.invalidRestSamples,invalidWaistSamples:handle.invalidWaistSamples,invalidCuffSamples:handle.invalidCuffSamples,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
@@ -801,28 +807,30 @@
     const restScratch = { bones: { left: makeJoints().left, right: makeJoints().right }, frame: new Array(9).fill(0), signature: '' };
     const restStanceBones = h => {
       const raw = legHandle.getRestStance?.();
-      if (!raw || !legHandle.group) return null;
+      if (!raw?.left?.hip || !raw?.left?.ankle || !raw?.right?.hip || !raw?.right?.ankle || !legHandle.group) return null;
       const legs = portraitsFlipped() ? { left: raw.right, right: raw.left } : raw; // Same left/right swap as findLegNodes: mirrored art puts the garment's left leg on the right_* leg.
       h.model.updateWorldMatrix?.(true, false);
       legHandle.group.updateWorldMatrix?.(true, false);
       const inverseModel = h.scratch.inverseModel.copy(h.model.matrixWorld).invert();
-      const toModel = (p, out) => { h.scratch.point.set(p.x, p.y, p.z).applyMatrix4(legHandle.group.matrixWorld).applyMatrix4(inverseModel); out.x = h.scratch.point.x; out.y = h.scratch.point.y; out.z = h.scratch.point.z; };
+      if (!Number.isFinite(inverseModel.elements[15]) || inverseModel.elements[15] === 0) return null;
+      const relative = h.scratch.m4.multiplyMatrices(inverseModel, legHandle.group.matrixWorld); // One matrix for all four neutral joints and the frame.
+      const toModel = (p, out) => { h.scratch.point.set(p.x, p.y, p.z).applyMatrix4(relative); out.x = h.scratch.point.x; out.y = h.scratch.point.y; out.z = h.scratch.point.z; };
       for (const side of ['left', 'right']) {
         const bones = restScratch.bones[side];
         toModel(legs[side].hip, bones.hip);
         toModel(legs[side].ankle, bones.ankle);
         bones.knee.x = (bones.hip.x + bones.ankle.x) / 2; bones.knee.y = (bones.hip.y + bones.ankle.y) / 2; bones.knee.z = (bones.hip.z + bones.ankle.z) / 2;
       }
-      const e = h.scratch.m4.multiplyMatrices(inverseModel, legHandle.group.matrixWorld).elements;
+      const e = relative.elements;
       for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) restScratch.frame[row * 3 + col] = e[col * 4 + row];
       return localJointsUsable(restScratch.bones, h.localPoseLimit) && restScratch.frame.every(Number.isFinite) ? restScratch : null;
     };
     handle.rest = makeJoints();
     handle.restRaw = makeJoints();
-    handle.captureRest = () => {
+    handle.captureRest = (sample = null) => {
       // The rest stance is the legs' pose at this moment (a fresh avatar stands idle). The garment is bound to it: at rest every
       // vertex sits exactly where the art puts it, and only the motion away from this pose moves the garment.
-      const stance = restStanceBones(handle); // The legs' standing stance when the leg system can say what it is, else their pose right now.
+      const stance = sample || restStanceBones(handle); // Reuse an already validated stance during the periodic recheck.
       // A temporarily invalid analytic stance must not be replaced with an animated bind.
       const measured = stance ? stance.bones : legHandle.getRestStance ? null : readLiveBones(handle);
       if (!localJointsUsable(measured, handle.localPoseLimit) || (!stance && LEG_SIDES.some(side => BONE_NAMES.some(name => !handle.scratch.frames[side][name].every(Number.isFinite))))) {
@@ -854,6 +862,7 @@
     const lastPoseComponents = new Float64Array(POSE_COMPONENT_COUNT); // Last skin-uploaded pose, compared against poseComponents.
     let hasLastPose = false; // First frame must skin even if every live bone is in its rest orientation.
     const poseChanged = aim => {
+      if (!aim) return null;
       let index = 0; // Same component order in both buffers, across left/right limbs.
       let moved = !hasLastPose; // Forces first upload and otherwise accumulates individual component changes.
       for (const side of LEG_SIDES) {
@@ -889,6 +898,7 @@
     };
     const aimAtLiveLegs = () => {
       const measured = readLiveBones(handle);
+      if (!measured) return null;
       const aim = handle.scratch.aim;
       for (const side of ['left', 'right']) {
         Core.amplifyLegRoll(measured[side], effectiveRollGain(), aim[side]);
@@ -1006,7 +1016,7 @@
         if (!stance) { handle.invalidRestSamples++; return; }
         let stanceDelta = 0, k = 0; // Max change in the standing bind joints, separate from the moving-pose flag.
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; stanceDelta = Math.max(stanceDelta, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
-        if (stanceDelta > 2e-4) { if (!handle.captureRest()) return; handle.alignToRest(); rebuildSpineShift(spineProfile()); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); if (moved === null) { handle.invalidPoseFrames++; return; } } // aim offsets depend on the rest pose just captured.
+        if (stanceDelta > 2e-4) { if (!handle.captureRest(stance)) return; handle.alignToRest(); rebuildSpineShift(spineProfile()); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); if (moved === null) { handle.invalidPoseFrames++; return; } } // aim offsets depend on the rest pose just captured.
       }
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
@@ -1171,12 +1181,10 @@
             });
             return [dx, dy];
           };
-          const position = handle.geometry.getAttribute('position').array;
           for (let row = 0, i = 0; row <= SEGMENTS; row++) {
             for (let col = 0; col <= SEGMENTS; col++, i++) {
               const [dx, dy] = displace(col / SEGMENTS, row / SEGMENTS);
               base[i * 3] += dx; base[i * 3 + 1] += dy;
-              position[i * 3] = base[i * 3]; position[i * 3 + 1] = base[i * 3 + 1];
             }
           }
         }
@@ -1200,8 +1208,9 @@
           };
           const x1 = toX(bounds.left), x2 = toX(bounds.right);
           if (Math.abs(x1) <= handle.localPoseLimit && Math.abs(x2) <= handle.localPoseLimit) {
-            waistTarget = { left: Math.min(x1, x2), right: Math.max(x1, x2) };
-            Core.fitWaistSpanX(handle.basePositions, SEGMENTS, beltSamples, waistTarget, handle.waistWidthInfluence);
+            const target = { left: Math.min(x1, x2), right: Math.max(x1, x2) };
+            if (Core.fitWaistSpanX(handle.basePositions, SEGMENTS, beltSamples, target, handle.waistWidthInfluence, handle.localPoseLimit)) waistTarget = target;
+            else handle.invalidWaistSamples++;
           } else handle.invalidWaistSamples++;
         } else handle.invalidWaistSamples++;
       }
@@ -1215,15 +1224,23 @@
         const mirrored = portraitsFlipped();
         footTargets = { left: legHandle.getFootWidthX(mirrored ? 'right' : 'left') * unit, right: legHandle.getFootWidthX(mirrored ? 'left' : 'right') * unit };
       }
-      const validFootTarget = width => Number.isFinite(width) && width > 0; // Unsupported geometry must not disable the prior safe fit.
-      if (footTargets && !validFootTarget(footTargets.left) && !validFootTarget(footTargets.right)) footTargets = null;
-      Core.stretchLegOpeningSpans(handle.basePositions, SEGMENTS, handle.rings, handle.splineSpec, footTargets || handle.openingWidthScale);
+      const validFootTarget = width => width > 0 && width <= handle.localPoseLimit; // Invalid measurements cannot enter the coupled fit.
+      if (footTargets) {
+        for (const side of LEG_SIDES) if (!validFootTarget(footTargets[side])) {
+          if (footTargets[side] > handle.localPoseLimit || !Number.isFinite(footTargets[side])) handle.invalidCuffSamples++;
+          footTargets[side] = 0; // Keep an independently usable opposite foot.
+        }
+        if (!footTargets.left && !footTargets.right) footTargets = null;
+      }
+      const cuffTarget = footTargets || handle.openingWidthScale;
+      const wantsCuffFit = typeof cuffTarget === 'object' || Math.abs(cuffTarget - 1) > 1e-8;
+      if (wantsCuffFit && !Core.stretchLegOpeningSpans(handle.basePositions, SEGMENTS, handle.rings, handle.splineSpec, cuffTarget, handle.localPoseLimit)) handle.invalidCuffSamples++;
       const sampledWidth = samples => {
         if (!samples?.length) return null;
         const xs = samples.map(sample => Core.sampleGridX(handle.basePositions, SEGMENTS, sample));
         return Math.max(...xs) - Math.min(...xs);
       };
-      handle.measuredFit = { waistSource: measuredBounds ? 'isolated-torso-lower-edge' : bounds ? 'composite-fallback' : 'authored', waistTarget: waistTarget && waistTarget.right - waistTarget.left, waistActual: sampledWidth(beltSamples), footTargets, cuffs: { left: sampledWidth(handle.splineSpec.leftAnkle.samples), right: sampledWidth(handle.splineSpec.rightAnkle.samples) } };
+      handle.measuredFit = { waistSource: waistTarget ? (measuredBounds ? 'isolated-torso-lower-edge' : 'composite-fallback') : 'authored', waistTarget: waistTarget && waistTarget.right - waistTarget.left, waistActual: sampledWidth(beltSamples), footTargets, cuffs: { left: sampledWidth(handle.splineSpec.leftAnkle.samples), right: sampledWidth(handle.splineSpec.rightAnkle.samples) } };
       const restPosition = handle.geometry.getAttribute('position'); // CPU/debug preview also sees the latest rest hem immediately.
       restPosition.array.set(handle.basePositions);
       restPosition.needsUpdate = true;
@@ -1343,6 +1360,6 @@
     taperTorsoBeltPoint, // Geometry regression hook to prove the same alpha width adjustment does not change knees/ankles.
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Pants reject invalid local leg/bind samples and refit against the current portrait plane.' }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Pants reuse local bone matrices and reject invalid pose or seam fits before upload.' }),
   });
 })(window);
