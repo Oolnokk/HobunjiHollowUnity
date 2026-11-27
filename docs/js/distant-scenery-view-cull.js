@@ -340,7 +340,7 @@
   function snapshot() {
     return {...stats,enabled,gpuEnabled,tracked:states.size,
       renderOnly:true,farPlaneExempt:true,consecutiveMisses:CONSECUTIVE_MISSES,
-      probeBudget:PROBES_PER_FRAME};
+      probeBudget:PROBES_PER_FRAME,proxySlots:probeSlots.length};
   }
 
   window.DistantSceneryViewCull=Object.freeze({
