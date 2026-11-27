@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const runtime = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // The source of both player and NPC flexible assemblies.
 assert.match(runtime, /const attachmentScale = Math\.max\(0\.00001, Math\.abs\(q\.scale\.y\)\)/,
   'flail size must follow the rendered LONG axis of the haft');
-assert.match(runtime, /state\.physicsLength = Math\.max\(0\.01, chainSpan\.length\(\) \* attachmentScale\)/,
+assert.match(runtime, /state\.physicsLength = Math\.max\(0\.01, maxReach\)/,
   'the pendulum lever must use the same resolved scale as the visible rope');
 assert.match(runtime, /placeFlexiblePartWorld\(state\.chain/);
 assert.match(runtime, /placeFlexiblePartWorld\(state\.headRoot/);
