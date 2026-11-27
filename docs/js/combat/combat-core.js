@@ -1097,9 +1097,9 @@
     desc: "Pink Health buffer: direct damage converts this band into Bleeding Health before real Health is lost."
   };
 
-  RS.addAffliction = function drunkenAwareAddAffliction(entity, id, amount) {
+  RS.addAffliction = function drunkenAwareAddAffliction(entity, id, amount, fluidSource) {
     if (id === DRUNK_FOOTING_ID || id === DRUNK_HEALTH_ID) return addDrunk(entity, id, amount);
-    return original.addAffliction(entity, id, amount);
+    return original.addAffliction(entity, id, amount, fluidSource);
   };
 
   RS.removeAffliction = function drunkenAwareRemoveAffliction(entity, id, amount) {

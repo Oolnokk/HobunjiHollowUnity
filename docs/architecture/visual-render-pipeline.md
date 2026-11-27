@@ -249,6 +249,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 | hat overflow plane (`hat-overflow-plane.js`) | player, NPC, enemy (split planes: `attachToPlanes`) | — |
 | held bag-item plane (game.js) | player | NPCs never hold bag items |
 | held-item x-ray through grass/ground (`held-object-render-order.js`) | player, short species (porakaneki) | other NPCs/enemies: hands ordinary depth, feet within 6 tiles only, weapons/tools in the base pass by default (user decision, ~11 ms on a GTX 1060; Settings → Render optimizations restores weapon x-ray) |
+| affliction fluids (`combat/affliction-fluid-vfx.js`) | live afflicted characters | One frame hook samples the composed poses. Two bounded world-depth batches draw the spray and ground puddles. |
 | procedural hands, pants, ground shadow, outline occlusion, rig layers | all humanoids (shadow/occlusion/rig: every kind) | — |
 | portrait life (blink/breath) | player, NPC | enemies keep static portraits |
 | render-time body composition (`player-body-transform-composer.js`) | player (+ its pet) | NPC/enemy poses go straight through rig layers |

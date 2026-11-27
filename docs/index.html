@@ -224,7 +224,7 @@
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261126exactSeamsAudit1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261127ruinInkPants4"></script>
+  <script src="js/pants-garment-renderer.js?v=20261127h7c9d81b"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -345,13 +345,14 @@
   <script src="js/remote-player-avatar.js?v=20261126mp4"></script> <!-- On-screen body for non-local players (reuses the cutscene stand-in makeNpcWalker pipeline). Initialised by game.js. -->
   <script src="js/remote-area-tick.js?v=20261127h2d04878"></script> <!-- Opt-in (off by default) coarse creature tick for other occupied, already-built zones in co-op. Initialised by game.js. -->
   <script src="js/dev-dummy-player.js?v=20261124mp1"></script> <!-- Dev-only second-player stand-in (window.DevDummyPlayer). -->
-  <script src="js/combat/resource-system.js?v=20261127combatPopups1"></script>
+  <script src="js/combat/resource-system.js?v=20261127h2709e61"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261127combatPopups1"></script>
   <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
   <script src="js/combat/burning-entity-hazards.js?v=20261117burnActorsAudit2"></script>
   <!-- Burning Health presentation: reuses the authored campfire emitter on living actors and temporarily burning corpses. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261125deepHotpaths1"></script>
+  <script src="js/combat/affliction-fluid-vfx.js?v=20261127he9bbb99"></script>
   <script src="js/combat/resource-rings.js?v=20261122hresarc5"></script>
   <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded

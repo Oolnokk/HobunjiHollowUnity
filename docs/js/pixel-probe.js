@@ -1191,6 +1191,8 @@
     }
     const resourceRingsDebug = window.ResourceRings?.debugSnapshot?.(); // Shows dashed ring batching during combat on mobile.
     if (resourceRingsDebug) lines.push(`Resource rings: ${resourceRingsDebug.dashedArcsBuilt} dash batches, ${resourceRingsDebug.dashMeshesAvoided} dash meshes avoided; arcs rebuilt=${resourceRingsDebug.resourceArcRebuilds || 0}, reused=${resourceRingsDebug.resourceArcReuses || 0}, target halos=${resourceRingsDebug.targetHaloRebuilds || 0}, cap checks=${resourceRingsDebug.capacityChecks || 0}, cap changes=${resourceRingsDebug.capacityInvalidations || 0}`);
+    const fluidVfxDebug = window.AfflictionFluidVfx?.debugSnapshot?.(); // Mobile-readable counts and puddle cleanup reasons.
+    if (fluidVfxDebug) lines.push('Affliction fluids: ' + JSON.stringify(fluidVfxDebug));
     const burningVfxDebug = window.BurningAfflictionVfx?.debugSnapshot?.(); // Confirms authored furniture fire emitters are attached without requiring a console.
     if (burningVfxDebug) {
       lines.push(`Burning VFX: active=${burningVfxDebug.activeEntities || 0} template=${burningVfxDebug.templateReady ? 'ready' : (burningVfxDebug.loading ? 'loading' : 'missing')} last=${burningVfxDebug.lastEvent?.phase || '-'} entity=${burningVfxDebug.lastEvent?.entity || '-'}`);

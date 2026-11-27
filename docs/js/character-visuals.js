@@ -61,6 +61,8 @@
       note: 'One managed rig per avatar; grips come from hand-tool-grips.js for any holder.' },
     { id: 'pants-garment', owner: 'pants-garment-renderer.js', covers: HUMANOIDS,
       note: 'Player mesh resolution is higher unless the "Player uses the NPC mesh cap" setting is on.' },
+    { id: 'affliction-fluids', owner: 'combat/affliction-fluid-vfx.js', covers: ALL.filter(kind => kind !== KINDS.CORPSE),
+      note: 'Live resource events drive world drips and sprays. Humanoid mouth and pants anchors follow their rigs. Creatures without an authored mouth point use their facing and body height.' },
     { id: 'ground-shadow', owner: 'character-ground-shadow.js', covers: ALL.filter(kind => kind !== KINDS.SHOULDER_PET) },
     { id: 'portrait-life', owner: 'world-portrait-life.js', covers: [KINDS.PLAYER, KINDS.NPC],
       gap: 'Blink/breathing/default expression for walkers only; enemies keep a static portrait (animals blink via creature-blink.js).' },

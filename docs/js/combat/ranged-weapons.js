@@ -1594,7 +1594,8 @@
       const lastY = Number.isFinite(state.shrapnelY) ? state.shrapnelY : entity.y;
       const movedTiles = Math.hypot(entity.x - lastX, entity.y - lastY) / Math.max(1, deps.TILE);
       if (movedTiles > 0 && !(entity.knockbackT > 0)) {
-        window.ResourceSystem?.addAffliction?.(entity, 'bleedingHealth', movedTiles * 5);
+        const bleedingAdded = window.ResourceSystem?.addAffliction?.(entity, 'bleedingHealth', movedTiles * 5); // Only actual shrapnel buildup triggers the movement spurt.
+        if (bleedingAdded > 0) window.AfflictionFluidVfx?.emit(entity, 'wound-spurt', 250);
         window.ResourceSystem?.addAffliction?.(entity, 'woundedStamina', movedTiles * 4);
       }
       state.shrapnelX = entity.x;
@@ -2437,6 +2438,7 @@
       previous: { x: p.prevX / deps.TILE, y: p.prevWorldY, z: p.prevY / deps.TILE },
     })),
     wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox, hasLineOfSight,
+    worldGeometryBlocksSight: (start, end) => !!deps && !!sceneGeometrySightBlock({ start, end }), // Share authored wall meshes with world-space presentation.
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     engagementRangePx, rangedAttackRadiusPx,
