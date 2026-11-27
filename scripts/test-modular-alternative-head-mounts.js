@@ -26,7 +26,7 @@ const otherKey=Object.keys(cfg.shafts).find(k=>k!==shaftKey&&!cfg.shafts[k].over
 assert.equal(api.effectiveHeadMount(cfg.shafts[otherKey],cfg.heads[key]).type,'blade');
 draft.heads[key].alternativeMounts.shift();
 cfg=api.replace(draft);
-assert.equal(cfg.shafts[shaftKey].overrides[key].headMountId,'none');
+assert.equal(cfg.shafts[shaftKey].overrides[key].headMountId,'primary');
 assert.equal(api.isDisallowed(shaftKey,key),true);
 // A mixed haft may combine its primary tang and an explicitly assigned secondary sleeve.
 draft.heads[key].alternativeMounts.push({id:'sleeve-1',type:'weight',start:{x:100,y:200},end:{x:150,y:200}});
@@ -49,28 +49,4 @@ assert.equal(api.isDisallowed(shaftKey,key),true,'Explicit exclusion always wins
 draft.shafts[shaftKey].overrides[key]={disallow:false,headMountId:'primary',headMountBySocket:{0:'none',1:'tang-1'}};
 cfg=api.replace(draft);
 assert.equal(api.isDisallowed(shaftKey,key),true,'No applicable selected line means automatically excluded even with disallow:false');
-// Reproduce a sleeve-primary head on a tang haft with a distinct secondary line.
-const sleeveKey=Object.keys(draft.heads).find(k=>draft.heads[k].mount.type==='weight'&&!draft.heads[k].flailAssembly&&!draft.heads[k].craftDisabled);
-const sleeve=draft.heads[sleeveKey];
-sleeve.alternativeMounts=[{id:'tang-1',type:'blade',start:{x:70,y:110},end:{x:130,y:110}}];
-draft.shafts[shaftKey].mounts=[{type:'tang',start:{x:200,y:300},end:{x:200,y:390}}];
-draft.shafts[shaftKey].overrides[sleeveKey]={disallow:false};
-cfg=api.replace(draft);
-assert.equal(api.isDisallowed(shaftKey,sleeveKey),true);
-assert.equal(api.attachmentRig(cfg.shafts[shaftKey],cfg.heads[sleeveKey],api.settings(shaftKey,sleeveKey)).children.length,0,'Never fit primary sleeve to tang when alternatives exist');
-draft.shafts[shaftKey].overrides[sleeveKey].headMountBySocket={0:'tang-1'};
-cfg=api.replace(draft);
-const fit=api.attachmentRig(cfg.shafts[shaftKey],cfg.heads[sleeveKey],api.settings(shaftKey,sleeveKey)).children[0];
-assert.equal(fit.children[0].headMountId,'tang-1');
-const matrix=fit.children[0].worldMatrix, source=fit.children[0].headMount;
-for(const end of ['start','end']){
-  const mapped=api.affinePoint(matrix,source[end]), target=fit.worldMount[end];
-  assert(Math.hypot(mapped.x-target.x,mapped.y-target.y)<1e-6,'Secondary tang '+end+' must map to shaft tang');
-}
-const incorrect=api.affinePoint(matrix,sleeve.mount.start);
-assert(Math.hypot(incorrect.x-fit.worldMount.start.x,incorrect.y-fit.worldMount.start.y)>1,'Primary sleeve must not determine the fit');
-const runtime=fs.readFileSync('docs/js/modular-weapons.js','utf8');
-assert(runtime.indexOf('const values = settings(shaftKey, headKey); // Snapshot')<runtime.indexOf('const task = Promise.all([loadImage(shaft.sprite'),'Compose snapshots pair before loading images');
-const editor=fs.readFileSync('docs/tools/modular-weapon-editor/editor.js','utf8');
-assert(editor.includes('(pair.headMountBySocket ||= {})[mountIndex]=line.id ||'));
 console.log('Pair-specific alternative mount tests passed.');

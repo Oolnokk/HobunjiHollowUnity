@@ -957,8 +957,8 @@
       }
     }
     for (const shaft of Object.values(next.shafts)) for (const [key,pair] of Object.entries(shaft.overrides || {})) {
-      if (pair.headMountId && pair.headMountId !== 'primary' && pair.headMountId !== 'none' && !next.heads[key]?.alternativeMounts?.some(m=>m.id===pair.headMountId))
-        pair.headMountId = 'none'; // Fail closed instead of fitting the primary when an explicit alternative disappeared.
+      if (pair.headMountId && pair.headMountId !== 'primary' && !next.heads[key]?.alternativeMounts?.some(m=>m.id===pair.headMountId))
+        pair.headMountId = 'primary'; // Invalid or deleted pair defaults cannot accidentally activate a different line.
       for (const [index,id] of Object.entries(pair.headMountBySocket || {})) {
         if (Number(index)>=shaft.mounts.length) delete pair.headMountBySocket[index];
         else if (id!=='primary' && id!=='none' && !next.heads[key]?.alternativeMounts?.some(m=>m.id===id))
@@ -1066,7 +1066,7 @@
     const compatible = rigidMountAssignments(shaft,head,values);
     // Preserve the old saved-item fallback only for pairs without any explicit mount assignment.
     const pair = values || shaft?.overrides?.[headKeys.get(head)] || {};
-    const selected = compatible.length || head.alternativeMounts?.length || pair.headMountBySocket || pair.headMountId ? compatible
+    const selected = compatible.length || pair.headMountBySocket || (pair.headMountId && pair.headMountId!=='primary') ? compatible
       : (shaft?.mounts || []).map((mount,index)=>({mount,index,headMount:head.mount})).filter(entry=>entry.mount.type!=='rope').slice(0,1);
     const children = selected.map(({ mount, index, headMount: selectedHeadMount }) => {
       const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
@@ -1076,7 +1076,7 @@
         kind: 'mount', index, type: mount.type, localMount: mount, regionId:region?.id||null, regionMatrix,
         worldMount: { type: mount.type, start: rigPoint(shaft,mount.start,region), end: rigPoint(shaft,mount.end,region) },
         children: [{
-          kind: 'primitive', source: 'head', headMountId: selectedHeadMount.id || 'primary', headMount: selectedHeadMount, localMatrix,
+          kind: 'primitive', source: 'head', headMountId: selectedHeadMount.id || 'primary', localMatrix,
           worldMatrix: multiplyAffine(multiplyAffine(parent,regionMatrix), localMatrix),
         }],
       };
@@ -1171,12 +1171,12 @@
     if (canvases.has(cacheKey)) return canvases.get(cacheKey);
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Validated manifest entries.
     if (!shaft || !head) throw new Error('Unknown weapon parts.');
-    const values = settings(shaftKey, headKey); // Snapshot the exact pair with its head and haft before any asynchronous image loads.
     const flail = flailRecipe(shaftKey, headKey); // Animated assemblies must not receive a baked rigid head in their base PNG.
-    const pieces = flail ? [] : [...new Set(expandOps(values.bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
+    const pieces = flail ? [] : [...new Set(expandOps(settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
     const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
     const task = Promise.all([loadImage(shaft.sprite, base), flail ? Promise.resolve(null) : loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
+      const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
       const frame = flail ? { left: 0, top: 0, width: 450, height: 1204 }
         : compositionFrame(shaft, head, visibleBounds(headImage), values,
           rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList)); // Animated heads are separate Three.js planes; the base keeps its 450×1204 authored socket coordinates.
