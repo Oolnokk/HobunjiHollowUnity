@@ -227,7 +227,7 @@
       }
     }
     moveToWalker(entry);
-    if (child.followPlayer) window.FamilyBabyFollow?.bind?.(child, entry.walker, 'basket');
+    if (child.followPlayer) window.FamilyBabyFollow?.bind?.(child, entry.walker, entry.walker?._childPhase || 'basket');
     entry.persist?.();
     debug.lastError = null;
   }
@@ -280,6 +280,8 @@
         clearNpcGrip(entry); entry.npcCarryPose = null; // Spouse hands the baby over: its hand rig lets go.
         entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null; entry.child.followPlayer = false;
         window.FamilyBabyFollow?.clearWalker?.(entry.walker);
+        window.NpcFollowing?.releaseForCarry?.(entry.child.id); // Retire any ordinary follower session before the burden owns movement.
+        if (entry.child.vatId) window.RomanceFamily?.clearVatWorkerPose?.(entry.child.vatId);
         group.visible = true; showWalker(entry, false);
         entry.persist?.();
       },
@@ -311,7 +313,7 @@
     return entry;
   }
   function sync(child, walker, phase, persist) {
-    if (phase !== 'basket') { discard(child?.id); return null; } // Toddler transitions clean up the baby-only proxy.
+    if (phase !== 'basket' && phase !== 'toddler') { discard(child?.id); return null; } // Both young stages use the same carry registry.
     const entry = ensure(child, walker, persist);
     if (!entry) return null;
     const api = window.Shattercasks;
@@ -446,7 +448,7 @@
     settle(entry, entry.burden, true);
     return true;
   }
-  function discard(id) {
+  function discard(id, preserveFollow = false) {
     const entry = entries.get(id);
     if (!entry) return;
     entry.disposing = true;
@@ -454,7 +456,8 @@
     showWalker(entry, true);
     window.Shattercasks?.discardBurden?.(entry.burden); // Shared registry cleans the actor's real physical burden.
     disposeProxy(entry); // Remove one shared mesh and its two materials, leaving the portrait texture alive.
-    entry.child.carryBy = null; entry.child.carryPose = null; entry.child.followPlayer = false;
+    entry.child.carryBy = null; entry.child.carryPose = null;
+    if (!preserveFollow) entry.child.followPlayer = false; // Growth can rebuild a walking follower without forgetting its destination.
     window.FamilyBabyFollow?.clearWalker?.(entry.walker);
     entries.delete(id);
   }

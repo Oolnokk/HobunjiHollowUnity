@@ -1161,7 +1161,7 @@
     (Number(entity?.maxHealth) || 0) - RS.getAffliction(entity, "bleedingHealth"));
 
   RS.applyDamage = function drunkenAwareApplyDamage(entity, amount, opts = {}) {
-    if (!(amount > 0) || window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0;
+    if (!(amount > 0) || (window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0;
     entity.lastAttackReceivedAt = performance.now();
     let finalDamage = Number(amount) || 0;
     if (opts.heavy) {

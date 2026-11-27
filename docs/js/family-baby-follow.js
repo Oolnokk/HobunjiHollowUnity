@@ -4,17 +4,18 @@
   'use strict';
   if (window.FamilyBabyFollow) return;
   const CRAWL_SPEED_TILES = 0.25; // Slow average ground speed, in tiles per second.
+  const TODDLER_WALK_FALLBACK_TILES = 1.25; // Used only when the normal NPC walker exposes neither an authored nor measured walking speed.
   const STOP_TILES = 0.7; // Stop within easy pickup range of the parent.
   let deps = null; // Game supplies the existing companion movement and current world.
   let bound = new Map(); // Only currently spawned family infants; no per-frame world scan.
-  const debug = { latestChange: 'Shared crawl owns infant body and limbs; safe landing and save recovery', lastEvent: null, recoveries: 0 };
+  const debug = { latestChange: 'Infants crawl; toddlers use ordinary NPC gait and age-specific footing while following', lastEvent: null, recoveries: 0 };
   function init(injected) { deps = injected; }
   function isWilderness(area) { return deps?.isWilderness?.(area) === true; }
   function canFollowIn(area) { return isWilderness(area) || area === 'farm' || area === 'town'; }
-  function scheduleTarget(child) {
+  function scheduleTarget(child, phase = 'basket') {
     if (!child.followPlayer || child.carryBy || !child.carrySpot) return null;
     const spot = child.carrySpot;
-    return { area: spot.area, c: spot.c, r: spot.r, activity: 'crawling after you', run: false };
+    return { area: spot.area, c: spot.c, r: spot.r, activity: phase === 'toddler' ? 'toddling after you' : 'crawling after you', run: false };
   }
   function clearWalker(walker) {
     if (!walker) return;
@@ -22,14 +23,16 @@
     if (!entry) return;
     bound.delete(walker);
     walker._familyBabyFollowing = false;
-    window.PlayerCrawl?.clearNpc?.(walker);
+    if (entry.phase === 'basket') window.PlayerCrawl?.clearNpc?.(walker);
     walker.resetRouteState?.();
   }
   function bind(child, walker, phase) {
     if (!walker) return;
-    if (phase !== 'basket' || !child.followPlayer || child.carryBy) { clearWalker(walker); return; }
+    if ((phase !== 'basket' && phase !== 'toddler') || !child.followPlayer || child.carryBy) { clearWalker(walker); return; }
     for (const [old, entry] of bound) if (old !== walker && entry.child.id === child.id) clearWalker(old);
-    if (bound.has(walker)) { bound.get(walker).child = child; return; }
+    const existing = bound.get(walker); // Retire the old pose owner on an age transition, but keep ordinary repeat binds cheap.
+    if (existing?.phase === phase) { existing.child = child; return; }
+    if (existing) clearWalker(walker);
     window.BedLiePose?.releaseNpc?.(walker); // Release any older floor/bed pose before taking the rig.
     if (walker._bedLieActive) { // releaseNpc retires bookkeeping, but does not undo its transform.
       walker._npcCharacterRigRoot?.rotation?.set(0, 0, 0);
@@ -42,7 +45,13 @@
       walker._npcMotionLookActive = false; walker._ambientLookActive = false;
       window.PerpRotation?.clearHeadtrackHint?.(walker.perpState);
     }
-    bound.set(walker, { child, actor: null }); // Actor state persists between frames for detours/recovery.
+    // Resolve the ordinary walk baseline once, before follower motion overwrites measured speed.
+    const explicitPx = Number(walker.walkSpeedPxS || walker.moveSpeedPxS || walker.rec?.walkSpeedPxS || walker.rec?.moveSpeedPxS);
+    const explicitTiles = Number(walker.walkSpeedTilesPerSecond || walker.moveSpeedTilesPerSecond || walker.rec?.walkSpeedTilesPerSecond || walker.rec?.moveSpeedTilesPerSecond);
+    const measured = Number(walker._moveSpeedTiles) / Math.max(.35, Number(walker.catchup) || 1);
+    const walkTiles = explicitTiles > 0 ? explicitTiles : explicitPx > 0 && deps?.TILE ? explicitPx / deps.TILE
+      : measured > .02 && Number(walker.catchup) >= .35 ? measured : TODDLER_WALK_FALLBACK_TILES;
+    bound.set(walker, { child, phase, walkTiles, actor: null }); // Actor state persists between frames for detours/recovery.
     walker._familyBabyFollowing = true;
     walker.resetRouteState?.();
   }
@@ -58,7 +67,8 @@
   function followActor(entry, walker) {
     const p = walker.root.position;
     if (!entry.actor || entry.actor.areaId !== walker.area) {
-      const def = { canClimb: false, canSwim: false, moveSpeed: deps.TILE * CRAWL_SPEED_TILES, chaseSpeed: deps.TILE * CRAWL_SPEED_TILES }; // Baby uses ordinary creature travel without active fighting or cliff hops.
+      const speed = deps.TILE * (entry.phase === 'toddler' ? entry.walkTiles : CRAWL_SPEED_TILES); // Navigation remains shared, but gait speed is stage-specific.
+      const def = { canClimb: false, canSwim: false, moveSpeed: speed, chaseSpeed: speed }; // Baby uses ordinary creature travel without active fighting or cliff hops.
       entry.actor = { id: entry.child.id, _familyBabyFollower: true, isCompanion: true, stableRole: 'companion',
         master: deps.player, areaId: walker.area, health: 1, def, halfHeight: 0.15, groundLift: 0,
         avatarRef: { group: walker.root }, vx: 0, vy: 0, state: 'idle' };
@@ -98,7 +108,7 @@
   }
   function savedCarrySpot() {
     const area = deps?.getCurrentArea?.();
-    return isWilderness(area) ? safeArrival(area) : null;
+    return canFollowIn(area) ? safeArrival(area) : null; // Farm and town saves also restore the dropped follower safely.
   }
   function updateWalker(walker, dt) {
     const entry = bound.get(walker);
@@ -130,12 +140,16 @@
     const beforeX = actor.x, beforeY = actor.y;
     const chasing = goal.routeRequired || goal.distance > deps.TILE * STOP_TILES;
     const heading = entry.movedLastFrame && Number.isFinite(entry.heading) ? entry.heading : Math.atan2(goal.y - actor.y, goal.x - actor.x);
-    const pull = window.PlayerCrawl?.poseNpc?.(walker, dt, chasing, heading);
-    const pace = Number.isFinite(pull) ? pull : 1; // Headless tests or an unfinished portrait retain safe ground motion.
+    const toddler = entry.phase === 'toddler'; // Only infants acquire the crawl limb/hand pose provider.
+    const tumbling = toddler && walker._toddleTumbleUntil > performance.now();
+    const pull = toddler ? Number(walker.catchup) : window.PlayerCrawl?.poseNpc?.(walker, dt, chasing, heading);
+    const pace = tumbling ? 0 : Number.isFinite(pull) ? Math.max(0, pull) : 1; // Same low-footing catchup multiplier used by ordinary toddler walking.
     if (chasing && pace > 0) {
-      deps.travelCreatureToward(actor, goal.x, goal.y, actor.def.chaseSpeed * pace, dt);
+      const walkSpeed = toddler ? deps.getToddlerWalkSpeed?.(walker) : null; // Live ordinary NPC pace includes shared drunkenness/yawn modifiers.
+      const speed = Number.isFinite(walkSpeed) && walkSpeed >= 0 ? walkSpeed * deps.TILE : actor.def.chaseSpeed;
+      deps.travelCreatureToward(actor, goal.x, goal.y, speed * pace, dt);
     } else { actor.vx = 0; actor.vy = 0; }
-    const recovered = nav.tickRecovery(actor, deps.player, goal, dt); // Exact animal companion unseen-stall timing and safe candidate search.
+    const recovered = !tumbling && nav.tickRecovery(actor, deps.player, goal, dt); // Exact animal companion unseen-stall timing and safe candidate search.
     const p = walker.root.position;
     p.x = actor.x / deps.TILE; p.z = actor.y / deps.TILE;
     const surface = deps.surfaceY(area, Math.floor(p.x), Math.floor(p.z));
@@ -143,12 +157,20 @@
     const moved = !recovered && Math.hypot(actor.x - beforeX, actor.y - beforeY) > 0.001;
     if (moved) {
       entry.heading = Math.atan2(actor.y - beforeY, actor.x - beforeX); // The actual detour, not the unobstructed target direction.
-      // Crawl owns absolute body yaw and both leg chains. Do not let ordinary
-      // NPC deadzone facing rotate the legs again after the crawl pose.
-      walker.desiredRot = -entry.heading;
+      if (toddler) {
+        walker.applyFacingDeadzone?.(-entry.heading + Math.PI / 2, 0.15); // Existing upright NPC facing convention.
+        if (Number.isFinite(walker.rot)) walker.root.rotation.y = walker.rot;
+      } else {
+        // Crawl owns absolute body yaw and both leg chains.
+        walker.desiredRot = -entry.heading;
+      }
     }
     entry.movedLastFrame = moved;
     walker._moveSpeedTiles = moved && dt > 0 ? Math.hypot(actor.x - beforeX, actor.y - beforeY) / deps.TILE / dt : 0;
+    if (toddler) {
+      walker.legs?.update?.(dt, walker._moveSpeedTiles, false); // Normal procedural NPC feet, not the infant crawl.
+      if (moved) walker._tickFootsteps?.(walker._moveSpeedTiles * dt);
+    }
     walker._legsPrevX = p.x; walker._legsPrevZ = p.z;
     walker.currentScheduleTarget = null; walker._bedLieSurface = null;
     recordPosition(entry, walker);
@@ -163,7 +185,7 @@
   function clear() { for (const walker of bound.keys()) clearWalker(walker); }
   window.FamilyBabyFollow = Object.freeze({ init, isWilderness, canFollowIn, scheduleTarget, safeLanding, savedCarrySpot, bind, updateWalker, clearWalker, clear,
     snapshot: () => ({ ...debug, speedTiles: CRAWL_SPEED_TILES, babies: [...bound].map(([walker, entry]) => ({
-      id: entry.child.id, area: walker.area, position: entry.child.carrySpot, stalled: entry.actor?._companionStuckRecovery?.stalled || 0
+      id: entry.child.id, phase: entry.phase, gait: entry.phase === 'toddler' ? 'walk' : 'crawl', walkTiles: entry.phase === 'toddler' ? entry.walkTiles : undefined, area: walker.area, position: entry.child.carrySpot, stalled: entry.actor?._companionStuckRecovery?.stalled || 0
     })) })
   });
 })();

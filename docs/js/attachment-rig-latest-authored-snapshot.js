@@ -11,7 +11,7 @@
   const urls = [
     new URL('../config/character-rig-scale-defaults.js?v=20261126h1dd486d', base).href,
     ...(needsAgeAuthoring ? [
-      new URL('../config/romance-config.js?v=20261126neckAudit2', base).href, // Authoring stage defaults precede lineup registration.
+      new URL('../config/romance-config.js?v=20261126familyWork2', base).href, // Authoring stage defaults precede lineup registration.
       new URL('character-age-rig-config.js?v=20261126h08f6eb8', base).href, // Shared runtime/author age proportions.
     ] : []),
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261114hrigcore1760', base).href,
