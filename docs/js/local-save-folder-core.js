@@ -482,6 +482,14 @@
     const digest = delta?.digests.get(key);
     // Changed payloads are serialized only when written; no full JSON buffer
     // survives the delta scan while disk safety guards perform asynchronous I/O.
+    if (_handle.assertDriveUnchanged && old && digest === old.digest && old.stamp) {
+      // All Drive file IDs and versions were checked before this commit and will be
+      // checked again before publishing/acknowledging its manifest. Avoid per-file
+      // round trips for unchanged bytes.
+      next.set(key, old);
+      work.unchanged++;
+      return;
+    }
     const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
     if (old && digest === old.digest && old.stamp) {
       // A deleted or externally modified disk file cannot be called saved just
@@ -560,8 +568,11 @@
       await writeTrackedFile(dirHandle, dirName, filename, entity, delta, next, work);
     }
     for await (const [name, entry] of dirHandle.entries()) {
-      if (entry.kind === 'file' && !keep.has(name)) {
-        try { await dirHandle.removeEntry(name); } catch {}
+      if (entry.kind === 'file' && name.toLowerCase().endsWith('.json') && !name.startsWith('.hobunji-') && !keep.has(name)) {
+        // Drive backup versions and non-save files may also be visible through Windows/SAF.
+        try { await dirHandle.removeEntry(name); } catch (error) {
+          if (_handle.assertDriveUnchanged && error?.name !== 'NotFoundError') throw error;
+        }
       }
     }
   }
@@ -1107,7 +1118,7 @@
         worldCount: (meta.worlds || []).length,
         farmLayoutCount: _farmLayoutCount,
       });
-      try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
+      if (!_handle.beginDriveCommit) { try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {} } // Retain an older portable file when using Drive; it may contain independent recovery data.
       await _handle.finishDriveCommit?.(); // Remove the marker only after the entire canonical publication verifies.
 
       _committedFileState = nextFiles;

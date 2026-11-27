@@ -58,6 +58,10 @@ async function runSuite(source, NativeURL, NativeBlob, crypto) {
       }
       throw Error('unexpected mocked request');
     };
+    s.uploadBlob=async(parent,n,blob)=>{
+      const made=row('uploadedFile'+(++seq),n,parent,blob.type,blob.size);
+      rows.set(made.id,made);return {...made};
+    };
     s.stage=async (parent,canonical,blob)=>{
       const pending=row('stagedFile'+(++seq),'.hobunji-pending-'+canonical+'-'+crypto.randomUUID(),parent,blob.type,blob.size);
       rows.set(pending.id,pending);
@@ -129,7 +133,56 @@ async function runSuite(source, NativeURL, NativeBlob, crypto) {
     s.auth.expires=Date.now()-1;
     check(await new DriveDirectory(s).queryPermission()==='prompt','expired token prompts explicit reconnect');
   }
-  return 11;
+  const marker='hobunji-write-in-progress.json';
+  {
+    const {s,rows}=fixture();
+    await s.beginLoad();await s.finishLoad();await s.beginCommit();
+    check((await s.child(root,marker))?.id===s.commitId,'marker is durable before first canonical write');
+    await s.publish('characters',name,blob);
+    await s.finishCommit();
+    check(!(await s.child(root,marker)),'verified commit removes marker');
+    check(await s.assertUnchanged(),'marker deletion is reflected in baseline');
+  }
+  {
+    const {s,rows,setFailure}=fixture();
+    await s.beginLoad();await s.finishLoad();await s.beginCommit();
+    setFailure('before-publish');
+    await rejects(()=>s.publish('characters',name,blob),'injected failure');
+    check(!!(await s.child(root,marker)),'failed publication preserves marker');
+    await rejects(()=>s.beginLoad(),'interrupted Drive save');
+    check(!s.writable,'cannot accept mixed canonical revision');
+    await s.beginLoad(true);await s.finishLoad();await s.beginCommit(true);
+    await s.publish('characters',name,blob);await s.finishCommit();
+    check(!(await s.child(root,marker)),'explicit verified recovery clears marker');
+  }
+  {
+    const {s,patch}=fixture();
+    await s.beginLoad();await s.finishLoad();await s.beginCommit();
+    await patch(first,{size:'7'});
+    await rejects(()=>s.finishCommit(),'changed on another device');
+    check(!!(await s.child(root,marker)),'conflict during full commit preserves marker');
+  }
+  {
+    const s=new Session(root,'Hobunji','12345-test.apps.googleusercontent.com');
+    s.json=async()=>({incompleteSearch:true,files:[]});
+    await rejects(()=>s.list(root),'Incomplete Google Drive listing');
+  }
+  {
+    const {s}=fixture();
+    await s.beginLoad();await s.finishLoad();
+    s.invalidate();
+    await rejects(()=>s.assertUnchanged(),'Load from Folder');
+    check(!s.writable,'invalidated import cannot grant writes');
+  }
+  {
+    const s=new Session(root,'Hobunji','12345-test.apps.googleusercontent.com');
+    s.auth={token:'test-token',expires:Date.now()+60000};
+    s.meta=async()=>({id:root,name:'Shared',mimeType:'application/vnd.google-apps.folder',driveId:'sharedDrive',capabilities:{canAddChildren:true}});
+    await rejects(()=>s.verifyRoot(),'Shared drives are not supported');
+    await rejects(()=>s.request('https://not-google.example/drive/v3/files'),'Rejected unexpected');
+    await rejects(()=>s.request('https://www.googleapis.com.evil.example/drive/v3/files'),'Rejected unexpected');
+  }
+  return 17;
 }
 if(require.main===module)runSuite(fs.readFileSync('docs/js/browser-drive-folder.js','utf8'),URL,Blob,webcrypto)
   .then(n=>console.log('browser Drive folder: '+n+' regression groups passed'))

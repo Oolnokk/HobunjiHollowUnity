@@ -93,7 +93,7 @@
     async request(target, method='GET', body, headers={}) {
       if (!this.granted()) throw fail('NotAllowedError','Google Drive authorization expired. Reconnect and load the folder before saving.');
       const u = new URL(target);
-      if (u.origin !== 'https://www.googleapis.com' || !(/^\/(?:upload\/)?drive\/v3\/files(?:\/|$)/.test(u.pathname)))
+      if (u.username || u.password || u.origin !== 'https://www.googleapis.com' || !(/^\/(?:upload\/)?drive\/v3\/files(?:\/|$)/.test(u.pathname)))
         throw Error('Rejected unexpected Google Drive endpoint.');
       const token = this.auth.token; // Never sent to a redirect or another host.
       const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(method === 'PUT' ? 300000 : 120000) : undefined; // Bound stalled network operations on supported browsers.
@@ -227,9 +227,7 @@
         }
         // Create marker before changing any canonical bytes. An ambiguous
         // create acknowledgement deliberately leaves a discoverable marker.
-        const made = await this.json(url(BASE,{fields:FIELDS}),'POST',{
-          name:COMMIT_MARKER,parents:[this.id],mimeType:'application/json'
-        });
+        const made = await this.uploadBlob(this.id,COMMIT_MARKER,new Blob([JSON.stringify({version:1,startedAt:Date.now()})],{type:'application/json'}));
         const current = await this.child(this.id,COMMIT_MARKER);
         if (!validId(made.id) || current?.id !== made.id) throw conflict();
         this.fileType(current);
@@ -259,6 +257,7 @@
     }
     async mkdir(name) {
       return this.enqueue(async () => {
+        await this.verifyRoot();
         const old = await this.child(this.id,name);
         if (!this.writable || old || this.baseline?.has(name+'/')) throw conflict();
         const made = await this.json(url(BASE,{fields:FIELDS}),'POST',{name,parents:[this.id],mimeType:FOLDER});
@@ -267,16 +266,21 @@
         this.baseline.set(name+'/',current);
       });
     }
-    async read(parent,name,expected) {
+    async read(parent,dir,name,expected) {
+      if (await this.parent(dir) !== parent) throw conflict();
       const before = await this.child(parent,name);
       if (!before || this.stamp(before) !== this.stamp(expected)) throw conflict();
       const blob = await (await this.request(url(BASE+'/'+encodeURIComponent(before.id),{alt:'media'}))).blob();
+      if (await this.parent(dir) !== parent) throw conflict();
       const after = await this.child(parent,name);
       if (this.stamp(after) !== this.stamp(before) || blob.size !== Number(before.size)) throw conflict();
       return blob;
     }
     async stage(parent,name,blob) {
-      const metadata = {name:'.hobunji-pending-'+name+'-'+crypto.randomUUID(),parents:[parent],mimeType:blob.type || 'application/octet-stream'};
+      return this.uploadBlob(parent,'.hobunji-pending-'+name+'-'+crypto.randomUUID(),blob);
+    }
+    async uploadBlob(parent,name,blob) {
+      const metadata = {name,parents:[parent],mimeType:blob.type || 'application/octet-stream'};
       if (blob.size > LIMIT) throw Error('Save file exceeds the browser Drive size limit.');
       let result;
       if (blob.size <= 5*1024*1024) {
@@ -289,7 +293,7 @@
         if (!session) throw Error('Google did not expose the resumable upload URL to this browser.');
         result = await (await this.request(session,'PUT',blob,{'Content-Type':metadata.mimeType})).json();
       }
-      if (!validId(result.id) || result.name !== metadata.name || !result.parents?.includes(parent) || Number(result.size) !== blob.size) throw Error('Google did not confirm complete staged save bytes.');
+      if (!validId(result.id) || result.name !== metadata.name || !result.parents?.includes(parent) || result.trashed || typeof result.version !== 'string' || Number(result.size) !== blob.size) throw Error('Google did not confirm complete staged save bytes.');
       return result;
     }
     async rename(parent,id,name,expected) {
@@ -359,14 +363,14 @@
   class DriveFile {
     constructor(session,dir,name) { this.session=session; this.dir=dir; this.name=name; this.kind='file'; }
     async getFile() {
-      const s=this.session, name=this.name, parent=await s.parent(this.dir);
+      const s=this.session, name=this.name, dir=this.dir, parent=await s.parent(dir);
       const row=await s.child(parent,name);
       if (!row) throw missing(name);
       s.fileType(row);
       if (Number(row.size)>LIMIT) throw Error('Drive save exceeds browser read limit.');
       return {name,size:Number(row.size),lastModified:Date.parse(row.modifiedTime),type:row.mimeType,
-        async text(){return (await s.read(parent,name,row)).text();},
-        async arrayBuffer(){return (await s.read(parent,name,row)).arrayBuffer();}
+        async text(){return (await s.read(parent,dir,name,row)).text();},
+        async arrayBuffer(){return (await s.read(parent,dir,name,row)).arrayBuffer();}
       };
     }
     async createWritable() {

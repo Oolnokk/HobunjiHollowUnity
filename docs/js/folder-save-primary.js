@@ -507,9 +507,10 @@
     if (!statusEl) return;
     const text = !status.supported ? 'Folder saves are not supported in this browser; using browser fallback.'
       : !status.folderName ? 'No primary save folder connected.'
-      : status.state === 'needs-permission' ? `Primary folder “${status.folderName}” needs permission.`
+      : status.state === 'needs-permission' ? `Primary folder “${status.folderName}” needs permission.${status.lastError ? ' ' + status.lastError : ''}`
       : status.lastError ? `Primary folder “${status.folderName}”: ${status.lastError}`
       : status.autoSyncArmed ? `Primary folder “${status.folderName}” is connected and autosyncing.`
+      : status.transport === 'google-drive-browser' && !status.driveCanWrite ? `Google Drive “${status.folderName}” connected; load the folder or recover before saving.`
       : `Primary folder “${status.folderName}” is connected; load or save to choose direction.`;
     // Same self-triggering-observer hazard noted in promoteEmptySaveGate above.
     if (statusEl.textContent !== text) statusEl.textContent = text;
