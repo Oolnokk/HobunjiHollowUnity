@@ -522,8 +522,7 @@
     if (box.isEmpty?.()) return false;
     const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
     if (!(size.y >= 1.7) || !(Math.max(size.x,size.z) > .1)) return false;
-    const cracks = []; // Native decals are separately owned and explicitly removed on a reroll.
-    for (let stage = 1; stage <= 3; stage++) cracks.push(crackRibbon(shaft,profile,stage,room.index)); // Three batched meshes, each drawing four crack faces.
+    const cracks = addPillarCracks(shaft, profile, room.index); // Native decals are separately owned and removed on a reroll.
     const light = addLight(center.x,center.y,center.z,2.2,.34,[255,109,28]); // Readable orange glow before the first pulse even under Hronal's heavy darkness.
     world.pillars.push({
       x:center.x,z:center.z,y:box.min.y,height:size.y,width:Math.max(size.x,size.z),
@@ -570,64 +569,85 @@
     let value=0;for(const ch of String(id))value=(Math.imul(value,31)+ch.charCodeAt(0))>>>0;
     return value%997;
   }
-  function platformPillarVisual(kit,height,id) {
-    // Shaft layout can contain many pillars; resolve the authored support ONCE instead of traversing the entire V50 scene for every platform.
-    if(!world.platformShaftTemplateResolved){
-      world.platformShaftTemplateResolved=true;
-      world.platformShaftTemplate=null;
-      world.context?.root?.traverse?.(node=>{
-        if(!world.platformShaftTemplate&&node.isMesh&&/square tapered shaft/i.test(String(node.name||''))&&node.geometry)
-          world.platformShaftTemplate=node;
-      });
-    }
-    const source=world.platformShaftTemplate; // Each platform owns a geometry/material clone, not the reusable source mesh.
-    let geometry=source?.geometry?.clone?.()||null;
-    if(geometry){
-      geometry.computeBoundingBox?.();
-      const bounds=geometry.boundingBox,size=bounds?.getSize?.(new THREE.Vector3()); // Normalize the original shaft to the unchanged platform hazard footprint.
-      if(!size||!(size.x>.01&&size.y>.1&&size.z>.01)){geometry.dispose?.();geometry=null;}
-      else{
-        geometry.translate?.(-.5*(bounds.min.x+bounds.max.x),-bounds.min.y,-.5*(bounds.min.z+bounds.max.z));
-        geometry.scale?.(.62/size.x,height/size.y,.62/size.z);
-      }
-    }
-    if(!geometry){ // If this seed contains no V50 square support, build a correctly centered carved tapered square, not an untextured box.
-      geometry=new THREE.CylinderGeometry(.39,.44,height,4);
-      geometry.rotateY(Math.PI/4); // The four corners form a 0.62-wide square, matching the authored hazard footprint.
-      geometry.translate(0,height/2,0); // CylinderGeometry is centre-origin; its base must rest on the platform.
-    }
-    const original=source?.material; // The platform owns its own disposable material; native V50 walls keep theirs.
-    const material=Array.isArray(original)?original.map(m=>m.clone?.()||m):original?.clone?.()
-      ||window.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63'})
-      ||kit.makeBasic(0x726d63);
-    const shaft=new THREE.Mesh(geometry,material);
-    shaft.name='hronal_authored_platform_pillar_'+id;
-    shaft.userData.devRuinFootprintIgnore=true;
-    const profile=crackSurfaceProfile(shaft),cracks=[];
-    if(profile)for(let stage=1;stage<=3;stage++)cracks.push(crackRibbon(shaft,profile,stage,hashPillar(id))); // The same staged, four-sided glowing cracks as exploding room pillars.
-    return {shaft,cracks};
+  function addPillarCracks(shaft, profile, salt) {
+    return [1, 2, 3].map(stage => crackRibbon(shaft, profile, stage, salt));
   }
-  function makeBoxExplodingPillar(kit,x,z,y,height,id,summoned=false,boss=null,options={}) {
-    const group=new THREE.Group();
-    group.position.set(x,y,z);group.name='hronal_exploding_pillar';
-    const authored=options.external===true?platformPillarVisual(kit,height,id):null; // Platforms share the original V50 silhouette; boss summons retain their authored combat geometry.
-    const shaft=authored?.shaft||new THREE.Mesh(new THREE.BoxGeometry(.62,height,.62),kit.makeBasic(0x65554b));
-    shaft.position.y=authored?0:height/2;group.add(shaft);
-    const cracks=authored?.cracks||[];
-    if(!authored)for(let face=0;face<4;face++) {
-      const crack=new THREE.Mesh(new THREE.PlaneGeometry(.045,height*.68),
-        new THREE.MeshBasicMaterial({color:0xff8a21,transparent:true,opacity:.14,depthWrite:false,side:THREE.DoubleSide}));
-      crack.position.set(0,height*.5,.319);crack.rotation.y=face*Math.PI/2;
-      crack.position.applyAxisAngle(new THREE.Vector3(0,1,0),face*Math.PI/2);
-      group.add(crack);cracks.push(crack);
+  function showPillarCracks(pillar) {
+    const stageCount = Math.max(1, pillar.pulses); // Keep the first fissure visible before the warning starts.
+    for (const crack of pillar.cracks) {
+      crack.visible = crack.userData.ruinCrackStage <= stageCount;
+      crack.material.opacity = crack.visible ? Math.min(.96, .48 + pillar.pulses * .16) : 0;
     }
+  }
+  let squarePillarParts = null; // Shared authored recipe for spawned traps, warmed by the first Hronal ruin or arena.
+  function loadSquarePillar() {
+    if (squarePillarParts) return;
+    return window.RuinShaftSupportPillars?.loadSquarePillar?.()?.then(source => {
+      if (source?.parts?.some(part => part.id === 'pillar_square_shaft')) squarePillarParts = source.parts;
+    }); // The structural shaft already owns the cached asset request and can retry failed loads.
+  }
+  function buildDecoyVisual(kit, height, salt) {
+    const visual = new THREE.Group(); // Normalize the complete decoy, including the plinth, collar and capital.
+    const furniture = window.ProceduralFurniture;
+    let shaft;
+    if (squarePillarParts && furniture?.buildPartMesh) {
+      for (const part of squarePillarParts) {
+        const mesh = furniture.buildPartMesh({ ...part, materialLighting:'unlit' }, 0x7b7466);
+        window.RuinShaftSupportPillars.stretchStoneFaces(mesh);
+        mesh.userData.devRuinFootprintIgnore = true; // The hazard record is the sole gameplay blocker.
+        visual.add(mesh);
+        if (part.id === 'pillar_square_shaft') shaft = mesh;
+      }
+      const bounds = new THREE.Box3().setFromObject(visual);
+      const size = bounds.getSize(new THREE.Vector3()); // Stay inside the existing hazard footprint and vertical clearance.
+      const center = bounds.getCenter(new THREE.Vector3());
+      visual.scale.set(.62 / size.x, height / size.y, .62 / size.z);
+      visual.position.set(-center.x * visual.scale.x, -bounds.min.y * visual.scale.y, -center.z * visual.scale.z);
+      visual.userData.authoredDecoyPillar = true;
+    } else {
+      const geometry = new THREE.CylinderGeometry(.39, .44, height, 4); // Cracked tapered stone stays readable while the full model loads.
+      geometry.rotateY(Math.PI / 4);
+      geometry.translate(0, height / 2, 0);
+      shaft = new THREE.Mesh(geometry, furniture?.makePartMaterial?.({
+        materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63',
+      }) || kit.makeBasic(0x726d63));
+      window.RuinShaftSupportPillars?.stretchStoneFaces?.(shaft);
+      shaft.userData.devRuinFootprintIgnore = true;
+      visual.add(shaft);
+    }
+    const profile = crackSurfaceProfile(shaft); // Native and spawned traps use the same surface-following warning art.
+    return {visual, cracks:profile ? addPillarCracks(shaft, profile, salt) : []};
+  }
+  function disposePillarVisual(visual) {
+    visual.traverse(node => {
+      if (!node.isMesh) return;
+      node.geometry?.dispose?.();
+      node.material?.dispose?.();
+    }); // Spawned parts own their geometry/materials. The furniture cache owns their shared texture.
+  }
+  function makeExplodingPillar(kit,x,z,y,height,id,{boss=null,external=false}={}) {
+    const summoned = !!boss;
+    const group = new THREE.Group();
+    group.position.set(x,y,z);group.name='hronal_exploding_pillar';
+    const salt = hashPillar(id); // Each pillar keeps the same crack pattern through the asset load.
+    const {visual, cracks} = buildDecoyVisual(kit, height, salt);
+    group.add(visual);
     group.scale.y=summoned?.001:1; // Group pivot stays at ground level so only the height rises visibly.
     world.group.add(group);
     const tag=summoned?'lich-theme-boss-'+id:'lich-theme-pillars'; // Separate tag allows single boss-pillar collision cleanup.
-    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena,external:options.external===true}; // Only generated ruins own DevRandomRuinTileOccupancy registration; shaft-platform pillars (external) are non-colliding and height-gated.
+    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena,external}; // Only generated ruins own DevRandomRuinTileOccupancy registration; shaft-platform pillars (external) are non-colliding and height-gated.
     world.pillars.push(pillar);
     if(!pillar.arena&&!pillar.external)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
       {cx:x,cz:z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent'&&pillar.phase!=='emerging',tag); // Fixed footprint; the arena instead uses a live AreaFootprintBlockers provider.
+    if (!visual.userData.authoredDecoyPillar) loadSquarePillar()?.then(() => {
+      if (!squarePillarParts || !window.ProceduralFurniture?.buildPartMesh || !group.parent?.parent || pillar.phase === 'spent') return;
+      const authored = buildDecoyVisual(kit, height, salt); // Keep the existing rise, collision and charge state during the art swap.
+      group.remove(visual);
+      disposePillarVisual(visual);
+      group.add(authored.visual);
+      pillar.cracks = authored.cracks;
+      showPillarCracks(pillar);
+    });
     return pillar;
   }
   // A shaft jump platform's pillar (js/ruin-jump-shaft.js): same charge/pulse/blast
@@ -636,7 +656,7 @@
   // share its X/Z).
   function addPlatformPillar({x,z,y,height=2.4,id='platform'}={}) {
     if(world?.theme!=='hronal'||!Number.isFinite(x)||!Number.isFinite(z)||!Number.isFinite(y))return null;
-    return makeBoxExplodingPillar(world.kit,x,z,y,height,'jump-'+id,false,null,{external:true});
+    return makeExplodingPillar(world.kit,x,z,y,height,'jump-'+id,{external:true});
   }
   function clearArenaBossPillars() {
     if(!arenaWorld)return;
@@ -715,7 +735,7 @@
       if(!clearAt(px,pz,ground)||world.pillars.some(p=>p.phase!=='spent'&&Math.hypot(p.x-px,p.z-pz)<1.2))continue;
       const height=Math.min(4.4,world.ceilingY-ground);
       if(height<1.7)continue;
-      makeBoxExplodingPillar(world.kit,px,pz,ground,height,'boss-'+sequence+'-'+k,true,boss);
+      makeExplodingPillar(world.kit,px,pz,ground,height,'boss-'+sequence+'-'+k,{boss});
       window.DevRandomRuinTileOccupancy?.refresh?.();lastEvent='hronal:azgarlu-pillar-rising';
       return 1;
     }
@@ -724,11 +744,7 @@
   function releaseBossPillar(pillar) {
     if(!pillar.arena)window.DevRandomRuinTileOccupancy?.clearSolids?.(pillar.tag); // Arena summons never touch the generated-ruin collision registry.
     pillar.group.parent?.remove?.(pillar.group);
-    pillar.group.traverse?.(node=>{
-      if(!node.isMesh)return;
-      node.geometry?.dispose?.();
-      for(const material of Array.isArray(node.material)?node.material:[node.material])material?.dispose?.();
-    }); // Per-summon meshes own their materials and do not survive combat.
+    disposePillarVisual(pillar.group);
   }
   function makePillars(kit) {
     const mixedRooms = findMixedPillarRooms(world.context); // Hollow-target rooms reuse their original non-target square support meshes.
@@ -736,7 +752,7 @@
       const mixed = mixedRooms.get(room.id); // Only exact authored square-pillar geometry qualifies in a room with real niche targets.
       if (mixed?.targets.length) {
         if (mixed.supports.length) convertMixedRoomDecoys(kit,room,mixed);
-        continue; // A room made entirely of real target housings must never gain an extra false generic box pillar.
+        continue; // A room made entirely of real target housings must never gain an extra decoy trap.
       }
       if (room.index % 2 !== 0) continue; // Other Hronal rooms retain the earlier supplemental corner hazard.
       const b = room.bounds;
@@ -748,7 +764,7 @@
       if (!point) continue;
       const y = floorY(kit, point.x, point.z), height = world.ceilingY - y;
       if (height < 1.7) continue;
-      makeBoxExplodingPillar(kit,point.x,point.z,y,height,'hronal-pillar-'+room.id); // Both ambient and summoned versions reuse one fixed-footprint recipe.
+      makeExplodingPillar(kit,point.x,point.z,y,height,'hronal-pillar-'+room.id);
     }
   }
   function playerFeetY(kit) {
@@ -781,16 +797,7 @@
         const gain = [.25, 1, 1.5][pillar.pulses]; // Author's exact three pulse gains.
         playRockPulse(gain);
         pillar.pulses++;
-        for (const crack of pillar.cracks) {
-          const stage = crack.userData?.ruinCrackStage; // Native square pillars reveal more glowing fracture branches each second.
-          if (stage) {
-            crack.visible = stage <= pillar.pulses;
-            crack.material.opacity = stage <= pillar.pulses ? Math.min(.96,.48 + pillar.pulses*.16) : 0;
-          } else {
-            crack.material.opacity = .14 + pillar.pulses * .25;
-            crack.scale.x = 1 + pillar.pulses * 1.5;
-          }
-        }
+        showPillarCracks(pillar);
         if (pillar.light) pillar.light.strength = .34 + pillar.pulses * .20;
         lastEvent = 'hronal:pulse-' + pillar.pulses;
       }
@@ -1307,7 +1314,7 @@
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
     kit.group().add(world.group);
     makeRoomLights(kit);
-    if (world.theme === 'hronal') { makePillars(kit); window.DevRandomRuinTileOccupancy?.refresh?.(); }
+    if (world.theme === 'hronal') { loadSquarePillar(); makePillars(kit); window.DevRandomRuinTileOccupancy?.refresh?.(); }
     if (world.theme === 'tothal') { makeIce(kit); makeIcicles(kit); preloadRockImpact(); }
     if (world.theme === 'kanthic') makePlasm(kit);
     lastEvent = 'generated:'+world.theme;
@@ -1388,7 +1395,7 @@
       plasmCapacity:world.rooms.reduce((n,r)=>n+(r.plasmCap||0),0),
       plasmCulled:world.rooms.reduce((n,r)=>n+(r.plasmCulls||0),0),
       plasmCleansed:world.rooms.reduce((n,r)=>n+(r.plasmCleansed||0),0),
-      plasmGrowthMs:0, plasmStatic:true, latestChange:'Static, checkpoint-safe seeded plasm; no automatic growth, lantern erasure or geometry rebuilds.',
+      plasmGrowthMs:0, plasmStatic:true, latestChange:'Hronal traps share the authored cracked decoy pillar, including Azgarlu summons and shaft platforms.',
       sinking:world.sink,lastEvent,
     } : {active:false,lastEvent};
   }
