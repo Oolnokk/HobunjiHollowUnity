@@ -49,9 +49,23 @@
     // Each surviving pair defines a single forbidden angular arc. Collect
     // them once; if the requested heading is already clear, no acos or arc
     // subtraction is needed.
+    const prefix=scratch.ownerSorted&&owners.length>=16?(scratch.ownerTopPrefix||=[]):null; // Reused broad-phase upper bounds for sorted owner slabs.
+    if(prefix){
+      prefix.length=owners.length;
+      let top=-Infinity;
+      for(let i=0;i<owners.length;i++)prefix[i]=top=Math.max(top,owners[i].y1);
+    }
     for(const p of pets) {
       const x=c*p.x+s*p.z,z=-s*p.x+c*p.z;
-      for(const o of owners) {
+      let start=0;
+      if(prefix){
+        let end=owners.length;
+        // Every preceding slab ends below this pet; preserve pair order and the exact clearance comparison.
+        while(start<end){const mid=(start+end)>>>1;if(p.y0>prefix[mid]+CLEARANCE)start=mid+1;else end=mid;}
+      }
+      for(let i=start;i<owners.length;i++) {
+        const o=owners[i];
+        scratch.ownerVisits=(scratch.ownerVisits||0)+1; // Actual broad-phase work, including rejected pairs.
         if(scratch.ownerSorted && o.y0>p.y1+CLEARANCE)break;
         const r=pairRadius(o,p);if(!r)continue;
         pairs.push(o,p,r);
@@ -351,7 +365,7 @@
     }
 
     function finishSolve(d,started) { // Hoisted: shared by every solve exit without a per-frame closure.
-      d.cacheHit=d.preparations===0;d.envelopePairs=scratch.pairTests;d.poseMs=Math.max(0,clock()-started-d.buildMs);
+      d.cacheHit=d.preparations===0;d.envelopePairs=scratch.pairTests;d.ownerPatchVisits=scratch.ownerVisits;d.poseMs=Math.max(0,clock()-started-d.buildMs);
       // Do not keep the last unequipped/disposed avatar alive through scratch references.
       ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=scratch.pairs.length=0;
       seenMeshes.clear();seenBones.clear();
@@ -365,7 +379,7 @@
       d.mode='geometry-unavailable';d.quality='live-bone-envelopes';d.checks=0;d.buildChecks=0;d.buildMs=0; // Direct writes: no per-frame literal.
       d.preparations=0;d.weightRefreshes=0;d.envelopePairs=0;d.headCandidates=0;d.ownerPatches=0;d.petPatches=0;d.cacheHit=true;
       d.requestedBodyYawDeg=requested/DEG;d.resolvedBodyYawDeg=requested/DEG;d.bodyOffsetDeg=0;d.requestedHeadYawDeg=head;d.headYawDeg=head;
-      scratch.pairTests=0;
+      scratch.pairTests=0;scratch.ownerVisits=0;
       if(!group?.isObject3D || !avatar.frontPlane || !grip || !scale || !perch || !args.ownerMeshes?.length)return finishSolve(d,started);
       ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=0;seenMeshes.clear();seenBones.clear();
       for(const mesh of args.ownerMeshes) {
