@@ -965,6 +965,7 @@
     const modelWidth = Number(options.modelWidth) || 0.9;
     const modelHeight = Number(options.modelHeight) || modelWidth;
     const fixedPosterior=Number.isFinite(options.posteriorYOverride); // Keep instance anatomy fixed even if a shared species-scale refresh runs later.
+    const stanceDropMax=Number.isFinite(options.stanceDropMax)?Math.max(0,options.stanceDropMax):Infinity; // Instance-specific clearance prevents short exposed bodies sinking into terrain.
     const gaitReachLimit=Number.isFinite(options.gaitReachLimit)&&options.gaitReachLimit>0?options.gaitReachLimit:Infinity; // Optional short-legged gait cap, cached for the existing solver.
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
     const footHeightFraction = Number(c.footHeightFraction) || 0.11;
@@ -1325,7 +1326,7 @@
     // feet are lifted toward them: applyLegChain's fixed-length fold then bends the knees instead of shortening the legs. Raising
     // the group (rather than counter-moving it at render time) keeps everything skinned to these joints, i.e. the pants, in the same frame.
     function applyStanceDrop(drop) {
-      const clamped = Math.max(0, Math.min(drop, standingLegLength() * state.stanceDropLimitFraction)); // Normal stances cap at 55%; an explicit paired kneel may bend deeper.
+      const clamped = Math.max(0, Math.min(drop, stanceDropMax, standingLegLength() * state.stanceDropLimitFraction)); // Normal stances cap at 55%; an explicit paired kneel may bend deeper.
       if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(root.position.y - clamped) < 1e-6) return;
       state.stanceDrop = clamped;
       root.position.y = clamped;
@@ -1872,7 +1873,7 @@
       const stanceDropAllowed = !suppressed && !state.hoverEnabled && !motion?.airborne; // Mounts, hover and falls own the whole-body pose.
       state.stanceDropAllowed = stanceDropAllowed;
       if (motion?.lunging || !stanceDropAllowed) { if (legChains.left.hip.rotation.y || legChains.right.hip.rotation.y) syncHipYaw(); }
-      const wantedDrop = stanceDropAllowed ? state.stanceDropTarget : 0;
+      const wantedDrop = stanceDropAllowed ? Math.min(state.stanceDropTarget,stanceDropMax) : 0;
       if (wantedDrop > 0 || state.stanceDrop > 0) {
         const eased = damp(state.stanceDrop, wantedDrop, wantedDrop > state.stanceDrop ? 12 : 9, dt);
         applyStanceDrop(wantedDrop === 0 && eased < modelHeight * 0.0005 ? 0 : eased); // Snaps the last sliver home so the standing pose is restored exactly.
@@ -2005,7 +2006,7 @@
       return {
         lastChange: 'Scaled sole envelopes drive grounded ankle height; pants depth push cannot sink a grounded shoe below its floor',
         motionMode: state.motionMode,
-        instancePosteriorFixed: fixedPosterior, gaitReachLimit: Number.isFinite(gaitReachLimit)?gaitReachLimit:null, // Mobile diagnostics for short-legged actors.
+        instancePosteriorFixed: fixedPosterior, gaitReachLimit: Number.isFinite(gaitReachLimit)?gaitReachLimit:null, stanceDropMax: Number.isFinite(stanceDropMax)?stanceDropMax:null, // Mobile diagnostics for short-legged actors.
         footOrientation: {
           rootYawDeg: root.rotation.y * 180 / Math.PI,
           leftHipYawDeg: legChains.left.hip.rotation.y * 180 / Math.PI,

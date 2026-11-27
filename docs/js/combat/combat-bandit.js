@@ -705,7 +705,7 @@
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
-      ...(rootLegLayout?{posteriorYOverride:rootPosteriorY,gaitReachLimit:modelHeight*rootLegLayout.gaitReach,legLengthRatioOverride:1}:{}), // Keep the real hip at center and limit stride to short exposed legs.
+      ...(rootLegLayout?{posteriorYOverride:rootPosteriorY,gaitReachLimit:modelHeight*rootLegLayout.gaitReach,stanceDropMax:modelHeight*rootLegLayout.gap*.8,legLengthRatioOverride:1}:{}), // Keep the real hip at center and limit stride to short exposed legs.
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
       spine: spine || undefined, // Wider stance and stride for a hunched enemy.
       portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, splineNodes: frontNeckSkin.splineNodes, neckLocal: frontNeckSkin.neckLocal } : undefined, // "Show bones" also draws the portrait's spine and neck.
@@ -3165,7 +3165,7 @@
     const ref = c?.avatarRef;
     const sink = window.ActorBodySink;
     if (!sink?.enabled() || !ref?.legs || !ref.frontPlane || !ref.handsPivot || ref.riderMount) return 0; // Mounted riders and legless bodies keep standing.
-    ref.bodySinkActor ||= { legs: ref.legs, lower: [{ obj: ref.frontPlane }, { obj: ref.backPlane }, { obj: ref.handsPivot }] }; // All children of the group the legs also live under.
+    ref.bodySinkActor ||= { legs: ref.legs, lower: [{ obj: ref.frontPlane }, { obj: ref.backPlane }, { obj: ref.handsPivot }, { obj: ref.legsPivot }] }; // The leg handle raises its root by the sink; lower its parent too so soles remain planted and hips track the portrait.
     const standing = (Number(c.health) || 0) > 0 && !c.prone;
     let pct = 0;
     if (standing) pct = Number.isFinite(sampled.bodySink) ? sampled.bodySink : (c._enemyPreparedPose ? window.SharedAttackPose.idleBodySinkPct() : 0); // Legacy arcs author no sink: only a stance weapon rests at the idle sink.
