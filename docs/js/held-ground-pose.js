@@ -131,18 +131,14 @@
     }
     return Number.isFinite(floor) ? floor : null;
   }
-  // Integrate equal strain over disjoint intervals. Subtract the grip's
-  // displacement so it remains a fixed point even inside a compressible span.
-  function contractedZ(z, gripZ, segments, amount, columnX = null) {
+  // Each longitudinal band has one displacement across the sprite's full width.
+  // Subtract the grip displacement to keep its source-space anchor fixed.
+  function contractedZ(z, gripZ, segments, amount) {
     if (!amount) return z;
     let delta = 0;
     for (const v of segments) {
       const span = v.b-v.a;
-      // Outside a bounded band the protruding head stays rigid, following the
-      // headward end rather than being compressed along with the wooden haft.
-      const outside=columnX!=null&&v.x0!=null&&(columnX<v.x0||columnX>v.x1);
-      const sample=outside?(gripZ<=(v.a+v.b)/2?v.b:v.a):z;
-      delta += Math.max(0,Math.min(span,sample-v.a))-Math.max(0,Math.min(span,gripZ-v.a));
+      delta += Math.max(0,Math.min(span,z-v.a))-Math.max(0,Math.min(span,gripZ-v.a));
     }
     return z-amount*delta;
   }
@@ -215,11 +211,6 @@
     for(let i=rows.length-1;i>0;i--)if(Math.abs(rows[i]-rows[i-1])<1e-7)rows.splice(i,1);
     return rows;
   }
-  function columnCuts(box,segments) {
-    const cuts=[box.min.x,box.max.x];
-    for(const v of segments)for(const x of [v.x0,v.x1])if(x>box.min.x&&x<box.max.x)cuts.push(x);
-    return [...new Set(cuts)].sort((a,b)=>a-b);
-  }
   function convexHull(points) {
     if(points.length<2)return points;
     const sorted=points.sort((a,b)=>a.x-b.x||a.z-b.z);
@@ -228,28 +219,20 @@
     return half(sorted).concat(half(sorted.slice().reverse()));
   }
   function tracePixels(rgba,w,h,box,segments) {
-    // Each column's alpha hull is clipped at the exact authored horizontal
-    // cuts; split hull edges at longitudinal cuts before transforming.
-    const cuts=columnCuts(box,segments),result=[];
+    const points=[]; // Opaque row extremes bound the alpha silhouette.
     const dx=(box.max.x-box.min.x)/w,dz=(box.max.y-box.min.y)/h;
-    for(let c=0;c<cuts.length-1;c++){
-      const left=cuts[c],right=cuts[c+1],columnX=(left+right)/2,points=[];
-      const start=Math.max(0,Math.floor((left-box.min.x)/dx)),end=Math.min(w,Math.ceil((right-box.min.x)/dx));
-      for(let y=0;y<h;y++){
-        let lo=end,hi=-1;
-        for(let x=start;x<end;x++)if(rgba[(y*w+x)*4+3]>=21){lo=Math.min(lo,x);hi=x;}
-        if(hi<lo)continue;
-        const x0=Math.max(left,box.min.x+lo*dx),x1=Math.min(right,box.min.x+(hi+1)*dx);
-        if(x1<=x0)continue;
-        const z0=-box.max.y+y*dz,z1=z0+dz;
-        points.push({x:x0,z:z0},{x:x1,z:z0},{x:x0,z:z1},{x:x1,z:z1});
-      }
-      if(!points.length)continue;
-      const hull=convexHull(points),vertices=[];
-      contactVertices(box,hull,segments,vertices);
-      for(const p of vertices)result.push({...p,columnX});
+    for(let y=0;y<h;y++){
+      let lo=w,hi=-1;
+      for(let x=0;x<w;x++)if(rgba[(y*w+x)*4+3]>=21){lo=Math.min(lo,x);hi=x;}
+      if(hi<lo)continue;
+      const x0=box.min.x+lo*dx,x1=box.min.x+(hi+1)*dx;
+      const z0=-box.max.y+y*dz,z1=z0+dz;
+      points.push({x:x0,z:z0},{x:x1,z:z0},{x:x0,z:z1},{x:x1,z:z1});
     }
-    return result;
+    if(!points.length)return points;
+    const vertices=[]; // Split the alpha hull where the longitudinal strain changes.
+    contactVertices(box,convexHull(points),segments,vertices);
+    return vertices;
   }
   function autoContact(image,box,segments) {
     if(!image||!(image.naturalWidth||image.width)||!(image.naturalHeight||image.height))return null;
@@ -276,18 +259,17 @@
     if(active?.plane===plane&&active.source===source&&active.amount===amount&&active.gripZ===gripZ&&active.segments===segments){
       active.holder=holder;active.rootScale=rootScale;plane.geometry=active.geometry;return;
     }
-    const cuts=columnCuts(box,segments); // Independent strips duplicate the seam vertices so a rigid beard is never sheared.
-    const signature=rows.join(',')+'|'+cuts.join(',');
+    const signature=rows.join(','); // Adjacent bands share vertices at each row.
     if(!active||active.plane!==plane||active.source!==source||active.signature!==signature) {
       restoreGeometry();
-      const geometry=new T.BufferGeometry(),count=(cuts.length-1)*rows.length*2;
+      const geometry=new T.BufferGeometry(),count=rows.length*2;
       geometry.parameters={...source.parameters}; // Preserve canonical source width for flail pixel anchors and rope scale.
       geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
       geometry.setAttribute('uv',new T.BufferAttribute(new Float32Array(count*2),2));
       geometry.setAttribute('normal',new T.BufferAttribute(Float32Array.from({length:count*3},(_,i)=>i%3===2?1:0),3));
       const indices=[];
-      for(let c=0;c<cuts.length-1;c++)for(let i=0;i<rows.length-1;i++){
-        const a=(c*rows.length+i)*2;indices.push(a,a+2,a+1,a+2,a+3,a+1);
+      for(let i=0;i<rows.length-1;i++){
+        const a=i*2;indices.push(a,a+2,a+1,a+2,a+3,a+1);
       }
       geometry.setIndex(indices);
       active={plane,source,geometry,signature,amount:-1,gripZ:NaN,holder,rootScale,segments};
@@ -297,12 +279,10 @@
     if(active.amount!==amount||active.gripZ!==gripZ||!sameSegments) {
       const p=active.geometry.attributes.position,uv=active.geometry.attributes.uv;
       const height=box.max.y-box.min.y;
-      const width=box.max.x-box.min.x;
-      for(let c=0;c<cuts.length-1;c++)for(let i=0;i<rows.length;i++) {
-        const left=cuts[c],right=cuts[c+1],columnX=(left+right)/2;
-        const y=-contractedZ(-rows[i],gripZ,segments,amount,columnX),v=(rows[i]-box.min.y)/height,index=(c*rows.length+i)*2;
-        p.setXYZ(index,left,y,0);p.setXYZ(index+1,right,y,0);
-        uv.setXY(index,(left-box.min.x)/width,v);uv.setXY(index+1,(right-box.min.x)/width,v);
+      for(let i=0;i<rows.length;i++) {
+        const y=-contractedZ(-rows[i],gripZ,segments,amount),v=(rows[i]-box.min.y)/height,index=i*2;
+        p.setXYZ(index,box.min.x,y,0);p.setXYZ(index+1,box.max.x,y,0);
+        uv.setXY(index,0,v);uv.setXY(index+1,1,v);
       }
       p.needsUpdate=true;uv.needsUpdate=true;
       active.geometry.computeBoundingBox();active.geometry.computeBoundingSphere();
@@ -313,7 +293,7 @@
   function gripZFor(point,mesh) { return (point.z-mesh.position.z)/mesh.scale.z; }
   function adjustHaftPoint(plane,point) {
     // The rope anchor follows exactly the same strip deformation as the art.
-    if(enabled()&&active?.amount&&(active.plane===plane||borrowedCopies.has(plane)))point.y=-contractedZ(-point.y,active.gripZ,active.segments,active.amount,point.x);
+    if(enabled()&&active?.amount&&(active.plane===plane||borrowedCopies.has(plane)))point.y=-contractedZ(-point.y,active.gripZ,active.segments,active.amount);
     return point;
   }
   // The shortest permissible straight connector is tried first. If that
@@ -382,14 +362,14 @@
     let min=Infinity;
     const e=matrix.elements; // Actual X extent, including protruding heads.
     for(const p of vertices){
-      const y=-contractedZ(p.z,gripZ,segments,amount,p.columnX);
+      const y=-contractedZ(p.z,gripZ,segments,amount);
       min=Math.min(min,e[1]*p.x+e[5]*y+e[13]);
     }
     return min;
   }
   function bakeContact(vertices,segments,gripZ,amount) {
     // Keep source ordering for the lowest-point tie that picks the rotation axis.
-    const points=vertices.map(p=>({x:p.x,z:contractedZ(p.z,gripZ,segments,amount,p.columnX)}));
+    const points=vertices.map(p=>({x:p.x,z:contractedZ(p.z,gripZ,segments,amount)}));
     return {points,hull:convexHull(points.slice())};
   }
   function projectedContactY(hull,matrix) {
@@ -409,7 +389,7 @@
   }
   function suspendedReferenceY(matrix,spec,segments,gripZ,amount,lightScale){
     const e=matrix.elements,scale=Math.hypot(e[4],e[5],e[6]); // Actual Light stance long-axis scale, never the live attack scale.
-    const anchorY=e[1]*spec.x-e[5]*contractedZ(-spec.y,gripZ,segments,amount,spec.x)+e[13];
+    const anchorY=e[1]*spec.x-e[5]*contractedZ(-spec.y,gripZ,segments,amount)+e[13];
     return anchorY-scale*(spec.headDrop+Math.hypot(spec.spanX,spec.spanY*lightScale));
   }
   // Enchantment motes (combat/weapon-enchantment-vfx.js) are camera-facing sprites in one marked group parented to
@@ -540,11 +520,6 @@
       const max=1-profile.minSegmentScale;
       debug.lightOriginalMinY=referenceMin;
       if(referenceMin<target&&segments.length&&max>0){
-        // Minimum of affine contact heights is concave in shortening. Find
-        // the best safe amount even when another edge becomes the lowest.
-        let lo=0,hi=max;
-        for(let i=0;i<24;i++){const a=(2*lo+hi)/3,b=(lo+2*hi)/3;if(evaluate(a)<evaluate(b))lo=a;else hi=b;}
-        const peak=(lo+hi)/2;
         // A weapon that needs shortening at all is shortened to the full extent of its bands, decided once here:
         // the fit is retained, so the length never changes between frames or between ordinary and lifted poses.
         // (The live pose correction below handles whatever clearance the full length still lacks.)
@@ -556,7 +531,7 @@
       fit.lightOriginalMinY=referenceMin;fit.lightFittedMinY=debug.lightFittedMinY;
       if(suspension){
         const e=s.reference.elements,scale=Math.hypot(e[4],e[5],e[6]);
-        const anchorY=e[1]*suspension.x-e[5]*contractedZ(-suspension.y,gripZ,segments,amount,suspension.x)+e[13];
+        const anchorY=e[1]*suspension.x-e[5]*contractedZ(-suspension.y,gripZ,segments,amount)+e[13];
         fit.ropeScale=profile.ropeMinScale!=null?ropeFitCandidate(suspension.spanX,suspension.spanY,scale,anchorY-target-scale*suspension.headDrop,profile.ropeMinScale,lightScale):1;
       }
     }

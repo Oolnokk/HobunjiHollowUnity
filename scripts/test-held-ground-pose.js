@@ -47,15 +47,14 @@ assert.equal(rope(1,1,-1,2).length,1,'airborne rope never grows');
 
 const {tracePixels}=context.window.HeldGroundPose;
 const bounded=[{a:-1,b:0,x0:-.2,x1:.2}];
-close(contractedZ(-1,1,bounded,.5,0),-.5);
-close(contractedZ(-.5,1,bounded,.5,0),-.25);
-close(contractedZ(-.5,1,bounded,.5,.8),0);
-close(contractedZ(-1,1,bounded,.5,.8)-contractedZ(.5,1,bounded,.5,.8),-1.5);
+close(contractedZ(-1,1,bounded,.5),-.5);
+close(contractedZ(-.5,1,bounded,.5),-.25);
+close(contractedZ(.5,1,bounded,.5),.5);
 const rgba=new Uint8ClampedArray(4*4*4);
 for(const [x,y] of [[1,0],[1,1],[1,2],[2,0],[3,0],[1,3]])rgba[(y*4+x)*4+3]=255;
 const traced=tracePixels(rgba,4,4,{min:{x:-1,y:-1},max:{x:1,y:1}},bounded);
 assert.ok(traced.some(p=>p.x===1&&p.z===-1),'actual outer head pixel participates');
-assert.ok(traced.every(p=>Number.isFinite(p.columnX)),'contact carries exact deformation column');
+assert.ok(traced.some(p=>p.z===0),'alpha hull includes the shortening boundary');
 assert.ok(!traced.some(p=>p.x===1&&p.z===1),'transparent lower corner is excluded');
 console.log('bounded bands and alpha contact: ok');
 
@@ -73,7 +72,7 @@ for(const vertices of [traced, traced.slice(0,1), traced.slice(0,2)]){
         matrix.elements[1]=Math.cos(theta)*.7;
         matrix.elements[5]=Math.sin(theta)*1.3;
         const expected=Math.min(...vertices.map(p=>matrix.elements[1]*p.x
-          -matrix.elements[5]*contractedZ(p.z,grip,bounded,amount,p.columnX)+.35));
+          -matrix.elements[5]*contractedZ(p.z,grip,bounded,amount)+.35));
         assert.ok(Math.abs(projectedContactY(baked.hull,matrix)-expected)<1e-12);
       }
     }
@@ -160,7 +159,7 @@ if(THREE){
   const source=new THREE.PlaneGeometry(.5,2),plane=new THREE.Mesh(source,new THREE.MeshBasicMaterial());
   plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
   holder.position.y=.6;holder.rotation.x=Math.PI/2;parent.updateMatrixWorld(true);
-  const profile={a:-1,b:1,heightFraction:1,minSegmentScale:.5,segments:[{a:0,b:.9}],contactOutline:[]};
+  const profile={a:-1,b:1,heightFraction:1,minSegmentScale:.5,segments:[{a:0,b:.9,x0:-.1,x1:.1}],contactOutline:[]};
   const ctx={preview:true,rig:{parent},itemKey:'test',fitIdentity:'test',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile,allowFit:true,lightReference:holder.matrix.clone()};
   assert.equal(solver.needsFit(ctx,weapon),true);
   solver.constrainWeapon(holder,weapon,ctx);
@@ -168,6 +167,16 @@ if(THREE){
   assert.ok(result.finalMinY>=.035-1e-5,'lowest opaque contact clears floor');
   assert.ok(plane.geometry!==source,'actual displayed geometry is shortened');
   const fitted=plane.geometry;
+  const positions=fitted.attributes.position; // Inspect the actual geometry submitted for drawing.
+  assert.equal(positions.count,8,'each band boundary has only one shared row across the sprite');
+  for(let i=0;i<positions.count;i+=2){
+    close(positions.getX(i),-.25);
+    close(positions.getX(i+1),.25);
+    close(positions.getY(i),positions.getY(i+1));
+  }
+  const anchor=new THREE.Vector3(.2,-.9,0); // Outside the old horizontal band but on its shorten-able boundary.
+  solver.adjustHaftPoint(plane,anchor);
+  close(anchor.y,-.45);
   holder.position.y=1.5;holder.rotation.x=Math.PI/2;parent.updateMatrixWorld(true);
   delete ctx.lightReference;solver.constrainWeapon(holder,weapon,ctx);
   assert.equal(plane.geometry,fitted,'later frames retain physical length');
