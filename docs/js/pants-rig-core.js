@@ -112,7 +112,7 @@
   // Stretch the finished ankle-opening spans to match the November 14 mean-X/Y foot width.
   // The real five-point curves are bilinearly sampled from the mesh; their endpoint weights can
   // differ, so a raw (ratio - 1) multiplier does NOT produce the requested final opening width.
-  function stretchLegOpeningSpans(positions, segments, rings, splines, widthRatio = 1) {
+  function stretchLegOpeningSpans(positions, segments, rings, splines, widthRatio = 1, maxAbs = Infinity) {
     const absolute = widthRatio && typeof widthRatio === 'object'; // Runtime supplies independently measured X widths; old author exports may use a ratio.
     const factor = absolute ? 1 : Number(widthRatio);
     const stride = Number(segments) + 1; // Garment grid width, matching all skinning/debug-spline samples.
@@ -211,15 +211,22 @@
       }
     }
 
+    // Only a neutral refit uses this optional local envelope. Stage the result so
+    // a malformed cuff cannot partially overwrite a usable rest grid.
+    const bounded = Number.isFinite(maxAbs); // Runtime safety, not an animation-time vertex check.
+    const output = bounded ? positions.slice() : positions; // Temporary rest grid only on a real fit.
     for (let index = 0; index < stride * stride; index++) {
-      const i = index * 3, point = [positions[i], positions[i + 1], positions[i + 2]];
+      const i = index * 3, x = positions[i], y = positions[i + 1], z = positions[i + 2];
       for (let k = 0; k < axes.length; k++) {
         const axis = axes[k], weight = axis.influence[index] * gains[k];
         if (!(Math.abs(weight) > 1e-12)) continue;
-        const along = dot(difference(point, axis.center), axis.direction) * weight;
-        for (let c = 0; c < 3; c++) positions[i + c] += axis.direction[c] * along;
+        const d = axis.direction, c = axis.center;
+        const along = ((x - c[0]) * d[0] + (y - c[1]) * d[1] + (z - c[2]) * d[2]) * weight;
+        output[i] += d[0] * along; output[i + 1] += d[1] * along; output[i + 2] += d[2] * along;
       }
+      if (bounded && !(Math.abs(output[i]) <= maxAbs && Math.abs(output[i + 1]) <= maxAbs && Math.abs(output[i + 2]) <= maxAbs)) return false;
     }
+    if (bounded) positions.set ? positions.set(output) : output.forEach((value, i) => { positions[i] = value; });
     return true;
   }
 
@@ -231,12 +238,21 @@
     return top * (1 - sample.fy) + bottom * sample.fy;
   }
 
-  function fitWaistSpanX(positions, segments, samples, target, influence) {
+  function fitWaistSpanX(positions, segments, samples, target, influence, maxAbs = Infinity) {
     if (!samples || samples.length < 2 || !target || influence?.length !== positions.length / 3) return false;
     const xs = samples.map(sample => sampleGridX(positions, segments, sample)); // Actual sampled waist extremes, including mirrored portraits.
     const lo = Math.min(...xs), hi = Math.max(...xs);
     if (!(hi - lo > 1e-9) || !(target.right > target.left) || !Number.isFinite(target.left + target.right)) return false;
     const scale = (target.right - target.left) / (hi - lo); // Width only; Y and Z remain exactly as authored.
+    if (!Number.isFinite(scale)) return false;
+    // A tiny but nonzero source seam can amplify the entire upper grid. Check
+    // the exact fitted X values before touching any vertices; only runs on refit.
+    if (Number.isFinite(maxAbs)) {
+      for (let i = 0; i < influence.length; i++) {
+        const x = positions[i * 3];
+        if (!(Math.abs(x + (target.left + (x - lo) * scale - x) * influence[i]) <= maxAbs)) return false;
+      }
+    }
     for (let i = 0; i < influence.length; i++) {
       const x = positions[i * 3];
       positions[i * 3] = x + (target.left + (x - lo) * scale - x) * influence[i];

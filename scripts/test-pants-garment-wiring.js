@@ -257,7 +257,7 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
   const joints = () => ({
     hip: { x: 0, y: 0, z: 0 }, knee: { x: 0, y: 0, z: 0 }, ankle: { x: 0, y: 0, z: 0 },
   }); // Neutral joint positions used to prove signed cancellation.
-  const handle = { scratch: { frames: { left: frames(), right: frames() } } }; // Only dependency of the extracted live comparator.
+  const handle = { localPoseLimit: 8, scratch: { frames: { left: frames(), right: frames() } } }; // Only dependency of the extracted live comparator.
   const pose = { left: joints(), right: joints() }; // Two independently animated leg chains.
   const reader = new Function('handle', 'LEG_SIDES', 'LEG_JOINTS', 'BONE_NAMES',
     source.slice(begin, end) + '\nreturn { changed: poseChanged, commit() { lastPoseComponents.set(poseComponents); hasLastPose = true; } };')(
@@ -286,6 +286,15 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
   assert(!reader.changed(pose), 'rounding-scale world transform jitter does not trigger reskinning');
   pose.left.hip.x += 0.001;
   assert(reader.changed(pose), 'genuine further leg movement remains detectable');
+  pose.left.hip.x = 12000;
+  assert.strictEqual(reader.changed(pose), null, 'map-scale local coordinates must never reach skinning');
+  pose.left.hip.x = NaN;
+  assert.strictEqual(reader.changed(pose), null, 'nonfinite joint coordinates must never reach skinning');
+  pose.left.hip.x = 0.0001;
+  handle.scratch.frames.left.thigh[0] = Infinity;
+  assert.strictEqual(reader.changed(pose), null, 'nonfinite bone frames must never reach skinning');
+  handle.scratch.frames.left.thigh[0] = 0;
+  assert(!reader.changed(pose), 'the last committed pose survives rejected frames');
   console.log('Pants independent pose-change detection: PASS');
 }
 
