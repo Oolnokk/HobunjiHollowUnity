@@ -456,6 +456,13 @@
       result[key] = key.startsWith('flip') ? raw?.[key] === true
         : finite(raw?.[key], key.startsWith('scale') ? 1 : 0, key.startsWith('scale') ? 0.05 : -2400, key.startsWith('scale') ? 8 : 2400);
     }
+    if (raw?.headMountBySocket && typeof raw.headMountBySocket === 'object') {
+      result.headMountBySocket = {}; // Pair-only assignments indexed by the authored haft socket order.
+      for (const [index,id] of Object.entries(raw.headMountBySocket)) {
+        if (/^(0|[1-9][0-9]?)$/.test(index) && typeof id==='string' && /^[a-z][a-z0-9_-]{0,39}$/.test(id))
+          result.headMountBySocket[index]=id; // 'none' skips this socket; 'primary' selects the original line.
+      }
+    }
     if (typeof raw?.headMountId === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(raw.headMountId)) result.headMountId = raw.headMountId; // Explicit per-pair alternative; primary is an explicit reset.
     if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
     if (raw?.flailHeadAnchor && Number.isFinite(raw.flailHeadAnchor.x) && Number.isFinite(raw.flailHeadAnchor.y)) {
@@ -484,7 +491,7 @@
     return { type, start, end };
   }
   function cleanAlternativeMounts(raw) {
-    const result = [], ids = new Set(['primary']); // Stable IDs avoid silently retargeting pairs after deletion or reordering.
+    const result = [], ids = new Set(['primary','none']); // Stable IDs avoid silently retargeting pairs after deletion or reordering.
     for (const candidate of (Array.isArray(raw) ? raw : []).slice(0, 16)) {
       if (!candidate || typeof candidate.id !== 'string' || !/^[a-z][a-z0-9_-]{0,39}$/.test(candidate.id)
           || ids.has(candidate.id) || !['blade','weight'].includes(candidate.type)
@@ -496,10 +503,21 @@
     }
     return result;
   }
-  function effectiveHeadMount(shaft, head, values) {
-    const id = values ? values.headMountId : shaft?.overrides?.[headKeys.get(head)]?.headMountId; // Only an explicit pair choice activates an alternative.
-    if (!head || head.flailAssembly || shaft?.flailAssembly || head.mount?.type === 'flail' || !id || id === 'primary') return head?.mount;
-    return head.alternativeMounts?.find(mount => mount.id === id) || head.mount;
+  function effectiveHeadMount(shaft, head, values, socketIndex) {
+    const pair = values || (head && shaft?.overrides?.[headKeys.get(head)]) || {}; // Object-only callers use the catalog's exact pair.
+    if (!head || head.flailAssembly || shaft?.flailAssembly || head.mount?.type === 'flail') return head?.mount;
+    const id = pair.headMountBySocket?.[socketIndex] ?? pair.headMountId ?? 'primary'; // Explicit socket selection overrides the pair default.
+    if (id === 'none') return null;
+    return id === 'primary' ? head.mount : head.alternativeMounts?.find(mount => mount.id === id) || null;
+  }
+  function rigidMountAssignments(shaft, head, values) {
+    const assigned = []; // Single authority shared by forge checks, fit geometry and authoring diagnostics.
+    for (const [index,mount] of (shaft?.mounts || []).entries()) {
+      const source = effectiveHeadMount(shaft,head,values,index);
+      const required = source?.type === 'blade' ? 'tang' : source?.type === 'weight' ? 'eye' : '';
+      if (required && mount.type === required) assigned.push({index,mount,headMount:source});
+    }
+    return assigned; // Unselected secondary lines never participate in compatibility or geometry.
   }
   function duplicateTransform(raw) {
     return {
@@ -614,9 +632,7 @@
         * (Number(template?.flail?.chain?.scaleY ?? template?.flail?.chain?.scale) || 1);
       return [{ type: 'rope', start, end: { x: start.x, y: start.y + length }, authored: true }];
     }
-    const selected = effectiveHeadMount(shaft, head, values); // Never fall back to an alternative automatically, even on an incompatible shaft.
-    const kind = selected?.type === 'blade' ? 'tang' : selected?.type === 'weight' ? 'eye' : '';
-    return mounts.filter(mount => mount.type === kind); // Nonflail heads continue to use authored tang/eye fitting.
+    return rigidMountAssignments(shaft,head,values).map(entry=>mounts[entry.index]); // Keep the existing transformed-mount return shape.
   }
   function renderingMounts(shaft, head) {
     const compatible = matchingMounts(shaft, head); // Only same-kind arrows are valid for newly crafted combinations.
@@ -920,6 +936,9 @@
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
           shaft.overrides[head].disallow = pair.disallow;
         }
+        if (pair.headMountBySocket && !Object.hasOwn(raw.overrides?.[head] || {}, 'headMountBySocket')) {
+          (shaft.overrides[head] ||= {}).headMountBySocket = {...pair.headMountBySocket}; // Old drafts inherit shipped assignments.
+        }
         if (pair.headMountId && !Object.hasOwn(raw.overrides?.[head] || {}, 'headMountId')) {
           (shaft.overrides[head] ||= {}).headMountId = pair.headMountId; // Preserve shipped explicit pair choices in older drafts.
         }
@@ -939,7 +958,12 @@
     }
     for (const shaft of Object.values(next.shafts)) for (const [key,pair] of Object.entries(shaft.overrides || {})) {
       if (pair.headMountId && pair.headMountId !== 'primary' && !next.heads[key]?.alternativeMounts?.some(m=>m.id===pair.headMountId))
-        pair.headMountId = 'primary'; // Invalid or deleted alternatives cannot accidentally activate a different line.
+        pair.headMountId = 'primary'; // Invalid or deleted pair defaults cannot accidentally activate a different line.
+      for (const [index,id] of Object.entries(pair.headMountBySocket || {})) {
+        if (Number(index)>=shaft.mounts.length) delete pair.headMountBySocket[index];
+        else if (id!=='primary' && id!=='none' && !next.heads[key]?.alternativeMounts?.some(m=>m.id===id))
+          pair.headMountBySocket[index]='none'; // A deleted alternative does not silently install a different primitive.
+      }
     }
     next.donorBandPreset=DONOR_BAND_PRESET;
     next.recipes = cleanRecipes(Object.hasOwn(incoming, 'recipes') ? incoming.recipes : reference.recipes);
@@ -1039,12 +1063,12 @@
           worldMount:{type:'rope',start:rigPoint(shaft,mount.start),end:rigPoint(shaft,mount.end)}
         })) }; // The Tool Hub attachment replaces ANY modular-head mount, even for old flails without a rope line.
     }
-    const selectedHeadMount = effectiveHeadMount(shaft, head, values); // Same selected arrow for geometry and forge compatibility.
-    const required = selectedHeadMount?.type === 'blade' ? 'tang' : selectedHeadMount?.type === 'weight' ? 'eye' : '';
-    const compatible = (shaft?.mounts || []).map((mount, index) => ({ mount, index }))
-      .filter(entry => entry.mount.type === required);
-    const selected = compatible.length ? compatible : (shaft?.mounts || []).filter(mount => mount.type !== 'rope').slice(0, 1).map((mount, index) => ({ mount, index }));
-    const children = selected.map(({ mount, index }) => {
+    const compatible = rigidMountAssignments(shaft,head,values);
+    // Preserve the old saved-item fallback only for pairs without any explicit mount assignment.
+    const pair = values || shaft?.overrides?.[headKeys.get(head)] || {};
+    const selected = compatible.length || pair.headMountBySocket || (pair.headMountId && pair.headMountId!=='primary') ? compatible
+      : (shaft?.mounts || []).map((mount,index)=>({mount,index,headMount:head.mount})).filter(entry=>entry.mount.type!=='rope').slice(0,1);
+    const children = selected.map(({ mount, index, headMount: selectedHeadMount }) => {
       const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
       const regionMatrix=regionAffine(region); // Mount and fitted primitive are descendants of this local area.
       const localMatrix = headTransform(mount, values, selectedHeadMount); // Fit first; inherit region and overall rig parents afterward.
@@ -1052,7 +1076,7 @@
         kind: 'mount', index, type: mount.type, localMount: mount, regionId:region?.id||null, regionMatrix,
         worldMount: { type: mount.type, start: rigPoint(shaft,mount.start,region), end: rigPoint(shaft,mount.end,region) },
         children: [{
-          kind: 'primitive', source: 'head', localMatrix,
+          kind: 'primitive', source: 'head', headMountId: selectedHeadMount.id || 'primary', localMatrix,
           worldMatrix: multiplyAffine(multiplyAffine(parent,regionMatrix), localMatrix),
         }],
       };
@@ -1249,10 +1273,11 @@
   function effectiveAttackAnimation(shaftKey, headKey, source) {
     const animation = settings(shaftKey, headKey).animation; // Preserve authored pair choices for straight-mounted weapons.
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Resolve the physical mounting geometry for this assembled weapon.
-    if (animation !== 'thrust' || source?.animStyle !== 'sweep' || effectiveHeadMount(shaft,head)?.type !== 'blade'
+    if (animation !== 'thrust' || source?.animStyle !== 'sweep'
         || shaft?.flailAssembly || head?.flailAssembly) return animation;
     // A normally sweeping haft cannot thrust with a blade set across its length, regardless of the head donor's style.
     return matchingMounts(shaft, head).some(mount => {
+      if (mount.type!=='tang') return false; // A sleeve does not turn a mixed assembly into a sideways blade.
       const dx = mount.end.x - mount.start.x, dy = mount.end.y - mount.start.y; // Effective tang direction after authored rig adjustments.
       return Math.abs(dx) >= Math.abs(dy) * SIDE_TANG_SLOPE;
     }) ? 'sweep' : animation;
@@ -1318,7 +1343,7 @@
     if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
     if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, effectiveHeadMount,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, effectiveHeadMount, rigidMountAssignments,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanShorteningBands, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,

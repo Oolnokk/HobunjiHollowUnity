@@ -358,7 +358,7 @@
         const rig = api.attachmentRig(shaft, head, values); // Same scene tree as production: one parent rig with mount/primitive descendants.
         const matrices = rig.children.flatMap(mount => mount.children.map(child => child.worldMatrix)); // Include parent transform; do NOT fit heads to pre-scaled mounts twice.
         byId('debug').textContent = JSON.stringify({
-          shaft: shaftKey, head: headKey, kind: activeHeadMount(shaft,head,headKey).type, mounts: shaft.mounts,
+          shaft: shaftKey, head: headKey, kind: activeHeadMount(shaft,head,headKey)?.type, mounts: shaft.mounts,
           duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: api.shaftRigTransform(shaft),
           rigHierarchy: rig, localRegions: shaft.rigRegions||[], shaftArtTransform: api.shaftArtTransform(shaft),
           effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
@@ -380,7 +380,7 @@
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(shaftImage, 0, 0, 450, 1204);
         byId('debug').textContent = JSON.stringify({
-          shaft: shaftKey, head: headKey, incompatibility: 'No ' + (activeHeadMount(shaft,head,headKey).type === 'blade' ? 'tang' : 'eye') + ' mount on selected haft.',
+          shaft: shaftKey, head: headKey, incompatibility: 'No ' + (activeHeadMount(shaft,head,headKey)?.type === 'blade' ? 'tang' : 'eye') + ' mount on selected haft.',
           headArrow: activeHeadMount(shaft,head,headKey), haftMounts: shaft.mounts
         }, null, 2);
       }
@@ -540,15 +540,15 @@
   function syncElementList() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Current assembly inventory.
     const mounts = byId('assembly-mount-elements'), ops = byId('assembly-operation-elements');
-    const required = activeHeadMount(shaft,head,headKey).type === 'blade' ? 'tang' : 'eye'; // Rigid fallback when no dedicated suspension line exists.
     const flexible = !!(shaft.flailAssembly || head.flailAssembly);
-    const matchedType = flexible && shaft.mounts.some(m => m.type === 'rope') ? 'rope' : required; // Same priority as the runtime resolver.
+    const assignments = api.rigidMountAssignments(shaft,head,shaft.overrides[headKey] || {}); // Actual per-socket selected head lines.
+    const matched = new Map(assignments.map(entry=>[entry.index,entry.headMount]));
     const strokes = shaft.overrides[headKey]?.bridges?.strokes || []; // Saved operations before recipe expansion.
     mounts.replaceChildren(); ops.replaceChildren();
     for (const [index, mount] of shaft.mounts.entries()) {
-      const used = mount.type === matchedType;
+      const used = flexible ? mount.type==='rope' : matched.has(index);
       elementRow(mounts, 'Mount ' + (index + 1) + ': ' + (mount.type === 'eye' ? 'eye / sleeve' : mount.type === 'rope' ? 'rope / chain reach' : 'tang')
-        + (used ? (matchedType === 'rope' ? ' — drives connector reach' : ' — draws this head') : ' — not used by this head'), [
+        + (used ? (flexible ? ' — drives connector reach' : ' — draws '+(matched.get(index).id || 'primary')) : ' — not used by this head'), [
         ['Select line', () => { mountIndex = index; openWorkspace('mount-editor-workflow'); render();
           byId('socket').scrollIntoView({ block: 'nearest' }); }],
         ['Remove mount', () => {
@@ -557,7 +557,7 @@
           }
           if (!window.confirm('Remove mount ' + (index + 1) + ' from ' + shaft.label
             + '? This affects EVERY head on this haft, not just the current combination.')) return;
-          shaft.mounts.splice(index, 1); mountIndex = Math.min(index, shaft.mounts.length - 1); save();
+          removeShaftMount(shaft,index); mountIndex = Math.min(index, shaft.mounts.length - 1); save();
           byId('assembly-status').textContent = 'Mount removed from this haft. Use Undo to restore it.';
         }]
       ]);
@@ -574,8 +574,8 @@
       ops.appendChild(hint);
     }
     const placed = strokes.filter(op => op.recipe).length, total = recipeBoxCount(shaft); // Per-pair and per-haft cleanup scopes.
-    byId('assembly-summary').textContent = shaft.mounts.filter(m => m.type === matchedType).length
-      + (matchedType === 'rope' ? ' rope/chain reach mount(s)' : ' matching head primitive(s)') + ' · ' + strokes.length + ' saved operation(s), including '
+    byId('assembly-summary').textContent = (flexible ? shaft.mounts.filter(m=>m.type==='rope').length : assignments.length)
+      + (flexible ? ' rope/chain reach mount(s)' : ' matching head primitive(s)') + ' · ' + strokes.length + ' saved operation(s), including '
       + placed + ' recipe box(es) on this pair.';
     byId('assembly-clear-pair-recipes').disabled = placed === 0;
     byId('assembly-clear-haft-recipes').disabled = total === 0;
@@ -713,6 +713,27 @@
     headEdit.value=headMountEditId;
     pairMount.value=shaft.overrides[headKey]?.headMountId || 'primary';
     headEdit.disabled=pairMount.disabled=flexibleHead;
+    const socketControls=byId('pair-socket-mounts'); // Rebuilt from current pair, never shared across heads.
+    socketControls.replaceChildren();
+    if (!flexibleHead) shaft.mounts.forEach((mount,index)=>{
+      if(mount.type==='rope')return;
+      const label=document.createElement('label'), select=document.createElement('select');
+      label.textContent='Haft line '+(index+1)+' ('+(mount.type==='tang'?'tang':'sleeve')+') ';
+      const required=mount.type==='tang'?'blade':'weight';
+      select.add(new Option('Use pair default','auto'));
+      select.add(new Option('Do not attach here','none'));
+      for(const line of headLines().filter(line=>line.type===required)) select.add(new Option(labelFor(line),line.id || 'primary'));
+      const id=shaft.overrides[headKey]?.headMountBySocket?.[index]; // Keep invalid explicit assignment visible, never silently retarget.
+      if(id && !Array.from(select.options).some(option=>option.value===id)) select.add(new Option('Incompatible: '+id,id));
+      select.value=id || 'auto';
+      select.onchange=()=>{
+        const pair=chosenShaft().overrides[byId('head').value] ||= {};
+        const choices=pair.headMountBySocket ||= {};
+        if(select.value==='auto')delete choices[index];else choices[index]=select.value;
+        save();
+      };
+      label.appendChild(select);socketControls.appendChild(label);
+    });
     byId('head-mount-add-tang').disabled=byId('head-mount-add-sleeve').disabled=flexibleHead || headLines().length>=17;
     byId('head-mount-remove').disabled=flexibleHead || headMountEditId==='primary';
     byId('head-kind').value = selectedHeadLine().type;
@@ -744,7 +765,7 @@
       : shaftOwnsFlail()
         ? 'Hanging rigid head: adjust its cyan pair-only contact in section 02; leave its shared tang/eye mounting arrow unchanged.'
         : (head.mountNote || ''); // Authoring notes for shovel scoop, transverse hoe, and pick head.
-    const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : activeHeadMount(shaft,head,headKey).type === 'blade' ? 'tang' : 'eye';
+    const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : activeHeadMount(shaft,head,headKey)?.type === 'blade' ? 'tang' : 'eye';
     const blocked = api.isDisallowed(byId('shaft').value,headKey); // Real forge gate, not only the number of geometric mount matches.
     byId('part-readiness').textContent = shaft.flailAssembly && head.flailAssembly
       ? 'Not forgeable: both parts own a full rope. Keep a flail recipe on only one.'
@@ -1186,10 +1207,16 @@
   byId('head-mount-remove').onclick=()=>{
     if(headMountEditId==='primary')return;
     const id=headMountEditId, key=byId('head').value;
-    const affected=Object.values(data.shafts).filter(shaft=>shaft.overrides[key]?.headMountId===id);
+    const affected=Object.values(data.shafts).filter(shaft=>{
+      const pair=shaft.overrides[key];return pair?.headMountId===id || Object.values(pair?.headMountBySocket || {}).includes(id);
+    });
     if(affected.length && !window.confirm('Remove this line and reset '+affected.length+' pair(s) to their primary mount?'))return;
     chosenHead().alternativeMounts=(chosenHead().alternativeMounts || []).filter(line=>line.id!==id);
-    for(const shaft of affected)shaft.overrides[key].headMountId='primary'; // Never retarget another alternative.
+    for(const shaft of affected){
+      const pair=shaft.overrides[key];
+      if(pair.headMountId===id)pair.headMountId='primary';
+      for(const [index,choice] of Object.entries(pair.headMountBySocket || {}))if(choice===id)pair.headMountBySocket[index]='none';
+    } // Never retarget another alternative.
     headMountEditId='primary';save();
   };
   byId('pair-head-mount').onchange=()=>{
@@ -1207,9 +1234,19 @@
     shaft.mounts.push({ type: kind, start: origin, end: { x: origin.x, y: Math.max(0, origin.y - 80) } });
     mountIndex = shaft.mounts.length - 1; save();
   };
+  function removeShaftMount(shaft,index) {
+    shaft.mounts.splice(index,1);
+    for(const pair of Object.values(shaft.overrides || {}))if(pair.headMountBySocket){
+      const shifted={}; // Move later indexes with their authored socket when an earlier socket is removed.
+      for(const [key,id] of Object.entries(pair.headMountBySocket)){
+        const i=Number(key);if(i!==index)shifted[i>index?i-1:i]=id;
+      }
+      pair.headMountBySocket=shifted;
+    }
+  }
   byId('remove').onclick = () => {
     if (chosenShaft().mounts.length <= 1) return;
-    chosenShaft().mounts.splice(mountIndex, 1); mountIndex = 0; save();
+    removeShaftMount(chosenShaft(),mountIndex); mountIndex = 0; save();
   };
   byId('disallow').onchange = () => {
     const pair = chosenShaft().overrides[byId('head').value] ||= {}; // Explicit exclusion for this pair, beyond type gating.
@@ -1227,7 +1264,7 @@
   };
   byId('reset-pair').onclick = () => {
     const old = chosenShaft().overrides[byId('head').value] || {}; // Reset local transforms while keeping authored pair exclusion.
-    chosenShaft().overrides[byId('head').value] = { ...(typeof old.disallow === 'boolean' ? {disallow:old.disallow} : {}), headMountId:'primary' };
+    chosenShaft().overrides[byId('head').value] = { ...(typeof old.disallow === 'boolean' ? {disallow:old.disallow} : {}), headMountId:'primary', headMountBySocket:{} };
     save();
   };
   gesture('shaft-canvas'); gesture('head-canvas');
@@ -1725,7 +1762,7 @@
     for (const [shaftKey, shaft] of Object.entries(data.shafts)) {
       if (!audit.isMultiEndedSleeveHaft(shaft)) continue; // Only physically separated blade mounts, not eye+tang at a single joint.
       for (const [headKey, head] of Object.entries(data.heads)) {
-        if (activeHeadMount(shaft,head,headKey).type !== 'blade' || api.isDisallowed(shaftKey, headKey)) continue;
+        if (!api.rigidMountAssignments(shaft,head,shaft.overrides[headKey] || {}).some(entry=>entry.mount.type==='tang') || api.isDisallowed(shaftKey, headKey)) continue;
         const pair = shaft.overrides[headKey];
         if (pair?.bridges?.strokes?.some(op => op.recipe === name)
           || (skip && pair?.bridges?.strokes?.some(op => !op.recipe))) { skipped++; continue; }
