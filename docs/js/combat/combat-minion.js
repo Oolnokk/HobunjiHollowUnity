@@ -82,6 +82,111 @@
     return { name, appearance: { speciesId, gender, cosmetics: {} }, equippedCosmetics, appliedDyes, cosmeticSlots, metalArmorItems };
   }
 
+  const RUIN_AREA='map_i_dev_random_ruin'; // Scope to dungeon skeletons only.
+  const RUIN_HEALTH=Object.freeze({minion:1.5,wallCoffin:3}); // Spawn-time health multipliers.
+  const COFFIN_SHAPES=Object.freeze({harlyaoLongsword:'longsword',harlyaoBroadsword:'broadsword',warhammer:'warhammer'}); // Held-to-bound shape mapping.
+  const COFFIN_BASES=['burning','frostbitten','mirrored','livingFlame','stormwake','stonebind','soulweight','ancestralSight']; // NPC-supported Base magic.
+  const debug={portraits:0,spikes:0,fire:0,plasm:0,coffins:0,lastError:null}; // Mobile diagnostic counters.
+  let oilPromise; // Shared decoded oil art.
+  function report(error){debug.lastError=String(error?.message||error);window.__farmLog?.('[ruin skeleton] '+debug.lastError,'warn','combat');}
+  function loadOil(){
+    if(!oilPromise)oilPromise=new Promise((resolve,reject)=>{
+      const image=new Image(); // Authored plasm texture.
+      image.crossOrigin='anonymous';image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('Oil image failed'));
+      image.src='./assets/textures/dark_oil.png.png';
+    }).catch(error=>{oilPromise=null;throw error;});
+    return oilPromise;
+  }
+  function noise(x,y,seed){
+    let h=Math.imul(x+1,374761393)^Math.imul(y+1,668265263)^seed; // Deterministic portrait grain.
+    h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;
+  }
+  async function paintRuinPortraits(roster,canvases){
+    const theme=roster.ruinSkeletonTheme; // Spawn-only treatment.
+    if(!theme)return;
+    try{
+      const oil=theme==='kanthic'?await loadOil():null;
+      for(const canvas of canvases){
+        const w=canvas.width,h=canvas.height,ctx=canvas.getContext('2d'); // Actual sprite resolution.
+        const pixels=ctx.getImageData(0,0,w,h),data=pixels.data;
+        let mask,overlay;
+        if(oil){
+          const eligible=new Uint8Array(w*h); // Opaque non-black sprite pixels.
+          for(let p=0;p<eligible.length;p++){const i=p*4;eligible[p]=data[i+3]&&(data[i]||data[i+1]||data[i+2])?1:0;}
+          mask=window.ToolMetalRecolor?.buildOxidationMask?.(eligible,w,h,.56,{seed:roster.ruinSkeletonSeed,blotchCount:4});
+          if(!mask)throw new Error('Verdigris mask unavailable');
+          const hidden=document.createElement('canvas'); // Stretch-to-fit hidden oil source.
+          hidden.width=w;hidden.height=h;const hc=hidden.getContext('2d');hc.drawImage(oil,0,0,w,h);
+          overlay=hc.getImageData(0,0,w,h).data;
+        }
+        for(let p=0;p<w*h;p++){
+          const i=p*4; // RGBA byte offset.
+          if(!data[i+3]||!(data[i]||data[i+1]||data[i+2]))continue;
+          if(oil){if(!mask[p])continue;const a=overlay[i+3]/255;for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;}
+          else{
+            const x=p%w,y=Math.floor(p/w),seed=roster.ruinSkeletonSeed; // Fine and coarse stable texture.
+            const grain=noise(x,y,seed),broad=noise(Math.floor(x/4),Math.floor(y/4),seed);
+            if(theme==='hronal'){
+              const gray=(data[i]*.25+data[i+1]*.6+data[i+2]*.15)*(.16+broad*.18);
+              data[i]=Math.max(2,gray+grain*9);data[i+1]=Math.max(2,gray*.85+grain*4);data[i+2]=Math.max(2,gray*.75);
+            }else{
+              const sheen=.24+.31*broad+.16*grain;
+              data[i]=data[i]*(1-sheen)+183*sheen;data[i+1]=data[i+1]*(1-sheen)+224*sheen;data[i+2]=data[i+2]*(1-sheen)+249*sheen;
+            }
+          }
+        }
+        ctx.putImageData(pixels,0,0);debug.portraits++;
+      }
+    }catch(error){report(error);}
+  }
+  function attachRuinBackSpikes(THREE,back,roster,width,height){
+    const theme=roster.ruinSkeletonTheme; // Physical growth only for stone and ice.
+    if(theme!=='hronal'&&theme!=='tothal')return;
+    const build=window.IceStalagmiteCoverage?.build; // Real furniture stalagmite generator.
+    if(!build){report('Stalagmite generator unavailable');return;}
+    const source=new THREE.Group(),geometry=new THREE.BoxGeometry(width*.35,.02,height*.29),material=new THREE.MeshBasicMaterial({visible:false}); // Back-as-ground support.
+    const support=new THREE.Mesh(geometry,material);support.userData.authoredPartId='ruin-skeleton-back';source.add(support);
+    try{
+      const stone=theme==='hronal';
+      const layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
+        seed:roster.ruinSkeletonSeed,count:4,density:1,iceCluster:3,radius:width*.055,iceHeightMin:width*.12,iceHeightMax:width*.32,
+        iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:.95,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1});
+      if(!layer)return;
+      layer.name='ruin-skeleton-back-stalagmites';layer.rotation.x=Math.PI/2; // Furniture Y becomes rear-facing Z.
+      layer.position.set(0,-height*.08,.025);layer.traverse(node=>{if(node.isMesh)delete node.userData.bladedHazard;});
+      back.add(layer);debug.spikes++;
+    }catch(error){report(error);}finally{geometry.dispose();material.dispose();}
+  }
+  function trailMovement(c,x0,y0,x1,y1,mode,tile){
+    const theme=c?.ruinSkeletonTheme; // No trail work on ordinary enemies.
+    if(theme!=='kanthic'&&!(theme==='hronal'&&mode==='lunge'))return;
+    if(!(c.health>0)||!(tile>0)||![x0,y0,x1,y1].every(Number.isFinite)||window.DevRandomRuinLichThemes?.activeTheme?.()!==theme)return;
+    const distance=Math.hypot(x1-x0,y1-y0)/tile; // Swept movement in tiles.
+    if(distance<.0001)return;
+    const height=c.physicalFeetY??c.shaftSupportY??c.surfaceYOverride?.()??(c.avatarRef?.group?.position?.y-(c.halfHeight||0)); // Actual actor story.
+    if(!Number.isFinite(height))return;
+    const spacing=theme==='hronal'?.75:.45; // Distance-based cadence.
+    let remaining=Number.isFinite(c._ruinTrailRemaining)?c._ruinTrailRemaining:0,count=0;
+    while(remaining<=distance&&count++<8){
+      const t=remaining/distance,x=(x0+(x1-x0)*t)/tile,z=(y0+(y1-y0)*t)/tile;remaining+=spacing;
+      const tx=Math.floor(x),tz=Math.floor(z);
+      const support=window.DynamicSurfaces?.sampleSupport?.(theme==='kanthic'?tx+.5:x,theme==='kanthic'?tz+.5:z,{minY:height-1.2,maxY:height+.35,pad:.02});
+      const floor=Number(support?.y);if(!Number.isFinite(floor))continue;
+      if(theme==='hronal'){
+        if(window.PersistentGroundFire?.ignite?.({area:RUIN_AREA,x,z,y:floor,radius:.72,seconds:4,source:'ruin-skeleton-lunge'}))debug.fire++;
+      }else{
+        const key=tx+','+tz+','+Math.round(floor*10); // Chance only once per visited tile.
+        if(c._ruinDripTile===key)continue;c._ruinDripTile=key;
+        if(rng()<.35&&window.DevRandomRuinLichThemes?.createPlasmPatch?.([{x:tx,z:tz,y:floor}],{ttl:5,label:'skeleton-drip'}))debug.plasm++;
+      }
+    }
+    c._ruinTrailRemaining=Math.max(0,remaining-distance);
+  }
+  function emitRuinEnchantedHit(c,target,actualDamage,slotId){
+    if(!c?.ruinWallCoffin||!target||!(actualDamage>0)||!c.rosterRecord?.enchantedWeapon)return;
+    window.CombatAttackEvents?.hit?.(null,{attacker:c,target,weaponKey:c.def.weaponKey,slotId,attackCategory:slotId==='tap1'?'combo':slotId==='tap2'?'quickAttack':slotId==='hold2'?'defensiveHold':'offensiveHold',actualDamage});
+  }
+
   async function makeEntity(options = {}) {
     const combat = window.BanditCombat; // Shared humanoid combat implementation beneath the distinct Minion category.
     const resources = window.ResourceSystem; // Owns immutable Shambling Footing and effective Footing.
@@ -93,11 +198,18 @@
     const name = options.name || 'Minion'; // Display/roster name.
     const tier = Math.max(0, Math.round(Number(options.tier) || 0)); // Existing humanoid difficulty tier.
     const weaponShapes = Array.isArray(options.weaponShapePool) && options.weaponShapePool.length ? options.weaponShapePool : DEFAULT_WEAPON_SHAPES; // Validated again by BanditCombat.
-    const roster = options.roster || rollRoster(speciesId, name); // Separation point: bandit clothing generation never runs. A supplied roster re-creates a specific skeleton (a lich raising its fallen).
+    const candidate=speciesId==='harlyao-skeleton'&&options.zoneId===RUIN_AREA?(window.DevRandomRuin?.getRuntimeContext?.()?.theme||window.DevRandomRuinLichThemes?.activeTheme?.()):null; // Ruin theme.
+    const theme=['hronal','tothal','kanthic'].includes(candidate)?candidate:null;
+    const wallCoffin=!!theme&&options.extra?.wallCoffin!=null; // Includes index zero.
+    let roster=options.roster||rollRoster(speciesId,name);
+    if(theme){
+      roster={...roster,ruinSkeletonTheme:theme,ruinSkeletonSeed:roster.ruinSkeletonSeed??Math.floor(rng()*2147483647)};
+      if(wallCoffin)roster.enchantedWeapon=window.GhoulSpecialVariants?.rollEnchantedWeapon?.(rng,{singleBase:true,baseIds:COFFIN_BASES});
+    } // Separation point: bandit clothing generation never runs. A supplied roster re-creates a specific skeleton (a lich raising its fallen).
     const entity = await combat.makeEntity({
       ...baseConfig,
       speciesWeights: { [speciesId]: 1 },
-      weaponShapePool: [...weaponShapes],
+      weaponShapePool: wallCoffin?Object.keys(COFFIN_SHAPES):[...weaponShapes],
       weaponMetalKey: options.weaponMetalKey || 'nativeCopper',
       rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
     }, 'grunt', tier, Number(options.x) || 0, Number(options.y) || 0, {
@@ -110,9 +222,13 @@
       enemyClass: options.enemyClass || CLASS_ID,
       avatarRigScale: options.avatarRigScale || null, // Caller-authored puppet proportions travel through BanditCombat before collision sizes are computed.
       defOverride: { ...(options.defOverride || {}), rangedWeaponKey: null },
-      extra: { ...(options.extra || {}), enemyClass: options.enemyClass || CLASS_ID, isMinion: true },
+      extra: { ...(options.extra || {}), enemyClass: options.enemyClass || CLASS_ID, isMinion: true,...(theme?{ruinSkeletonTheme:theme,ruinWallCoffin:wallCoffin,ruinSkeletonHealthMultiplier:wallCoffin?RUIN_HEALTH.wallCoffin:RUIN_HEALTH.minion}:{}) },
     });
     if (!entity) return null;
+    if(wallCoffin){
+      if(entity.rosterRecord?.enchantedWeapon)entity.rosterRecord.enchantedWeapon.relicShape=COFFIN_SHAPES[entity.def?.weaponShapeKey];
+      debug.coffins++;window.__farmLog?.('[ruin skeleton] '+theme+' coffin: '+entity.maxHealth+' HP, '+(entity.rosterRecord?.enchantedWeapon?.enchantments?.base?.[0]||'missing enchantment'),'info','combat');
+    }
 
     const shamblingFraction = Number.isFinite(Number(options.shamblingFootingFraction)) ? Math.max(0, Math.min(1, Number(options.shamblingFootingFraction))) : SHAMBLING_FOOTING_FRACTION; // Custom puppet troops bypass Minion's Harlyao-only shamble.
     const shamblingAmount = (Number(entity.maxFooting) || 0) * shamblingFraction; // Reserve permanent footing only when the troop requests it.
@@ -159,6 +275,7 @@
     shamblingFootingFraction: SHAMBLING_FOOTING_FRACTION,
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
+    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
     makeEntity,
     makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });

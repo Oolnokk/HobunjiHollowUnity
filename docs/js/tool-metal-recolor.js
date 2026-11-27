@@ -1024,6 +1024,7 @@
   }
 
   window.ToolMetalRecolor = {
+    buildOxidationMask, // Shared irregular texture reveal mask.
     getRecoloredCanvas,
     clearCache,
     rgbToHsv,

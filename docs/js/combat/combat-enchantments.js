@@ -646,7 +646,7 @@
     const power = getEnchantmentPowerMultiplier(key);
     const target = event.target;
     if (!target || target.health <= 0 && !(event.actualDamage > 0)) return;
-    const baseIds = stateFor(key).base; // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
+    const baseIds = event.attacker?.ruinWallCoffin?(event.attacker.rosterRecord?.enchantedWeapon?.enchantments?.base||[]):stateFor(key).base; // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
     for (const id of baseIds) {
       const def = DEFINITIONS[id];
       if (def?.hitAffliction) applyRealmHitAffliction(event, def, power);
@@ -674,7 +674,7 @@
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
       if (baseIds.includes(id)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker });
     }
-    applyFlourish(event);
+    if(!event.attacker?.ruinWallCoffin)applyFlourish(event);
   }
 
   function onDefensive(event) {

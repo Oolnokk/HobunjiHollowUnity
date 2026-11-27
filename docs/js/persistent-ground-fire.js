@@ -129,6 +129,7 @@
         const nearby=deps?.getSplashEntities?.(area,patch.x*tile,patch.z*tile,patch.radius*tile)||[];
         for(const actor of nearby){
           if(!actor||Number(actor.health)<=0)continue;
+          if(patch.source==='ruin-skeleton-lunge'&&actor.ruinSkeletonTheme==='hronal')continue; // Charred skeletons ignore their trails.
           if(Math.hypot(Number(actor.x)/tile-patch.x,Number(actor.y)/tile-patch.z)>patch.radius)continue;
           if(ruin){
             const feetY=actor.physicalFeetY??(actor===player?ruin.getPlayerSupportY?.()

@@ -180,6 +180,7 @@
     const swept = deps.sweptMove(entity.x, entity.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const actualX = swept.x - entity.x, actualY = swept.y - entity.y; // Collision-accepted movement is the actual velocity, not the blocked requested vector.
     const stepPx = Math.hypot(actualX, actualY); // Actual traveled distance drives the existing creature footstep cadence.
+    if(entity.ruinSkeletonTheme==='kanthic')window.MinionCombat?.trailMovement?.(entity,entity.x,entity.y,swept.x,swept.y,'dodge',deps.TILE);
     entity.x = swept.x;
     entity.y = swept.y;
     entity.vx = travelDt > 0 ? actualX / travelDt : 0;

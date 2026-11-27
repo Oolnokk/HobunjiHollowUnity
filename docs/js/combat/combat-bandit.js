@@ -444,6 +444,7 @@
     characterBuildStatus.stage = 'back-portrait';
     if (roster.rootledoot) await window.Rootledoots.paintPortrait(backCanvas,true);
     else await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    if(roster.ruinSkeletonTheme)await window.MinionCombat?.paintRuinPortraits?.(roster,[frontCanvas,neutralFrontCanvas,combatFrownCanvas,backCanvas]);
     // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
     // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
     // The untouched renders below stay as the rig canvases, so head bones and weights still come from the real skull.
@@ -566,6 +567,7 @@
     frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
     group.add(frontPivot);
     group.add(backPivot);
+    if(roster.ruinSkeletonTheme)window.MinionCombat?.attachRuinBackSpikes?.(THREE,backPivot,roster,portraitPlaneW,portraitPlaneH);
     // Big hats: brim/crown pixels past the portrait square ride each plane's head bone (js/hat-overflow-plane.js).
     window.HatOverflowPlane?.attachToPlanes?.(THREE, {
       profile, sourceCanvas: frontCanvas,
@@ -1343,11 +1345,12 @@
         ? window.DamageAuthority.hit(struckPlayer, amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c })
         : deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
     }
-    if (c?._banditCaptainArmament) {
+    if (c?._banditCaptainArmament || c?.ruinWallCoffin) {
       const afterHealth = Number(target?.health); // Uses the actual victim (player or NPC), so allied skirmishes can proc enchantments too.
       const actualDamage = Number.isFinite(beforeHealth) && Number.isFinite(afterHealth)
         ? Math.max(0, beforeHealth - afterHealth) : 0;
-      window.BanditCaptainArmaments?.emitHit?.(c, target, actualDamage, opts.enchantmentSlot || 'tap1', {
+      if(c.ruinWallCoffin)window.MinionCombat?.emitRuinEnchantedHit?.(c,target,actualDamage,opts.enchantmentSlot||'tap1');
+      if(c._banditCaptainArmament)window.BanditCaptainArmaments?.emitHit?.(c, target, actualDamage, opts.enchantmentSlot || 'tap1', {
         comboFinisher: opts.comboFinisher === true, quickBonusEffectProc: opts.quickBonusEffectProc === true,
       });
     }
@@ -1551,6 +1554,7 @@
     c._banditLungeHopCurrent = (c._banditLungeHopUnits || 0) * Math.sin(eased * Math.PI);
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
+    if(c.ruinSkeletonTheme==='hronal')window.MinionCombat?.trailMovement?.(c,c.x,c.y,swept.x,swept.y,'lunge',deps.TILE);
     c.x = swept.x; c.y = swept.y;
     if (motion?.wind) window.ResourceSystem?.commitMovement?.(c, motion, Math.min(1, stepPx / Math.max(.00001, Math.hypot(motion.x, motion.y))), window.Combat?.deps?.movementFootingDepleted);
     if (c.prone) return true;
@@ -2607,7 +2611,13 @@
     return staging.update(c, dt, target, distPx, towardAngle, npcDuelStagingApi);
   }
 
-  function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
+  function updateBanditCombatAI(c,dt,targetPlayer,distToPlayer){
+    if(c?.ruinSkeletonTheme!=='kanthic')return updateBanditCombatAIInternal(c,dt,targetPlayer,distToPlayer);
+    const x=c.x,y=c.y; // Actual pursuit and lunge movement.
+    try{return updateBanditCombatAIInternal(c,dt,targetPlayer,distToPlayer);}
+    finally{if(!c._enemyDodge)window.MinionCombat?.trailMovement?.(c,x,y,c.x,c.y,'move',deps.TILE);}
+  }
+  function updateBanditCombatAIInternal(c, dt, targetPlayer, distToPlayer) {
     if (c?.tzatzulCapturedBy) {
       if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Carried actors cannot hold a reservation while off the battlefield.
       releaseBanditApproach(c);
@@ -3488,6 +3498,7 @@
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    if(opts.extra?.ruinWallCoffin)cfg={...cfg,weaponShapePool:[...window.MinionCombat.coffinWeaponShapes]}; // Match relic catalog.
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
     if (!loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
       cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
@@ -3574,6 +3585,8 @@
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
       window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [def.rangedWeaponKey] });
     }
+    if(opts.extra?.ruinSkeletonHealthMultiplier)def.maxHealth=Math.round(def.maxHealth*opts.extra.ruinSkeletonHealthMultiplier); // Before perks and resource initialization.
+    if(opts.extra?.ruinWallCoffin)def.weaponShapeKey=deps.TOOL_ITEM_DEFS?.[def.weaponKey]?.shapeKey||def.weaponShapeKey;
     applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts, authoredRule); // After authored weapon and projectile definitions exist; before resources initialize.
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();

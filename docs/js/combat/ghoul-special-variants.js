@@ -43,15 +43,15 @@
   }
 
   // Rolls an enchanted weapon: one Base, usually plus one enchantment of another type (a Flourish), with a random particle color and effect.
-  function rollEnchantedWeapon(rnd) {
+  function rollEnchantedWeapon(rnd,{singleBase=false,baseIds=null}={}) {
     const defs = Object.values(window.EnchantmentSystem?.DEFINITIONS || {});
-    const bases = defs.filter(def => def.type === 'Base'), flourishes = defs.filter(def => def.type === 'Flourish');
+    const bases = defs.filter(def => def.type === 'Base'&&(!baseIds||baseIds.includes(def.id))), flourishes = defs.filter(def => def.type === 'Flourish');
     if (!bases.length) return null;
     const pick = list => list[Math.floor(rnd() * list.length)];
     const base = pick(bases);
     const enchantments = { base: [base.id], flourishes: {} };
     const chosen = [base];
-    if (flourishes.length && rnd() < KNIGHT_SECOND_ENCHANTMENT_CHANCE) {
+    if (!singleBase && flourishes.length && rnd() < KNIGHT_SECOND_ENCHANTMENT_CHANCE) {
       const flourish = pick(flourishes);
       enchantments.flourishes[pick(SLOTS)] = flourish.id;
       chosen.push(flourish);
@@ -154,7 +154,9 @@
     const relics = window.HarlyaoRelics;
     if (!enchanted?.enchantments || !relics?.grantBoundRelic || !relics.makeRelic) return null;
     const shapes = Object.keys(relics.SHAPES || {});
-    const relic = { ...relics.makeRelic(shapes[Math.floor(Math.random() * shapes.length)]), enchantments: clone(enchanted.enchantments), ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
+    const shape=enchanted.relicShape||(entity.ruinWallCoffin?null:shapes[Math.floor(Math.random()*shapes.length)]); // Exact coffin weapon.
+    if(!shape||!relics.SHAPES[shape])return null;
+    const relic = { ...relics.makeRelic(shape), enchantments: clone(enchanted.enchantments), ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
     const key = relics.grantBoundRelic(relic);
     return key ? { key, label: relics.SHAPES[relic.shape].label } : null;
   }
