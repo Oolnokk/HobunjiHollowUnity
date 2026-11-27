@@ -105,8 +105,8 @@
       script.id = 'proceduralPantsGarmentRendererScript';
       script.async = false;
       script.src = SELF_SCRIPT_SRC
-        ? new URL('pants-garment-renderer.js?v=20261126exactSeamsAudit1', SELF_SCRIPT_SRC).href
-        : new URL('../../js/pants-garment-renderer.js?v=20261126exactSeamsAudit1', window.location.href).href;
+        ? new URL('pants-garment-renderer.js?v=20261127h7c9d81b', SELF_SCRIPT_SRC).href
+        : new URL('../../js/pants-garment-renderer.js?v=20261127h7c9d81b', window.location.href).href;
       script.addEventListener('load', () => window.PantsGarmentRenderer ? resolve(window.PantsGarmentRenderer) : reject(new Error('pants-garment-renderer loaded without installing PantsGarmentRenderer.')), { once: true });
       script.addEventListener('error', () => reject(new Error(`Failed to load ${script.src}`)), { once: true });
       document.head.appendChild(script);

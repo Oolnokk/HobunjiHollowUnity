@@ -490,6 +490,20 @@
     out[0] = ox; out[1] = oy; out[2] = oz;
   }
 
+  // Event-only attachment lookup through the same skin, ring and spine shifts as the visible garment.
+  function posedVertexToWorld(handle, mesh, vertex, out) {
+    const offset = vertex * 3; // Position and spine attributes share the authored UV grid's vertex index.
+    if (handle.gpuSkinActive) {
+      const point = handle.gpuScratch.corner; // Reuses the cuff sampler's scratch outside the pose update.
+      skinVertexInto(handle, handle.scratch.transforms, vertex, point, handle.maskUniforms.uPantsRingShift.value, 2);
+      const spineShift = handle.spineShift; // Same additive deformation as the GPU shader.
+      out.set(point[0] + (spineShift?.[offset] || 0), point[1] + (spineShift?.[offset + 1] || 0), point[2] + (spineShift?.[offset + 2] || 0));
+    } else {
+      out.fromBufferAttribute(handle.geometry.getAttribute('position'), vertex);
+    }
+    return mesh.localToWorld(out);
+  }
+
   function writeGpuSkinUniforms(handle, transforms, aim) {
     const Core = core(), u = handle.maskUniforms;
     for (let channel = 1; channel < 5; channel++) writeBoneUniform(u.uPantsBoneM.value[channel - 1], u.uPantsBoneT.value[channel - 1], transforms[channel]);
@@ -744,6 +758,7 @@
         mesh.renderOrder = 28;
         mesh.frustumCulled = false;
         mesh.userData.hobunjiPantsGarment = true;
+        mesh.userData.pantsVertexToWorld = (vertex, out) => posedVertexToWorld(handle, mesh, vertex, out);
         mesh.userData.hobunjiPantsPreview = true; // Also keeps the editor's Apply-to-NPC mesh builder from mistaking this for the portrait plane.
         mesh.userData.hobunjiXrayDeformPadding = 0.8; // Conservative GPU-leg-posed scissor margin consumed by held-object-render-order.js, in local garment units.
         avatarGroup.add(mesh);

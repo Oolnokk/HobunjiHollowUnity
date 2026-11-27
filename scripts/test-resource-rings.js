@@ -359,6 +359,45 @@ ResourceSystem.spendStamina(shatteredStaminaTriggerEntity, 100, 'full shattered 
 assert.equal(shatteredStaminaTriggerEntity.health, 100, 'spending Shattered Stamina converts its consequence into Bleeding without immediate Health damage');
 assert.equal(ResourceSystem.getAffliction(shatteredStaminaTriggerEntity, 'bleedingHealth'), 100, 'Shattered Stamina may convert the resulting Bleeding up to the full Health bar');
 
+{
+  const emitted = []; // Records the VFX requested by real ResourceSystem transactions.
+  context.AfflictionFluidVfx = { emit: (_actor, kind) => emitted.push(kind) };
+  const actor = ResourceSystem.initEntity({ health: 100, maxHealth: 100, stamina: 50, maxStamina: 100 });
+  ResourceSystem.addAffliction(actor, 'woundedStamina', 20);
+  ResourceSystem.addAffliction(actor, 'shatteredStamina', 20);
+  ResourceSystem.spendStamina(actor, 15, 'outside afflicted stamina');
+  assert.deepEqual(emitted.splice(0), [], 'application and ordinary stamina spending do not spray');
+  ResourceSystem.spendStamina(actor, 25, 'through afflicted stamina');
+  assert.deepEqual(emitted.splice(0), ['wound-spurt', 'blood-spew'], 'sharp and blunt punishments fire together');
+  ResourceSystem.tick(actor, 0.2);
+  assert.deepEqual(emitted.splice(0), ['blood-spew'], 'blunt-only bleeding replaces the drip with a mouth spew');
+  ResourceSystem.addAffliction(actor, 'bleedingHealth', 3);
+  ResourceSystem.addAffliction(actor, 'poisonedHealth', 4);
+  ResourceSystem.removeAffliction(actor, 'bleedingHealth', 4);
+  ResourceSystem.tick(actor, 0.2);
+  assert.deepEqual(emitted.splice(0), ['blood-drip', 'blood-spew', 'poison-drip'], 'both blood sources survive partial recovery and poison has a separate drip');
+
+  ResourceSystem.removeAffliction(actor, 'bleedingHealth', 100);
+  ResourceSystem.removeAffliction(actor, 'poisonedHealth', 100);
+  ResourceSystem.tick(actor, 0.2);
+  assert.deepEqual(emitted.splice(0), [], 'cleared pools stop requesting periodic effects');
+  ResourceSystem.addAffliction(actor, 'bleedingHealth', 4);
+  ResourceSystem.tick(actor, 0.2);
+  assert.deepEqual(emitted.splice(0), ['blood-drip'], 'a new sharp bleed does not inherit the cleared blunt source');
+
+  const configured = context.SCRATCHBONES_CONFIG.game.combat.resourceSystem;
+  const originalRandom = context.GameRandom.random; // Force the existing vomiting roll and restore the original test configuration immediately afterward.
+  configured.pukeChancePerSec = 1;
+  context.GameRandom.random = () => 0;
+  const sick = ResourceSystem.initEntity({ health: 100, maxHealth: 100, stamina: 100, maxStamina: 100 });
+  ResourceSystem.addAffliction(sick, 'infectedStamina', 25);
+  assert.ok(ResourceSystem.tick(sick, 0.1).puked, 'infection takes the authored vomiting path');
+  assert.deepEqual(emitted.splice(0), ['vomit'], 'the recolored spew is tied to the vomiting event');
+  context.GameRandom.random = originalRandom;
+  configured.pukeChancePerSec = 0;
+  delete context.AfflictionFluidVfx;
+}
+
 const afflictedEntity = {
   health: 100, maxHealth: 100, stamina: 47, maxStamina: 100,
   footing: 100, maxFooting: 100, exhaustion: { active: true, blackStamina: 60 },
