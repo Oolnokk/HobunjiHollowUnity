@@ -939,10 +939,10 @@
       setSideVisible,
       useIdlePose,
       applyToolCalibration,
-      copyGripWristBasis(side, out) {
+      copyGripWristBasis(side, out, calibrationSide = side) {
         // The rendered hand includes model alignment and the right-hand half-turn.
         // Expose its rotational basis read-only; grip/model calibration remain separately owned.
-        const rec = sockets[side];
+        const rec = sockets[calibrationSide]; // Both hands use the same selected model calibration; the source side can already be placed.
         if (!rec || !out) return null;
         out.copy(rec.calibration.quaternion);
         if (side === 'right') out.multiply(rightWristBasis);
