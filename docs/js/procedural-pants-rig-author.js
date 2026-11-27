@@ -86,8 +86,8 @@
       script.id = CORE_SCRIPT_ID;
       script.async = false;
       script.src = SELF_SCRIPT_SRC
-        ? new URL('pants-rig-core.js?v=20261117waistWidthSolve1', SELF_SCRIPT_SRC).href
-        : new URL('../../js/pants-rig-core.js?v=20261117waistWidthSolve1', window.location.href).href;
+        ? new URL('pants-rig-core.js?v=20261126exactSeamsAudit1', SELF_SCRIPT_SRC).href
+        : new URL('../../js/pants-rig-core.js?v=20261126exactSeamsAudit1', window.location.href).href;
       script.addEventListener('load', () => {
         state.coreReady = !!window.HobunjiPantsRig;
         state.coreReady ? resolve(window.HobunjiPantsRig) : reject(new Error('pants-rig-core loaded without installing HobunjiPantsRig.'));
@@ -105,8 +105,8 @@
       script.id = 'proceduralPantsGarmentRendererScript';
       script.async = false;
       script.src = SELF_SCRIPT_SRC
-        ? new URL('pants-garment-renderer.js?v=20261126inkAudit3', SELF_SCRIPT_SRC).href
-        : new URL('../../js/pants-garment-renderer.js?v=20261126inkAudit3', window.location.href).href;
+        ? new URL('pants-garment-renderer.js?v=20261126exactSeamsAudit1', SELF_SCRIPT_SRC).href
+        : new URL('../../js/pants-garment-renderer.js?v=20261126exactSeamsAudit1', window.location.href).href;
       script.addEventListener('load', () => window.PantsGarmentRenderer ? resolve(window.PantsGarmentRenderer) : reject(new Error('pants-garment-renderer loaded without installing PantsGarmentRenderer.')), { once: true });
       script.addEventListener('error', () => reject(new Error(`Failed to load ${script.src}`)), { once: true });
       document.head.appendChild(script);
@@ -227,8 +227,10 @@
       if (state.maskCache?.front !== portrait.front) state.maskCache = { front: portrait.front, promise: Renderer.buildOverlayMask(portrait.front, portrait.profile, { seatId: seatNpc?.id || seatNpc?.name || 'npc' }).catch(() => null) };
       overlayMask = state.maskCache.promise;
     }
+    const legRoot = legSearchRoot(model); // Reuse gameplay anatomy and cached widths when the preview has a real procedural rig.
+    const legHandle = window.ProceduralLegAnimation?.handleForGroup?.(legRoot) || { group: legRoot };
     const handle = Renderer.attach(THREE, {
-      overlayMask, avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
+      overlayMask, avatarGroup: model, legHandle, sourceCanvas: portrait?.front, speciesId: identity.speciesId, gender: identity.gender,
       garmentId, garmentRecord: garment, characterRecord: character, imageUrl: garmentSourceUrl(garment), name: 'pantsLivePreview',
       footObjects: window.HobunjiGameplayBackdrop?.getFootObjects?.() || null, debugSplines: state.splinesToggle ? state.splinesToggle.checked : true,
       gpuSkin: false, // getPreviewData() reads the skinned vertex positions back, so the author keeps the CPU skin.

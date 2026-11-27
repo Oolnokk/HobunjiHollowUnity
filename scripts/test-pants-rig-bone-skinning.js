@@ -504,3 +504,44 @@ console.log('Pants rig bone skinning: PASS');
     'missing spline data leaves geometry intact');
   console.log('Pants ankle opening vs uniform foot scale: PASS');
 }
+
+{ // Real independent X dimensions, including a sloped cuff and a mirrored waist.
+  const segments = 8, stride = segments + 1;
+  const positions = new Float32Array(stride * stride * 3); // Deterministic rest-grid fixture.
+  const waistInfluence = new Float32Array(stride * stride);
+  const rings = { left: { influence: new Float32Array(stride * stride) }, right: { influence: new Float32Array(stride * stride) } };
+  const sample = (row, col, fx = 0, fy = 0) => ({ i: row * stride + col, fx, fy });
+  for (let row = 0; row < stride; row++) for (let col = 0; col < stride; col++) {
+    const i = row * stride + col;
+    positions[i * 3] = 1 - col / segments; // Portrait mirror: source left corresponds to positive local X.
+    positions[i * 3 + 1] = row / segments + col * .015; // Sloped cuff: chord length differs from X width.
+    positions[i * 3 + 2] = .02;
+    waistInfluence[i] = row <= 2 ? 1 : row === 3 ? .5 : 0;
+    if (row >= 5 && col <= 3) rings.left.influence[i] = 1;
+    if (row >= 5 && col >= 5) rings.right.influence[i] = 1;
+  }
+  const belt = [sample(1, 1, .25, .5), sample(1, 4, 0, .5), sample(1, 6, .75, .5)];
+  const splines = {
+    leftAnkle: { samples: [sample(6, 1, .25, .25), sample(6, 2, .75, .25)] },
+    rightAnkle: { samples: [sample(6, 5, .25, .25), sample(6, 6, .75, .25)] },
+  };
+  rings.left.anchor = sample(6, 2, 0, .25); rings.right.anchor = sample(6, 6, 0, .25);
+  const original = positions.slice(); // Fit must not move Y/Z even on a curved or angled seam.
+  assert(Core.fitWaistSpanX(positions, segments, belt, { left: .13, right: .71 }, waistInfluence));
+  const beforeCuffs = positions.slice();
+  assert(Core.stretchLegOpeningSpans(positions, segments, rings, splines, { left: .31, right: .09 }));
+  const span = samples => {
+    const xs = samples.map(p => Core.sampleGridX(positions, segments, p));
+    return Math.max(...xs) - Math.min(...xs);
+  };
+  assert(near(span(belt), .58, 1e-6), 'mirrored waist exactly spans the two torso edges');
+  const waistXs = belt.map(p => Core.sampleGridX(positions, segments, p));
+  assert(near(Math.min(...waistXs), .13, 1e-6) && near(Math.max(...waistXs), .71, 1e-6), 'asymmetric waist center is also fitted');
+  assert(near(span(splines.leftAnkle.samples), .31, 1e-6), 'left cuff independently widens to its measured X width');
+  assert(near(span(splines.rightAnkle.samples), .09, 1e-6), 'right cuff independently narrows to its measured X width');
+  for (let i = 0; i < positions.length; i++) {
+    if (i % 3 !== 0) assert.strictEqual(positions[i], original[i], 'width fitting never moves Y or Z');
+    if (Math.floor(i / (stride * 3)) <= 2) assert.strictEqual(positions[i], beforeCuffs[i], 'cuff fit does not alter the waist');
+  }
+  console.log('Independent absolute pants seam widths: PASS');
+}

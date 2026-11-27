@@ -356,3 +356,28 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
   api.advanceIdleHeadMotion(m,false,0,.3,.7,{x:4,y:1,z:2},0,0,.016,.2,.7);
   assert.equal(m.leanX,0);assert.equal(m.yaw,.2);
 }
+
+{ // A floor-forced trailing connector keeps its drag heading when the actor stops, instead of snapping to a default angle.
+  const makeState = () => ({ direction: { x: 0, y: -1, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } } });
+  const solveY = -0.3, horizontal = Math.sqrt(1 - solveY * solveY);
+  const step = (s, vx, vz, shaftX, shaftZ, dt) => api.resolveTrailingDirection(s, vx, vz, shaftX, shaftZ, solveY, dt);
+  const s = makeState();
+  for (let i = 0; i < 120; i++) step(s, 4, 0, 0, 1, 1 / 60); // Travelling +X drags the connector toward -X.
+  assert.ok(Math.abs(s.direction.x + horizontal) < 1e-3 && Math.abs(s.direction.z) < 1e-3, 'trails directly behind the travel direction');
+  const settled = { x: s.direction.x, y: s.direction.y, z: s.direction.z };
+  for (let i = 0; i < 120; i++) step(s, 0, 0, 0, 1, 1 / 60); // Stopped: the shaft up-vector (+Z) must not take over.
+  assert.ok(Math.hypot(s.direction.x - settled.x, s.direction.y - settled.y, s.direction.z - settled.z) < 1e-6, 'stopping keeps the last drag heading');
+  const e = makeState(); e.direction.set(0, solveY, horizontal); // Already trailing toward +Z when the actor starts moving +X.
+  step(e, 4, 0, 0, 1, 1 / 60); // One frame later the heading has turned partway, not snapped to -X.
+  assert.ok(e.direction.x < -0.01 && e.direction.z > 0.01, 'heading eases from +Z toward -X instead of snapping');
+  assert.ok(Math.abs(e.direction.x) < horizontal - 0.05, 'one frame does not complete the turn');
+  assert.ok(e.direction.y >= solveY - 1e-12, 'easing never dips below the floor-safe vertical direction');
+  const frozen = makeState(); step(frozen, 4, 0, 0, 1, 0); // Frozen physics (dt 0) applies only the floor-safe clamp; nothing eases or advances.
+  assert.ok(Math.abs(frozen.direction.y - solveY) < 1e-12 && Math.abs(Math.hypot(frozen.direction.x, frozen.direction.y, frozen.direction.z) - 1) < 1e-9, 'frozen physics stays floor-safe and unit length');
+  const idle = makeState(); for (let i = 0; i < 120; i++) step(idle, 0, 0, 1, 0, 1 / 60); // Never moved: first contact falls back to the haft once and then stays.
+  assert.ok(Math.abs(idle.direction.x - horizontal) < 1e-3, 'standing first contact uses the haft heading');
+  step(idle, 0, 0, 0, 1, 1 / 60);
+  assert.ok(Math.abs(idle.direction.x - horizontal) < 1e-3, 'the haft fallback is remembered, not recomputed each frame');
+  for (const bad of [NaN, Infinity]) { const n = makeState(); step(n, bad, bad, 0, 1, 1 / 60); assert.ok(Number.isFinite(n.direction.x + n.direction.y + n.direction.z), 'non-finite velocity cannot corrupt the direction'); }
+  const len = Math.hypot(s.direction.x, s.direction.y, s.direction.z); assert.ok(Math.abs(len - 1) < 1e-6, 'result stays a unit vector');
+}

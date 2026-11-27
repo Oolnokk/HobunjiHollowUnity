@@ -288,3 +288,77 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
   assert(reader.changed(pose), 'genuine further leg movement remains detectable');
   console.log('Pants independent pose-change detection: PASS');
 }
+
+{ // Exact seam constraints must be installed before the shared CPU/GPU vertex buffers are built.
+  const source = fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8');
+  const from = source.indexOf('    // Prepare the shared CPU/GPU seam constraints');
+  const to = source.indexOf('    installGpuSkin(THREE, handle, gpuSkin);', from);
+  const gpuFrom = source.indexOf('  function installGpuSkin('), gpuTo = source.indexOf('  function gpuSkinUsable(', gpuFrom);
+  assert(from >= 0 && to > from && gpuFrom >= 0 && gpuTo > gpuFrom, 'seam preparation precedes GPU upload');
+  const prepare = new Function('handle', 'garment', 'LEG_SIDES', 'fitCuffs', source.slice(from, to));
+  const install = new Function(source.slice(gpuFrom, gpuTo) + '; return installGpuSkin;')();
+  const garment = rigs.garments.pants_basic, sides = ['left', 'right'];
+  for (const segments of [16, 32, 64]) {
+    const stride = segments + 1, count = stride * stride;
+    const sample = point => {
+      const x = Math.min(segments - 1, Math.floor(point.x * segments)), y = Math.min(segments - 1, Math.floor(point.y * segments));
+      return { i: y * stride + x, fx: point.x * segments - x, fy: point.y * segments - y };
+    };
+    const corners = p => [p.i, p.i + 1, p.i + stride, p.i + stride + 1];
+    const attrs = new Map(), weights = new Float32Array(count * 5).fill(.2);
+    const handle = { segments, weights, basePositions: new Float32Array(count * 3), maskUniforms: {},
+      rings: { left: { influence: new Float32Array(count).fill(.5) }, right: { influence: new Float32Array(count).fill(.5) } },
+      splineSpec: { belt: { samples: garment.pantsBeltSpline.map(sample) }, leftAnkle: { samples: garment.legOpenings.left.map(sample) }, rightAnkle: { samples: garment.legOpenings.right.map(sample) } },
+      geometry: { setAttribute(name, attr) { attrs.set(name, attr); } } };
+    prepare(handle, garment, sides, true);
+    const THREE = { BufferAttribute: class { constructor(array) { this.array = array; } }, Vector3: class {}, Matrix3: class {} };
+    install(THREE, handle, true);
+    for (const p of handle.splineSpec.belt.samples) for (const i of corners(p)) {
+      assert.strictEqual(weights[i * 5], 1, 'all interpolated waist vertices are rigid');
+      assert.strictEqual(handle.waistWidthInfluence[i], 1, 'all waist corners receive the entire horizontal correction');
+      assert.strictEqual(handle.rings.left.influence[i] + handle.rings.right.influence[i], 0, 'cuffs cannot shift the waist');
+    }
+    const left = new Set(handle.splineSpec.leftAnkle.samples.flatMap(corners));
+    const right = new Set(handle.splineSpec.rightAnkle.samples.flatMap(corners));
+    for (const side of sides) for (const i of side === 'left' ? left : right) {
+      if (left.has(i) && right.has(i)) continue; // A genuinely shared grid corner cannot belong exclusively to both cuffs.
+      assert.strictEqual(weights[i * 5 + (side === 'left' ? 2 : 4)], 1, 'all unshared cuff sample vertices follow one calf');
+      assert.strictEqual(handle.rings[side].influence[i], 1, 'ring correction translates all cuff corners uniformly');
+    }
+    for (let i = 0; i < count; i++) {
+      assert.strictEqual(attrs.get('pantsSkinW0').array[i * 4], weights[i * 5], 'GPU and CPU agree on waist ownership');
+      assert.strictEqual(attrs.get('pantsSkinW0').array[i * 4 + 2], weights[i * 5 + 2], 'GPU and CPU agree on left calf ownership');
+      assert.strictEqual(attrs.get('pantsSkinW1').array[i], weights[i * 5 + 4], 'GPU and CPU agree on right calf ownership');
+      assert.strictEqual(attrs.get('pantsRingInfluence').array[i * 2], handle.rings.left.influence[i], 'GPU ring uses the finalized left field');
+      assert.strictEqual(attrs.get('pantsRingInfluence').array[i * 2 + 1], handle.rings.right.influence[i], 'GPU ring uses the finalized right field');
+    }
+  }
+  console.log('Pants sampled seams and GPU/CPU parity: PASS');
+}
+
+{ // Verify the production torso and shoe measurement code, without a browser or Three.js version dependency.
+  const source = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8');
+  const scan = new Function(source.slice(source.indexOf('  function scanWidestOpaqueRow('), source.indexOf('  function pixelToModelX(')) + '; return scanWidestOpaqueRow;')();
+  const width = 100, height = 100, pixels = new Uint8Array(width * height * 4);
+  const fill = (y, l, r, a = 255) => { for (let x = l; x < r; x++) pixels[(y * width + x) * 4 + 3] = a; };
+  for (let y = 10; y < 80; y++) fill(y, 5, 95); // Broad upper torso must not set the lower belt width.
+  for (let y = 80; y < 90; y++) fill(y, 20, 76);
+  for (let y = 90; y < 98; y++) fill(y, 30, 65, 12); // Faint fringe is not opaque.
+  const canvas = { width, height, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
+  const fit = scan(canvas, 8);
+  assert.strictEqual(fit.beltBounds.left, .2);
+  assert.strictEqual(fit.beltBounds.right, .76);
+  assert(fit.rightMedian > fit.leftMedian, 'existing stance scan still produces medians');
+  const cache = new Function(source.slice(source.indexOf('  function cacheFootGroundSupport('), source.indexOf('  function rolledSoleOffset(')) + '; return cacheFootGroundSupport;')();
+  const positions = [[1, -1, 0], [-1, 1, 0], [0, .5, 0]];
+  const vertex = { count: positions.length, getX: i => positions[i][0], getY: i => positions[i][1], getZ: i => positions[i][2] };
+  const box = { min: { x: -2, y: -1, z: 0 }, max: { x: 2, y: 1, z: 0 } };
+  const mesh = { isMesh: true, geometry: { attributes: { position: vertex }, boundingBox: box }, matrixWorld: { elements: [.5, 0, 0, 0, .5, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] } };
+  const foot = { userData: {}, traverse: fn => fn(mesh) };
+  class Box3 { setFromObject() { this.min = box.min; this.max = box.max; return this; } isEmpty() { return false; } }
+  cache({ Box3 }, foot);
+  assert.strictEqual(foot.userData.cuffWidthX, .25, 'rotated geometry uses projected vertices rather than a loose transformed bounding box');
+  assert.strictEqual(foot.userData.contactRadiusY, 1, 'foot width measurement does not alter ground support');
+  assert(fs.readFileSync('docs/js/pixel-probe.js', 'utf8').includes('Pants seam fit (neutral local units):'), 'measured widths are included in the mobile report');
+  console.log('Pants isolated torso and foot vertex measurements: PASS');
+}
