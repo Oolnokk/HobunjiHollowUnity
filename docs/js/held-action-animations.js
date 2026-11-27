@@ -491,7 +491,7 @@
     new URL('js/procedural-hand-outline-parity.js?v=20261117handDepthReplay2', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261127workshopParallel14', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20261127wristAudit3', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20261127wristGuide4', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261126exactGrip4', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -504,7 +504,7 @@
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20261005hce195f1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20261001c0bd7bbe', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20261025h6a95a6d', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20261127wristGuide4', docsBase).href);
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20261019h611c43d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20261127wristAudit3', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
