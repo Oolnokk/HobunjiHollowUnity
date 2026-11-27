@@ -1497,13 +1497,15 @@
         // Save the unique bound weapon before consuming the corpse or awarding repeatable ordinary loot.
         const captainWeapon = !trophyKey && c._banditCaptainArmament ? window.BanditCaptainArmaments?.grantCorpseWeapon?.(c) : null;
         if (!trophyKey && c._banditCaptainArmament && !captainWeapon) return { ok: false, message: 'Could not collect the bound weapon. Try again.' };
+        const coffinRelic=c.ruinWallCoffin?window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c):null;
+        if(c.ruinWallCoffin&&!coffinRelic)return {ok:false,message:'Could not collect the bound weapon; try again.'}; // Preserve corpse if grant fails.
         const parts = grantBanditLoot(trophyKey ? { [trophyKey]: 1 } : deps.rollLootPool(c.def.lootPool, { entity: c }));
         if (trophyKey) c.corpseLooted = true; // Mark the actual source before despawn, not only the temporary interaction object.
         if (!trophyKey) { // Ordinary bandits, ghouls and liches retain every existing corpse bonus; tribe hunters receive their trophy only.
           const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
           if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
           grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
-          const relic = window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
+          const relic = coffinRelic||window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
           if (relic) parts.push('🗡️ Bound ' + relic.label);
           if (captainWeapon) parts.push('⚒️ ' + captainWeapon);
           for (const item of banditWornClothingItems(c.rosterRecord, c)) {

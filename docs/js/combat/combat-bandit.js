@@ -398,6 +398,14 @@
     return garmentId;
   }
 
+  function rootledootLegLayout(opaqueHeightFraction, kenkariProfile) {
+    const height = Math.max(0, Math.min(1, Number(opaqueHeightFraction) || 1)); // Cropped Heftroot art is bottom-aligned in the portrait canvas.
+    const gap = .06; // Only 6% of the portrait height is exposed below the body; keep the entire sprite above the floor.
+    const donor = Number(kenkariProfile?.posteriorRule?.heightPercentFromFloor);
+    const gaitReach = Number.isFinite(donor) && donor > 0 ? Math.min(.15, donor / 100) : .13; // Male Kenkari's authored short-leg reach; not its feet, shoulders or torso.
+    return { placementRatio: .5 + gap, posteriorFraction: gap + height / 2, gaitReach, gap };
+  }
+
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) throw new Error('Humanoid portrait modules are unavailable.');
     characterBuildStatus.stage = 'cosmetics';
@@ -444,6 +452,13 @@
     characterBuildStatus.stage = 'back-portrait';
     if (roster.rootledoot) await window.Rootledoots.paintPortrait(backCanvas,true);
     else await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    let ruinRearTorsoCanvas=null; // Unobstructed authored torso, including pixels hidden by skull/hair in the composite.
+    if(['hronal','tothal'].includes(roster.ruinSkeletonTheme)){
+      ruinRearTorsoCanvas=document.createElement('canvas');ruinRearTorsoCanvas.width=backCanvas.width;ruinRearTorsoCanvas.height=backCanvas.height;
+      await window.NpcAvatarPreview.renderProfileToCanvas(ruinRearTorsoCanvas,profile,{portraitView:'behind',forceEyesOpen:true,onlyTorsoSprite:true});
+    }
+    const themedPantsOverlay=roster.ruinSkeletonTheme?await window.PantsGarmentRenderer?.buildOverlayMask?.(frontCanvas,profile,{forceEyesOpen:true})?.catch(error=>{window.__farmLog?.('[ruin skeleton pants mask] '+error.message,'warn','combat');return null;}):null; // Compare ORIGINAL art; frost/char/oil are not clothing occluders.
+    if(roster.ruinSkeletonTheme)await window.MinionCombat?.paintRuinPortraits?.(roster,[frontCanvas,neutralFrontCanvas,combatFrownCanvas,backCanvas]);
     // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
     // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
     // The untouched renders below stay as the rig canvases, so head bones and weights still come from the real skull.
@@ -470,10 +485,12 @@
       await redraw(backCanvas, { portraitView: 'behind' });
     }
     characterBuildStatus.stage = 'portrait-model';
+    const rootLegLayout=roster.rootledoot?rootledootLegLayout(frontCanvas.rootledootOpaqueHeightFraction,window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['kenkari::male']):null; // Shared live/Workshop anatomy, computed only at build time.
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
         backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
+        ...(rootLegLayout?{portraitPlacementRatioOverride:rootLegLayout.placementRatio,posteriorAtOpaqueCenter:true}:{}),
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait', meshBudget: 'npc', // Enemies use the capped mesh budget.
         hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; HatOverflowPlane.attachToPlanes is called on those instead.
         mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
@@ -595,6 +612,27 @@
     // itself assumes its parent's local Y=0 is the floor (see its own comment).
     const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
+    const rootPosteriorY=rootLegLayout?(portrait.userData.posteriorYOverride??modelHeight*rootLegLayout.posteriorFraction):null; // Exact alpha midpoint from the same scan as the portrait; crop fraction is a fallback.
+    if(rootLegLayout){
+      portrait.userData.posteriorYOverride=rootPosteriorY;
+      const rigProfile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+      const space=window.HobunjiCharacterPortraitAnchorSpace,metrics=space?.metricsForAvatarRoot?.(portrait,rigProfile);
+      const shoulders={}; // Resolve each authored shoulder exactly once; both wrapped and direct hand queries share it.
+      const reaches={};
+      const wristY=rootPosteriorY-modelHeight*(Number(rigProfile?.anatomy?.armLengthHeightPercentOffset)||0)/100;
+      for(const side of ['left','right']){
+        const key=side+'HandShoulder',p=metrics&&space.resolveAnchor(rigProfile,key,metrics);
+        if(!p||![p.x,p.y,p.z].every(Number.isFinite))continue;
+        shoulders[side]={x:p.x,y:p.y,z:p.z};reaches[side]=Math.max(.001,Math.hypot(p.y-wristY,p.z));
+      }
+      if(Object.keys(shoulders).length===2){
+        portrait.userData.instanceHandShoulders=shoulders;
+        portrait.userData.armLengthBySide=reaches;
+        portrait.userData.armLength=portrait.userData.scaledArmLength=(reaches.left+reaches.right)/2;
+        portrait.userData.armLengthSource='instance-shoulder-to-opaque-posterior';
+      }
+      group.userData.rootledootLegLayout={...rootLegLayout,posteriorY:rootPosteriorY};
+    }
     // Preserve the portrait box recipe on the converted animal-style root:
     // authored width/height plus vertical placement, with runtime world scale
     // applied later by ranged-weapons' shared player/NPC 3D hitbox resolver.
@@ -667,6 +705,7 @@
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
+      ...(rootLegLayout?{posteriorYOverride:rootPosteriorY,gaitReachLimit:modelHeight*rootLegLayout.gaitReach,stanceDropMax:modelHeight*rootLegLayout.gap*.8,legLengthRatioOverride:1}:{}), // Keep the real hip at center and limit stride to short exposed legs.
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
       spine: spine || undefined, // Wider stance and stride for a hunched enemy.
       portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, splineNodes: frontNeckSkin.splineNodes, neckLocal: frontNeckSkin.neckLocal } : undefined, // "Show bones" also draws the portrait's spine and neck.
@@ -681,7 +720,8 @@
         spine, // The pants ride the portrait's spine curve like an extension of it (frontPivot is not the avatar root the profile is bound to).
         name: roster.name || 'enemy', garmentId: enemyPants, meshBudget: 'npc', // Enemies use the capped garment grid.
         appearance: pantsAppearanceWithForcedPattern(window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors), roster),
-        overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
+        overlayMask: roster.ruinSkeletonTheme?themedPantsOverlay:window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
+        transformCanvas:roster.ruinSkeletonTheme?canvas=>window.MinionCombat.paintRuinPants(roster,canvas):null, // Bakes themed art on every real garment appearance render, not the shared weaving cache.
       });
       characterBuildStatus.pantsAttached = !!pants && await pants.readyPromise;
     }
@@ -689,6 +729,7 @@
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       frontPortraitMesh: renderedFrontMesh, backPortraitMesh: renderedBackMesh, // Exact carriers used by frozen stance rendering.
+      ruinRearTorsoCanvas, // Original torso alpha, prior to skull/cosmetic compositing.
       handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
       handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes, spine,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
@@ -897,6 +938,17 @@
   const configuredWeaponMetalKey = cfg => typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers.
 
   function banditWeaponFor(cfg, rank, tier) {
+    if(cfg?._rootledootWeaponPool){
+      const metalKey=configuredWeaponMetalKey(cfg)||rollBanditWeaponMetalKey(cfg,rank,tier);
+      const api=window.BanditCaptainArmaments,modular=window.ModularWeapons;
+      const pairs=api?.rootledootPairs?.(modular)||[]; // Foundry compatibility, never a whole-weapon fallback.
+      const keys=pairs.map(p=>modular.itemKey(p.shaft,p.head,metalKey)).filter(k=>deps.TOOL_ITEM_DEFS[k]?.modular);
+      const saved=cfg._rootledootPreviewKey;
+      const weaponKey=saved&&api.isRootledootWeapon(saved)&&deps.TOOL_ITEM_DEFS[saved]?.modular?saved:keys[Math.floor(deps.rnd()*keys.length)];
+      const item=deps.TOOL_ITEM_DEFS[weaponKey];if(!item)throw Error('No compatible Rootledoot modular weapons for '+metalKey);
+      const dmgMultiplier=window.EnemyTierProgression?.weaponMultiplier(item.metalKey,tier,deps.METAL_DEFS,deps.VERDIGRIS_METAL_KEYS)??deps.metalDmgMultiplier(item.metalKey);
+      return {weaponKey,shapeKey:item.shapeKey,metalKey:item.metalKey,dmgType:item.dmgType||'sharp',dmgMultiplier,animStyle:item.animStyle};
+    }
     const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
     const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
     const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
@@ -1066,10 +1118,10 @@
     const healthStatMul = (Number.isFinite(healthRankMultiplier) && healthRankMultiplier > 0 ? healthRankMultiplier : weaken) * tierMul; // Used only for maxHealth so extra survivability never increases outgoing damage or Stamina.
     const weapon = banditWeaponFor(cfg, rank, tier);
     const isFlasker = rank === 'flasker'; // Used to reserve this rank's ranged role for its infinite two-flask loadout.
-    const rangedWeaponKey = isFlasker ? null : banditRangedWeaponFor(cfg, rank);
+    const rangedWeaponKey = isFlasker||cfg._rootledootWeaponPool ? null : banditRangedWeaponFor(cfg, rank);
     const banditFlaskLoadout = isFlasker ? rollBanditFlaskLoadout(cfg) : []; // Per-entity definition; uses never decrement it.
     const flaskerTuning = isFlasker ? banditFlaskerTuning(cfg) : null; // Shared AI/loot tuning stored with this spawned hostile.
-    const shapeStats = window.WeaponShapeStats?.forShape?.(weapon.shapeKey) || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs use the same physical shape stats as player weapons.
+    const shapeStats = (cfg._rootledootWeaponPool?window.WeaponShapeStats?.forKey?.(weapon.weaponKey,deps.TOOL_ITEM_DEFS[weapon.weaponKey]):window.WeaponShapeStats?.forShape?.(weapon.shapeKey)) || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs use the same physical shape stats as player weapons.
     const weaponEfficiency = Number(shapeStats.efficiency); // Validate the shape's stamina efficiency before using it for both attack cost and capacity.
     const attackStaminaCost = BANDIT_ATTACK_STAMINA_COST / (Number.isFinite(weaponEfficiency) && weaponEfficiency > 0 ? weaponEfficiency : 1); // The opening-attack gate and capacity floor must use the same final cost.
     const minimumAttacks = cfg?._preserveMineEnemyTiers ? 1 : 2; // Keep the original mine stamina curve wherever viable; new danger-tier bandits need two affordable openings.
@@ -1098,13 +1150,14 @@
       attackCooldownS: (rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER) / shapeStats.speed,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
+      ...(cfg._ruinCoffinWeapon||cfg._rootledootWeaponPool?{weaponShapeKey:weapon.shapeKey,weaponMetalKey:weapon.metalKey}:{}), // Preserve the exact rolled shape for bound relic loot even before generated item definitions settle.
       weaponMetalPowerMultiplier: weapon.dmgMultiplier, // Arena and combat diagnostics show the exact effective metal grade, not only the metal's name.
       weaponShapeStats: shapeStats, // Used below to keep NPC attack windups, lunges and affliction delivery in sync.
       rangedWeaponKey,
       banditFlaskLoadout,
       banditFlaskerTuning: flaskerTuning,
       banditFlaskPotencyTier: isFlasker ? (cfg?._preserveMineEnemyTiers ? Math.min(4, tier) : Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7))) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
-      banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
+      banditAbilityLoadout: { ...banditAbilityLoadout(weapon.shapeKey, held), ...(weapon.animStyle?{tap1:weapon.animStyle==='thrust'?'pokeCombo':'swingCombo'}:{}) },
       quickAttackChance: quickTuning && Number.isFinite(quickBase) && Number.isFinite(quickStep)
         ? Math.max(0, Math.min(1, quickBase + tier * quickStep)) : BANDIT_QUICK_ATTACK_CHANCE, // Fixed at spawn; no tier/config lookups per attack.
       backstabFlankMaxSeconds: Math.max(0, Number(quickTuning?.backstabFlankMaxSeconds) || 2),
@@ -1343,11 +1396,12 @@
         ? window.DamageAuthority.hit(struckPlayer, amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c })
         : deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
     }
-    if (c?._banditCaptainArmament) {
+    if (c?._banditCaptainArmament || c?.ruinWallCoffin) {
       const afterHealth = Number(target?.health); // Uses the actual victim (player or NPC), so allied skirmishes can proc enchantments too.
       const actualDamage = Number.isFinite(beforeHealth) && Number.isFinite(afterHealth)
         ? Math.max(0, beforeHealth - afterHealth) : 0;
-      window.BanditCaptainArmaments?.emitHit?.(c, target, actualDamage, opts.enchantmentSlot || 'tap1', {
+      if(c.ruinWallCoffin)window.MinionCombat?.emitRuinEnchantedHit?.(c,target,actualDamage,opts.enchantmentSlot||'tap1');
+      if(c._banditCaptainArmament)window.BanditCaptainArmaments?.emitHit?.(c, target, actualDamage, opts.enchantmentSlot || 'tap1', {
         comboFinisher: opts.comboFinisher === true, quickBonusEffectProc: opts.quickBonusEffectProc === true,
       });
     }
@@ -1481,6 +1535,7 @@
       distancePx = Math.min(distancePx, Math.max(0, currentDist - haltDist));
       if (distancePx <= 0 && lungeProfile.hopUnits <= 0.01) return;
     }
+    if(c.ruinSkeletonTheme==='hronal')c._ruinTrailRemaining=0; // Each committed lunge starts its own trail.
     c._banditLunging = true;
     c._banditLungeT = durationS;
     c._banditLungeDur = durationS;
@@ -1551,6 +1606,7 @@
     c._banditLungeHopCurrent = (c._banditLungeHopUnits || 0) * Math.sin(eased * Math.PI);
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
+    if(c.ruinSkeletonTheme==='hronal'||c.ruinSkeletonTheme==='kanthic')window.MinionCombat?.trailMovement?.(c,c.x,c.y,swept.x,swept.y,'lunge',deps.TILE);
     c.x = swept.x; c.y = swept.y;
     if (motion?.wind) window.ResourceSystem?.commitMovement?.(c, motion, Math.min(1, stepPx / Math.max(.00001, Math.hypot(motion.x, motion.y))), window.Combat?.deps?.movementFootingDepleted);
     if (c.prone) return true;
@@ -3109,7 +3165,7 @@
     const ref = c?.avatarRef;
     const sink = window.ActorBodySink;
     if (!sink?.enabled() || !ref?.legs || !ref.frontPlane || !ref.handsPivot || ref.riderMount) return 0; // Mounted riders and legless bodies keep standing.
-    ref.bodySinkActor ||= { legs: ref.legs, lower: [{ obj: ref.frontPlane }, { obj: ref.backPlane }, { obj: ref.handsPivot }] }; // All children of the group the legs also live under.
+    ref.bodySinkActor ||= { legs: ref.legs, lower: [{ obj: ref.frontPlane }, { obj: ref.backPlane }, { obj: ref.handsPivot }, { obj: ref.legsPivot }] }; // The leg handle raises its root by the sink; lower its parent too so soles remain planted and hips track the portrait.
     const standing = (Number(c.health) || 0) > 0 && !c.prone;
     let pct = 0;
     if (standing) pct = Number.isFinite(sampled.bodySink) ? sampled.bodySink : (c._enemyPreparedPose ? window.SharedAttackPose.idleBodySinkPct() : 0); // Legacy arcs author no sink: only a stance weapon rests at the idle sink.
@@ -3488,8 +3544,18 @@
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    if(opts.extra?.ruinWallCoffin){
+      const permitted=window.MinionCombat.coffinWeaponShapes; // Only authored choices that actually encode to bound relic shapes are legal.
+      const authored=loadoutRules?.ruleFor(loadoutKind)?.weapons?cfg.weaponShapePool?.filter(shape=>permitted.includes(shape)):null;
+      cfg={...cfg,_ruinCoffinWeapon:true,weaponShapePool:authored?.length?authored:[...permitted]};
+    } // Match relic catalog.
+    if(opts.extra?.rootledoot){
+      const saved=opts.zoneId==='map_dev_arena'?opts.defOverride?.weaponKey:null;
+      if(saved&&!window.BanditCaptainArmaments?.isRootledootWeapon(saved))throw Error('Saved Rootledoot weapon is outside the current compatible pool; roll a new preview.');
+      cfg={...cfg,_rootledootWeaponPool:true,_rootledootPreviewKey:saved};
+    }
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
-    if (!loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
+    if (!opts.extra?.rootledoot && !loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
       cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
     const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
     if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
@@ -3556,7 +3622,8 @@
       if (shape) cfg = { ...cfg, weaponShapePool: [shape] };
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
-    const rolledDefinition = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+    let rolledDefinition;
+    try{rolledDefinition=makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);}catch(error){avatarRef.dispose();throw error;}
     const unarmedWitch = !!window.GhoulSpecialVariants?.isUnarmedWitch?.(opts.extra); // Shadow-wind Wyrm-witches cast bare-handed like liches: the lich casting pose weapon, no visible mesh.
     let def = Object.assign({ ...rolledDefinition }, unarmedWitch ? { weaponKey: window.GhoulSpecialVariants.castWeaponKey(), rangedWeaponKey: null } : {}, opts.defOverride || {});
     // Special enemies supply fixed weapons through defOverride. Explicit authored
@@ -3569,11 +3636,14 @@
     }
     if(authoredRule?.ranged || authoredRule?.rangedChance != null)def.rangedWeaponKey=rolledDefinition.rangedWeaponKey;
     def = loadoutRules?.applyDefinition(loadoutKind, def, deps.rnd) || def;
+    if(opts.extra?.rootledoot){def.weaponKey=rolledDefinition.weaponKey;def.rangedWeaponKey=null;if(def.banditAbilityLoadout)def.banditAbilityLoadout.tap1=rolledDefinition.banditAbilityLoadout.tap1;} // Workshop rules cannot substitute a forbidden weapon or ranged item.
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
       window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [def.rangedWeaponKey] });
     }
+    if(opts.extra?.ruinSkeletonHealthMultiplier)def.maxHealth=Math.round(def.maxHealth*opts.extra.ruinSkeletonHealthMultiplier); // Before perks and resource initialization.
+    if(opts.extra?.ruinWallCoffin)def.weaponShapeKey=deps.TOOL_ITEM_DEFS?.[def.weaponKey]?.shapeKey||def.weaponShapeKey;
     applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts, authoredRule); // After authored weapon and projectile definitions exist; before resources initialize.
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();
@@ -3585,6 +3655,10 @@
     const surfY = targetGrid[row]?.[col] ? deps.tileSurfaceYInArea(targetGrid[row][col], deps.getCurrentArea()) : 0;
     avatarRef.group.position.set(x / deps.TILE, surfY + halfH, y / deps.TILE);
     deps.markPngPlane(avatarRef.group);
+    if(roster.ruinSkeletonTheme && avatarRef.backPlane) {
+      const disposeSpikes=window.MinionCombat?.attachRuinBackSpikes?.(THREE,avatarRef,roster); // Real geometry must not enter PNG depth replay.
+      if(disposeSpikes){const disposeAvatar=avatarRef.dispose;avatarRef.dispose=function(){disposeSpikes();return disposeAvatar.call(this);};}
+    }
     targetScene.add(avatarRef.group);
     // A lighting pass can prune a still-building avatar's off-scene light
     // while async portrait/limb work yields. Register again at scene adoption.

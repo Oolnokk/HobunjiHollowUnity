@@ -12,6 +12,13 @@
     ['porakaneki:avenger', 'Porakaneki Avenger', 'Tribes'],
     ['mao-ao-skeleton', 'Mao’ao Skeleton', 'Undead'],
     ['harlyao-skeleton', 'Harlyao Skeleton', 'Undead'],
+    ...['hronal','tothal','kanthic'].flatMap(theme=>{
+      const name=theme[0].toUpperCase()+theme.slice(1);
+      return [['harlyao-skeleton:'+theme,name+' Skeleton','Ruin Skeletons'],['harlyao-skeleton:'+theme+':coffin',name+' Coffin Guard','Ruin Skeletons']];
+    }),
+    ['rootledoot:grunt','Rootledoot (Small)','Rootledoots'],
+    ['rootledoot:lieutenant','Rootledoot (Medium)','Rootledoots'],
+    ['rootledoot:captain','Big Rootledoot','Rootledoots'],
     ['harlyao-demolitionist', 'Harlyao Demolitionist', 'Undead'], // Ruin-only bomb carrier; future challenge encounters opt in through MinionCombat.makeDemolitionist.
     ['ghoul', 'Ghoul', 'Undead'],
     ['ghoul:shadowknight', 'Ghoul Shadowknight', 'Special Ghouls'], // Mine variants share the ghoul wardrobe/species; each can carry its own rule on top of the base Ghoul's.
@@ -79,9 +86,18 @@
     );
     return { makeShellMaterial, makeLighting, applyLighting };
   }
-  async function load() {
-    const [gang, porakaneki, omgurku, game, attackValues, index, npcDb, renderPipeline, heldToolsSource] =
-      await Promise.all([
+  let inputsPromise = null; // Shared per page; preload and load consume the same requests.
+  function prefetch() {
+    if (inputsPromise) return inputsPromise;
+    const speciesPromise = read('config/species/index.json').then(async index => {
+      const species = {};
+      await Promise.all(index.entries.map(async entry => {
+        const data = await read(new URL(entry.path, new URL('config/species/index.json', document.baseURI)).href);
+        species[data.speciesId] = data;
+      }));
+      return species;
+    }); // Begin the species fan-out as soon as its own index arrives, not after the entire game source.
+    inputsPromise = Promise.all([
         read('config/bandits/bandit-gang-config.json?v=20261122hWeakHP30'),
         read('config/porakaneki-camp.json'),
         read('config/omgurku-camp.json'),
@@ -90,7 +106,7 @@
           return r.text();
         }),
         read('config/combat/attack-values.json'),
-        read('config/species/index.json'),
+        speciesPromise,
         read('config/npcs/hobunji-starter-npc-database.json'),
         fetch('js/world-render-pipeline.js').then((r) => {
           if (!r.ok) throw Error('Render pipeline source HTTP ' + r.status);
@@ -100,24 +116,17 @@
           if (!r.ok) throw Error('Held tool source HTTP ' + r.status);
           return r.text();
         }),
-      ]);
+        read('config/outline-rendering.json'),
+      ]).catch(error => { inputsPromise = null; throw error; });
+    return inputsPromise;
+  }
+  async function load() {
+    const [gang, porakaneki, omgurku, game, attackValues, species, npcDb, renderPipeline, heldToolsSource, outline] = await prefetch();
     const shapes = {
       ...declaration(game, 'TOOL_SHAPE_DEFS'),
       ...declaration(game, 'MELEE_WEAPON_SHAPE_DEFS'),
     };
     const metals = declaration(game, 'METAL_DEFS');
-    const species = {};
-    await Promise.all(
-      index.entries.map(async (entry) => {
-        const data = await read(
-          new URL(
-            entry.path,
-            new URL('config/species/index.json', document.baseURI),
-          ).href,
-        );
-        species[data.speciesId] = data;
-      }),
-    );
     const metalDamage = Function(
       'METAL_DEFS',
       'return (' +
@@ -140,8 +149,8 @@
     if (typeof heldTools?.createToolPlaneFactory !== 'function')
       throw Error('Game weapon mesh factory unavailable');
     // Same argument order the preview has always passed.
-    const weaponMeshFactory = (THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel) =>
-      heldTools.createToolPlaneFactory({ THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel });
+    const weaponMeshFactory = (THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel, modularGeometries) =>
+      heldTools.createToolPlaneFactory({ THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel, modularGeometries });
     const rangedItems = {};
     for (const id of ['crossbow', 'scatterbow']) {
       const literal = new RegExp(
@@ -157,7 +166,7 @@
       applyLighting,
       rangedItems,
       weaponMeshFactory,
-      outline: await read('config/outline-rendering.json'),
+      outline,
       heldObjectRenderOrder: Number(heldTools.HELD_OBJECT_RENDER_ORDER) || 1.5,
       npcs: npcDb.npcs || npcDb,
       metalDamage,
@@ -170,8 +179,9 @@
     };
   }
   function defaults(kind, data) {
-    const rank = kind.startsWith('bandit:') ? kind.split(':')[1] : 'grunt';
-    const fixed = kind.startsWith('maskbound:')
+    const rootledoot=kind.startsWith('rootledoot:'),themed=kind.startsWith('harlyao-skeleton:'); // The same rank/species used by the shared factories.
+    const rank = kind.startsWith('bandit:')||rootledoot ? kind.split(':')[1] : 'grunt';
+    const fixed = rootledoot?'mao-ao':kind.startsWith('maskbound:')
       ? 'maskbound-guardian'
       : kind.startsWith('lich:')
         ? 'harlyao-skeleton'
@@ -186,7 +196,7 @@
       'mao-ao-skeleton',
       'harlyao-skeleton',
       'ghost-marcher',
-    ].includes(kind);
+    ].includes(kind)||themed;
     const special = kind.split(':').length === 3 && kind.startsWith('lich:') ? window.SpecialHarlyaoLiches?.DATA?.[kind.split(':')[1]] : null; // Workshop defaults are original shipped presets, not already-applied draft overrides.
     const lich = kind.startsWith('lich:')
       ? window.HarlyaoLichCombat.TYPE_DEFS[kind.split(':')[1]]
@@ -197,7 +207,7 @@
       (lich
         ? ['pickshovel']
         : minion
-          ? window.MinionCombat.defaultWeaponShapes
+          ? (kind.endsWith(':coffin')?window.MinionCombat.coffinWeaponShapes:window.MinionCombat.defaultWeaponShapes)
           : tribe
             ? kind.endsWith('avenger')
               ? tribe.avengers.weaponShapes
@@ -255,7 +265,7 @@
           items: { 'appearance::hat::basic_headband': 1 },
         },
       });
-    if (!tribe)
+    if (!tribe&&!rootledoot)
       clothing.pants = {
         chance: 1,
         items: { pants_basic: 1, draped_pants: 1 },
@@ -325,6 +335,19 @@
       extra: { enemyLoadoutKind: kind },
       ...options,
     };
+    const saved=options.previewCaptainArmament; // Register before the normal actor factory constructs its weapon holder.
+    if(saved&&kind.startsWith('rootledoot:')&&!window.BanditCaptainArmaments.isRootledootWeapon(saved.key))throw Error('Saved Rootledoot uses an obsolete weapon; roll a new preview.');
+    if(saved&&!window.BanditCaptainArmaments.registerDefinition(saved.key,saved))throw Error('Saved modular weapon could not be restored');
+    if(kind.startsWith('harlyao-skeleton:')){
+      const [,theme,variant]=kind.split(':');
+      return window.MinionCombat.makeEntity({...shared,speciesId:'harlyao-skeleton',name:types.find(t=>t.id===kind).label,baseConfig:data.gang,
+        previewRuinTheme:theme,previewRuinWallCoffin:variant==='coffin'});
+    }
+    if(kind.startsWith('rootledoot:')){
+      const rank=kind.split(':')[1],entity=await window.Rootledoots.makeCombatant(data.gang,rank,tier,0,0,shared);
+      if(entity&&rank==='captain'&&!entity._banditCaptainArmament){window.BanditCombat.discardEntity?.(entity);throw Error('Big Rootledoot did not receive its required Fey weapon');}
+      return entity;
+    }
     if (kind.startsWith('maskbound:'))
       return window.MaskboundGuardianCombat.makeEntity({
         ...shared,
@@ -445,6 +468,7 @@
   }
   window.EnemyLoadoutSourceData = Object.freeze({
     types,
+    prefetch,
     load,
     declaration,
     renderingFromGame,

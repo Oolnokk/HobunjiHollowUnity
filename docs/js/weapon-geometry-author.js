@@ -15,7 +15,7 @@
     const wrap=document.createElement('details');wrap.open=true;wrap.className='field';
     const summary=document.createElement('summary');summary.textContent='Weapon geometry — draw on sprite';wrap.appendChild(summary);host.appendChild(wrap);
     const help=document.createElement('div');help.className='help';
-    help.textContent='Drag length A/B, drag shortening bands, or trace the complete contact perimeter. Draw a rectangle around only the shortenable material. Bands and rope are fitted once in the grounded Light weapon stance; automatic alpha contact is used at runtime; jumps change rotation, never fitted length. Cyan = length, amber = shortening, pink = contact.';
+    help.textContent='Drag length A/B, drag shortening bands, or trace the complete contact perimeter. Place the top and bottom of each band around the shortenable part of the haft. The full sprite width compresses within those rows. Bands and rope are fitted once in the grounded Light weapon stance; automatic alpha contact is used at runtime; jumps change rotation, never fitted length. Cyan = length, amber = shortening, pink = contact.';
     wrap.appendChild(help);
     const previewLabel=document.createElement('label');previewLabel.style.cssText='display:flex;gap:6px;align-items:center;margin:6px 0';
     const previewToggle=document.createElement('input');previewToggle.type='checkbox';previewToggle.checked=true;previewToggle.id='weaponGeometryPreviewEnabled';

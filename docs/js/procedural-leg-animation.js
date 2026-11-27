@@ -964,6 +964,9 @@
     } : null; // Frozen per-avatar values drive only the walking branch of update; lunge/airborne/seated continue normally.
     const modelWidth = Number(options.modelWidth) || 0.9;
     const modelHeight = Number(options.modelHeight) || modelWidth;
+    const fixedPosterior=Number.isFinite(options.posteriorYOverride); // Keep instance anatomy fixed even if a shared species-scale refresh runs later.
+    const stanceDropMax=Number.isFinite(options.stanceDropMax)?Math.max(0,options.stanceDropMax):Infinity; // Instance-specific clearance prevents short exposed bodies sinking into terrain.
+    const gaitReachLimit=Number.isFinite(options.gaitReachLimit)&&options.gaitReachLimit>0?options.gaitReachLimit:Infinity; // Optional short-legged gait cap, cached for the existing solver.
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
     const footHeightFraction = Number(c.footHeightFraction) || 0.11;
     const sizeBalanceMultiplier = Number(c.sizeBalanceMultiplier) > 0 ? Number(c.sizeBalanceMultiplier) : 1; // Enlarges every fallback/imported foot toward the shared hand/foot midpoint.
@@ -988,7 +991,7 @@
     const root = new THREE.Group();
     root.name = `${options.name || 'avatar'}_procedural_feet`;
 
-    const restPosteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY)); // Authored original hip height, in the parent/foot-root's floor-relative frame.
+    const restPosteriorY = Number.isFinite(options.posteriorYOverride)?options.posteriorYOverride:posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY)); // Authored original hip height, in the parent/foot-root's floor-relative frame.
     let posteriorY = restPosteriorY; // Live hip height, lengthened independently of the portrait and never used to scale a foot mesh.
     let legLengthMultiplier = 1; // Relative to portrait Y scale, so old rigScaleY still scales portrait and legs together.
     const posteriorX = posteriorXForSpecies(speciesId, gender); // Used to recenter the legs and to locate the seated surface in this avatar-local frame.
@@ -1176,7 +1179,7 @@
     function setLegLengthMultiplier(multiplier, contactChanged = false) {
       if (state.disposed) return posteriorY;
       const raw = Number(multiplier); // Ratio of authored leg length to portrait Y, both in canonical world-size units.
-      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1;
+      const next = fixedPosterior ? 1 : Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1;
       if (!contactChanged && Math.abs(next - legLengthMultiplier) <= 1e-9) return posteriorY; // Width/head/age changes must not re-solve both bones or rebuild pants.
       legLengthMultiplier = next;
       const contact = (state.leftContactY + state.rightContactY) * .5; // Feet remain planted: leg growth moves the hip, not the shoe geometry.
@@ -1323,7 +1326,7 @@
     // feet are lifted toward them: applyLegChain's fixed-length fold then bends the knees instead of shortening the legs. Raising
     // the group (rather than counter-moving it at render time) keeps everything skinned to these joints, i.e. the pants, in the same frame.
     function applyStanceDrop(drop) {
-      const clamped = Math.max(0, Math.min(drop, standingLegLength() * state.stanceDropLimitFraction)); // Normal stances cap at 55%; an explicit paired kneel may bend deeper.
+      const clamped = Math.max(0, Math.min(drop, stanceDropMax, standingLegLength() * state.stanceDropLimitFraction)); // Normal stances cap at 55%; an explicit paired kneel may bend deeper.
       if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(root.position.y - clamped) < 1e-6) return;
       state.stanceDrop = clamped;
       root.position.y = clamped;
@@ -1558,7 +1561,8 @@
     }
 
     parent.add(root);
-    let authoredLegRatio = window.HobunjiCharacterRigScale?.legLengthRatioFor?.(speciesId, gender); // Species/gender default includes legacy Height migration.
+    const explicitLegRatio=Number.isFinite(options.legLengthRatioOverride)?options.legLengthRatioOverride:null; // An instance-specific posterior must not be overwritten by its donor species' leg scale.
+    let authoredLegRatio = explicitLegRatio??window.HobunjiCharacterRigScale?.legLengthRatioFor?.(speciesId, gender); // Species/gender default includes legacy Height migration.
     for (let owner = parent; owner; owner = owner.parent) {
       const scaleState = owner.userData?.hobunjiCharacterRigScaleState; // A hostile's explicit parent scale can differ from species defaults.
       if (!scaleState) continue;
@@ -1566,7 +1570,7 @@
         / (Number(scaleState.factor?.y) || 1);
       break;
     }
-    if (Number.isFinite(Number(authoredLegRatio))) setLegLengthMultiplier(authoredLegRatio); // Initial spawn honors the CURRENT parent scale, not a possibly different default.
+    if (Number.isFinite(Number(explicitLegRatio??authoredLegRatio))) setLegLengthMultiplier(explicitLegRatio??authoredLegRatio); // Initial spawn honors the CURRENT parent scale, not a possibly different default.
 
     function applyPose(side, contactY, idleX, pose, response, dt) {
       const target = state[`${side}Target`];
@@ -1869,7 +1873,7 @@
       const stanceDropAllowed = !suppressed && !state.hoverEnabled && !motion?.airborne; // Mounts, hover and falls own the whole-body pose.
       state.stanceDropAllowed = stanceDropAllowed;
       if (motion?.lunging || !stanceDropAllowed) { if (legChains.left.hip.rotation.y || legChains.right.hip.rotation.y) syncHipYaw(); }
-      const wantedDrop = stanceDropAllowed ? state.stanceDropTarget : 0;
+      const wantedDrop = stanceDropAllowed ? Math.min(state.stanceDropTarget,stanceDropMax) : 0;
       if (wantedDrop > 0 || state.stanceDrop > 0) {
         const eased = damp(state.stanceDrop, wantedDrop, wantedDrop > state.stanceDrop ? 12 : 9, dt);
         applyStanceDrop(wantedDrop === 0 && eased < modelHeight * 0.0005 ? 0 : eased); // Snaps the last sliver home so the standing pose is restored exactly.
@@ -1928,7 +1932,7 @@
       const gaitTarget = isGaiting ? Math.sqrt(speedRatio) : 0;
       state.gaitStrength = damp(state.gaitStrength, gaitTarget, gaitTarget > state.gaitStrength ? 8 : 12, dt);
 
-      const gaitLegLength = standingLegLength(); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
+      const gaitLegLength = Math.min(standingLegLength(),gaitReachLimit); // Used as the stride reach basis so species proportions, not total sprite height, determine step length.
       const requestedRun = lurch ? 0.15 : motion?.combat ? 1 : motion?.allowSpeedRun ? smoothstep01((speedRatio - 0.42) / 0.28) : 0; // Wooden puppets never turn into ordinary humanoid sprints.
       state.runBlend = damp(state.runBlend, isGaiting ? requestedRun : 0, 9, dt);
       state.motionMode = isGaiting ? (lurch ? 'maskbound-lurch' : requestedRun > 0.5 ? 'run' : 'walk') : 'idle';
@@ -2002,6 +2006,7 @@
       return {
         lastChange: 'Scaled sole envelopes drive grounded ankle height; pants depth push cannot sink a grounded shoe below its floor',
         motionMode: state.motionMode,
+        instancePosteriorFixed: fixedPosterior, gaitReachLimit: Number.isFinite(gaitReachLimit)?gaitReachLimit:null, stanceDropMax: Number.isFinite(stanceDropMax)?stanceDropMax:null, // Mobile diagnostics for short-legged actors.
         footOrientation: {
           rootYawDeg: root.rotation.y * 180 / Math.PI,
           leftHipYawDeg: legChains.left.hip.rotation.y * 180 / Math.PI,

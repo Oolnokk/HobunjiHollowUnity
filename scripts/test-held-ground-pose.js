@@ -47,15 +47,14 @@ assert.equal(rope(1,1,-1,2).length,1,'airborne rope never grows');
 
 const {tracePixels}=context.window.HeldGroundPose;
 const bounded=[{a:-1,b:0,x0:-.2,x1:.2}];
-close(contractedZ(-1,1,bounded,.5,0),-.5);
-close(contractedZ(-.5,1,bounded,.5,0),-.25);
-close(contractedZ(-.5,1,bounded,.5,.8),0);
-close(contractedZ(-1,1,bounded,.5,.8)-contractedZ(.5,1,bounded,.5,.8),-1.5);
+close(contractedZ(-1,1,bounded,.5),-.5);
+close(contractedZ(-.5,1,bounded,.5),-.25);
+close(contractedZ(.5,1,bounded,.5),.5);
 const rgba=new Uint8ClampedArray(4*4*4);
 for(const [x,y] of [[1,0],[1,1],[1,2],[2,0],[3,0],[1,3]])rgba[(y*4+x)*4+3]=255;
 const traced=tracePixels(rgba,4,4,{min:{x:-1,y:-1},max:{x:1,y:1}},bounded);
 assert.ok(traced.some(p=>p.x===1&&p.z===-1),'actual outer head pixel participates');
-assert.ok(traced.every(p=>Number.isFinite(p.columnX)),'contact carries exact deformation column');
+assert.ok(traced.some(p=>p.z===0),'alpha hull includes the shortening boundary');
 assert.ok(!traced.some(p=>p.x===1&&p.z===1),'transparent lower corner is excluded');
 console.log('bounded bands and alpha contact: ok');
 
@@ -73,7 +72,7 @@ for(const vertices of [traced, traced.slice(0,1), traced.slice(0,2)]){
         matrix.elements[1]=Math.cos(theta)*.7;
         matrix.elements[5]=Math.sin(theta)*1.3;
         const expected=Math.min(...vertices.map(p=>matrix.elements[1]*p.x
-          -matrix.elements[5]*contractedZ(p.z,grip,bounded,amount,p.columnX)+.35));
+          -matrix.elements[5]*contractedZ(p.z,grip,bounded,amount)+.35));
         assert.ok(Math.abs(projectedContactY(baked.hull,matrix)-expected)<1e-12);
       }
     }
@@ -160,7 +159,7 @@ if(THREE){
   const source=new THREE.PlaneGeometry(.5,2),plane=new THREE.Mesh(source,new THREE.MeshBasicMaterial());
   plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
   holder.position.y=.6;holder.rotation.x=Math.PI/2;parent.updateMatrixWorld(true);
-  const profile={a:-1,b:1,heightFraction:1,minSegmentScale:.5,segments:[{a:0,b:.9}],contactOutline:[]};
+  const profile={a:-1,b:1,heightFraction:1,minSegmentScale:.5,segments:[{a:0,b:.9,x0:-.1,x1:.1}],contactOutline:[]};
   const ctx={preview:true,rig:{parent},itemKey:'test',fitIdentity:'test',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile,allowFit:true,lightReference:holder.matrix.clone()};
   assert.equal(solver.needsFit(ctx,weapon),true);
   solver.constrainWeapon(holder,weapon,ctx);
@@ -168,6 +167,16 @@ if(THREE){
   assert.ok(result.finalMinY>=.035-1e-5,'lowest opaque contact clears floor');
   assert.ok(plane.geometry!==source,'actual displayed geometry is shortened');
   const fitted=plane.geometry;
+  const positions=fitted.attributes.position; // Inspect the actual geometry submitted for drawing.
+  assert.equal(positions.count,8,'each band boundary has only one shared row across the sprite');
+  for(let i=0;i<positions.count;i+=2){
+    close(positions.getX(i),-.25);
+    close(positions.getX(i+1),.25);
+    close(positions.getY(i),positions.getY(i+1));
+  }
+  const anchor=new THREE.Vector3(.2,-.9,0); // Outside the old horizontal band but on its shorten-able boundary.
+  solver.adjustHaftPoint(plane,anchor);
+  close(anchor.y,-.45);
   holder.position.y=1.5;holder.rotation.x=Math.PI/2;parent.updateMatrixWorld(true);
   delete ctx.lightReference;solver.constrainWeapon(holder,weapon,ctx);
   assert.equal(plane.geometry,fitted,'later frames retain physical length');
@@ -179,6 +188,18 @@ if(THREE){
   assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds+1,'replacing weapon artwork rebuilds the hull');
   solver.setPreviewEnabled(false);
   assert.equal(plane.geometry,source,'raw mode restores original geometry');
+  // A grip can be below the posterior even with every sprite pixel above the floor.
+  solver.setPreviewEnabled(true);
+  holder.position.set(0,1.5,0);
+  holder.rotation.set(Math.PI/2,0,0);
+  parent.updateMatrixWorld(true);
+  assert.equal(solver.constrainWeapon(holder,weapon,{...ctx,posteriorLocalY:1.7}),true);
+  close(holder.position.y,1.701);
+  close(solver.authoredFrameFor(holder).holderWorld.elements[13],1.5);
+  close(solver.snapshot().posteriorLift,.201);
+  close(solver.snapshot().angleDeg,0);
+  assert.equal(solver.snapshot().reason,'posterior-lift');
+
   // The real grip is off-origin. Compare against the actual sprite matrix,
   // not the solver's own pivot reconstruction (including a reflected root).
   solver.setPreviewEnabled(true);
@@ -285,16 +306,21 @@ if(THREE){
   const localLeft=new THREE.Vector3(.05,0,0).applyMatrix4(holder.matrixWorld).applyMatrix4(canonicalInverse);
   const beforeRight=localRight.clone().applyMatrix4(mainMesh.matrixWorld);
   const beforeLeft=localLeft.clone().applyMatrix4(offMesh.matrixWorld);
+  const shaftBefore=new THREE.Vector3().setFromMatrixColumn(offMesh.matrixWorld,1); // Compare the shaft bearing across clearance.
   const holderBefore=holder.matrix.clone();
   const hullBuilds=solver.snapshot().contactHullBuilds;
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   const d=solver.snapshot().dual;
   assert.equal(solver.snapshot().contactHullBuilds,hullBuilds,'neither hand rebuilds the shared contact hull');
-  assert.ok(d.right.angleDeg!==0&&d.left.angleDeg!==0,'independent corrective rotation');
+  assert.ok(d.right.angleDeg!==0&&d.left.angleDeg!==0,'each weapon independently rotates to clear the floor');
   assert.ok(d.right.finalMinY>=.035-1e-5&&d.left.finalMinY>=.035-1e-5,'both weapons clear floor');
   close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);
   close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(beforeLeft),0);
   close(d.right.gripPivotDrift,0);close(d.left.gripPivotDrift,0);
+  assert.equal(d.left.clearanceStrategy,'offhand-pitch');
+  const shaftAfter=new THREE.Vector3().setFromMatrixColumn(offMesh.matrixWorld,1);
+  close(shaftBefore.x*shaftAfter.z-shaftBefore.z*shaftAfter.x,0);
+  assert.ok(shaftBefore.x*shaftAfter.x+shaftBefore.z*shaftAfter.z>=0);
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
   assert.equal(offMesh.geometry,plane.geometry);
@@ -313,7 +339,7 @@ if(THREE){
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   const md=solver.snapshot().dual;
   for(const side of ['right','left']){
-    assert.ok(md[side].angleDeg!==0&&md[side].finalMinY>=.035-1e-5,'mirrored '+side+' clears floor');
+    assert.ok(md[side].finalMinY>=.035-1e-5,'mirrored '+side+' clears floor');
     close(md[side].gripPivotDrift,0);
   }
   close(mirrorRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(mirrorBeforeRight),0);
@@ -349,6 +375,48 @@ if(THREE){
   assert.equal(solver.hasCurrentGripPose(new THREE.Group()),false);
   frame++;assert.equal(solver.hasCurrentGripPose(holder),false);
   solver.clear();assert.equal(solver.hasCurrentGripPose(holder),false);
+
+  // Gameplay uses the body frame and live leg handle even with no ground sample.
+  parent.position.y=.2;
+  holder.position.y=.8;
+  parent.updateMatrixWorld(true);
+  const legs={standingPosteriorY:2}; // Authored relative to the translated character root.
+  w.PlayerBodyTransformComposer={getPlayerMesh:()=>parent,getPlayerLegHandle:()=>legs};
+  w.PlayerJump.heldPoseGroundY=()=>null;
+  plane.remove(mainRoot,offRoot);
+  frame++;
+  assert.equal(solver.constrainWeapon(holder,weapon,{...ctx,preview:false,dual:false}),true);
+  plane.add(mainRoot,offRoot);
+  assert.ok(solver.snapshot().gripY>=2.201-1e-8);
+  close(solver.snapshot().angleDeg,0);
+
+  // Both copies independently lift from their authored offsets over a gap.
+  holder.position.y=.8;
+  mainRoot.position.y=0;
+  offRoot.position.y=.1;
+  parent.updateMatrixWorld(true);
+  const dualContext={...ctx,preview:false};
+  solver.constrainWeapon(holder,weapon,dualContext);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
+  assert.ok(solver.snapshot().dual.right.posteriorLift>0);
+  assert.equal(solver.snapshot().dual.left.posteriorLift,0);
+  assert.equal(solver.snapshot().dual.left.gripLift,0);
+  close(solver.snapshot().angleDeg,0);
+
+  holder.position.y=.8;
+  offRoot.position.set(0,0,0);
+  parent.updateMatrixWorld(true);
+  plane.remove(mainRoot,offRoot);
+  solver.constrainWeapon(holder,weapon,{...dualContext,dual:false});
+  plane.add(mainRoot,offRoot);
+  parent.updateMatrixWorld(true);
+  const offBefore=offRoot.getWorldPosition(new THREE.Vector3()); // Socket-only copy starts below the posterior.
+  offRoot.position.copy(offBefore.clone().add(new THREE.Vector3(0,-2,0)).applyMatrix4(plane.matrixWorld.clone().invert()));
+  offRoot.updateMatrixWorld(true);
+  const lowered=offRoot.getWorldPosition(new THREE.Vector3());
+  assert.ok(lowered.y<offBefore.y);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:true});
+  assert.ok(offRoot.getWorldPosition(new THREE.Vector3()).y>lowered.y);
   console.log('held ground pose: actual Three preview and independent dual grip pivots passed');
 }
 

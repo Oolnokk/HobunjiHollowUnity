@@ -166,6 +166,8 @@
     }
 
     function profileShoulderInParent(side) {
+      const fixed=avatarRoot.userData?.instanceHandShoulders?.[side]; // Instance anchors are already transformed by the portrait-binding owner; do not shift again.
+      if(fixed){shoulderSource[side]='instance-portrait-anchor';return new THREE.Vector3(fixed.x,fixed.y,fixed.z);}
       const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder';
       const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
       if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
@@ -248,6 +250,8 @@
     };
 
     function posteriorYInParent() {
+      const explicit=avatarRoot.userData?.posteriorYOverride; // Instance-specific anatomical center, shared with the leg rig.
+      if(Number.isFinite(explicit))return explicit;
       const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
       if (Number.isFinite(resolvedY)) return resolvedY;
       const posteriorRule = attachmentRigProfile()?.posteriorRule;

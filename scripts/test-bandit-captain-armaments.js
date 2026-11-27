@@ -317,6 +317,25 @@ for (let i=0;i<500;i++) {
   const combatSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
   for (const slot of ['tap1','tap2','hold1','hold2']) assert(combatSource.includes("enchantmentSlot: '"+slot+"'"), 'all captain attack families publish their real slot: ' + slot);
   assert(combatSource.includes('BanditCaptainArmaments?.tick?.'), 'enemy blade VFX are updated by the live hostile weapon loop');
+  // Rootledoot pool is exactly the legal union of dagger hafts and Porakaneki club heads.
+  const rootPairs=cap.rootledootPairs();assert(rootPairs.length>0);
+  for(const [shaft,s] of Object.entries(config.shafts))for(const [head,h] of Object.entries(config.heads)){
+    const expected=!s.editorOnly&&!/hachutu/i.test(shaft)&&!/hachutu/i.test(s.sourceShape||'')&&!h.editorOnly&&!h.craftDisabled&&(shaft==='dagger'||head==='porakaneki-greatclub')&&!modular.isDisallowed(shaft,head);
+    assert.equal(rootPairs.some(p=>p.shaft===shaft&&p.head===head),expected);
+  }
+  assert(!cap.isRootledootWeapon(modular.itemKey('hachutuTorchStaff','porakaneki-greatclub','nativeCopper')),'Hachutu haft excluded even with a compatible Porakaneki head');
+  // Exercise the actual initial bandit weapon roll as well as the subsequent enchantment wrapper.
+  const banditSource=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),start=banditSource.indexOf('  function banditWeaponFor('),end=banditSource.indexOf('  function banditRangedWeaponFor(',start);
+  const select=new Function('window','deps','configuredWeaponMetalKey','rollBanditWeaponMetalKey',banditSource.slice(start,end)+';return banditWeaponFor;');
+  for(const rank of ['grunt','lieutenant','captain'])for(let i=0;i<rootPairs.length;i++){
+    const roll=select(window,{...deps,rnd:()=> (i+.5)/rootPairs.length,metalDmgMultiplier:()=>1},()=> 'nativeCopper',()=> 'nativeCopper');
+    const weapon=roll({_rootledootWeaponPool:true},rank,0);assert(cap.isRootledootWeapon(weapon.weaponKey));assert.equal(weapon.animStyle,toolDefs[weapon.weaponKey].animStyle);
+  }
+  for(const rank of ['grunt','lieutenant'])for(const roll of [0.1,0.4,0.9]){
+    const actor=entity();actor.rootledoot=true;actor.enemyClass='rootledoot';const part=rootPairs[0];actor.def.weaponKey=modular.itemKey(part.shaft,part.head,'nativeCopper');
+    cap.equip(actor,{},rank,0,{}, {...deps,rnd:()=>roll});assert(cap.isRootledootWeapon(actor.def.weaponKey));assert.equal(!!actor._banditCaptainArmament,roll<(rank==='lieutenant'?.5:.25));
+    if(actor._banditCaptainArmament){assert.equal(actor._banditCaptainArmament.origin,'Fey');assert(actor._banditCaptainArmament.enchantments.base.every(id=>definitions[id].alignment==='Fey'));cap.discard(actor);}
+  }
   // Rootledoots use the actual modular catalog even below the normal captain's minimum tier.
   for(let tier=0;tier<=7;tier++){
     const boss=entity();boss.rootledootBig=true;boss.enemyClass='rootledoot';
@@ -324,6 +343,7 @@ for (let i=0;i<500;i++) {
     const record=boss._banditCaptainArmament;
     assert(record,'every Big Rootledoot tier gets an enchanted weapon');
     assert.equal(record.origin,'Fey');
+    assert(record.shaft==='dagger'||record.head==='porakaneki-greatclub');assert(!/hachutu/i.test(record.shaft));assert(!modular.isDisallowed(record.shaft,record.head));
     assert.equal(record.visual.alignment,'Fey');
     const ids=[...record.enchantments.base,...Object.values(record.enchantments.flourishes)];
     assert(ids.length>0&&ids.every(id=>definitions[id].alignment==='Fey'));

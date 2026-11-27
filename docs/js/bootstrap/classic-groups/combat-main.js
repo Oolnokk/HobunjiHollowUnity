@@ -13,7 +13,7 @@
     "js/combat/combat-animal-attacks.js?v=20261126h583b393",
     "js/combat/combat-voorg-ass-rear-kick.js?v=20261126h5232b66",
     "js/combat/combat-attach.js?v=20261126h901bb94",
-    "js/combat/combat-loadout.js?v=20261126groundFit2",
+    "js/combat/combat-loadout.js?v=20261127dualPommel1",
     "js/combat/combat-progression.js?v=20261114packbooks2",
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261123companionAudit3",
@@ -30,9 +30,9 @@
     "js/combat/combat-charged-breaker.js?v=20261126h22fa9c0",
     "js/combat/combat-flurry.js?v=20261126planarRebase1",
     "js/combat/combat-loadout-ui.js?v=20261123ha2c1378",
-    "js/combat/combat-enchantments.js?v=20261127combatPopups2",
-    "js/combat/fey-illusions.js?v=20261127combatPopups2",
-    "js/combat/fey-hyped-attacks.js?v=20261127combatPopups2",
+    "js/combat/combat-enchantments.js?v=20261127h9f27629",
+    "js/combat/fey-illusions.js?v=20261127h64ecb2f",
+    "js/combat/fey-hyped-attacks.js?v=20261127h2230969",
     "js/combat/weapon-enchantment-vfx.js?v=20261117flailEnchants1",
     "js/combat/loadout-weapon-preview.js?v=20261118instrumentSubtabPreview1"
 ]; // Versioned modules evaluated before gameplay boot.

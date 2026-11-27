@@ -429,8 +429,8 @@
     }
   }
 
-  function scaled(def, key, baseValue, property) {
-    return Number(baseValue) * (def.scalable?.[property] ? getEnchantmentPowerMultiplier(key) : 1);
+  function scaled(def, key, baseValue, property, power = null) {
+    return Number(baseValue) * (def.scalable?.[property] ? (power ?? getEnchantmentPowerMultiplier(key)) : 1);
   }
 
   function applyEnhanced(entity, id, amount, reason) {
@@ -649,10 +649,12 @@
 
   function onHit(event) {
     const key = event.weaponKey;
-    const power = getEnchantmentPowerMultiplier(key);
     const target = event.target;
     if (!target || target.health <= 0 && !(event.actualDamage > 0)) return;
-    const baseIds = stateFor(key).base; // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
+    const coffin=event.attacker?.ruinWallCoffin===true; // Read actor-local magic, not player gear sharing a crafted item key.
+    const baseIds=coffin?(event.attacker.rosterRecord?.enchantedWeapon?.enchantments?.base||[]):stateFor(key).base;
+    const alignment=coffin?DEFINITIONS[baseIds[0]]?.alignment:null; // Exactly one Base: one point of Immundanity for a planar enchantment.
+    const power=coffin?1+(['Hronal','Tothal','Kanthic','Ohthic'].includes(alignment)?ENCHANTMENT_POWER_PER_IMMUNDANITY:0):getEnchantmentPowerMultiplier(key); // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
     for (const id of baseIds) {
       const def = DEFINITIONS[id];
       if (def?.hitAffliction) applyRealmHitAffliction(event, def, power);
@@ -660,19 +662,19 @@
     }
 
     if (baseIds.includes('burning')) {
-      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount'), event.attacker);
+      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount', power), event.attacker);
     }
     if (baseIds.includes('frostbitten')) {
-      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount'), event.attacker);
+      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount', power), event.attacker);
     }
     if (baseIds.includes('mirrored') && event.actualDamage > 0) {
-      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount');
+      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount', power);
       applyEnhanced(event.attacker, 'mirroredHealth', amount, 'Mirrored');
     }
     if (baseIds.includes('spiritHeal')) applySpiritHeal(event, power);
     if (baseIds.includes('livingFlame')) {
-      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount');
-      const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount');
+      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount', power);
+      const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount', power);
       applyAttributedAffliction(target, 'burningHealth', targetBurn, event.attacker);
       window.ResourceSystem?.addAffliction?.(event.attacker, 'kindlingHealth', selfKindling);
     }
@@ -680,7 +682,7 @@
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
       if (baseIds.includes(id)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker });
     }
-    applyFlourish(event);
+    if(!event.attacker?.ruinWallCoffin)applyFlourish(event);
   }
 
   function onDefensive(event) {

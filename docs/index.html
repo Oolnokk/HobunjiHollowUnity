@@ -37,7 +37,7 @@
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
   <script src="js/xray-hierarchy.js?v=20261127h36870ae"></script>
-  <script src="js/held-ground-pose.js?v=20261127groundOnce2"></script>
+  <script src="js/held-ground-pose.js?v=20261127mirrorClearance1"></script>
   <script src="js/held-ground-pose-trace.js?v=20261127trace1"></script> <!-- Diagnostic only: inert unless ?groundPoseTrace=1. -->
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
@@ -166,10 +166,10 @@
   <script src="js/color-fill.js?v=20261117h93b0e83"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261126h097bdbf"></script>
-  <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
+  <script src="js/tool-metal-recolor.js?v=20261127ruinBlotchLift6"></script>
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
-  <script src="config/attachment-rig-profiles.js?v=20261126voorg31merge1"></script>
+  <script src="config/attachment-rig-profiles.js?v=20261127rootAnatomyRevert16"></script>
   <link rel="stylesheet" href="style.css?v=20261124bulkRebase4">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
@@ -184,12 +184,12 @@
     }
   </script>
   <script src="js/beard-hood-cutout.js?v=20261125pristineCloth1"></script>
-  <script src="js/portrait-utils.js?v=20261126inkParity1"></script>
+  <script src="js/portrait-utils.js?v=20261127ruinTorsoOnly10"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261122hKasa3"></script>
   <script src="js/character-spine.js?v=20261126neckBlendConsolidate3"></script>
   <script src="js/hat-overflow-plane.js?v=20261124hatOverflow3"></script>
-  <script src="js/png-plane-avatar.js?v=20261126had87cb8"></script>
+  <script src="js/png-plane-avatar.js?v=20261127rootRigAudit18"></script>
   <script src="js/creature-ground-anchor.js?v=20261126h78dd910"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261126neckAudit2"></script>
@@ -199,7 +199,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261127he0ddf8a"></script>
+  <script src="js/held-action-animations.js?v=20261127h22d76ee"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -220,11 +220,11 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261117hRigSink2"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261126exactSeamsAudit1"></script>
+  <script src="js/procedural-leg-animation.js?v=20261127rootRigAudit19"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261126exactSeamsAudit1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261126exactSeamsAudit1"></script>
+  <script src="js/pants-garment-renderer.js?v=20261127ruinInkPants4"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -259,7 +259,7 @@
   <script src="js/wildlife-threat-response.js?v=20261123h48936ff"></script> <!-- Shared predator panic, close-range herd defense and alerted nest adults; consulted by WildlifeFoodWeb. -->
   <script src="js/wildlife-food-web.js?v=20261126familyAudit3"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1"></script>
+  <script src="js/ice-stalagmite-coverage.js?v=20261127ruinSurfaceAnchors9"></script>
   <script src="js/foliage-generator.js?v=20261125treeRuntime2"></script>
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
@@ -318,7 +318,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261125enemyClassAudit1"></script>
+  <script src="js/condition-registry.js?v=20261127rootledootRigFey13"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js.
@@ -358,9 +358,9 @@
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261126flailHeadLean1"></script>
-  <script src="config/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
+  <script src="config/weapon-sprite-assemblies.js?v=20261127mirrorFlail2"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261115torchWick2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261126h4ed79f8"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261127mirrorFlail2"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
@@ -381,7 +381,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261127captainRegistration1"></script>
+  <script src="js/bandit-camps.js?v=20261127ruinViewer1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -415,7 +415,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
-  <script src="js/persistent-ground-fire.js?v=20261122h525babc"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261127ruinViewer1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
   <script src="js/alchemy-flasks.js?v=20261119cheapGeometry1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
@@ -513,7 +513,7 @@
        Slagothim culture names for caravan members. -->
   <script src="js/scratchbones-name-generator.js?v=20261108harlyao2"></script>
   <script src="js/boney-shinjimi-rewards.js?v=20261116milk1"></script> <!-- Existing museum/relic/trinket reward adapters. -->
-  <script src="js/wilderness-encounter-runtime.js?v=20261124shared2"></script>
+  <script src="js/wilderness-encounter-runtime.js?v=20261127rootCorsCrystalParity11"></script>
   <script src="js/boney-shinjimi-wilderness.js?v=20261124moonCatchup2"></script> <!-- Full-moon hermit, house and chase; shares traveller scheduler/save seam. -->
   <script src="js/slagothim-traders.js?v=20261124bulkAudit3"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
@@ -671,7 +671,7 @@
   <script src="config/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
   <script src="js/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
-  <script src="js/bandit-captain-armaments.js?v=20261127captainRegistration2"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
+  <script src="js/bandit-captain-armaments.js?v=20261127rootAnatomyRevert16"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
   <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
@@ -2894,7 +2894,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261114posobj1754"></script>
+  <script src="js/fishing-minigame.js?v=20261127ruinViewer1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2904,7 +2904,7 @@
        during its own setup, mirroring window.Fishing above. -->
   <script src="js/kurraya-puzzle.js?v=20261110releaseGrid1"></script>
   <script src="js/instrument-pattern-loadout.js?v=20261118instrumentLoadout2"></script>
-  <script src="js/music-minigame.js?v=20261118instrumentLoadout2"></script>
+  <script src="js/music-minigame.js?v=20261127ruinViewer1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -3008,8 +3008,8 @@
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
-  <script src="js/rootledoot-encounter.js?v=20261127captainRegistration1"></script>
-  <script src="game.js?v=20261127combatPopups2"></script>
+  <script src="js/rootledoot-encounter.js?v=20261127rootAnatomyRevert16"></script>
+  <script src="game.js?v=20261127h35eafa2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

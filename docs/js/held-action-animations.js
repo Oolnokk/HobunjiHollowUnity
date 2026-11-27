@@ -481,7 +481,7 @@
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20261126fixedWeaponSize1', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
-    new URL('js/dual-wield-weapon-visuals.js?v=20261126exactGrip3', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261127mirrorWeapon2', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20261123npcBabyCarry1', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
@@ -489,9 +489,9 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20261126hac4f3c7', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261117handDepthReplay2', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261127h0ee9e7e', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261127workshopParallel14', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20261126groundPose1', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20261127rootRigAudit18', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261126exactGrip4', docsBase).href,
   ];
   if (isAttackEditor) {
@@ -518,6 +518,7 @@
   }
 
   function loadSequentially(urls) {
+    if (isEnemyLoadoutEditor) window.__enemyWorkshopPreloadScripts?.(urls); // Fetch ahead without executing the hand driver before nested rig readiness.
     return urls.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = src;
