@@ -118,7 +118,7 @@ assert(handRig.getDebug().visualMatrixResyncs >= 2, 'a second stale color draw i
 assert.match(read('docs/js/hand-pixel-probe-diagnostics.js'), /maxOriginDrift=/, 'the on-device Pixel Probe exposes the measured hand drift');
 const overlaySource = read('docs/js/held-object-render-order.js'); // Production overlay must refresh hands before projecting their screen-space bounds.
 assert.match(overlaySource, /refreshHeldMatrices\?\.\(held\)[\s\S]*const visibleHeld = filterOffscreenReplayMeshes\(camera, held\)/, 'held renderer refreshes hand matrices before camera culling');
-assert.match(overlaySource, /refreshHeldMatrices\?\.\(shellCandidates\)[\s\S]*const xrayMeshes = filterOffscreenReplayMeshes\(camera, shellCandidates\)/, 'shell renderer refreshes hand matrices before camera culling');
+assert.match(overlaySource, /refreshHeldMatrices\?\.\(shellCandidates\)[\s\S]*return originalRender\.call\(this, scene, camera\)/, 'shell renderer still refreshes held matrices before the ordinary shell pass draws');
 
 
 

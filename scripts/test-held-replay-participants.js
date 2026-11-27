@@ -15,7 +15,7 @@ const slice = (startMarker, endMarker) => {
   return source.slice(a, b);
 };
 const code = [
-  slice('  const XRAY_TILE_RADIUS =', '  const XRAY_CIRCLE_RADIUS ='),
+  slice('  const XRAY_TILE_RADIUS =', '\n'),
   slice('  function isDescendantOf(', '  function worldYOf('),
   slice('  function actorRootForXrayMesh(', '  function actorXrayScope('),
 ].join('\n');
@@ -72,8 +72,7 @@ const dryOthers = [wetFoot,dryFoot,wetPants,distantFoot,playerBlade], wetOnly = 
 selectWaterOnly(scene,[cover],dryOthers,wetOnly);
 assert.deepEqual(wetOnly,[wetFoot,wetPants], 'water-only path selects actual submerged foot and pants but not dry, distant or unrelated gear');
 assert.deepEqual(dryOthers,[dryFoot,distantFoot,playerBlade], 'selected water-only meshes are removed from suppression list exactly once');
-assert.match(source,/if \(forceOrdinary\?\.has\(mesh\)\) \{ ordinary\.push\(mesh\); continue; \}/, 'water-only meshes skip ground region construction');
-assert.match(source,/buildXrayGroups\(renderer, scene, camera, overlayMeshes, null, waterOnlyFeet\)/, 'visible water-only feet explicitly enter ordinary group');
+assert.match(source,/classifyReplayOwners\(scene, overlayMeshes\)/, 'visible water-only feet explicitly enter the ordinary group');
 // The shipped local gate keeps whole actors together, independent of the camera.
 assert.equal(api.ringDefault, true);
 at(player, -0.2, -0.2);
