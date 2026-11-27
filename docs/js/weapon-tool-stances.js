@@ -485,8 +485,6 @@
     if (!slot || !itemKey || !holder?.visible) return false;
     if (slot === 'weapon') return true;
     if (holder.userData?.headRelativeBackPlane) return false;
-    if (slot === 'ranged') return !window.RangedWeapons?.playerActionState?.()
-      && !window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.();
     // Fitted tools retain their physical length through an authored stroke.
     // The solver itself suppresses the idle pose correction during that stroke.
     return true;
@@ -559,7 +557,7 @@
         clearanceContext.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh)==='flail'||!!assembly?.flail; // Suspension is solved separately by its existing owner.
         const scaleIdentity=clearanceContext.scaleIdentity; // Height readiness matters only for explicitly enabled species scaling.
         const grips=window.HobunjiHandToolGrips;
-        clearanceContext.fitOnly=activeSlot!=='weapon'&&(attackInProgress||authoredToolActionActive); // Preserve established length, never rotate a working stroke.
+        clearanceContext.fitOnly=activeSlot!=='weapon'&&(attackInProgress||authoredToolActionActive||(activeSlot==='ranged'&&(!!window.RangedWeapons?.playerActionState?.()||!!window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()))); // Preserve established length, never rotate a working stroke.
         clearanceContext.preserveOrientation=!!targetPose?.worldUpright||(activeSlot==='ranged'&&window.RangedWeapons?.isLoaded?.(itemKey)!==false); // Flame up and loaded reticle bearing are authored constraints.
         clearanceContext.allowFit=activeSlot!=='ranged'&&(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
         if(clearanceContext.allowFit&&mesh&&clearance.needsFit(clearanceContext,mesh))grips?.applyHeldItemPlacement?.(mesh,itemKey,clearanceContext.gripContext||'melee',scaleIdentity);
@@ -572,7 +570,7 @@
             const fitPose=weaponIdleClass(itemKey,def)||activeSlot==='weapon'?idleStances.lightWeapon:targetPose; // Dual-role tools keep one physical fit; dedicated tools use their own Neutral.
             if(fitPose){
               const lightFrame=applyRelativeHolderPose(this,sourcePose,fitPose);
-              if(activeSlot==='weapon'||torchIdle)deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
+              if(weaponIdleClass(itemKey,def)||activeSlot==='weapon'||torchIdle)deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
             }
             this.updateMatrix();
             clearanceContext.lightReference=this.matrix.clone(); // Local matrix; solver composes the same world/plane transforms.
