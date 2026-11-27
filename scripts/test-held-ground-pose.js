@@ -497,7 +497,7 @@ if(THREE){
   for(let i=0;i<16;i++)assert.ok(Math.abs(second.m.elements[i]-first.m.elements[i])<1e-6,'reused pose equals the solved pose');
   assert.equal(solver.snapshot().reuseHits,1);
   stance(.25,Math.PI/2+.01); // A small stance wobble is still reused, applied relative to the new stance.
-  const wobble=step();assert.equal(wobble.g.reused,true);assert.ok(wobble.g.finalMinY>=.035-.02,'wobble stays about clear');
+  const wobble=step();assert.ok(wobble.g.finalMinY>=.035-1e-7,'wobble must stay clear even if the cached correction needs a fresh solve');
   // Turning the player rotates the whole stance about the vertical; the correction is kept in the weapon's own
   // frame, so it is reused exactly and matches a fresh solve of the turned stance.
   const yawStance=(y,rx,yaw)=>{holder.position.set(0,y,0);holder.quaternion.setFromEuler(new THREE.Euler(rx,0,0)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),yaw));holder.updateMatrix();parent.updateMatrixWorld(true);};
@@ -515,6 +515,7 @@ if(THREE){
   stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,false,'a large stance change solves again');
   stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,true);
   floorY=.2;stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,false,'a real change in height above the floor solves again');
+  floorY=.22;stance(.25,Math.PI/2+.5);assert.ok(step().g.finalMinY>=floorY+.035-1e-7,'small floor changes cannot reuse a penetrating pose');
   solver.clear();
   console.log('held ground pose: grounded poses are solved once and reused; midair recalculates');
 }
@@ -555,4 +556,23 @@ if(THREE){
   assert.ok((seen['radial-lift']||0)>=50,'sweep reaches the bounded-lift branch: '+JSON.stringify(seen));
   assert.ok((seen['flat-face-up']||0)>=10,'sweep reaches the flat last resort: '+JSON.stringify(seen));
   console.log('held ground pose: fallback chain keeps the ordinary rotation with a bounded lift first '+JSON.stringify(seen));
+}
+
+// Real Three carry geometry: single PNG grip, cached turn, rigid two-hand lift,
+// replacement art and authored pose protection.
+if(THREE){
+  const rgba=new Uint8ClampedArray(4*16*4).fill(255);
+  const w={THREE,document:{createElement:()=>({getContext:()=>({drawImage(){},getImageData(){return {data:rgba};}})})},XrayHierarchy:{get:()=> 'rotation'},PlayerJump:{heldPoseGroundY:()=>0,heldPoseGrounded:()=>true}};
+  vm.runInNewContext(fs.readFileSync('docs/js/held-ground-pose.js','utf8'),{window:w});
+  const solver=w.HeldGroundPose,parent=new THREE.Group(),holder=new THREE.Group();parent.add(holder);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(.5,2),new THREE.MeshBasicMaterial());plane.material.map={image:{width:4,height:16}};holder.add(plane);
+  const grip=new THREE.Vector3(0,.1,0),context={itemKey:'bag',rig:{parent},grip};
+  const reset=()=>{holder.position.set(0,.4,0);holder.quaternion.identity();parent.updateMatrixWorld(true);};
+  reset();const before=holder.localToWorld(grip.clone());assert.equal(solver.constrainCarry(holder,plane,context),true);
+  let d=solver.snapshot().carry;assert.ok(d.finalMinY>=.035-1e-7);assert.ok(d.angleDeg!==0);assert.ok(holder.localToWorld(grip.clone()).distanceTo(before)<1e-6,'single-item rotation preserves grip');
+  const builds=d.hullBuilds;reset();assert.equal(solver.constrainCarry(holder,plane,context),true);d=solver.snapshot().carry;assert.equal(d.hullBuilds,builds);assert.ok(d.reuseHits>0);
+  reset();const q=holder.quaternion.clone();assert.equal(solver.constrainCarry(holder,plane,{...context,preserveOrientation:true,otherGrips:[new THREE.Vector3(.2,0,0)]}),true);assert.ok(Math.abs(holder.quaternion.dot(q))>1-1e-9);assert.ok(solver.snapshot().carry.finalMinY>=.035-1e-7);
+  plane.geometry=new THREE.PlaneGeometry(.5,3);reset();solver.constrainCarry(holder,plane,{...context,preserveOrientation:true});assert.ok(solver.snapshot().carry.hullBuilds>builds,'geometry replacement invalidates cached hull');
+  reset();w.XrayHierarchy.get=()=> 'xray';assert.equal(solver.constrainCarry(holder,plane,context),false);assert.equal(holder.position.y,.4);
+  console.log('held carry: actual Three geometry, grip, cache and orientation checks passed');
 }
