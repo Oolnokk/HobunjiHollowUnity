@@ -2050,6 +2050,7 @@
   // Environmental impacts reuse the existing hit/ignition recordings and spatial audio.
   function playCollisionImpactSfx(cue, x, y, areaId) {
     if (!deps || !Number.isFinite(x) || !Number.isFinite(y) || !areaId || areaId !== deps.getCurrentArea()) return;
+    if (gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return; // Every impact is combat feedback, including the reused object ignition cue.
     const pitch = 0.65; // Deep collision transposition (~7.5 semitones), shared by all three cue families.
     if (cue === 'fire') {
       const source = { x, y, areaId, earshotTiles: 9 }; // Actor gameplay coordinates, not Three.js world units.
