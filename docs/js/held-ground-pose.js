@@ -875,7 +875,7 @@
       ['right',current.mainRoot,main,live.primary],
       ['left',current.offRoot,off,live.offhand||grips?.offhandPrimaryGripForTool?.(context.itemKey,'melee',live.scaleIdentity||context.scaleIdentity)]
     ]){
-      if(current.invisible&&side==='right')continue;
+      if(current.invisible&&side==='right'||current.mirrorOffhand&&side==='left')continue;
       if(!grip?.position){results[side]={reason:'no-grip'};continue;}
       let posteriorLift=0; // Each visible copy has its own fitted grip and world height.
       const rotationOnly=side==='left'&&!current.invisible; // Keep the visible offhand anchored to its authored grip.

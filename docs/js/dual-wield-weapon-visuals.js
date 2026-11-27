@@ -254,6 +254,7 @@
       targetHolderQuaternion: q(), targetHolderWorld: m(), inverseHolderWorld: m(), planeRelative: m(), inversePlaneWorld: m(),
       idleResult: { position: v(), quaternion: q() },
       offTargetPosition: v(), offTargetQuaternion: q(),
+      reflection: m(), mirrorLocal: m(), mirrorX: m().makeScale(-1,1,1), // Reused by the reflected weapon and socket.
       currentPose: { position: v(), quaternion: q() },
     };
     return current.frameScratch;
@@ -414,6 +415,23 @@
     planeRelative.decompose(result.position, result.quaternion, s.ignoredScale);
     result.quaternion.normalize();
     return result;
+  }
+
+  function mirrorSolvedWeapon(current) {
+    const s=frameScratch(current); // Reflect in the portrait's body frame, including its current facing.
+    const body=current.bodyRoot.matrixWorld;
+    body.decompose(s.bodyPosition,s.bodyQuaternion,s.ignoredScale);
+    s.targetHolderWorld.compose(s.bodyPosition,s.bodyQuaternion,s.unitScale);
+    s.reflection.copy(s.targetHolderWorld).multiply(s.mirrorX).multiply(s.inverseHolderWorld.copy(s.targetHolderWorld).invert());
+    const root=current.offRoot;
+    current.offMesh.updateMatrix();
+    root.matrix.copy(s.inversePlaneWorld.copy(current.plane.matrixWorld).invert())
+      .multiply(s.reflection).multiply(current.mainMesh.matrixWorld)
+      .multiply(s.mirrorLocal.copy(current.offMesh.matrix).invert());
+    root.matrix.decompose(root.position,root.quaternion,root.scale);
+    root.matrixAutoUpdate=false; // Preserve the exact reflection even under a scaled parent.
+    root.matrixWorldNeedsUpdate=true;
+    root.updateMatrixWorld(true);
   }
 
   function setRootToward(root, targetPosition, targetQuaternion, influence) {
@@ -578,7 +596,9 @@
     // Authoring the offhand stance: the gizmo/Neutral sliders move the offhand weapon directly (it stays
     // on the holder), and the main-hand copy is placed from its saved stance instead.
     const authoringOffhand = editorOffhandAuthoring && inAttackEditor() && current.idleBlend > ACTIVE_EPSILON;
-    const idleTransform = current.idleBlend > ACTIVE_EPSILON && !authoringOffhand ? idleOffhandLocalTransform(current) : null;
+    current.mirrorOffhand=key===PLAYER_KEY&&active&&!authoringOffhand&&!!current.bodyRoot;
+    current.offRoot.matrixAutoUpdate=true;
+    const idleTransform = !current.mirrorOffhand && current.idleBlend > ACTIVE_EPSILON && !authoringOffhand ? idleOffhandLocalTransform(current) : null;
     const idleAmount = clamp01(current.idleBlend);
     const targetPosition = idleTransform ? scratch.offTargetPosition.copy(idleTransform.position).multiplyScalar(idleAmount) : scratch.offTargetPosition.set(0, 0, 0);
     const targetQuaternion = idleTransform
@@ -608,7 +628,8 @@
       if(!active){clearance?.releaseDualCopy?.(current.mainMesh);clearance?.releaseDualCopy?.(current.offMesh);}
       if(active||invisible)clearance?.constrainDualCopies?.(current);
     }
-    current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
+    if(current.mirrorOffhand)mirrorSolvedWeapon(current);
+    current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active, current.mirrorOffhand); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
     return current;
   }
 
@@ -636,6 +657,8 @@
     const inversePlaneWorld = current.plane.matrixWorld.clone().invert();
     const planeLocalPosition = socketFrame.position.clone().applyMatrix4(inversePlaneWorld);
     const position = planeLocalPosition.clone().applyMatrix4(weapon.matrixWorld);
+    if(side==='right'&&solve&&current.mirrorOffhand)solve.mirrorSourceGrip=planeLocalPosition;
+    if(side==='left'&&current.mirrorOffhand&&solve?.mirrorSourceGrip)position.copy(solve.mirrorSourceGrip).applyMatrix4(weapon.matrixWorld);
 
     const Quaternion = weapon.quaternion.constructor;
     const planeWorldQ = bakedWorldQuaternion(current.plane, new Quaternion(), current);
