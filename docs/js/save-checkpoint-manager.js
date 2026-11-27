@@ -881,7 +881,7 @@
         return { ok: true, browserOnly: true };
       }
 
-      await folderApi()?.prepareDriveRecovery?.(); // Explicit user recovery may authorize a fresh Drive baseline.
+      if (folderRecoveryAvailable()) await folderApi()?.prepareDriveRecovery?.(); // Disconnected Drive must not block browser-only recovery.
       preRestore = await preservePreRestore();
 
       if (folderRecoveryAvailable()) {

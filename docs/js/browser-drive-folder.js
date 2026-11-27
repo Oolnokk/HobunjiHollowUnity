@@ -8,9 +8,10 @@
   const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files'; // Resumable upload sessions must stay on this origin.
   const SCOPE = 'https://www.googleapis.com/auth/drive'; // Existing PC-authored child files need more than drive.file.
   const FOLDER = 'application/vnd.google-apps.folder'; // Reject shortcuts and Google-native documents.
-  const FIELDS = 'id,name,mimeType,size,modifiedTime,version,parents,trashed,capabilities(canEdit,canAddChildren)'; // Version is the conflict authority.
+  const FIELDS = 'id,name,mimeType,size,modifiedTime,version,parents,trashed,driveId,capabilities(canEdit,canAddChildren)'; // Version is the conflict authority.
   const DIRS = new Set(['characters','worlds','farm-layouts','patterns','recovery']); // Exact portable-save directories.
-  const ROOT_FILES = new Set(['manifest.json','hobunji-save.json']); // No arbitrary Drive file access.
+  const COMMIT_MARKER = 'hobunji-write-in-progress.json'; // Visible to the shared folder core on every platform.
+  const ROOT_FILES = new Set(['manifest.json','hobunji-save.json',COMMIT_MARKER]); // No arbitrary Drive file access.
   const LIMIT = 512 * 1024 * 1024; // Maximum bytes held by a single browser writer.
   const PUBLIC_CLIENT = window.HobunjiBrowserDriveConfig?.clientId || ''; // Public OAuth Web client ID, never a secret.
   let gisPromise = null; // Load Google's script only after the player requests Drive.
@@ -85,6 +86,7 @@
       this.loadBaseline = null; // Candidate captured before an explicit load, not accepted until verified.
       this.writable = false; // Connect/reconnect never authorizes replacing an existing save.
       this.tainted = false; // Partial mutation or conflict requires an explicit verified import/recovery.
+      this.commitId = null; // Remote in-progress marker owned by this full or targeted canonical write.
       this.tail = Promise.resolve(); // Serializes mutations from the core and motif/checkpoint consumers.
     }
     granted() { return !!this.auth && Date.now() < this.auth.expires; }
@@ -94,9 +96,10 @@
       if (u.origin !== 'https://www.googleapis.com' || !(/^\/(?:upload\/)?drive\/v3\/files(?:\/|$)/.test(u.pathname)))
         throw Error('Rejected unexpected Google Drive endpoint.');
       const token = this.auth.token; // Never sent to a redirect or another host.
+      const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(method === 'PUT' ? 300000 : 120000) : undefined; // Bound stalled network operations on supported browsers.
       let response;
       try {
-        response = await fetch(u.href,{method,body,headers:{...headers,Authorization:'Bearer '+token},credentials:'omit',redirect:'error',cache:'no-store'});
+        response = await fetch(u.href,{method,body,headers:{...headers,Authorization:'Bearer '+token},credentials:'omit',redirect:'error',cache:'no-store',signal});
       } catch { throw Error('Google Drive network request failed. Reconnect if needed; no successful commit was assumed.'); }
       if (response.status === 401) {
         if (this.auth?.token === token) { this.auth = null; this.writable = false; }
@@ -111,8 +114,8 @@
     async meta(id) { return this.json(url(BASE+'/'+encodeURIComponent(id),{fields:FIELDS})); }
     async verifyRoot() {
       const root = await this.meta(this.id);
-      if (root.id !== this.id || root.trashed || root.mimeType !== FOLDER || !root.capabilities?.canAddChildren)
-        throw Error('Choose a writable dedicated Google Drive folder.');
+      if (root.id !== this.id || root.trashed || root.mimeType !== FOLDER || !root.capabilities?.canAddChildren || root.driveId)
+        throw Error('Choose a writable dedicated folder in My Drive. Shared drives are not supported by this save transport.');
       this.name = root.name;
     }
     async list(parent, name) {
@@ -123,10 +126,10 @@
       const seenPages = new Set();
       let pageToken;
       do {
-        const p = {q,fields:'nextPageToken,files('+FIELDS+')',pageSize:'1000'};
+        const p = {q,fields:'nextPageToken,incompleteSearch,files('+FIELDS+')',pageSize:'1000'};
         if (pageToken) p.pageToken = pageToken;
         const result = await this.json(url(BASE,p));
-        if (!Array.isArray(result.files)) throw Error('Invalid Drive listing.');
+        if (result.incompleteSearch || !Array.isArray(result.files)) throw Error('Incomplete Google Drive listing; no save changes were accepted.');
         for (const row of result.files) {
           if (!validId(row.id) || !row.parents?.includes(parent) || row.trashed || typeof row.name !== 'string') throw Error('Invalid Drive child metadata.');
           rows.push(row);
@@ -165,7 +168,7 @@
       checkPending(root);
       const put = (key,row) => {
         if (result.has(key)) throw conflict();
-        if (!row.version) throw Error('Drive did not supply a file revision.');
+        if (typeof row.version !== 'string' || !/^\d+$/.test(row.version)) throw Error('Drive did not supply a valid file revision.');
         result.set(key,row);
       };
       for (const row of root) {
@@ -183,7 +186,7 @@
       return result;
     }
     fileType(row) {
-      if (row.mimeType?.startsWith('application/vnd.google-apps.') || !Number.isFinite(Number(row.size)) || row.size == null) throw Error('Unsupported Drive save file: '+row.name);
+      if (typeof row.mimeType !== 'string' || row.mimeType.startsWith('application/vnd.google-apps.') || !Number.isSafeInteger(Number(row.size)) || Number(row.size)<0 || row.size == null) throw Error('Unsupported Drive save file: '+row.name);
     }
     stamp(row) { return row ? row.id + ':' + String(row.version) : ''; }
     equalTrees(a,b) {
@@ -195,11 +198,13 @@
       }
       return true;
     }
-    async beginLoad() {
+    async beginLoad(recovery = false) {
       await this.tail;
-      this.writable = false;
+      this.invalidate();
       this.loadBaseline = await this.tree();
+      if (!recovery && this.loadBaseline.has(COMMIT_MARKER)) throw Error('An interrupted Drive save needs recovery. Open Save Recovery or inspect the previous versions before loading.');
     }
+    invalidate() { this.writable = false; this.tainted = true; this.loadBaseline = null; this.commitId = null; }
     async finishLoad() {
       const now = await this.tree();
       if (!this.equalTrees(this.loadBaseline,now)) throw conflict();
@@ -207,20 +212,49 @@
     }
     async assertUnchanged() {
       if (!this.writable || !this.baseline) throw Error('Load from Folder before writing to Google Drive.');
-      if (!this.equalTrees(this.baseline,await this.tree())) { this.writable = false; this.tainted = true; throw conflict(); }
+      if (!this.equalTrees(this.baseline,await this.tree())) { this.invalidate(); throw conflict(); }
       return true;
+    }
+    async beginCommit(recovery = false) {
+      return this.enqueue(async () => {
+        await this.assertUnchanged();
+        if (this.commitId) throw conflict();
+        const existing = this.baseline.get(COMMIT_MARKER);
+        if (existing) {
+          if (!recovery) throw Error('An interrupted Drive save must be recovered before writing.');
+          this.commitId = existing.id; // Explicit checkpoint recovery may adopt an unchanged marker.
+          return;
+        }
+        // Create marker before changing any canonical bytes. An ambiguous
+        // create acknowledgement deliberately leaves a discoverable marker.
+        const made = await this.json(url(BASE,{fields:FIELDS}),'POST',{
+          name:COMMIT_MARKER,parents:[this.id],mimeType:'application/json'
+        });
+        const current = await this.child(this.id,COMMIT_MARKER);
+        if (!validId(made.id) || current?.id !== made.id) throw conflict();
+        this.fileType(current);
+        this.baseline.set(COMMIT_MARKER,current);
+        this.commitId = current.id;
+      });
+    }
+    async finishCommit() {
+      if (!this.commitId || this.baseline?.get(COMMIT_MARKER)?.id !== this.commitId) throw conflict();
+      await this.assertUnchanged();
+      await this.remove('',COMMIT_MARKER);
+      this.commitId = null;
+      await this.assertUnchanged();
     }
     async expected(parent,dir,name) {
       if (!this.writable || !this.baseline) throw Error('Load from Folder before writing to Google Drive.');
       if (dir && this.baseline.get(dir+'/')?.id !== parent) throw conflict();
       const row = await this.child(parent,name);
       const key = dir ? dir+'/'+name : name;
-      if (this.stamp(row) !== this.stamp(this.baseline.get(key))) { this.writable = false; this.tainted = true; throw conflict(); }
+      if (this.stamp(row) !== this.stamp(this.baseline.get(key))) { this.invalidate(); throw conflict(); }
       return {row,key};
     }
     enqueue(operation) {
       const task = this.tail.then(operation);
-      this.tail = task.catch(error => { if (error?.name !== 'NotFoundError') { this.writable = false; this.tainted = true; } lastError = String(error.message || error); });
+      this.tail = task.catch(error => { if (error?.name !== 'NotFoundError') { this.invalidate(); } lastError = String(error.message || error); });
       return task;
     }
     async mkdir(name) {
@@ -235,7 +269,7 @@
     }
     async read(parent,name,expected) {
       const before = await this.child(parent,name);
-      if (this.stamp(before) !== this.stamp(expected)) throw conflict();
+      if (!before || this.stamp(before) !== this.stamp(expected)) throw conflict();
       const blob = await (await this.request(url(BASE+'/'+encodeURIComponent(before.id),{alt:'media'}))).blob();
       const after = await this.child(parent,name);
       if (this.stamp(after) !== this.stamp(before) || blob.size !== Number(before.size)) throw conflict();
@@ -268,6 +302,7 @@
         const parent = await this.parent(dir);
         const {row:old,key} = await this.expected(parent,dir,name);
         const draft = await this.stage(parent,name,blob);
+        if (await this.parent(dir) !== parent) throw conflict(); // The selected directory may have moved during the upload.
         await this.expected(parent,dir,name); // A competing edit during upload must not be overwritten.
         let moved = false;
         try {
@@ -341,7 +376,7 @@
       return {
         async write(data) {
           if (closed) throw Error('Writer closed.');
-          if (!(typeof data==='string'||data instanceof Blob||data instanceof ArrayBuffer||ArrayBuffer.isView(data))) throw TypeError('Unsupported file data.');
+          if (!(typeof data==='string'||data instanceof Blob||data instanceof ArrayBuffer||ArrayBuffer.isView(data))) { closed=true;chunks=[];throw TypeError('Unsupported file data.'); }
           const part=new Blob([data]); bytes+=part.size;
           if(bytes>LIMIT){closed=true;chunks=[];throw Error('Drive save exceeds browser write limit.');}
           chunks.push(part);
@@ -358,7 +393,11 @@
       if(this.session.granted())return 'granted';
       await select(this.session); this.name=this.session.name; return 'granted';
     }
-    async beginDriveLoad(){return this.session.beginLoad();}
+    async beginDriveLoad(recovery=false){return this.session.beginLoad(recovery);}
+    invalidateDriveBaseline(){this.session.invalidate();}
+    invalidateIncompleteDriveCommit(){if(this.session.commitId)this.session.invalidate();}
+    async beginDriveCommit(recovery=false){return this.session.beginCommit(recovery);}
+    async finishDriveCommit(){return this.session.finishCommit();}
     async finishDriveLoad(){return this.session.finishLoad();}
     async assertDriveUnchanged(){return this.session.assertUnchanged();}
     get driveCanWrite(){return this.session.writable && this.session.granted();}
@@ -424,7 +463,7 @@
           await session.verifyRoot();
           const current=await session.tree(); // Validate dedicated folder and duplicate names before accepting selection.
           // Reauthorization can resume only an unchanged, fully committed in-memory baseline.
-          if(existing && !session.tainted && session.equalTrees(session.baseline,current)) session.writable=true;
+          if(existing && !session.tainted && !current.has(COMMIT_MARKER) && session.equalTrees(session.baseline,current)) session.writable=true;
           else session.baseline=null;
           lastError='';finish(null,new DriveDirectory(session));
         }catch(e){session.auth=null;lastError=String(e.message||e);status.textContent=lastError;connect.disabled=false;local.disabled=false;cancel.disabled=false;}

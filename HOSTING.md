@@ -55,3 +55,7 @@ Do not migrate a disposable Festival Test timeline.
 Do not disable the old service, delete Identity/Blobs, or change DNS until
 existing saves have been recovered and the production Drive round trip has
 passed. The legacy client, server functions, configuration, and dependencies are removed from the new game and retained only on the archived recovery branch. Verify the archived deployment on the original site before merging this PR, and verify that existing saves have been recovered before decommissioning that site. This is an explicit data-preservation gate, not a runtime dependency of the new game.
+
+## Interrupted canonical writes
+
+The browser publishes a visible `hobunji-write-in-progress.json` marker before any multi-file canonical write and removes it only after verification. Updated Windows/Android builds refuse canonical reads/writes while it exists. Close all other devices and use a trusted recovery checkpoint from the browser, or preserve the entire folder and inspect prior versions manually. Do not simply delete the marker to silence a warning; a same-count mixed revision may be present. Google Drive still has no cross-client atomic transaction or lock. Use a dedicated folder in My Drive, not a Shared drive. Older single-file saves need migration first.

@@ -222,7 +222,8 @@
         // Browser Drive access tokens cannot survive a reload. Offer the existing
         // explicit reconnect/load or browser fallback gate instead of silently
         // resuming with a disconnected primary folder.
-        if (window.HobunjiBrowserDrive?.isSupported?.()) {
+        const phase = window.HobunjiQuickSave?.festivalStatus?.()?.phase; // An intentional festival/quick-load handoff takes precedence.
+        if (skipOnce === 'folder-loaded-in-settings' && window.HobunjiBrowserDrive?.isSupported?.() && (!phase || phase === 'idle')) {
           const status = await waitForCoreStatus();
           if (status.transport === 'google-drive-browser' && status.folderName) return showReconnectGate(status);
         }
@@ -312,6 +313,9 @@
     }
     if (status.state !== 'ready') return { ok: false, changed: false, message: status.lastError || 'Folder access was not completed.' };
 
+    if (status.transport === 'google-drive-browser' && !confirm('Use this Google Drive save folder? Loading replaces this device’s working save. If the folder is empty, the game initializes it from this device. Preserve newer progress first.')) {
+      return { ok: false, changed: false, message: 'Drive folder connected; load or initialize it explicitly when ready.' };
+    }
     const result = await localSave.loadFromFolder();
     const succeeded = folderActionSucceeded(result);
     const afterMeta = localStorage.getItem(SAVE_META_KEY) || ''; // Fresh local metadata after the folder either loaded or adopted the browser save.
