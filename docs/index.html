@@ -199,7 +199,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261126exactGrip4"></script>
+  <script src="js/held-action-animations.js?v=20261127he0ddf8a"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -345,7 +345,7 @@
   <script src="js/remote-player-avatar.js?v=20261126mp4"></script> <!-- On-screen body for non-local players (reuses the cutscene stand-in makeNpcWalker pipeline). Initialised by game.js. -->
   <script src="js/remote-area-tick.js?v=20261127h2d04878"></script> <!-- Opt-in (off by default) coarse creature tick for other occupied, already-built zones in co-op. Initialised by game.js. -->
   <script src="js/dev-dummy-player.js?v=20261124mp1"></script> <!-- Dev-only second-player stand-in (window.DevDummyPlayer). -->
-  <script src="js/combat/resource-system.js?v=20261126h6c44b4c"></script>
+  <script src="js/combat/resource-system.js?v=20261127h54464ab"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
   <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
@@ -2983,13 +2983,13 @@
   <script src="js/character-age-rig-config.js?v=20261126h08f6eb8"></script> <!-- Applies explicit Animation Author age proportions before family walkers initialize. -->
   <script src="config/family-baby-carry-pose.js?v=20261123babyMidpoint7"></script>
   <script src="js/family-baby-limbs.js?v=20261123babyGLB3"></script> <!-- Kicking hands/feet cloned from the hidden baby walker onto the carried proxy. -->
-  <script src="js/family-baby-burdens.js?v=20261124babyFollowRebase1"></script>
+  <script src="js/family-baby-burdens.js?v=20261127hf9e47c5"></script>
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
-  <script src="js/family-baby-follow.js?v=20261124babyFollowRebase1"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
-  <script src="js/family-baby-care.js?v=20261124babyFollowRebase1"></script>
-  <script src="js/romance-family.js?v=20261126neckAudit2"></script>
+  <script src="js/family-baby-follow.js?v=20261127h6c36db2"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
+  <script src="js/family-baby-care.js?v=20261127hceefd7a"></script>
+  <script src="js/romance-family.js?v=20261127hb4b20e7"></script>
   <script src="js/romance-wedding.js?v=20261126h44c94f3"></script>
-  <script src="js/npc-following.js?v=20261122babyFollow1"></script>
+  <script src="js/npc-following.js?v=20261127h0f1f7dc"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
   <script src="js/spouse-kiss-motion.js?v=20261126h40e548a"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
@@ -3009,14 +3009,14 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261127captainRegistration1"></script>
-  <script src="game.js?v=20261127h68e2138"></script>
+  <script src="game.js?v=20261127hdcacb28"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20261110banubuNightAudit3"></script>
   <script src="js/ui-element-editor.js?v=20261112keyPack2"></script>
   <script src="js/controller-menu-dismissal.js?v=20261122ha0c2da7"></script> <!-- Shared legacy Close/Escape policy; load before controller navigation. -->
-  <script src="js/controller-ui-nav.js?v=20261124menuCategoryPages3"></script>
+  <script src="js/controller-ui-nav.js?v=20261127h257e410"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

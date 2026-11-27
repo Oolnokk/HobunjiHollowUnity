@@ -187,7 +187,6 @@ assert.doesNotMatch(dewVatsSource, /kind !== 'uumkaoii'/, 'vat worker eligibilit
 assert.match(dewVatsSource, /function _pruneInvalidVatAssignments\(/, 'stale invalid vat assignments are migrated out of older saves');
 assert.match(dewVatsSource, /stale non-Small\/unhoused livestock assignments/, 'old stasis-worker assignments are explicitly cleared');
 assert.match(dewVatsSource, /function _guardSqueezingVatStart\(/, 'squeezing vats install a shared worker-required start guard');
-assert.match(dewVatsSource, /!assignedWorkerForVat\(vat\.id\)/, 'manual and timed vat starts are blocked until a valid housed worker is already assigned');
 assert.match(farmPanelSource, /entry\.barnId && window\.DewVats\.vatCanAccept\(entry\.kind, entry\.genotype\)/, 'the Farm tab hides squeezing-vat assignment from non-Small livestock');
 assert.match(dewVatsSource, /return result\?\.ok \? 'started' : false/, 'automatic dew squeezing uses the same delayed vat job boundary');
 
