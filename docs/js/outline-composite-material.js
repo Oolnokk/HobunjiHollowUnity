@@ -32,11 +32,13 @@
         void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
       `,
       fragmentShader: `
-        uniform sampler2D tColor, tEdgeId, tEdgeIdDepth, tSceneDepth;
+        uniform sampler2D tColor, tEdgeId;
+        // Preserve packed-depth precision even on mobile GLSL implementations.
+        uniform highp sampler2D tEdgeIdDepth, tSceneDepth;
         uniform vec2 uTexel;
         uniform float uCameraNear, uCameraFar;
         uniform float uSeamOutlinesOn;
-        uniform sampler2D tShellMaskDepth;
+        uniform highp sampler2D tShellMaskDepth;
         uniform float uDepthOutlinesOn, uOrthographic, uDepthFogMode;
         uniform vec3 uDepthFogColor;
         uniform float uDepthFogNear, uDepthFogFar, uDepthFogDensity;

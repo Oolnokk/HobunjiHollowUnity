@@ -45,6 +45,7 @@ const hand = mesh('left_hand_visual'); // A real hand draw captured by the parit
 const hands = loadParity('hand', { group: group([hand]), getDebug: () => ({}), dispose() {} });
 assert(hand.layers.mask & (1 << 1), 'procedural hand is registered for the shell outline layer'); // Exercises the production attach wrapper.
 const camera = { isPerspectiveCamera: true, matrixWorldInverse: new Matrix4() }; // Looking down negative Z.
+const screenMask = { userData: { hobunjiScreenOutlineMask: true }, polygonOffset: false }; // Production screen-mask marker, not an expanded shell.
 const shell = { isShaderMaterial: true, side: 1, uniforms: { uThickness: { value: 0.006 } } }; // Shared outline material also used by other world meshes.
 function handThickness(depth) {
   hand.matrixWorld.elements[14] = -depth;
@@ -95,6 +96,12 @@ assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'outline d
 restoreStaged();
 assert.equal(detachedHand.matrixWorld.elements[13], 0.85, 'the pre-outline matrix is restored without compounding transforms');
 assert.equal(staged.window.HobunjiHandOutlineParity.getDebug().visualMatrixResyncs, 1);
+const restoreScreenHand = draw(detachedHand, { overrideMaterial: screenMask }, camera, screenMask);
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'screen depth masks use the visible hand, not the stale hierarchy pose');
+restoreScreenHand();
+assert.equal(detachedHand.matrixWorld.elements[13], 0.85, 'screen mask restores the original hand transform');
+assert.equal(staged.window.HobunjiHandOutlineParity.getDebug().lockedScreenMaskDraws, 1);
+assert.equal(handRig.getDebug().outlineLockedScreenMaskDraws, 1);
 
 // Nonuniform Nuhongan-like body scale and mirrored handedness must be composed
 // through the socket chain, not applied by rewriting authored hand coordinates.
@@ -166,6 +173,17 @@ assert.equal(finalFoot.matrixWorld.elements[12], 7);
 finishMask();
 assert.equal(finalFoot.matrixWorld.elements[12], 100, 'temporary water-mask matrix is restored');
 assert.equal(rig.getOutlineParityDebug().lockedWaterMaskDraws, 1);
+const restoreScreenFoot = draw(finalFoot, { overrideMaterial: screenMask }, camera, screenMask);
+assert.equal(finalFoot.matrixWorld.elements[12], 7, 'screen mask uses the last visible foot pose');
+assert.equal(screenMask.polygonOffset, false, 'screen mask never applies shell-only foot depth offset');
+restoreScreenFoot();
+assert.equal(finalFoot.matrixWorld.elements[12], 100, 'screen mask restores the original foot transform');
+assert.equal(rig.getOutlineParityDebug().lockedScreenMaskDraws, 1);
+assert.equal(feet.window.HobunjiFeetOutlineParity.getDebug().lockedScreenMaskDraws, 1);
+feet.setTime(60000);
+const restoreStale = draw(finalFoot, { overrideMaterial: screenMask }, camera, screenMask);
+assert.equal(finalFoot.matrixWorld.elements[12], 100, 'expired screen-mask snapshots cannot pull limbs into stale poses');
+restoreStale();
 rig.dispose();
 assert.equal(feet.window.HobunjiFeetOutlineParity.refreshRig(root), false, 'disposed rigs cannot register more meshes');
 

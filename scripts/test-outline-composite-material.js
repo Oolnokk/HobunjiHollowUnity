@@ -31,12 +31,18 @@ const frag = a.fragmentShader;
 const guard = frag.match(/if \(raw >= 1\.0 \|\| (raw - sceneRaw > [\d.]+ \/ [\d.]+)\) return 0\.0;/);
 assert.ok(guard, 'screen mask rejects a curve behind the visible depth');
 const behind = new Function('raw', 'sceneRaw', 'return ' + guard[1]);
+assert.match(frag, /uniform highp sampler2D tEdgeIdDepth, tSceneDepth;/, 'scene depth is sampled at high precision on mobile');
+assert.match(frag, /uniform highp sampler2D tShellMaskDepth;/, 'screen-mask depth has the same precision');
 const quantum = 1 / 16777215;
 const depth = 0.95;
 assert.equal(behind(depth, depth), false, 'matching geometry keeps its outline');
 assert.equal(behind(depth + 2 * quantum, depth), false, 'depth quantization is tolerated');
 assert.equal(behind(depth + 8 * quantum, depth), true, 'foreground art cannot inherit a nearby background curve');
 assert.equal(behind(depth - 8 * quantum, depth), false, 'existing forward-bias tolerance is preserved');
+for (const z of [0.1, 0.5, 0.95, 0.999]) {
+  assert.equal(behind(Math.fround(z + 2 * quantum), Math.fround(z)), false, 'float32 rounding does not erase a matching mask');
+  assert.equal(behind(Math.fround(z + 8 * quantum), Math.fround(z)), true, 'float32 rounding does not admit a deeper mask');
+}
 assert.match(frag, /visibleCurve\(vUv, centerRaw, centerDepth\)/, 'center stroke is gated by visible scene depth');
 assert.match(frag, /visibleCurve\(uv, otherRaw, otherDepth\)/, 'neighbor sampling uses the same guard');
 const early = frag.indexOf('if (uSeamOutlinesOn < 0.5)');
