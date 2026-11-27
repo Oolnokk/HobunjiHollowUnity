@@ -306,6 +306,7 @@ if(THREE){
   const localLeft=new THREE.Vector3(.05,0,0).applyMatrix4(holder.matrixWorld).applyMatrix4(canonicalInverse);
   const beforeRight=localRight.clone().applyMatrix4(mainMesh.matrixWorld);
   const beforeLeft=localLeft.clone().applyMatrix4(offMesh.matrixWorld);
+  const shaftBefore=new THREE.Vector3().setFromMatrixColumn(offMesh.matrixWorld,1); // Compare the shaft bearing across clearance.
   const holderBefore=holder.matrix.clone();
   const hullBuilds=solver.snapshot().contactHullBuilds;
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
@@ -316,6 +317,10 @@ if(THREE){
   close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);
   close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(beforeLeft),0);
   close(d.right.gripPivotDrift,0);close(d.left.gripPivotDrift,0);
+  assert.equal(d.left.clearanceStrategy,'offhand-pitch');
+  const shaftAfter=new THREE.Vector3().setFromMatrixColumn(offMesh.matrixWorld,1);
+  close(shaftBefore.x*shaftAfter.z-shaftBefore.z*shaftAfter.x,0);
+  assert.ok(shaftBefore.x*shaftAfter.x+shaftBefore.z*shaftAfter.z>=0);
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
   assert.equal(offMesh.geometry,plane.geometry);

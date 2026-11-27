@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261115torchGripIdle2';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261127dualPommel1';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   const STANCE_ORDER = ['tool', 'hoeTool', 'torchHold', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({

@@ -713,6 +713,27 @@
       if(!lowest||p.y<lowest.y)lowest=p;
     }
     s.samples.length=count;
+    if(rotationOnly){
+      const e=matrix.elements; // The sprite's local Y runs along the haft.
+      const bearing=Math.hypot(e[4],e[6]); // Horizontal projection of the haft.
+      if(bearing>1e-8)s.axis.set(e[6]/bearing,0,-e[4]/bearing);
+      else s.axis.set(e[0],0,e[2]).normalize(); // A vertical haft uses its plane's lateral axis.
+      rotationCoefficients(s,s.axis);
+      const sameBearing=a=>bearing<=1e-8||bearing*Math.cos(a)+e[5]*Math.sin(a)>0;
+      s.clearanceStrategy='offhand-pitch';
+      const safe=chooseAngle(s.points,s.pivot.y,target,sameBearing);
+      if(safe!==null)return safe;
+      // If the fixed grip cannot clear, keep the best height available on the same axis.
+      let best=0,min=minimumY(s.points,s.pivot.y,0);
+      for(let step=-18;step<=18;step++){
+        const angle=step*STEP;
+        if(!sameBearing(angle))continue;
+        const height=minimumY(s.points,s.pivot.y,angle);
+        if(height>min+1e-9){best=angle;min=height;}
+      }
+      s.clearanceStrategy='offhand-pitch-limited';
+      return best;
+    }
     s.radialAxis.set(-(lowest.z-s.pivot.z),0,lowest.x-s.pivot.x);
     if(s.radialAxis.lengthSq()<1e-10)s.radialAxis.set(1,0,0);else s.radialAxis.normalize();
     rotationCoefficients(s,s.radialAxis);
@@ -722,7 +743,7 @@
     // Keep the ordinary rotation and raise the whole weapon by the smallest amount (up to LIFT_LIMIT) that makes
     // it work. The caller lifts the residual, so the pose changes continuously instead of jumping to a different
     // orientation the moment the plain rotation stops fitting.
-    angle=rotationOnly?null:liftedRotation(s,target,reachable);
+    angle=liftedRotation(s,target,reachable);
     s.clearanceStrategy='radial-lift';
     if(angle!==null)return angle;
     if(reachable){ // A second hand's reach must not make the primary-held blade cut the floor.
