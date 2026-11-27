@@ -201,6 +201,7 @@
   const ATTACK_LABELS = Object.freeze({ // Names shared with the Stable loadout and mobile diagnostics.
     guardCharge: 'Guard Charge', pounce: 'Pounce', swarm: 'Swarm', rearKick: 'Rear Kick',
     grehlrBurrow: 'Burrow Ambush', grehlrStink: 'Stink Spray', causticPellet: 'Caustic Pellet',
+    pingdortBoulderBomb: 'Boulder Drop', flyingCompanionDive: 'Dive Attack',
   });
   const FREQUENCIES = ['Off', 'Rare', 'Regular', 'Often', 'Priority']; // Relative weights 0–4, shown as an exact share beside each move.
 
@@ -208,7 +209,11 @@
     const species = canonicalSpecies(entry?.kind); // Resolves species-specific aliases before exposing existing moves.
     const def = actor?._stableTrainingBaseDef || actor?.def || currentDeps()?.CREATURE_DB?.[entry?.kind] || window.CREATURE_DB?.[entry?.kind] || {};
     const ids = new Set(['guardCharge']); // Every fighting companion already has the guard-charge fallback.
-    for (let id of def.attacks || []) {
+    const flying=def.isFlyingSpecies===true;
+    const canBomb=window.PingdortFlocks?.canBomb?.(entry.kind,entry.genotype,def)
+      ?? (flying&&(window.CreatureGenetics?.creatureSizeClass?.(entry.kind,entry.genotype)||entry.genotype?.sizeClass||def.defaultSizeClass)==='large'); // Stable UI and live dispatch use the same Size rule.
+    const attacks=flying?[canBomb?'pingdortBoulderBomb':'flyingCompanionDive']:(def.attacks||[]);
+    for (let id of attacks) {
       if (id === 'pounce' && species === 'grehlr') id = 'grehlrBurrow';
       if (id === 'pounce' && species === 'drenkirra') id = 'causticPellet';
       ids.add(id);
