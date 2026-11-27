@@ -982,6 +982,11 @@
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
       if (!handle.restCaptured && !handle.captureRest()) return;
+      let aim = aimAtLiveLegs();
+      // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
+      // bones and orientation frames are identical to the last frame's.
+      let moved = poseChanged(aim); // Detect each limb's translation and twist without canceling opposing steps.
+      if (moved === null) { handle.invalidPoseFrames++; return; } // Retain the last valid CPU buffer/GPU uniforms; retry next tick.
       // The normal update owns all neutral fitting. Render-only calls never even resolve a scale profile.
       const widthScale = renderOnly ? handle.openingWidthScale : (fitCuffs ? legHandle.getFootWidthScaleX?.() ?? openingWidthRatioForFeet() : openingWidthRatioForFeet());
       if (!renderOnly && (Math.abs(widthScale - handle.openingWidthScale) > 1e-6 || (legHandle.anatomyRevision?.() ?? null) !== handle.fitAnatomyRevision)) {
@@ -989,12 +994,10 @@
         handle.alignToRest(); // Rebuild from untouched art after a real anatomy change.
         rebuildSpineShift(spineProfile()); // The prior hunch offsets were sampled from the OLD rest vertices.
         handle.dirty = true;
+        aim = aimAtLiveLegs(); moved = poseChanged(aim); // The new neutral bind changes depth correction.
+        if (moved === null) { handle.invalidPoseFrames++; return; }
       }
-      let aim = aimAtLiveLegs();
-      // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
-      // bones and orientation frames are identical to the last frame's.
-      let moved = poseChanged(aim); // Detect each limb's translation and twist without canceling opposing steps.
-      if (moved === null) { handle.invalidPoseFrames++; return; } // Retain the last valid CPU buffer/GPU uniforms; retry next tick.
+
       // The leg group may be repositioned/rescaled after attach (placement, seats): rebind to the stance as it is now. Moving
       // the group also moves the live bones (so the signature changes); a still NPC only re-checks every REST_RECHECK_FRAMES.
       if (!renderOnly && legHandle.getRestStance && handle.lastStance && (moved || handle.dirty || --handle.restRecheckIn <= 0)) {
@@ -1122,8 +1125,8 @@
     const worldElements = handle.model.matrixWorld.elements;
     handle.depthBiasBase = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // How far the feet protrude toward the camera, in world units.
     handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase; // Stored feet-covering distance (scoped limits can lower it); drives the feet's depth push, not the garment.
-    applyFootDepthBias();
     if (!handle.captureRest()) { handle.dispose(); return null; } // Never bind a new garment to an invalid stance.
+    applyFootDepthBias();
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
     handle.alignToRest = () => {
       const SEGMENTS = handle.segments;
