@@ -859,8 +859,8 @@
             const healthLost = impactHealth > 0 ? window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' }) : 0; // Actual branch impact loss.
             const footingLost = window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch'); // Actual branch impact Footing.
             if (popupCredit) {
-              window.WorldPopupText?.showCombatEffect?.(target, 'health', healthLost, true, 'impact');
-              window.WorldPopupText?.showCombatEffect?.(target, 'footing', footingLost, true, 'impact');
+              const healthPopup = window.WorldPopupText?.showCombatEffect?.(target, 'health', healthLost, true, 'impact'); // Actual branch-landing Health popup, if visible.
+              const footingPopup = window.WorldPopupText?.showCombatEffect?.(target, 'footing', footingLost, true, 'impact'); if (healthPopup != null || footingPopup != null) window.WorldPopupText?.showImpactCallout?.(target);
             }
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
