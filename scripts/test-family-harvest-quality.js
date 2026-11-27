@@ -38,7 +38,7 @@ const processingContext = {
 const addProcessedOutputs = vm.runInNewContext('(' +
   extractFunction('      function addProcessedOutputs(', '\n      function makeProcessingFurniture(') + ')', processingContext);
 
-assert.match(game, /addProcessedOutputs\(finished\.outputs, finished\.inputStars, def\.method, finished\.yieldMultiplier, finished\.source === 'family'\)/,
+assert.match(game, /addProcessedOutputs\(finished\.outputs, finished\.inputStars, def\.method, finished\.yieldMultiplier, finished\.source === 'family' \|\| finished\.source === 'family-chore'\)/,
   'timed vat completions pass their saved family source through to the quality resolver');
 assert.equal(addProcessedOutputs([{ key: 'milk' }], 1, 'squeezing', 2, true), 1,
   'family toddler output remains 1★ despite a 5★ player-processing roll');

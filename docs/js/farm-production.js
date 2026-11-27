@@ -236,7 +236,7 @@
     if (small) {
       const common = { source: 'processing', key: 'processing:' + id, stationId: id, c: small.col, r: small.row };
       if (small.familyReady?.()) return { ...common, job: 'processingCollect', activity: 'collecting processed goods' };
-      if (small.getJob?.() || !inputKey || !(storage.load()[inputKey] > 0)) return null;
+      if (small.getJob?.() || small.familyCanLoad?.() === false || !inputKey || !(storage.load()[inputKey] > 0)) return null;
       return { ...common, job: 'processingLoad', inputKey, activity: 'loading the processor' };
     }
     const entry = buildings.find(candidate => candidate.id === id);
@@ -308,7 +308,7 @@
         changed = true;
       }
     }
-    if (changed) { deps.saveFarmLayout(); deps.debugLog('Farm production finished queued batches.'); }
+    if (changed) { window.NpcFarmPlots?.invalidateFamilyChoreJobs?.(); deps.saveFarmLayout(); deps.debugLog('Farm production finished queued batches.'); }
     window.HoneyfuzzleHouse?.tick(buildings, now()); // Establishes due queen colonies; same low-frequency timer, no extra loop.
   }
   function collect(id) {

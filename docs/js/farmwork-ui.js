@@ -279,7 +279,7 @@
     const stations = window.FarmProduction?.familyStations?.() || [];
     html += `<div class="fw-settings" data-ctrl-transparent>
       <h3>Livestock &amp; processing</h3>
-      <p class="fw-note">Assigned workers tend livestock, small processors or production buildings from 08:00–17:00 before returning to fieldwork. Fodder and selected processor inputs come from Farm Storage; goods go into your bag.</p>
+      <p class="fw-note">Assigned workers tend livestock, small processors or production buildings from 08:00–17:00 before returning to fieldwork. Fodder and selected processor inputs come from Farm Storage; goods go into your bag. Squeezing vats still require a dedicated stomper.</p>
       <label>Livestock (feed, pet, collect)<select data-fwlivestock>${workerOptions(chores.livestock)}</select></label>
       ${stations.map(station => {
         const assignment = chores.processing?.[station.id] || {};

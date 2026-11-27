@@ -3053,7 +3053,8 @@
         function familyOutputFits() {
           if (!job?.outputs?.length) return false;
           const counts = new Map(); // Combined output keys must fit, even when a recipe repeats a key.
-          const units = Math.max(1, Math.floor(Number(job.yieldMultiplier) || 1));
+          const possibleBonus = job.source === 'family' || familyBatch() ? 0 : (window.PerkSystem?.rank('farming', 'efficientProcessing') > 0 ? 1 : 0);
+          const units = (1 + possibleBonus) * Math.max(1, Math.floor(Number(job.yieldMultiplier) || 1));
           for (const output of job.outputs) counts.set(output.key, (counts.get(output.key) || 0) + units);
           for (const [key, count] of counts) if ((inventory[key] || 0) + count > window.InventoryStacks.MAX_TOTAL) return false;
           return true;
@@ -3080,7 +3081,7 @@
           vfxT += dt;
           if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
           const active = vfxActive();
-          const timed = job?.kind === 'timed';
+          const timed = job?.kind === 'timed' && (!familyBatch() || jobRemainingHours() > 0);
           const progress = timed ? Math.max(0, Math.min(1, 1 - jobRemainingHours() / Math.max(0.1, Number(job.durationHours) || baseProcessingHours(def.method)))) : 0;
           const liveTimeline = processTimeline ? { ...processTimeline, substanceColor: timed ? job.substanceColor : processTimeline.substanceColor } : null;
           const timelineState = liveTimeline ? window.AuthoredFurniture.applyProcessTimeline(mesh, authoredVfx, liveTimeline, progress) : null;
@@ -3108,14 +3109,19 @@
           startTimedJob({ outputs, inputStars, inputLabel, source, yieldMultiplier } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source, yieldMultiplier); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
           familyRecipe(itemKey) {
-            // Tea is a three-herb recipe UI; squeezing retains its dedicated animal/child worker contract.
-            if (def.specialMode || def.method === 'squeezing') return null;
+            // Tea is a three-herb recipe UI, not a single-ingredient processor.
+            if (def.specialMode) return null;
             return window.ItemProcessing.getProcessingOutputs(def.method, itemKey);
           },
-          familyEligible: !def.specialMode && def.method !== 'squeezing',
+          familyEligible: !def.specialMode,
+          familyCanLoad() {
+            if (def.method !== 'squeezing') return true;
+            const worker = window.DewVats?.assignedWorkerForVat?.(obj.id); // A loader may supply a vat, but may not bypass its dedicated stomper requirement.
+            return !!worker && (!worker.familyWorker || !window.RomanceFamily?.isFamilyWorkUnavailable?.(worker.id));
+          },
           familyReady() { return !!job && jobRemainingHours() <= 0 && familyOutputFits(); },
           startFamilyJob(itemKey, workerId) {
-            if (!obj.familyEligible || job || !workerId || !hasFarmPermission('storage')) return { ok: false };
+            if (!obj.familyEligible || !obj.familyCanLoad() || job || !workerId || !hasFarmPermission('storage')) return { ok: false };
             const outputs = obj.familyRecipe(itemKey);
             const now = window.ItemProcessing?.gameHour?.();
             if (!outputs?.length || !Number.isFinite(now)) return { ok: false };
@@ -8234,6 +8240,7 @@
         isWilderness: area => Object.hasOwn(EXTERIOR_ZONES, area),
         isAreaSettled: () => sceneTransDir === 0 && !_layoutSwapInProgress,
         travelCreatureToward, canEnter: creatureCanEnterTile, surfaceY: npcSurfaceY, scheduleMemberSave: () => scheduleLootMemberSave(),
+        getToddlerWalkSpeed: walker => (npcMovementConfig().speedTilesPerSecond ?? 1.25) * (window.NpcCharacterState?.movementSpeedMultiplier?.(walker.rec?.id) ?? 1) / Math.max(.001, devGlobalSpeedMul), // Compensate for the creature mover applying the global speed multiplier; ordinary humanoid walking does not.
       }); // Uses the exact companion movement executor; no new wildlife combat object or second frame loop.
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,

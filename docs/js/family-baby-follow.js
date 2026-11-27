@@ -4,7 +4,7 @@
   'use strict';
   if (window.FamilyBabyFollow) return;
   const CRAWL_SPEED_TILES = 0.25; // Slow average ground speed, in tiles per second.
-  const TODDLER_WALK_FALLBACK_TILES = 1.6; // Used only when the normal NPC walker exposes neither an authored nor measured walking speed.
+  const TODDLER_WALK_FALLBACK_TILES = 1.25; // Used only when the normal NPC walker exposes neither an authored nor measured walking speed.
   const STOP_TILES = 0.7; // Stop within easy pickup range of the parent.
   let deps = null; // Game supplies the existing companion movement and current world.
   let bound = new Map(); // Only currently spawned family infants; no per-frame world scan.
@@ -145,7 +145,9 @@
     const pull = toddler ? Number(walker.catchup) : window.PlayerCrawl?.poseNpc?.(walker, dt, chasing, heading);
     const pace = tumbling ? 0 : Number.isFinite(pull) ? Math.max(0, pull) : 1; // Same low-footing catchup multiplier used by ordinary toddler walking.
     if (chasing && pace > 0) {
-      deps.travelCreatureToward(actor, goal.x, goal.y, actor.def.chaseSpeed * pace, dt);
+      const walkSpeed = toddler ? deps.getToddlerWalkSpeed?.(walker) : null; // Live ordinary NPC pace includes shared drunkenness/yawn modifiers.
+      const speed = Number.isFinite(walkSpeed) && walkSpeed >= 0 ? walkSpeed * deps.TILE : actor.def.chaseSpeed;
+      deps.travelCreatureToward(actor, goal.x, goal.y, speed * pace, dt);
     } else { actor.vx = 0; actor.vy = 0; }
     const recovered = !tumbling && nav.tickRecovery(actor, deps.player, goal, dt); // Exact animal companion unseen-stall timing and safe candidate search.
     const p = walker.root.position;

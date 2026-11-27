@@ -646,7 +646,7 @@
   const api = {
     registersCropSpritePlaceholders: true, // Both gameplay crop producers now notify the sprite bridge.
     init, registerMap, registerFarmPlots, isManagedTile, onNewDay, serialize, restore,
-    targetFor, tick, invalidateFamilyChores,
+    targetFor, tick, invalidateFamilyChores, invalidateFamilyChoreJobs: () => choreCache.clear(), // A completed production queue invalidates cached job discovery without dropping active claims.
     plots: () => [...plotsById.values()],
     snapshot: () => ({
       plots: [...plotsById.values()].map(p => ({ id: p.id, area: p.area, kind: p.kind, managed: p.managed, tiles: p.tiles.length, hours: p.hours })),
