@@ -777,17 +777,22 @@
     record.lastVisualGripBasis = null;
   }
 
-  // Only the player melee-clearance path needs an early pose bake. Other
-  // actors, tools and editors retain their existing hand-sync workload.
+  // Only the player's eligible equipment needs an early clearance bake.
+  // Other actors and editors retain their existing hand-sync workload.
   function prepareGroundPoseForSockets(record,toolHolder,toolKey,gripContext,scaleIdentity,dualWield,dualSolve) {
     const groundPose=global.HeldGroundPose;
     if(inAttackEditor()||!gameDeps?.playerMesh||record.avatarRoot?.userData?.proceduralHandToolHolder
-      ||record.rig?.parent!==gameDeps.playerMesh||toolHolder!==gameDeps.toolHolder||gripContext!=='melee'
-      ||!groundPose?.enabled?.()||global.WeaponToolStances?.getRuntimeState?.()?.activeSlot!=='weapon')return undefined;
-    const offhandIdle=dualWield?null:(toolGrips.offhandIdleStateForTool?.(toolKey,gripContext,scaleIdentity)||null);
+      ||record.rig?.parent!==gameDeps.playerMesh||toolHolder!==gameDeps.toolHolder
+      ||!groundPose?.enabled?.())return undefined;
+    const stances=global.WeaponToolStances;
+    const state=stances?.getRuntimeState?.();
+    const slot=state?.activeSlot;
+    if(!(stances?.groundPoseEligible?.(slot,state.itemKey||toolKey,toolHolder)??(slot==='weapon'&&gripContext==='melee')))return undefined;
+    const weaponDual=slot==='weapon'&&gripContext==='melee'; // Tool and ranged slots must never spawn weapon-only copies.
+    const offhandIdle=!weaponDual||dualWield?null:(toolGrips.offhandIdleStateForTool?.(toolKey,gripContext,scaleIdentity)||null);
     // Dual sync can rebake the holder and move both visible copies. Do it
     // before either canonical socket, then reuse this one prepared result.
-    if(dualWield||offhandIdle){
+    if(weaponDual&&(dualWield||offhandIdle)){
       const visuals=global.HobunjiDualWieldWeaponVisuals;
       if(visuals?.syncNow){
         toolHolder.parent.updateWorldMatrix?.(true,false);
@@ -1095,15 +1100,17 @@
       for(const record of managed) {
         if((!preview&&record.rig?.parent!==gameDeps.playerMesh)||record.avatarRoot?.userData?.proceduralHandToolHolder||currentToolHolder(record)!==holder)continue;
         const key=preview?toolGrips.toolKeyFor(itemKey):currentToolKey(record);
-        if(!key||currentGripContext(record)!=='melee')return null;
+        const gripContext=currentGripContext(record);
+        if(!key||(preview&&gripContext!=='melee'))return null;
         const identity={speciesId:record.speciesId,gender:record.gender,rigScaleY:Number(record.avatarRoot?.userData?.proceduralHandRigScaleY)||null};
-        const dual=!!toolGrips.dualWieldStateForTool?.(key,'melee',identity);
-        return {rig:record.rig,itemKey:itemKey||key,preview,scaleIdentity:identity,dual,
+        const slot=preview?'weapon':global.WeaponToolStances?.getRuntimeState?.()?.activeSlot;
+        const dual=(preview||slot==='weapon')&&gripContext==='melee'&&!!toolGrips.dualWieldStateForTool?.(key,'melee',identity);
+        return {rig:record.rig,itemKey:itemKey||key,preview,scaleIdentity:identity,dual,gripContext,
           offhand:dual?toolGrips.offhandPrimaryGripForTool?.(key,'melee',identity):null,
           fitIdentity:[identity.speciesId,identity.gender,identity.rigScaleY||'',toolGrips.actualCharacterHeight?.(identity.speciesId,identity.gender,identity.rigScaleY)||''].join(':'),
-          authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,'melee')?.position?.z,
-          primary:toolGrips.primaryGripForTool(key,'melee',identity),
-          secondary:toolGrips.secondaryGripForTool(key,'melee',identity),
+          authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,gripContext)?.position?.z,
+          primary:toolGrips.primaryGripForTool(key,gripContext,identity),
+          secondary:toolGrips.secondaryGripForTool(key,gripContext,identity),
           profile:toolGrips.groundProfileForTool?.(itemKey||key)};
       }
       return null;
