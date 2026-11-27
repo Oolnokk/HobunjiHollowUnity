@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261127rootRigAudit19';
+import { EnemyPreview } from './preview.js?v=20261127h48ac00a';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
