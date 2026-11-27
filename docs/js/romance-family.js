@@ -596,7 +596,7 @@
     const phase = phaseOf(child);
     const hour = H.clockHour();
     if (phase === 'basket' || isCarryFollowing(child.id) || window.FamilyBabyBurdens?.isProxyActive?.(child.id)) {
-      const following = window.FamilyBabyFollow?.scheduleTarget?.(child);
+      const following = window.FamilyBabyFollow?.scheduleTarget?.(child, phase);
       if (following) return following;
       const carry = child.carrySpot; // Saved safe landing spot: a put-down or thrown baby does not teleport to the basket on reload.
       if (carry && window.FamilyBabyBurdens?.isAllowedArea?.(carry.area)
@@ -709,7 +709,7 @@
     for (const child of fam.children) {
       const walker = walkerFor(child);
       if (!walker?.root) continue;
-      if (isProtectedFamilyChild(child.id)) continue; // Carry/follow owns the young child's presentation.
+      if (phaseOf(child) === 'basket' || child.carryBy || window.FamilyBabyBurdens?.isProxyActive?.(child.id)) continue; // Only carried/airborne children and crawling babies suppress the normal toddler wobble.
       const footing = num(walker._toddlingFooting, 0) / 99;
       const tumbling = walker._toddleTumbleUntil > now;
       const target = tumbling ? 1.15 : Math.sin(now / 160 + child.id.length) * 0.11 * footing;
