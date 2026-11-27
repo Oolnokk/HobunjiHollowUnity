@@ -98,7 +98,7 @@ class GripPoint {
 }
 const gripMatrix = z => ({ z, clone() { return gripMatrix(this.z); }, invert() { this.z *= -1; return this; } }); // Translation-only fixture isolates the hand direction from the weapon position.
 const gripWeapon = z => ({ matrixWorld: gripMatrix(z), quaternion: new GripQuaternion(), scale: { x: 1 }, updateMatrixWorld() {} }); // Both visible sprites retain the corrected forward facing.
-const gripState = { influence: 1, idleBlend: 0, plane: { matrixWorld: gripMatrix(0), quaternion: new GripQuaternion() }, mainMesh: gripWeapon(-0.075), offMesh: gripWeapon(0.075) }; // Supplies a live dual pair to the production socket resolver.
+const gripState = { influence: 1, idleBlend: 0, invisible: false, plane: { matrixWorld: gripMatrix(0), quaternion: new GripQuaternion() }, mainMesh: gripWeapon(-0.075), offMesh: gripWeapon(0.075) }; // Supplies a live dual pair to the production socket resolver.
 const mirrorStart = dual.indexOf('  function mirrorQuaternionAcrossLocalX('); // Bounds of the production direction conversion.
 const mirrorEnd = dual.indexOf('  function currentPlanePose(', mirrorStart);
 const socketStart = dual.indexOf('  function transformSocketForHand('); // Bounds of the production per-hand dispatch.
@@ -118,12 +118,16 @@ const authoredSocket = { position: new GripPoint(-0.04, -0.04, -0.1), quaternion
 const rightGrip = socketResolver({}, 'right', authoredSocket); // Main hand keeps the authored direction.
 const leftGrip = socketResolver({}, 'left', authoredSocket); // Offhand flips its grip while remaining on its own visible weapon.
 assert.deepEqual([rightGrip.quaternion.x, rightGrip.quaternion.y, rightGrip.quaternion.z, rightGrip.quaternion.w], [0.5, -0.5, 0.5, 0.5]);
-assert.deepEqual([leftGrip.quaternion.x, leftGrip.quaternion.y, leftGrip.quaternion.z, leftGrip.quaternion.w], [0.5, 0.5, -0.5, 0.5]);
+assert.deepEqual([leftGrip.quaternion.x, leftGrip.quaternion.y, leftGrip.quaternion.z, leftGrip.quaternion.w], [0.5, -0.5, -0.5, -0.5], 'visible offhand corrects the half-turn about its local grip X axis');
 assert.equal(leftGrip.dualWield.mirroredGripFrame, true);
 assert.equal(rightGrip.dualWield.mirroredGripFrame, false);
 assert.equal(leftGrip.position.x, authoredSocket.position.x);
 assert(Math.abs(leftGrip.position.z - (authoredSocket.position.z + 0.075)) < 1e-9);
 assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mutate the shared authored grip');
+gripState.invisible = true;
+const invisibleGrip = socketResolver({}, 'left', authoredSocket);
+assert.deepEqual([invisibleGrip.quaternion.x, invisibleGrip.quaternion.y, invisibleGrip.quaternion.z, invisibleGrip.quaternion.w], [0.5, 0.5, -0.5, 0.5], 'invisible offhand idle keeps its original orientation');
+gripState.invisible = false;
 // Lean sync: one rig solve (procedural-hand-frame-driver.js passes the same object for both hands) syncs once,
 // and both hands still resolve exactly the frames they resolve with a sync each.
 {

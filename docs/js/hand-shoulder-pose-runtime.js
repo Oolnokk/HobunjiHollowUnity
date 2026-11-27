@@ -149,8 +149,8 @@
     return !!global.HobunjiHandToolGrips?.secondaryGripForTool?.(toolKey || '');
   }
 
-  function applyLeftIdleRule(side, toolKey, weights) {
-    return side === 'left' && !secondaryGripActive(toolKey) ? { ...IDLE } : weights;
+  function applyLeftIdleRule(freeLeft, toolKey, weights) {
+    return freeLeft && !secondaryGripActive(toolKey) ? { ...IDLE } : weights;
   }
 
   // WeaponToolStances has to remain authoritative for transforming actual tool
@@ -195,7 +195,7 @@
   }
   global.setInterval?.(captureLoop, 250); // Polls only for global.Combat.deps to become available; the post-install check is a cheap no-op, so no per-frame cadence is needed.
 
-  function rangedWeights(side) {
+  function rangedWeights(freeLeft) {
     const action = global.RangedWeapons?.playerActionState?.() || null;
     if (!action?.itemKey || !action?.kind || !(Number(action.durationS) > 0)) return null;
     const def = global.RangedWeapons?.config?.[action.itemKey] || null;
@@ -217,7 +217,7 @@
     const authored = hasAuthoredPoseAim(configuredPose)
       ? configuredPose
       : (global.HobunjiHandShoulderPoseProfiles?.forKey?.(key) || {});
-    return applyLeftIdleRule(side, action.itemKey, weightsAt(progress, timing, authored, sequence));
+    return applyLeftIdleRule(freeLeft, action.itemKey, weightsAt(progress, timing, authored, sequence));
   }
 
   function restingTorchPose(avatarRoot, snapshot) {
@@ -227,8 +227,8 @@
     return snapshot.idlePose || global.HeldActionAnimations?.torchIdle?.poses?.neutral || null; // The editable loaded stance wins; the shared action is an offline fallback.
   }
 
-  function gameWeights(side, avatarRoot = null) {
-    const ranged = rangedWeights(side);
+  function gameWeights(freeLeft, avatarRoot = null) {
+    const ranged = rangedWeights(freeLeft);
     if (ranged) return ranged;
 
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || null;
@@ -236,7 +236,7 @@
     if (!active) {
       capturedMelee = null;
       const torch = restingTorchPose(avatarRoot, snapshot); // Apply the exported idle shoulder target even when combat is not playing.
-      return torch ? applyLeftIdleRule(side, 'torch', normalize(torch.shoulderAim, IDLE)) : { ...IDLE };
+      return torch ? applyLeftIdleRule(freeLeft, 'torch', normalize(torch.shoulderAim, IDLE)) : { ...IDLE };
     }
 
     const toolKey = snapshot?.itemKey || snapshot?.shape || '';
@@ -250,7 +250,7 @@
         poseScale: snapshot.combatPoseScale ?? 1,
       };
       const sequence = capturedMelee.opts.sequence || 'attack';
-      return applyLeftIdleRule(side, toolKey, weightsAt(snapshot.combatProgress, timing, rawPose, sequence));
+      return applyLeftIdleRule(freeLeft, toolKey, weightsAt(snapshot.combatProgress, timing, rawPose, sequence));
     }
 
     // Current committed melee profiles use both local hinges at Neutral and the
@@ -264,7 +264,7 @@
       grip: profile.strike.grip + (profile.neutral.grip - profile.strike.grip) * neutralWeight,
       palmNormal: profile.strike.palmNormal + (profile.neutral.palmNormal - profile.strike.palmNormal) * neutralWeight,
     };
-    return applyLeftIdleRule(side, toolKey, weights);
+    return applyLeftIdleRule(freeLeft, toolKey, weights);
   }
 
   function rangedWindupStrikeActive() {
@@ -293,17 +293,14 @@
     return instrumentHandState;
   }
 
-  function currentWeights(side, avatarRoot = null) {
+  function currentWeights(side, avatarRoot = null, handAttached = false) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
-    if (editor?.currentWeights) {
-      const weights = editor.currentWeights();
-      const toolKey = document.getElementById('toolSpriteSelect')?.value || '';
-      return applyLeftIdleRule(side, toolKey, normalize(weights, IDLE));
-    }
+    if (editor?.currentWeights) return normalize(editor.currentWeights(), IDLE);
+    const freeLeft = side === 'left' && !handAttached; // Only a free offhand may use the gameplay idle fallback.
     const instrument = playingInstrumentFor(avatarRoot);
-    if (instrument) return applyLeftIdleRule(side, instrument.key,
+    if (instrument) return applyLeftIdleRule(freeLeft, instrument.key,
       weightsAt(instrument.progress, instrument.action, instrument.action.poses, instrument.action.sequence)); // No weapon/throw stance override while playing.
-    const weights = gameWeights(side, avatarRoot);
+    const weights = gameWeights(freeLeft, avatarRoot);
     if (!rangedWindupStrikeActive()) return weights;
     return { ...weights, grip: 0 }; // Ranged Windup/Strike disables the grip-axis correction only; palm-normal targeting still follows the authored elbow/shoulder target.
   }
