@@ -24745,6 +24745,8 @@
         return {
           holder: heldItemHolder,
           plane: _heldItemPlane,
+          itemKey: _heldItemKey, // Shared clearance diagnostics identify the exact selected carry art.
+          groundPoseIdle: !_heldDrinkPhase && !_heldThrowAimT, // Only the stationary carry owns clearance; drink and flask release retain their authored timeline.
           mode: _heldItemHandMode,
           width: (geo?.width || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.x || 1),
           height: (geo?.height || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1),
