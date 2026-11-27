@@ -125,7 +125,7 @@
     }
     // Non-combat NPC walkers are approached/repelled without inventing a creature Health pool.
     for (const walker of walkers || []) {
-      if (walker.area !== ctx.zoneId || !walker.root?.position || window.RomanceFamily?.isBasketBaby?.(walker.rec?.id)) continue; // Infants are never guard-site intruders.
+      if (walker.area !== ctx.zoneId || !walker.root?.position || (window.RomanceFamily?.isProtectedFamilyChild?.(walker.rec?.id) ?? window.RomanceFamily?.isBasketBaby?.(walker.rec?.id))) continue; // Infants are never guard-site intruders.
       const candidate = npcProxy(walker, ctx.zoneId, ctx.tile);
       const dx = candidate.x - spot.x, dy = candidate.y - spot.y, dist2 = dx * dx + dy * dy;
       if (dist2 < bestD2) { best = candidate; bestD2 = dist2; }
@@ -376,7 +376,7 @@
     // Ordinary NPC walkers lack Health/Combat resources. This records an actual
     // defended confrontation without assigning fabricated health or killing an NPC.
     const walker = target?.walker;
-    if (!walker || window.RomanceFamily?.isBasketBaby?.(walker.rec?.id)) return false;
+    if (!walker || (window.RomanceFamily?.isProtectedFamilyChild?.(walker.rec?.id) ?? window.RomanceFamily?.isBasketBaby?.(walker.rec?.id))) return false;
     walker._wildlifeThreatUntil = performance.now() + 2500;
     walker._wildlifeThreatSource = { x: attacker.x, y: attacker.y }; // Walker's normal pathing update steers away from this bite source. // Exposed for NPC scheduling/flight behavior to consume in a later combat-aware update.
     debug.last = 'nazgraku confronted NPC ' + (walker.rec?.id || 'walker');

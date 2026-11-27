@@ -133,7 +133,7 @@
     return false;
   }
   function activeWorker(plot, role) {
-    return lineupOf(plot, role).find(id => !unavailable(id, plot)) || null;
+    return lineupOf(plot, role).find(id => !unavailable(id, plot) && (!plot.family || !familyClaims.has(id))) || null; // A backup may cover a primary worker's other assigned chore.
   }
   function inHours(plot) {
     const hour = num(window.CalendarSystem?.getHour?.(), 12);
@@ -218,10 +218,10 @@
   function invalidateFamilyChores() { familyClaims.clear(); choreOwners.clear(); choreCache.clear(); }
   function familyChoreAssignments(id) {
     const config = window.RomanceFamily?.familyChores?.();
-    if (!config || !window.RomanceFamily?.usefulnessInfo?.(id)) return null;
+    if (!config) return null;
     const livestock = config.livestock === id;
     const processing = Object.entries(config.processing || {}).filter(([, assignment]) => assignment?.workerId === id);
-    return livestock || processing.length ? { livestock, processing } : null;
+    return (livestock || processing.length) && window.RomanceFamily?.usefulnessInfo?.(id) ? { livestock, processing } : null;
   }
   function familyChoreJobs(id, assignments) {
     const now = Date.now(), cached = choreCache.get(id);
@@ -237,7 +237,7 @@
   function familyChoreHours() { const hour = num(window.CalendarSystem?.getHour?.(), 12); return hour >= CHORE_HOURS[0] && hour < CHORE_HOURS[1]; }
   function familyChoreTarget(rec, walker) {
     const id = rec.id, assignments = familyChoreAssignments(id);
-    if (!assignments || !familyChoreHours() || unavailable(id, { family: true })) { releaseFamilyClaim(id); return null; }
+    if (!assignments || !familyChoreHours() || walker?._doorstepVisitor || unavailable(id, { family: true })) { releaseFamilyClaim(id); return null; }
     const jobs = familyChoreJobs(id, assignments);
     let claim = familyClaims.get(id);
     let job = claim && jobs.find(candidate => candidate.key === claim.key && candidate.job === claim.job && candidate.itemKey === claim.itemKey && candidate.inputKey === claim.inputKey);
@@ -262,7 +262,7 @@
       activity: claim.activity, rotY: (-Math.atan2(claim.r - claim.standR, claim.c - claim.standC) + Math.PI / 2) * 180 / Math.PI };
   }
   function tickFamilyChores(dt) {
-    for (const [id, previous] of familyClaims) {
+    for (const [id, previous] of [...familyClaims]) { // Snapshot iteration: a moving target may replace its claim.
       const walker = deps.findWalker?.(id);
       const target = familyChoreTarget({ id }, walker), claim = familyClaims.get(id);
       if (!target || !claim || previous !== claim) continue;
@@ -404,7 +404,7 @@
   function tick() {
     if (!deps) return;
     const dt = TICK_MS / 1000;
-    tickFamilyChores(dt);
+    if (familyClaims.size) tickFamilyChores(dt);
     if (!plotsById.size) return; // Family chores also work without a crop plot.
     const raining = !!deps.isRaining?.();
     if (raining) rainShower();

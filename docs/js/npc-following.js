@@ -215,6 +215,7 @@
 
   window.NpcFollowing = {
     init, clear, clearRetreat, target, setMode, commandOptionsFor,
+    isCompanion: id => companions.has(id), // Farmwork availability reads the real session owner.
     releaseForCarry: id => { companions.delete(id); clearRetreat(id); window.FurnitureTableSystem?.setSeatTarget?.(id, null); }, // Silent handoff to the physical carry owner.
     snapshot: () => ({
       latestChange: 'Shared combat cover, map transitions, running and exclusive seating for dates and friendly followers.',

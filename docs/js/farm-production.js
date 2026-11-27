@@ -197,6 +197,7 @@
     return { load: deps.loadStorage, save: deps.saveStorage }; // Shared with livestock trough refilling.
   }
   function isFamilyStation(id, inputKey = '') {
+    if (!deps) return false;
     const entry = buildings.find(candidate => candidate.id === id);
     return !!(entry && catalog[entry.key]?.method && catalog[entry.key]?.family !== 'seedMaker'
       && (!inputKey || outputsFor(entry.key, inputKey)?.length));

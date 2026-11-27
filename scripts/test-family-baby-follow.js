@@ -55,6 +55,9 @@ const family=R._test.getFamily();family.children.push({id:'second',bornRawDay:0,
 assert(R.serialize().children.every(c=>c.followPlayer===true && c.carrySpot.area===area),'both carried infants survive the same wilderness save');
 family.children[0].usefulnessLevel=5;family.children[0].usefulnessXp=0;const beforeMax=saves;onAward({amount:100});assert.equal(saves,beforeMax,'maxed usefulness does not cause save churn');
 family.children[0].usefulnessLevel=1;family.children[0].usefulnessXp=.3;
-day=29;onAward({amount:100});assert(Math.abs(R.serialize().children[0].usefulnessXp-.3)<1e-9);
+day=29;onAward({amount:100});assert(Math.abs(R.serialize().children[0].usefulnessXp-1.3)<1e-9, 'back-stowed toddlers also gain observation XP');
+assert(R.isProtectedFamilyChild('baby'), 'carried toddler remains safe');
+assert(!R.isBasketBaby('baby'), 'toddler speech remains age appropriate');
+child.carryBy=null;child.followPlayer=true;F.bind(child,walker,'toddler');assert(walker._familyBabyFollowing,'toddlers share the safe put-down follower');F.clearWalker(walker);
 assert(saves>0);
 console.log('baby wilderness follow, crawl, recovery, carry save, fractional XP passed');

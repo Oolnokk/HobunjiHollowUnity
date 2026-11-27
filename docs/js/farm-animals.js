@@ -1470,17 +1470,19 @@
     if (!deps?.hasFarmPermission?.('livestock')) return [];
     const jobs = [], list = deps.loadWorldLivestock();
     const barns = new Map((deps.getFarmBuildings() || []).filter(b => b.kind === 'barn' && b.stage === 'built' && !b.nursery && b.tier !== 'nursery').map(b => [b.id, b]));
-    const live = new Map([...deps.animalObjects || []].filter(a => a?.livestockId).map(a => [a.livestockId, a]));
+    const live = new Map(); // Avoid temporary arrays while reading the live herd.
+    for (const animal of deps.animalObjects || []) if (animal?.livestockId) live.set(animal.livestockId, animal);
     const stock = window.FarmProduction?.familyStorageAccess?.()?.load() || {};
+    const farmVisible = deps.getCurrentArea?.() === 'farm'; // Visible work must target an actual spawned animal.
     const seenTroughs = new Set(); // A shared trough receives a single claim regardless of herd size.
     for (const rec of list) {
       if (!rec?.id || rec.lifeStage === 'baby' || (rec.lifeStage !== 'adult' && 'barnId' in rec && !rec.barnId)) continue;
       const animal = live.get(rec.id), barn = barns.get(rec.barnId);
-      if (animal?._harvestFrozen || animal?._vatWorkPose || rec.assignedVatId) continue;
-      const c = Math.floor(animal?.col ?? rec.col ?? barn?.col), r = Math.floor(animal?.row ?? rec.row ?? barn?.row);
+      const canHandle = !animal?._harvestFrozen && !animal?._vatWorkPose && !rec.assignedVatId && (!farmVisible || !!animal);
+      const c = Math.floor(animal?.col ?? barn?.col ?? rec.col), r = Math.floor(animal?.row ?? barn?.row ?? rec.row);
       if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
       const common = { source: 'livestock', livestockId: rec.id, c, r };
-      if (!rec.outdoorProductionLocked && !isHarvesting()) {
+      if (canHandle && !rec.outdoorProductionLocked && !isHarvesting()) {
         const products = [deps.LIVESTOCK_RESOURCE_DEFS[rec.kind], ...additionalResourceDefs(rec.kind)].filter(Boolean);
         for (const product of products) {
           const primary = product === deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
@@ -1489,7 +1491,7 @@
             jobs.push({ ...common, key: 'livestock:' + rec.id + ':' + product.itemKey, job: 'livestockCollect', itemKey: product.itemKey, activity: 'collecting livestock goods' });
         }
       }
-      if (Number.isFinite(deps.calendar?.day) && rec.lastPettedDay !== deps.calendar.day)
+      if (canHandle && Number.isFinite(deps.calendar?.day) && rec.lastPettedDay !== deps.calendar.day)
         jobs.push({ ...common, key: 'livestock:' + rec.id + ':pet', job: 'livestockPet', activity: 'petting livestock' });
       if (barn && rec.troughIndex != null) {
         const key = 'trough:' + barn.id + ':' + rec.troughIndex;
@@ -1497,7 +1499,7 @@
         const itemKey = feedKeysForDiet(dietFor(rec.kind)).find(item => stock[item] > 0);
         if (!seenTroughs.has(key) && itemKey && trough?.slots?.some(slot => slot == null)) {
           seenTroughs.add(key);
-          jobs.push({ ...common, key, job: 'livestockFeed', barnId: barn.id, troughIndex: rec.troughIndex, itemKey, c: barn.col, r: barn.row, activity: 'refilling livestock troughs' });
+          jobs.push({ ...common, key, job: 'livestockFeed', barnId: barn.id, troughIndex: rec.troughIndex, itemKey, c: barn.col + Math.floor((barn.w || 1) / 2), r: barn.row + (barn.h || 1) - 1, activity: 'refilling livestock troughs' });
         }
       }
     }

@@ -323,7 +323,14 @@
     const child = fam.children.find(entry => entry.id === id); // Only active carry/follow ownership, not age or speech.
     return !!child && (phaseOf(child) === 'basket' || phaseOf(child) === 'toddler') && !!(child.carryBy || child.followPlayer || window.FamilyBabyBurdens?.isProxyActive?.(id));
   }
-  function isFamilyWorkUnavailable(id) { return isBasketBaby(id) || isCarryFollowing(id) || window.FamilyBabyBurdens?.isProxyActive?.(id) === true; }
+  function isProtectedFamilyChild(id) {
+    const child = fam.children.find(entry => entry.id === id); // Carry protection does not change toddler speech or ordinary development.
+    if (!child) return false;
+    const phase = phaseOf(child);
+    return phase === 'basket' || window.FamilyBabyBurdens?.isProxyActive?.(id) === true
+      || (phase === 'toddler' && !!(child.carryBy || child.followPlayer));
+  }
+  function isFamilyWorkUnavailable(id) { return isProtectedFamilyChild(id); }
   function familyChores() { return fam.farmChores || null; } // Saved assignments belong to the family, not the map.
   function setFamilyChore(kind, stationId, workerId, inputKey = '') {
     if (workerId && !workProfileFor(workerId)) return false;
@@ -702,7 +709,7 @@
     for (const child of fam.children) {
       const walker = walkerFor(child);
       if (!walker?.root) continue;
-      if (phaseOf(child) === 'basket' || isCarryFollowing(child.id)) continue; // Carry/follow owns the young child's presentation.
+      if (isProtectedFamilyChild(child.id)) continue; // Carry/follow owns the young child's presentation.
       const footing = num(walker._toddlingFooting, 0) / 99;
       const tumbling = walker._toddleTumbleUntil > now;
       const target = tumbling ? 1.15 : Math.sin(now / 160 + child.id.length) * 0.11 * footing;
@@ -1142,7 +1149,7 @@
 
   const api = {
     init, tick, serialize, restore, snapshot, setVatWorkerPose, clearVatWorkerPose, retargetVatAssignments,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, isCarryFollowing, isFamilyWorkUnavailable, releaseCarryFollow, babyAmbientSound, voiceAgePhase,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, isCarryFollowing, isProtectedFamilyChild, isFamilyWorkUnavailable, releaseCarryFollow, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp, familyChores, setFamilyChore,
     isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.
