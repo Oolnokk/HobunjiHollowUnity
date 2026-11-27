@@ -825,7 +825,7 @@ assert.match(shoulderPoseRuntimeSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]
 assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.isPlayerThrownFireThroughStrike\?\.\(\) === true/, 'ranged hand targeting must consume the real thrown-action phase API rather than debug state');
 assert.doesNotMatch(shoulderPoseRuntimeSource, /__rangedDebug|WeaponToolStances\?\.debugSnapshot/, 'gameplay hand targeting must never depend on diagnostic snapshots');
 assert.match(shoulderPoseRuntimeSource, /if \(!rangedWindupStrikeActive\(\)\) return weights;[\s\S]*return \{ \.\.\.weights, grip: 0 \}/, 'thrown Windup\/Strike must disable only the local grip-axis correction while preserving palm-normal targeting');
-assert.match(shoulderAimSource, /const appliedPalmNormalAngle = palmNormalAngle \* weights\.palmNormal/, 'palm-normal targeting must remain active through the ordinary shoulder\/elbow solver');
+assert.match(shoulderAimSource, /const appliedPalmNormalAngle = \(palmNormalAngle - wristLeeway\.palmNormal\) \* weights\.palmNormal/, 'palm-normal targeting must correct only excess wrist deviation');
 assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
 assert.match(shoulderAimSource, /legacy-shoulder-target/, 'older animations without elbows must retain the old shoulder target instead of calculating a runtime midpoint');
 assert.doesNotMatch(shoulderAimSource, /copy\(shoulder\)\.add\(socket\.position\)\.multiplyScalar\(0\.5\)/, 'runtime must never synthesize the authoring midpoint');
@@ -879,6 +879,20 @@ assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|g
   vm.runInContext(shoulderAimSource, sandbox, { filename: 'procedural-hand-shoulder-aim.js' });
   const solve = sandbox.window.ProceduralHandShoulderAim?.solveLocalHingeAngles;
   assert.equal(typeof solve, 'function', 'shoulder solver must expose its pure local hinge decomposition for regression');
+  const leeway = sandbox.window.ProceduralHandShoulderAim.wristHingeLeeway;
+  const rad = degrees => degrees * Math.PI / 180;
+  for (const side of ['left', 'right']) {
+    const sign = side === 'left' ? -1 : 1;
+    for (const [grip, palm, expectedGrip, expectedPalm] of [
+      [0, 0, 0, 0], [45, 15, 45, 15], [-45, -15, -45, -15],
+      [90, 60, 80, 35], [-90, -60, -70, -20],
+      [80, 35, 80, 35], [-70, -20, -70, -20],
+    ]) {
+      const result = leeway(rad(grip), sign * rad(palm), side, {});
+      assert(Math.abs(result.grip - rad(expectedGrip)) < 1e-12, 'flexion/extension limit');
+      assert(Math.abs(result.palmNormal - sign * rad(expectedPalm)) < 1e-12, 'mirrored lateral wrist limit');
+    }
+  }
   const targets = [
     { x: 0.5, y: 0.8, z: 0.2 },
     { x: -0.45, y: 0.72, z: -0.31 },
