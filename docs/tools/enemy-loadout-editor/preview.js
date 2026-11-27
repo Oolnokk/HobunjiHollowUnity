@@ -177,7 +177,12 @@ export class EnemyPreview {
     window.__enemyWorkshopPreloadScripts = preload; // Optional workshop-only hint consumed by the nested runtime loaders.
     const dataFile = files.find(file => file.startsWith('tools/enemy-loadout-editor/source-data.js?'));
     // This adapter only declares functions at evaluation; network reads do not require the rest of the runtime.
-    const catalogInputs = loadRuntimeScript(dataFile).then(() => window.EnemyLoadoutSourceData.prefetch());
+    const catalogStarted = performance.now(); // Includes adapter load and independent network requests, overlapping runtime startup.
+    const catalogInputs = loadRuntimeScript(dataFile).then(() => window.EnemyLoadoutSourceData.prefetch()).then(inputs => {
+      this.startupTimings.catalogDownloads = Math.round(performance.now() - catalogStarted);
+      this.log('Startup · catalog downloads (overlapped): '+this.startupTimings.catalogDownloads+' ms');
+      return inputs;
+    });
     catalogInputs.catch(() => {}); // Preserve the original rejection for the later awaited phase, without an early unhandled rejection.
     preload(files.filter(file => file !== dataFile));
     await this.timedStartup('Runtime scripts', async () => {
@@ -417,6 +422,7 @@ export class EnemyPreview {
     window.RangedWeapons.applyConfig?.(d.attackValues.rangedWeapons);
     window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions();
     window.BanditCombat.applyBanditConfig(d.attackValues.bandit);
+    if (!Object.hasOwn(this.startupTimings,'Portrait cosmetics')) this.onStartupPhase?.('Portrait cosmetics remaining');
     this.cosmetics = await cosmeticsReady;
     this.startupTimings.total = Math.round(performance.now() - started);
     this.log('Startup · total runtime ready: ' + this.startupTimings.total + ' ms');

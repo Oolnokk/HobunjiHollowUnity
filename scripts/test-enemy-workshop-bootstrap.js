@@ -102,6 +102,31 @@ const tick = async () => {
   assert.equal(links.length,2);assert(links.every(node=>node.rel==='preload'&&node.as==='script'));
   const loaded = new Function('URL',helper+';return loadRuntimeScript;')(URL)('js/a.js?v=1',doc);
   assert.equal(links.length,3);links[2].onload();await loaded;
+  // Catalog network requests start immediately, deduplicate and fan out without waiting for the large game source.
+  const dataWindow={},requests=[];let finishGame;
+  const response = value => ({ok:true,json:async()=>value,text:async()=>String(value)});
+  const fetchData = url => {
+    const key=String(url);requests.push(key);
+    if(key==='game.js')return new Promise(resolve=>{finishGame=resolve;});
+    if(key==='config/species/index.json')return Promise.resolve(response({entries:[{path:'a.json'},{path:'b.json'}]}));
+    if(key.endsWith('/a.json'))return Promise.resolve(response({speciesId:'a'}));
+    if(key.endsWith('/b.json'))return Promise.resolve(response({speciesId:'b'}));
+    return Promise.resolve(response({}));
+  };
+  vm.runInNewContext(fs.readFileSync('docs/tools/enemy-loadout-editor/source-data.js','utf8'),{window:dataWindow,document:doc,fetch:fetchData,URL});
+  const dataApi=dataWindow.EnemyLoadoutSourceData,first=dataApi.prefetch();
+  assert.equal(first,dataApi.prefetch(),'same in-flight catalog reads');
+  let complete=false;first.then(()=>{complete=true;});
+  await tick();
+  assert(requests.includes('https://game.test/docs/config/species/a.json'));
+  assert(requests.includes('https://game.test/docs/config/species/b.json'));
+  assert(requests.includes('config/outline-rendering.json'));
+  assert.equal(complete,false,'species and outline requests do not wait for game.js');
+  finishGame(response('game source'));
+  const result=await first;
+  assert.equal(result[5].a.speciesId,'a');assert.equal(result[5].b.speciesId,'b');
+  assert.equal(first,dataApi.prefetch(),'completed catalog stays reusable');
+  assert.equal(new Set(requests).size,requests.length,'no duplicate catalog requests');
   console.log(
     'Enemy workshop: one nested rig bootstrap finishes before the shared hand driver; no double compound-avatar installation',
   );
