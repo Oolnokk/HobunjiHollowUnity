@@ -19,13 +19,12 @@ const legacy = actual.replace(/    let rowLayouts = null;[^\n]*\n/, '')
         const centerSlot =`);
 assert.notEqual(actual, legacy);
 assert(!legacy.includes('rowLayouts'));
-const uncached = actual.replace(/    const anchors = state\.active\.length > 1[^\n]*\n/, '')
-  .replace(/          anchors\?\.clear\(\);[^\n]*\n/, '')
-  .replace(/        anchors\?\.delete\(event\.root\);[^\n]*\n/, '')
-  .replace(/      let center;[\s\S]*?      \} else center = popupAnchorWorld\(event\.root, event\.mode\);/, '      const center = popupAnchorWorld(event.root, event.mode);');
+const uncached = actual.replace(/    const shareAnchors =[^\n]*\n    let floatAnchors =[^\n]*\n/, '')
+  .replace(/^.*floatAnchors\?\.clear\(\); rowAnchors\?\.clear\(\);[^\n]*\n/gm, '')
+  .replace(/      let center;[\s\S]*?      \} else if \(progress < 1\) center = popupAnchorWorld\(event\.root, event\.mode\);/, '      const center = popupAnchorWorld(event.root, event.mode);');
 assert.notEqual(actual, uncached);
-assert(!uncached.includes('anchors'));
-function run(updateSource, activeSpec, now) {
+assert(!uncached.includes('floatAnchors') && !uncached.includes('shareAnchors'));
+function run(updateSource, activeSpec, now, moveDuringIcon = false) {
   class Vec {
     constructor(x=0,y=0,z=0) { Object.assign(this,{x,y,z}); }
     setFromMatrixColumn(matrix,i) { this.x = i===0?1:0; this.y=0; this.z=i===2?1:0; return this; }
@@ -41,12 +40,13 @@ function run(updateSource, activeSpec, now) {
     material:{opacity:1},plane:{position:new Vec(),quaternion:{copy(){}},scale:new Vec()},
   }));
   const disposed=[],forwarded=[];
-  let sorts=0,cameraUpdates=0,anchorBuilds=0;
+  let sorts=0,cameraUpdates=0,anchorBuilds=0,actorShift=0; // Simulate a live icon callback changing an actor's pose.
   const state={active,infoLists:new Map(),settings:{centeredFiveRow:{worldHeight:.32,maxRows:5,rowSpacing:1.08,textAlign:'left'},floatPlus:{worldHeight:.36}},
     deps:{THREE:{Vector3:Vec},camera:{matrixWorld:{},position:new Vec(0,0,5),quaternion:{},updateMatrixWorld(){cameraUpdates++;}}}};
   const ctx={state,Vec,PRIORITY:{skillXp:0,masteryXp:1,favor:2,currency:3,loot:4},
     CENTERED_LIST_SCALE:.25,INTERACTION_MAX_SCREEN_FRACTION:.035,_updateScratch:{},
-    rowLayoutBuilds:0,popupAnchorWorld:(root,mode)=>{anchorBuilds++;return new Vec(roots.indexOf(root),mode==='floatPlus'?2:1,0);},updateIconEffect:()=>true,
+    rowLayoutBuilds:0,popupAnchorWorld:(root,mode)=>{anchorBuilds++;return new Vec(roots.indexOf(root)+actorShift,mode==='floatPlus'?2:1,0);},
+    updateIconEffect:()=>{if(moveDuringIcon)actorShift+=2;return true;},
     dispose:event=>disposed.push(event.id),forwardToReadout:event=>forwarded.push(event.id),
     updateConditionCallout(){},updateAimLabel(){},updateInfoLists(){},keepPromptRowOnScreen(){}};
   ctx.listFor=root=>{sorts++;return active.filter(e=>e.root===root&&e.mode==='centeredFiveRow'&&!e.interactionPrompt).sort((a,b)=>(ctx.PRIORITY[a.kind]??99)-(ctx.PRIORITY[b.kind]??99)||a.sequence-b.sequence)};
@@ -73,6 +73,10 @@ for(const time of [5,500,1150,3200]) {
   assert.deepEqual(after.forwarded,before.forwarded);
   if(time<1150)assert.equal(after.anchorBuilds,3,'one anchor transform per root and mode in a burst');
 }
+const callbackBurst=[[1,0,'damage',false,1150,'floatPlus'],[2,0,'emoji',false,1150,'iconEffect'],[3,0,'damage',false,1150,'floatPlus']];
+assert.deepEqual(run(actual,callbackBurst,50,true).rows,run(uncached,callbackBurst,50,true).rows,
+  'a live icon callback must invalidate the preceding actor anchor');
+assert.equal(run(actual,burst,3200).anchorBuilds,0,'expired popups perform no actor matrix work');
 assert.equal(run(actual,[],50).cameraUpdates,0);
 assert.equal(run(actual,[[1,0,'damage',false,1150,'floatPlus']],50).sorts,0);
 // Use the actual event gate, not a duplicate approximation of its camera test.
