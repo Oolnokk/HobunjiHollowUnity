@@ -12,6 +12,9 @@ on:
       - 'docs/js/farm-animals.js'
       - 'docs/js/farm-production.js'
       - 'docs/js/farmwork-ui.js'
+      - 'docs/js/world-popup-text.js'
+      - 'docs/js/farm-panel-core.js'
+      - 'scripts/test-world-popup-row-layout.js'
       - 'docs/js/family-baby-*.js'
       - 'scripts/test-family-chore-jobs.js'
       - 'scripts/test-family-baby-*.js'
@@ -41,6 +44,8 @@ jobs:
           node --check docs/js/farm-animals.js
           node --check docs/js/farm-production.js
           node --check docs/js/farmwork-ui.js
+          node --check docs/js/world-popup-text.js
+          node --check docs/js/farm-panel-core.js
           node --check docs/js/family-baby-burdens.js
           node --check docs/js/family-baby-care.js
           node --check docs/js/family-baby-follow.js
@@ -61,5 +66,7 @@ jobs:
         run: node scripts/test-farm-grass-billboard-refresh.js
       - name: Real game harvest and processor-quality integration
         run: node scripts/test-family-harvest-quality.js
+      - name: Family XP camera gating and row layout
+        run: node scripts/test-world-popup-row-layout.js
       - name: Vat quality and save-bound external workers
         run: node scripts/test-item-quality-and-blackout-wander.js

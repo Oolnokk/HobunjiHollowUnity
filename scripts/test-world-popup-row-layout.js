@@ -60,4 +60,23 @@ for(const time of [5,500,3200]) {
 }
 assert.equal(run(actual,[],50).cameraUpdates,0);
 assert.equal(run(actual,[[1,0,'damage',false,1150,'floatPlus']],50).sorts,0);
-console.log('World popup row layout parity: PASS');
+// Use the actual event gate, not a duplicate approximation of its camera test.
+const familyPopup = block('  function showFamilyUsefulness(', '  function showChange(');
+const popupScene={}, camera={}, emitted=[];
+const popupRoot={visible:true,parent:popupScene};
+let projected={x:0,y:0,z:0};
+const gate=vm.runInNewContext(familyPopup+'\nshowFamilyUsefulness;',{
+  state:{deps:{camera,getActiveScene:()=>popupScene}},
+  iconAnchorScene:root=>root.visible?root.parent:null,
+  avatarCentroidWorld:()=>({project(){Object.assign(this,projected);}}),
+  spawn:entry=>{emitted.push(entry);return 0;}
+});
+assert.equal(gate(popupRoot,.125),true);
+assert.equal(emitted[0].text,'+0.13 Usefulness XP');
+assert.equal(emitted[0].root,popupRoot);
+projected={x:1.1,y:0,z:0};assert.equal(gate(popupRoot,2),false);
+projected={x:0,y:0,z:2};assert.equal(gate(popupRoot,2),false);
+projected={x:0,y:0,z:0};popupRoot.visible=false;assert.equal(gate(popupRoot,2),false);
+popupRoot.visible=true;popupRoot.parent={};assert.equal(gate(popupRoot,2),false);
+assert.equal(emitted.length,1,'off-camera, hidden and wrong-scene family awards do not spawn popups');
+console.log('World popup row layout and family visibility parity: PASS');
