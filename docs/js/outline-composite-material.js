@@ -32,11 +32,13 @@
         void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
       `,
       fragmentShader: `
-        uniform sampler2D tColor, tEdgeId, tEdgeIdDepth, tSceneDepth;
+        uniform sampler2D tColor, tEdgeId;
+        // Preserve packed-depth precision even on mobile GLSL implementations.
+        uniform highp sampler2D tEdgeIdDepth, tSceneDepth;
         uniform vec2 uTexel;
         uniform float uCameraNear, uCameraFar;
         uniform float uSeamOutlinesOn;
-        uniform sampler2D tShellMaskDepth;
+        uniform highp sampler2D tShellMaskDepth;
         uniform float uDepthOutlinesOn, uOrthographic, uDepthFogMode;
         uniform vec3 uDepthFogColor;
         uniform float uDepthFogNear, uDepthFogFar, uDepthFogDensity;
@@ -49,22 +51,28 @@
         }
         // Only darken a visible eligible pixel, never its untagged neighbor.
         // Matching full-scene depth rejects curves behind portraits, terrain and walls.
-        float visibleCurve(vec2 uv, float worldDepth) {
+        float visibleCurve(vec2 uv, float sceneRaw, float worldDepth) {
           float raw = texture2D(tShellMaskDepth, uv).r;
-          if (raw >= 1.0) return 0.0;
+          // Both screen-mode targets use 24-bit depth. Never accept a curve
+          // behind the visible scene except for a few quantization steps; the
+          // old symmetric world-space tolerance let nearby furniture ink cover
+          // a foreground PNG. Keep the existing tolerance for forward bias.
+          if (raw >= 1.0 || raw - sceneRaw > 4.0 / 16777215.0) return 0.0;
           float maskDepth = linearDepth(raw);
           return step(abs(maskDepth - worldDepth), max(0.012, worldDepth * 0.0005));
         }
         float curveEdge(vec2 uv, float centerDepth) {
-          float otherDepth = linearDepth(texture2D(tSceneDepth, uv).r);
+          float otherRaw = texture2D(tSceneDepth, uv).r;
+          float otherDepth = linearDepth(otherRaw);
           // Inward silhouette plus strong outward depth discontinuities. Suppress
           // small depth gradients on smooth curved faces.
           float gap = smoothstep(max(0.105, centerDepth * 0.009), max(0.225, centerDepth * 0.018), otherDepth - centerDepth);
-          return max(1.0 - visibleCurve(uv, otherDepth), gap);
+          return max(1.0 - visibleCurve(uv, otherRaw, otherDepth), gap);
         }
         vec3 applyScreenOutline(vec3 color) {
-          float centerDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
-          if (visibleCurve(vUv, centerDepth) < 0.5) return color;
+          float centerRaw = texture2D(tSceneDepth, vUv).r;
+          float centerDepth = linearDepth(centerRaw);
+          if (visibleCurve(vUv, centerRaw, centerDepth) < 0.5) return color;
           vec2 stroke = uTexel * 12.0; // Four times the previous three-texel reach, with the same four neighbor taps.
           float edge = max(max(curveEdge(vUv + vec2(stroke.x, 0.0), centerDepth),
                                curveEdge(vUv - vec2(stroke.x, 0.0), centerDepth)),
