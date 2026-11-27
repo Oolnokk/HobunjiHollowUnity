@@ -6,6 +6,25 @@ GhoulSpecialVariants:{rollEnchantedWeapon:(rnd,o)=>{assert.equal(o.singleBase,tr
 BanditCombat:{makeEntity:async(cfg,rank,tier,x,y,o)=>{calls.push(o);return {maxFooting:10,maxHealth:100,def:{weaponShapeKey:'warhammer'},rosterRecord:o.rosterOverride,...o.extra};}}};
 vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-minion.js','utf8'),{window,console});
 (async()=>{const m=window.MinionCombat,o={zoneId:'map_i_dev_random_ruin',roster:{appearance:{speciesId:'harlyao-skeleton'}},baseConfig:{}};
+// Actual frost pass must retain pure black, transparent and dark anti-aliased ink in all views.
+const sample=[0,0,0,255,0,0,0,80,12,20,24,255,100,85,50,255,200,150,100,0,0,32,0,255];
+const canvases=Array.from({length:4},()=>{const data=new Uint8ClampedArray(sample);return {width:6,height:1,data,getContext:()=>({getImageData:()=>({data}),putImageData(){}})};});
+await m.paintRuinPortraits({ruinSkeletonTheme:'tothal',ruinSkeletonSeed:7},canvases);
+for(const canvas of canvases){assert.deepEqual(Array.from(canvas.data.slice(0,12)),sample.slice(0,12));assert.deepEqual(Array.from(canvas.data.slice(16,20)),sample.slice(16,20));assert.ok(canvas.data[12]>100);assert.ok(canvas.data[13]>85);assert.equal(canvas.data[15],255);}
+// Oversized skull + narrow torso, with an offset silhouette: only the body pixels may seed spikes.
+const w=100,h=100,body=new Uint8ClampedArray(w*h*4);
+for(let y=3;y<60;y++)for(let x=12;x<88;x++)body[(y*w+x)*4+3]=255;
+for(let y=60;y<92;y++)for(let x=42;x<63;x++)body[(y*w+x)*4+3]=255;
+const footprint=m.ruinTorsoFootprint({width:w,height:h,getContext:()=>({getImageData:()=>({data:body})})},{x:.48,y:.60},1,1);
+assert.ok(footprint&&footprint.top<-.10&&footprint.bottom>-.42);assert.ok(footprint.width<.22);assert.ok(footprint.x<0);
+vm.runInNewContext(fs.readFileSync('docs/js/tool-metal-recolor.js','utf8'),{window,console});
+const eligible=new Uint8Array(100*100).fill(1);
+for(let seed=1;seed<=12;seed++){
+  const mask=window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.28,{seed,blotchCount:9,separateBlotches:true});
+  const visited=new Uint8Array(mask.length);let groups=0,area=0;
+  for(let p=0;p<mask.length;p++)if(mask[p]){area++;if(visited[p])continue;groups++;const stack=[p];visited[p]=1;while(stack.length){const i=stack.pop();for(const n of [i%100>0?i-1:-1,i%100<99?i+1:-1,i-100,i+100])if(n>=0&&n<mask.length&&mask[n]&&!visited[n]){visited[n]=1;stack.push(n);}}}
+  assert.ok(groups>=5,'Oil patches must stay visibly separate, seed '+seed+' groups '+groups);assert.ok(area>0&&area<=2800);
+}
 await m.makeEntity(o);assert.equal(calls.at(-1).extra.ruinSkeletonHealthMultiplier,1.5);
 const e=await m.makeEntity({...o,extra:{wallCoffin:0}});assert.equal(e.ruinSkeletonHealthMultiplier,3);assert.equal(e.rosterRecord.enchantedWeapon.relicShape,'warhammer');
 await m.makeEntity({...o,zoneId:'map_mine'});assert.equal(calls.at(-1).extra.ruinSkeletonTheme,undefined);

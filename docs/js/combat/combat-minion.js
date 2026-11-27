@@ -101,6 +101,7 @@
     let h=Math.imul(x+1,374761393)^Math.imul(y+1,668265263)^seed; // Deterministic portrait grain.
     h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;
   }
+  const inkFadeFor=(r,g,b)=>Math.max(0,Math.min(1,(Math.max(r,g,b)-24)/40)); // Frost/oil never lighten pure black or its dark outline fringe.
   async function paintRuinPortraits(roster,canvases){
     const theme=roster.ruinSkeletonTheme; // Spawn-only treatment.
     if(!theme)return;
@@ -114,8 +115,8 @@
         let mask,overlay;
         if(oil){
           const eligible=new Uint8Array(w*h); // Opaque non-black sprite pixels.
-          for(let p=0;p<eligible.length;p++){const i=p*4;eligible[p]=data[i+3]&&(data[i]||data[i+1]||data[i+2])?1:0;}
-          mask=view<3&&frontMask?frontMask:window.ToolMetalRecolor?.buildOxidationMask?.(eligible,w,h,.56,{seed:roster.ruinSkeletonSeed,blotchCount:4});
+          for(let p=0;p<eligible.length;p++){const i=p*4;eligible[p]=data[i+3]&&inkFadeFor(data[i],data[i+1],data[i+2])>0?1:0;}
+          mask=view<3&&frontMask?frontMask:window.ToolMetalRecolor?.buildOxidationMask?.(eligible,w,h,.28,{seed:roster.ruinSkeletonSeed,blotchCount:9,separateBlotches:true});
           if(view===0)frontMask=mask;
           if(!mask)throw new Error('Verdigris mask unavailable');
           const hidden=document.createElement('canvas'); // Stretch-to-fit hidden oil source.
@@ -125,7 +126,9 @@
         for(let p=0;p<w*h;p++){
           const i=p*4; // RGBA byte offset.
           if(!data[i+3]||!(data[i]||data[i+1]||data[i+2]))continue;
-          if(oil){if(!mask[p])continue;const a=overlay[i+3]/255;for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;}
+          const inkFade=inkFadeFor(data[i],data[i+1],data[i+2]); // Preserve black and dark antialiasing in both magical treatments.
+          if(theme!=='hronal'&&inkFade===0)continue;
+          if(oil){if(!mask[p])continue;const a=overlay[i+3]/255*inkFade;for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;}
           else{
             const x=p%w,y=Math.floor(p/w),seed=roster.ruinSkeletonSeed; // Fine and coarse stable texture.
             const grain=noise(x,y,seed),broad=noise(Math.floor(x/4),Math.floor(y/4),seed);
@@ -133,7 +136,7 @@
               const gray=(data[i]*.25+data[i+1]*.6+data[i+2]*.15)*(.16+broad*.18);
               data[i]=Math.max(2,gray+grain*9);data[i+1]=Math.max(2,gray*.85+grain*4);data[i+2]=Math.max(2,gray*.75);
             }else{
-              const sheen=.24+.31*broad+.16*grain;
+              const sheen=(.24+.31*broad+.16*grain)*inkFade;
               data[i]=data[i]*(1-sheen)+183*sheen;data[i+1]=data[i+1]*(1-sheen)+224*sheen;data[i+2]=data[i+2]*(1-sheen)+249*sheen;
             }
           }
@@ -142,21 +145,71 @@
       }
     }catch(error){report(error);}
   }
-  function attachRuinBackSpikes(THREE,back,roster,width,height){
+  function ruinTorsoFootprint(canvas,neck,width,height){
+    const w=canvas?.width,h=canvas?.height;
+    if(!(w>0&&h>0&&width>0&&height>0&&Number.isFinite(neck?.y)&&Number.isFinite(neck?.x)))return null;
+    const rgba=canvas.getContext('2d').getImageData(0,0,w,h).data;
+    const opaque=(x,y)=>rgba[(y*w+x)*4+3]>=128;
+    const center=Math.max(0,Math.min(w-1,Math.floor((1-neck.x)*w))); // Rear canvas is mirrored when mapped to the actual plane.
+    const headEnd=Math.max(0,Math.min(h-1,Math.ceil(neck.y*h)));
+    let bottom=-1; // Lowest alpha-visible row below the skull.
+    for(let y=h-1;y>headEnd&&bottom<0;y--)for(let x=0;x<w;x++)if(opaque(x,y)){bottom=y;break;}
+    const span=bottom-headEnd;if(span<5)return null;
+    for(const [start,end] of [[.18,.82],[.32,.70],[.42,.60]]){
+      const first=headEnd+Math.max(1,Math.ceil(span*start)),last=headEnd+Math.floor(span*end);
+      let left=0,right=w-1,valid=last>first;
+      for(let y=first;y<=last&&valid;y++){
+        let x=center;
+        if(!opaque(x,y)){
+          let found=-1;
+          for(let d=1;d<=Math.ceil(w*.12)&&found<0;d++)for(const q of [center-d,center+d])if(q>=0&&q<w&&opaque(q,y)){found=q;break;}
+          if(found<0){valid=false;break;}x=found;
+        }
+        let lo=x,hi=x;
+        while(lo>0&&opaque(lo-1,y))lo--;
+        while(hi<w-1&&opaque(hi+1,y))hi++;
+        left=Math.max(left,lo);right=Math.min(right,hi);valid=right-left>=2;
+      }
+      if(!valid)continue;
+      const x0=(.5-(right+.5)/w)*width,x1=(.5-(left+.5)/w)*width;
+      const y0=(.5-(last+.5)/h)*height,y1=(.5-(first+.5)/h)*height;
+      return {x:(x0+x1)/2,y:(y0+y1)/2,width:x1-x0,height:y1-y0,top:y1,bottom:y0};
+    }
+    return null;
+  }
+  function attachRuinBackSpikes(THREE,avatar,roster){
+    const back=avatar.backPlane,width=avatar.modelWidth,height=avatar.modelHeight; // Rear portrait dimensions, never the weapon holder.
+
     const theme=roster.ruinSkeletonTheme; // Physical growth only for stone and ice.
     if(theme!=='hronal'&&theme!=='tothal')return;
     const build=window.IceStalagmiteCoverage?.build; // Real furniture stalagmite generator.
     if(!build){report('Stalagmite generator unavailable');return;}
-    const source=new THREE.Group(),geometry=new THREE.BoxGeometry(width*.35,.02,height*.29),material=new THREE.MeshBasicMaterial({visible:false}); // Back-as-ground support.
+    let footprint;
+    try{footprint=ruinTorsoFootprint(avatar.backCanvas,avatar.ruinNeckNormalized,width,height);}catch(error){report(error);return;}
+    if(!footprint){report('No opaque torso footprint below skull');return;}
+    // Satellites spread up to 1.78 radii and their bases reach 1.44 more. Inset each seed edge by 3.3 radii.
+    const radius=Math.min(width*.055,Math.min(footprint.width,footprint.height)/8);
+    const source=new THREE.Group(),geometry=new THREE.BoxGeometry(footprint.width-radius*6.6,.02,footprint.height-radius*6.6),material=new THREE.MeshBasicMaterial({visible:false}); // Torso-as-ground proxy.
     const support=new THREE.Mesh(geometry,material);support.userData.authoredPartId='ruin-skeleton-back';source.add(support);
     try{
       const stone=theme==='hronal';
       const layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
-        seed:roster.ruinSkeletonSeed,count:4,density:1,iceCluster:3,radius:width*.055,iceHeightMin:width*.12,iceHeightMax:width*.32,
+        seed:roster.ruinSkeletonSeed,count:4,density:1,iceCluster:3,radius,iceHeightMin:width*.12,iceHeightMax:width*.32,
         iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:.95,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1});
       if(!layer?.children?.length)throw new Error('Back stalagmite generator returned no geometry');
       layer.name='ruin-skeleton-back-stalagmites';layer.rotation.x=Math.PI/2; // Furniture Y becomes rear-facing Z.
-      layer.position.set(0,-height*.08,.025);
+      layer.position.set(footprint.x,footprint.y,.012); // Ground vertices are at -.015, embedding bases .003 in the rear plane.
+      layer.userData.ruinTorsoFootprint={...footprint,radius}; // Spawn-time placement diagnosis.
+      // Attach to a torso spline node, excluding the two uppermost nodes and every head/weapon joint.
+      let carrier=avatar.backPortraitMesh||back,rest={x:0,y:0,z:0},nearest=Infinity,offset={x:0,y:0,z:0};
+      const nodes=avatar.ruinBackSplineNodes||[];
+      for(let i=0;i<Math.min(5,nodes.length);i++){
+        const p=nodes[i].userData?.hobunjiSplineRest;if(!p)break;
+        rest={x:rest.x+p.x,y:rest.y+p.y,z:rest.z+p.z};
+        const distance=Math.abs(rest.y-footprint.y);
+        if(distance<nearest){nearest=distance;carrier=nodes[i];offset={...rest};}
+      }
+      layer.position.x-=offset.x;layer.position.y-=offset.y;layer.position.z-=offset.z;
       const owned=[]; // Only per-instance buffers/materials are disposed; natural surface caches remain shared.
       layer.traverse(node=>{if(!node.isMesh)return;delete node.userData.bladedHazard;
         if(stone && window.FacetedRocks?.surfaceStone){
@@ -168,7 +221,7 @@
           owned.push({geometry:node.geometry,material:node.material===oldMaterial?oldMaterial:null});
         }else{owned.push({geometry:node.geometry,material:node.material});}
       });
-      back.add(layer);debug.spikes++;
+      carrier.add(layer);debug.spikes++;
       let disposed=false;
       return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);for(const entry of owned){entry.geometry.dispose();entry.material?.dispose();}};
     }catch(error){report(error);}finally{geometry.dispose();material.dispose();}
@@ -293,7 +346,7 @@
     shamblingFootingFraction: SHAMBLING_FOOTING_FRACTION,
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
-    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
+    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,ruinTorsoFootprint,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
     makeEntity,
     makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });

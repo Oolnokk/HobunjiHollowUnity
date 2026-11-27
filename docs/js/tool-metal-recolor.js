@@ -164,7 +164,15 @@
     const baseRadius = Math.max(1.2, Math.sqrt(metalPixels.length / Math.max(1, requestedCount) / Math.PI));
 
     for (let c = 0; c < requestedCount; c++) {
-      const p = metalPixels[Math.floor(rng() * metalPixels.length)] || metalPixels[0];
+      let p = metalPixels[Math.floor(rng() * metalPixels.length)] || metalPixels[0];
+      if(opts.separateBlotches&&centers.length){
+        let best=-1; // Pick the farthest of a bounded random sample rather than overlapping earlier centers.
+        for(let k=0;k<32;k++){
+          const candidate=metalPixels[Math.floor(rng()*metalPixels.length)],x=candidate%width,y=Math.floor(candidate/width);
+          const separation=Math.min(...centers.map(center=>(x-center.x)**2+(y-center.y)**2));
+          if(separation>best){best=separation;p=candidate;}
+        }
+      }
       centers.push({
         x: p % width,
         y: Math.floor(p / width),
@@ -174,6 +182,10 @@
       });
     }
 
+    if(opts.separateBlotches)for(const center of centers){
+      const nearest=Math.min(...centers.filter(other=>other!==center).map(other=>Math.hypot(center.x-other.x,center.y-other.y)));
+      center.radius=Math.min(center.radius,baseRadius*.70,nearest*.29); // Even with the existing irregular edge wobble, retain a gap between neighboring blobs.
+    }
     const scored = [];
     for (const p of metalPixels) {
       const x = p % width;
@@ -196,7 +208,10 @@
     }
 
     scored.sort((a, b) => a.score - b.score);
-    for (let i = 0; i < targetCount; i++) mask[scored[i].p] = 1;
+    for (let i = 0; i < targetCount; i++) {
+      if(opts.separateBlotches&&scored[i].score>1)break; // Never inflate the isolated blobs just to meet coverage.
+      mask[scored[i].p] = 1;
+    }
     return mask;
   }
 

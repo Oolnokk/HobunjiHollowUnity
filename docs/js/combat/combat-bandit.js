@@ -690,6 +690,8 @@
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       frontPortraitMesh: renderedFrontMesh, backPortraitMesh: renderedBackMesh, // Exact carriers used by frozen stance rendering.
+      ruinNeckNormalized:roster.ruinSkeletonTheme?neckPivotNormalized:null, // Actual base-head bottom for torso growth.
+      ruinBackSplineNodes:roster.ruinSkeletonTheme?backNeckSkin?.splineNodes:null, // Spawn-only attachment to the rear body rig.
       handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
       handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes, spine,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
@@ -3598,7 +3600,7 @@
     avatarRef.group.position.set(x / deps.TILE, surfY + halfH, y / deps.TILE);
     deps.markPngPlane(avatarRef.group);
     if(roster.ruinSkeletonTheme && avatarRef.backPlane) {
-      const disposeSpikes=window.MinionCombat?.attachRuinBackSpikes?.(THREE,avatarRef.backPlane,roster,avatarRef.modelWidth,avatarRef.modelHeight); // Real geometry must not enter PNG depth replay.
+      const disposeSpikes=window.MinionCombat?.attachRuinBackSpikes?.(THREE,avatarRef,roster); // Real geometry must not enter PNG depth replay.
       if(disposeSpikes){const disposeAvatar=avatarRef.dispose;avatarRef.dispose=function(){disposeSpikes();return disposeAvatar.call(this);};}
     }
     targetScene.add(avatarRef.group);
