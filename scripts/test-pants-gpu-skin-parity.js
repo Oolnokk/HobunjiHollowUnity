@@ -380,6 +380,81 @@ for (const meshBudget of ['npc', 'player']) {
     widths.left = .14; widths.right = .19; bounds = { left: .25, right: .75 }; revision++;
     pants.update(); checkWidths();
     for (let i = 0; i < baseline.length; i++) assert(Math.abs(pants.basePositions[i] - baseline[i]) < 1e-6, 'absolute refits are reversible without accumulating drift');
+    // Hostiles bind pants to a portrait pivot and legs to a sibling pivot.
+    const scene = actor.model.parent, hostile = new THREE.Group();
+    scene.add(hostile); hostile.add(actor.model); hostile.add(actor.legs);
+    hostile.position.set(12000, 0, -9000); // Large shared world translations are valid.
+    pants.update(); checkWidths();
+    // The faster relative-matrix reader must also match world-to-local
+    // sampling when the hostile and its sibling pivots rotate and scale.
+    hostile.rotation.set(.2, .8, -.4); hostile.scale.set(1.2, .85, 1.4);
+    actor.model.rotation.set(.1, .2, -.15); actor.legs.rotation.set(-.1, .5, .2);
+    actor.nodes.left.thigh.rotation.set(.6, .3, .1); actor.nodes.left.calf.rotation.set(-.7, .05, .04);
+    actor.nodes.right.thigh.rotation.set(-.3, -.2, -.1); actor.nodes.right.calf.rotation.set(.4, -.2, 0);
+    pants.update(true);
+    for (const side of ['left', 'right']) {
+      const boneSide = mirrored ? (side === 'left' ? 'right' : 'left') : side;
+      const { thigh, calf } = actor.nodes[boneSide];
+      const hip = actor.model.worldToLocal(new THREE.Vector3().setFromMatrixPosition(thigh.matrixWorld));
+      const knee = actor.model.worldToLocal(new THREE.Vector3().setFromMatrixPosition(calf.matrixWorld));
+      const ankle = actor.model.worldToLocal(new THREE.Vector3(0, -calf.userData.hobunjiCalfLength, 0).applyMatrix4(calf.matrixWorld));
+      for (const [joint, expected] of [['hip', hip], ['knee', knee], ['ankle', ankle]]) {
+        const actual = pants.scratch.bones3D[side][joint];
+        for (const axis of ['x', 'y', 'z']) assert(Math.abs(actual[axis] - expected[axis]) < 1e-8, 'relative matrix preserves world/local bone coordinate under rotated, scaled siblings');
+      }
+    }
+    hostile.rotation.set(0, 0, 0); hostile.scale.set(1, 1, 1);
+    actor.model.rotation.set(0, 0, 0); actor.legs.rotation.set(0, 0, 0);
+    for (const side of ['left', 'right']) { actor.nodes[side].thigh.rotation.set(0, 0, 0); actor.nodes[side].calf.rotation.set(0, 0, 0); }
+    pants.update();
+    const oldPlane = actor.model.getObjectByName('frontPlane');
+    const replacement = oldPlane.clone();
+    actor.model.remove(oldPlane); actor.model.add(replacement);
+    oldPlane.position.set(0, 0, 0); oldPlane.updateMatrixWorld(true);
+    revision++; pants.update(); checkWidths();
+    for (let i = 0; i < baseline.length; i++) assert(Math.abs(pants.basePositions[i] - baseline[i]) < 1e-5,
+      'portrait replacement at a distant map location leaves the fitted grid local');
+    for (const gpu of [false, true]) {
+      Renderer.setGpuSkinning(gpu); pants.update();
+      const before = Float32Array.from(pants.geometry.getAttribute('position').array);
+      const uniforms = JSON.stringify(pants.maskUniforms.uPantsBoneT.value);
+      const ringUniforms = JSON.stringify(pants.maskUniforms.uPantsRingShift.value);
+      const rejected = pants.invalidPoseFrames;
+      actor.nodes.left.thigh.position.x += 12000; // Inconsistent sibling-bone transform.
+      pants.update(true);
+      assert.strictEqual(pants.invalidPoseFrames, rejected + 1, 'map-scale bone sample rejected in either skinning mode');
+      assert.deepStrictEqual(Float32Array.from(pants.geometry.getAttribute('position').array), before);
+      assert.strictEqual(JSON.stringify(pants.maskUniforms.uPantsBoneT.value), uniforms);
+      assert.strictEqual(JSON.stringify(pants.maskUniforms.uPantsRingShift.value), ringUniforms);
+      actor.nodes.left.thigh.position.x -= 12000;
+      pants.update();
+      const beforeVersion = pants.baseVersion;
+      actor.legs.position.x = 12000; revision++; pants.update();
+      assert.strictEqual(pants.baseVersion, beforeVersion, 'invalid neutral pose cannot overwrite fitted grid');
+      actor.legs.position.x = 0; pants.update();
+      assert.strictEqual(pants.baseVersion, beforeVersion + 1, 'valid anatomy revision retries after pose recovers');
+      checkWidths();
+
+      // The live pose can be fine while the neutral metadata alone is invalid.
+      const getRestStance = legHandle.getRestStance;
+      legHandle.getRestStance = () => { const stance = getRestStance(); stance.left.hip.x = 12000; return stance; };
+      const neutralVersion = pants.baseVersion, rejectedRest = pants.invalidRestSamples;
+      revision++; pants.update();
+      assert.strictEqual(pants.baseVersion, neutralVersion, 'bad analytic rest alone cannot rewrite geometry');
+      assert.strictEqual(pants.invalidRestSamples, rejectedRest + 1);
+      legHandle.getRestStance = getRestStance; pants.update();
+      assert.strictEqual(pants.baseVersion, neutralVersion + 1);
+      checkWidths();
+
+      // Three.js returns a zero inverse for singular matrices.
+      const singularCount = pants.invalidPoseFrames, singularBefore = Float32Array.from(pants.geometry.getAttribute('position').array);
+      actor.model.scale.x = 0; pants.update(true);
+      assert.strictEqual(pants.invalidPoseFrames, singularCount + 1, 'singular owner matrix is rejected');
+      assert.deepStrictEqual(Float32Array.from(pants.geometry.getAttribute('position').array), singularBefore);
+      actor.model.scale.x = 1; pants.update();
+      checkWidths();
+    }
+    Renderer.setGpuSkinning(true);
     pants.dispose();
   }
 }

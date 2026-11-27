@@ -413,3 +413,18 @@ while their head only shrinks to `childHeadScaleMultiplier` of an adult head:
 and toddlers), and `character-rig-scale.js` re-enlarges just the head at the
 neck rig's head-scale bone by head ÷ body — the same bone the rig editor's
 head scale drives. `character-dimensions.js` accounts for it.
+
+
+### Enchantment formula research
+
+Garanki studies a bound weapon when unbinding/re-registering it. Every enchantment has five distinct formulas; the number discovered determines its available level (I–V), independent of discovery order. Reapplying a learned enchantment upgrades that weapon to the highest known level using the normal service fee. Flourish-slot permissions remain independently learned. Level I retains the original effect and each additional level adds 25% numerical benefit (up to 2× at V); self-costs and planar alignment counts do not increase. Legacy saves and bound keys retain level/formula I.
+
+Formula roll per enchantment on a recovered weapon:
+- Bandit captains: I or II for every non-Fey enchantment; II chance 10%, 25%, 40%, 55% at 5–8 stars.
+- Solitary wall-coffin skeletons and non-final Harlyao chests: II/III/IV; III chance 12/24/36%, IV chance 1/2/3% at cave/hole/lich rarity. Ordinary skeletons do not enter this reward pool.
+- Lich corpses and final Harlyao chests: IV (96%) or V (4%).
+- Ordinary relics: I. Fey weapons have a separate I–V pool; Boney prioritizes still-missing Fey research.
+
+Every Harlyao chest (including secret and final chests) awards one equipment item: 50% bound weapon, 50% tier-weighted trinket. Artifacts, metal bars, mastery rewards and lockpicking material bonuses remain separate. The separate dev Hachutu temple retains its authored reward rules.
+
+The formula is part of the bound pack key, so pickup, custody, save/load and registration preserve its identity. Applied levels persist alongside the actual weapon enchantments and are visible in Garanki's services, the combat loadout and mobile diagnostics.

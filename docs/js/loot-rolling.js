@@ -197,7 +197,8 @@
     const masteryPool = masteryPoolForLoot(poolId, context); // Select the semantic source before ordinary pool inheritance obscures its identity.
     if (!pool) return masteryPool ? rollMasteryPool(masteryPool, { ...context, sourcePoolId: poolId }) : {}; // Preserve the original loot source for its authored mastery chance override.
     const world = _lootShopWorldState();
-    const eligible = window.ConditionRegistry.rollIndependentEligible(pool.entries || [], world);
+    const entries = pool.entries || [];
+    const eligible = window.ConditionRegistry.rollIndependentEligible(context.excludeTrinkets ? entries.filter(entry => !String(entry.itemKey || '').startsWith('trinket_')) : entries, world); // Ruin chests select their single equipment reward separately.
     const gained = {};
     for (const entry of eligible) {
       if (entry.kind === 'generator' && entry.generatorKey === 'harlyaoArtifact') {

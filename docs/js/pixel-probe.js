@@ -1098,6 +1098,9 @@
     });
     const pantsDepth = playerPants?.getFootDepthBiasDebug?.(); // The render-only foot offset, including active paired-animation overrides.
     if (window.PantsGarmentRenderer) lines.push(`Pants/feet depth: player=${playerPants ? 'attached' : 'none'} live=${wornPants.length} camera=${camera?.isPerspectiveCamera ? 'perspective' : 'other'} base=${Number(pantsDepth?.base || 0).toFixed(4)}u applied=${Number(pantsDepth?.applied || 0).toFixed(4)}u anatomyRevision=${pantsDepth?.anatomyRevision ?? '-'} scopes=${pantsDepth?.scopes?.join(',') || 'none'}`);
+    // Probe-only scan: include affected enemies even when they are not the player or among the first twelve garments.
+    const rejectedPants = wornPants.filter(h => h.invalidPoseFrames || h.invalidRestSamples || h.invalidWaistSamples || h.invalidCuffSamples);
+    if (rejectedPants.length) lines.push('Pants rejected deformation samples: ' + JSON.stringify({ affected: rejectedPants.length, garments: rejectedPants.slice(0, 20).map(h => ({ name: h.name, pose: h.invalidPoseFrames, rest: h.invalidRestSamples, waist: h.invalidWaistSamples, cuff: h.invalidCuffSamples })) }));
     if (pantsDepth?.measuredFit) lines.push('Pants seam fit (neutral local units): ' + JSON.stringify(pantsDepth.measuredFit)); // On-demand actual vs target widths, no animation overhead.
     const nuhonganDebug = window.HobunjiNuhonganSpecies?.debugSnapshot?.(); // Verifies the Tletingan anatomy inheritance used by this player's saved species.
     if (nuhonganDebug) lines.push('Nuhongan: ' + JSON.stringify(nuhonganDebug));

@@ -305,7 +305,29 @@
     return !!tribeOf(entity) && nowMs() < num(entity._porakanekiSharedEnemyUntilMs, 0);
   } // "Nearby" means the same player ecology radius the fights use, with a 1.5s grace so simultaneous crossfire deaths stay forgiven.
   let ecologyState = { chunk: null, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0 }; // Copyable mobile debug summary of the currently observed stream-chunk ecology pass.
+  const ECOLOGY_STORM_RECHECK_MS = 2000; // Same-size roster replacements and reactivated AI targets are inspected at most every two seconds during storms.
+  let ecologyStormRosterCount = -1; // Counts stormbound residents without scanning the live roster each neutral-planner tick.
+  let ecologyStormRosterRef = null; // Detects the shared hostile collection being replaced even if its actor count stays equal.
+  let ecologyStormLastSweepAtMs = -Infinity; // Monotonic deadline for detecting same-size replacements that bypass the count comparison.
   function updateChunkEcology() {
+    if ((window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01) {
+      const roster = combatDeps?.hostileObjects; // Existing faction ecology roster; no separate event-owned scan loop.
+      const rosterCount = roster?.size ?? roster?.length ?? 0; // Handles both array and Set owners without copying.
+      const clock = nowMs(); // Existing neutral-planner update clock, never an additional loop or interval.
+      if (roster !== ecologyStormRosterRef || rosterCount !== ecologyStormRosterCount
+          || clock < ecologyStormLastSweepAtMs || clock - ecologyStormLastSweepAtMs >= ECOLOGY_STORM_RECHECK_MS) {
+        for (const entity of roster || []) { // Also release same-size late replacements and accidentally reacquired targets.
+          if (entity._chunkCombatTarget) setHumanoidEcologyTarget(entity, null);
+          if (entity._chunkFactionEcologyTarget) setPredatorEcologyTarget(entity, null);
+        }
+        ecologyStormRosterRef = roster;
+        ecologyStormRosterCount = rosterCount;
+        ecologyStormLastSweepAtMs = clock;
+      }
+      if (!ecologyState.sheltering) ecologyState = { chunk: null, bandits: 0, predators: 0, prey: 0, humanoidTargets: 0, predatorTargets: 0, sheltering: true };
+      return;
+    }
+    ecologyStormRosterCount = -1; ecologyStormRosterRef = null; ecologyStormLastSweepAtMs = -Infinity; // Normal target selection resumes; any future storm starts with a fresh sweep.
     const observedChunk = playerStreamChunk(); // Used both as the hard simulation gate and the mobile-visible debug identity.
     if (!combatDeps?.hostileObjects || !observedChunk) return;
     const groups = activePlayerChunkEcology();
@@ -425,6 +447,7 @@
     return map[seasonName] || cfg?.wildernessZones?.[0] || null;
   }
   function isSleepingHour(hour = gameHour()) {
+    if ((window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01) return true; // Both rival tribes suspend raids/hunts and shelter in their authored tents.
     const start = num(cfg?.schedule?.sleepStartHour, 22);
     const wake = num(cfg?.schedule?.wakeHour, 6);
     return start > wake ? (hour >= start || hour < wake) : (hour >= start && hour < wake);

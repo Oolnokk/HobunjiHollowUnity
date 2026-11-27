@@ -18,6 +18,7 @@
     FLURRY_FLOURISH_NUMERIC_MULTIPLIER,
     FLURRY_FLOURISH_PROC_CHANCE,
     ENCHANTMENT_POWER_PER_IMMUNDANITY,
+    FORMULA_LEVEL_STEP:0.25, // Applied magnitude increases by 25% for each additional distinct formula.
     MASTERY_POWER_LOSS_PER_IMMUNDANITY,
 
     SICCED_DURATION_S: 8, // Used as the transient target-lock lifetime for Sicced.
@@ -230,7 +231,21 @@
       const id = migratedId(raw?.flourishes?.[slotId]);
       if (DEFINITIONS[id]?.type === 'Flourish') flourishes[slotId] = id;
     }
-    return { base, flourishes };
+    const clean = { base, flourishes };
+    if (raw?.formulas) {
+      const ids = [...base,...Object.values(flourishes)]; // Only bound records allocate formula metadata.
+      const formulas = {};
+      for (const id of ids) { const n=raw.formulas[id]; if(Number.isInteger(n)&&n>=1&&n<=5) formulas[id]=n; }
+      if(Object.keys(formulas).length) clean.formulas=formulas;
+    }
+    if(raw?.levels) {
+      const levels={};
+      for(const id of [...base,...Object.entries(flourishes).map(([slot,id])=>id+'@'+slot)]) {
+        const n=raw.levels[id]; if(Number.isInteger(n)&&n>=2&&n<=5) levels[id]=n;
+      }
+      if(Object.keys(levels).length) clean.levels=levels;
+    }
+    return clean;
   }
 
   function gear() {
@@ -291,6 +306,12 @@
         if (u.flourish[`${legacy}@${slot}`]) u.flourish[`${modern}@${slot}`] = true; // Keeps each previously learned Flourish slot.
       }
     }
+    if(!u.formulas || typeof u.formulas!=='object' || Array.isArray(u.formulas)) u.formulas={};
+    // Legacy boolean unlocks represent formula I, never all five.
+    for(const [id,known] of Object.entries(u.base)) if(known&&DEFINITIONS[id]&&!u.formulas[id]) u.formulas[id]=1;
+    for(const [key,known] of Object.entries(u.flourish)) {
+      const id=key.split('@')[0]; if(known&&DEFINITIONS[id]&&!u.formulas[id]) u.formulas[id]=1;
+    }
     return u;
   }
 
@@ -304,22 +325,64 @@
     return DEFINITIONS[id]?.type === 'Flourish' && unlockStore().flourish[flourishUnlockKey(id, slotId)] === true;
   }
 
+  const formulaIds=id=>{const bits=Number(unlockStore().formulas[id])&31;return [1,2,3,4,5].filter(n=>bits&(1<<(n-1)));};
+  function formulaLevel(id){
+    let bits=Number(unlockStore().formulas[id])&31,count=0; // Count known bits without allocating an array for every level label.
+    while(bits){bits&=bits-1;count++;}
+    return count;
+  }
+  function formulaNumber(source,difficulty,rng=rnd){
+    const roll=Math.max(0,Math.min(.999999,rng())); // One independent roll per enchantment, only at loot generation.
+    const percent=roll*100; // Integer percentage cutoffs keep adjacent rarity bands explicit.
+    if(source==='captain'){
+      const stars=Math.max(5,Math.min(8,Math.floor(Number(difficulty)||5)));
+      return percent<10+15*(stars-5)?2:1;
+    }
+    if(source==='coffin'||source==='ruinChest'){
+      const tier={cave:1,hole:2,lich:3}[difficulty]||Math.max(1,Math.min(3,Math.floor(Number(difficulty)||1)));
+      return percent<tier?4:percent<13*tier?3:2; // Restore the original per-enchantment probabilities for both ruin sources.
+    }
+    if(source==='final')return percent<4?5:4;
+    if(source==='fey')return roll<.04?5:roll<.14?4:roll<.34?3:roll<.64?2:1;
+    return 1;
+  }
+  function rollFormulaState(raw,source,difficulty,rng=rnd){
+    const formulas={}; // Carried by the portable bound key through save/load and custody.
+    for(const id of new Set([...(raw.base||[]),...Object.values(raw.flourishes||{})])) formulas[id]=formulaNumber(source,difficulty,rng);
+    return {...raw,formulas};
+  }
+  function appliedLevel(key,id,slotId){
+    const n=store()[key]?.levels?.[slotId?flourishUnlockKey(id,slotId):id]; // Direct hot-path lookup.
+    return Number.isInteger(n)&&n>=2&&n<=5?n:1;
+  }
+  function levelMultiplier(key,id,slotId){
+    if(window.BanditCaptainArmaments?.unlootedEnchantmentState?.(key))return 1;
+    return rankMultiplier(appliedLevel(key,id,slotId));
+  }
+  function rankMultiplier(rank){
+    return Number.isInteger(rank)&&rank>=2&&rank<=5?1+(rank-1)*TUNING.FORMULA_LEVEL_STEP:1;
+  }
+  function writeLevel(state,key,rank){
+    if(Number.isInteger(rank)&&rank>=2&&rank<=5)(state.levels||={})[key]=rank;
+    else if(state.levels){delete state.levels[key];if(!Object.keys(state.levels).length)delete state.levels;}
+  }
+
   // Unlocks everything present on an enchantment state (e.g. an unbound
   // relic). Returns the list of newly learned labels for the UI toast.
   function unlockFromState(raw, options = {}) {
     const clean = cleanWeaponState(raw);
     const u = unlockStore();
     const learned = [];
-    for (const id of clean.base) {
-      if (u.base[id]) continue;
-      u.base[id] = true;
-      learned.push(DEFINITIONS[id].displayName);
+    for(const id of new Set([...clean.base,...Object.values(clean.flourishes)])){
+      const n=clean.formulas?.[id]||1; // Legacy bound keys are formula I.
+      const bit=1<<(n-1),before=Number(u.formulas[id])&31;
+      if(!(before&bit)){u.formulas[id]=before|bit;learned.push(`${DEFINITIONS[id].displayName} Formula ${n} (Level ${formulaLevel(id)})`);}
     }
-    for (const [slotId, id] of Object.entries(clean.flourishes)) {
-      const k = flourishUnlockKey(id, slotId);
-      if (u.flourish[k]) continue;
-      u.flourish[k] = true;
-      learned.push(`${DEFINITIONS[id].displayName} (${slotId.toUpperCase()} Flourish)`);
+    for(const id of clean.base)u.base[id]=true;
+    for(const [slotId,id] of Object.entries(clean.flourishes)){
+      const k=flourishUnlockKey(id,slotId);
+      if(!u.flourish[k])learned.push(`${DEFINITIONS[id].displayName} (${slotId.toUpperCase()} Flourish)`);
+      u.flourish[k]=true;
     }
     if (learned.length) {
       if (options.deferSave !== true) persist(); // Garanki's gear/member transaction persists its entire learned batch in one write.
@@ -356,7 +419,10 @@
       while (next.length < index) next.push(null);
       next[index] = enchantmentId;
     }
+    const previous=state.base[index]; // Clear replaced ranks; a surviving base retains its rank across slot compaction.
     state.base = next.filter(Boolean).slice(0, BASE_LIMIT);
+    if(previous&&previous!==enchantmentId)writeLevel(state,previous,1);
+    if(enchantmentId&&(previous!==enchantmentId||options.level!=null))writeLevel(state,enchantmentId,options.level);
     if (options.deferSave !== true) persist(); // Deferred only for a validated combined gear/member transaction.
     if (options.deferSave !== true && def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // An owned ordinary weapon gaining Fey magic also starts the one-time investigation.
     return true;
@@ -372,8 +438,12 @@
     const def = DEFINITIONS[enchantmentId];
     if (enchantmentId && !allowsFlourishSlot(enchantmentId, slotId) && !(options.importLegacySlot === true && def?.type === 'Flourish')) return false; // Only an already-owned bound relic may import a now-inactive legacy slot.
     const state = stateFor(key, true);
-    if (enchantmentId) state.flourishes[slotId] = enchantmentId;
-    else delete state.flourishes[slotId];
+    const previous=state.flourishes[slotId]; // Flourish rank follows its exact slot.
+    if(previous&&previous!==enchantmentId)writeLevel(state,flourishUnlockKey(previous,slotId),1);
+    if(enchantmentId){
+      state.flourishes[slotId]=enchantmentId;
+      if(previous!==enchantmentId||options.level!=null)writeLevel(state,flourishUnlockKey(enchantmentId,slotId),options.level);
+    }else delete state.flourishes[slotId];
     if (options.deferSave !== true) persist(); // Garanki commits the entire transaction once after mutation.
     if (options.deferSave !== true && def?.alignment === 'Fey' && gear()?.tools?.[key]) window.FeyArmamentQuest?.maybeStart?.(); // Flourish-only Fey equipment follows the same acquisition rule.
     return true;
@@ -509,12 +579,12 @@
   // Projectile impacts use this narrow adapter because they do not publish melee attack events.
   function applyRangedSpiritHeal(attacker, target, weaponKey, actualDamage) {
     if (!weaponKey || !Number.isFinite(actualDamage) || !(actualDamage > 0) || !hasBase('spiritHeal', weaponKey)) return;
-    applySpiritHeal({ attacker, target, actualDamage }, getEnchantmentPowerMultiplier(weaponKey));
+    applySpiritHeal({ attacker, target, actualDamage }, getEnchantmentPowerMultiplier(weaponKey)*levelMultiplier(weaponKey,'spiritHeal'));
   }
 
   function applySicced(event, def, power) {
     const target = event.target;
-    if (!validSiccedTarget(target)) return;
+    if (event.attacker?._banditCaptainArmament || !validSiccedTarget(target)) return false; // Hostile captain loot cannot redirect the player's companion.
     target._siccedUntilMs = Math.max(Number(target._siccedUntilMs) || 0, nowMs() + TUNING.SICCED_DURATION_S * 1000);
     target._siccedCompanionPowerMul = 1 + TUNING.SICCED_COMPANION_POWER_BONUS * power;
     siccedTargets.add(target);
@@ -528,20 +598,20 @@
   }
 
   function applyFury(event, def, power) {
-    const amount = scaled(def, event.weaponKey, TUNING.FURIOUS_STAMINA_AMOUNT, 'amount');
+    const amount = scaled(def, event.weaponKey, TUNING.FURIOUS_STAMINA_AMOUNT, 'amount', power);
     for (const ally of resolveAllies(event.attacker)) applyEnhanced(ally, 'furiousStamina', amount, 'Fury Flourish');
     logEvent(`Fury granted ${Math.round(amount * 10) / 10} Furious Stamina`);
   }
 
   function applyMoralized(event, def, power) {
-    const amount = scaled(def, event.weaponKey, TUNING.MORALIZED_STAMINA_AMOUNT, 'amount');
+    const amount = scaled(def, event.weaponKey, TUNING.MORALIZED_STAMINA_AMOUNT, 'amount', power);
     for (const ally of resolveAllies(event.attacker)) applyEnhanced(ally, 'moralizedStamina', amount, 'Moralized Flourish');
     logEvent(`Moralized granted ${Math.round(amount * 10) / 10} Moralized Stamina`);
   }
 
   function applyResolve(event, def, power) {
-    const footing = scaled(def, event.weaponKey, TUNING.RESOLUTE_FOOTING_AMOUNT, 'amount');
-    const health = scaled(def, event.weaponKey, TUNING.RESOLUTE_HEALTH_AMOUNT, 'amount');
+    const footing = scaled(def, event.weaponKey, TUNING.RESOLUTE_FOOTING_AMOUNT, 'amount', power);
+    const health = scaled(def, event.weaponKey, TUNING.RESOLUTE_HEALTH_AMOUNT, 'amount', power);
     for (const ally of resolveAllies(event.attacker)) {
       applyEnhanced(ally, 'resoluteFooting', footing, 'Resolve Flourish');
       applyEnhanced(ally, 'resoluteHealth', health, 'Resolve Flourish');
@@ -551,7 +621,7 @@
 
   function applyFeyFlourish(event, def) {
     // Fey deliberately ignores ordinary positive Immundanity boosts. At a hard zero enchantment-power gate, illusions also fail.
-    window.FeyIllusions?.apply?.(def.id, event.target, { weaponKey: event.weaponKey, attacker: event.attacker });
+    window.FeyIllusions?.apply?.(def.id, event.target, { weaponKey: event.weaponKey, attacker: event.attacker, effectMultiplier: levelMultiplier(event.weaponKey,def.id,event.slotId) });
   }
   // Planar effects share one data-driven application path; resource transactions own their unique behavior.
   function livingActor(actor) {
@@ -611,7 +681,7 @@
 
     const handler = FLOURISH_HANDLERS[id];
     if (!handler) return false;
-    const power = getEnchantmentPowerMultiplier(event.weaponKey);
+    const power = getEnchantmentPowerMultiplier(event.weaponKey)*levelMultiplier(event.weaponKey,id,event.slotId);
     if (handler(event, def, power * (event.flourishNumericMultiplier || 1)) === false) return false; // No false proc log when a new Flourish cannot apply its effect.
     if (event.attackCategory === 'combo') logEvent('Combo Flourish triggered');
     else if (event.attackCategory === 'quickAttack') logEvent('Quick Attack Flourish triggered');
@@ -624,7 +694,7 @@
     if (!hasBase('livingGust', context.weaponKey)) return;
     const player = context.attacker;
     const def = DEFINITIONS.livingGust;
-    const power = getEnchantmentPowerMultiplier(context.weaponKey);
+    const power = getEnchantmentPowerMultiplier(context.weaponKey)*levelMultiplier(context.weaponKey,'livingGust');
 
     context.modifiers.knockback *= 1 + (TUNING.LIVING_GUST_KNOCKBACK_MULTIPLIER - 1) * power;
     context.modifiers.lunge *= 1 + (TUNING.LIVING_GUST_LUNGE_MULTIPLIER - 1) * power;
@@ -660,35 +730,37 @@
     const target = event.target;
     if (!target || target.health <= 0 && !(event.actualDamage > 0)) return;
     const coffin=event.attacker?.ruinWallCoffin===true; // Read actor-local magic, not player gear sharing a crafted item key.
-    const baseIds=coffin?(event.attacker.rosterRecord?.enchantedWeapon?.enchantments?.base||[]):stateFor(key).base;
+    const state=coffin?event.attacker.rosterRecord?.enchantedWeapon?.enchantments:stateFor(key);
+    const baseIds=state?.base||[];
+    const ranks=coffin?null:state?.levels; // Reuse normalized state rather than rereading gear or allocating a per-hit closure.
     const alignment=coffin?DEFINITIONS[baseIds[0]]?.alignment:null; // Exactly one Base: one point of Immundanity for a planar enchantment.
     const power=coffin?1+(['Hronal','Tothal','Kanthic','Ohthic'].includes(alignment)?ENCHANTMENT_POWER_PER_IMMUNDANITY:0):getEnchantmentPowerMultiplier(key); // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
     for (const id of baseIds) {
       const def = DEFINITIONS[id];
-      if (def?.hitAffliction) applyRealmHitAffliction(event, def, power);
-      if (def?.grantAffliction) applyRealmFlourish(event, def, power); // Weightless is a self-grant on every Base hit.
+      if (def?.hitAffliction) applyRealmHitAffliction(event, def, power*rankMultiplier(ranks?.[id]));
+      if (def?.grantAffliction) applyRealmFlourish(event, def, power*rankMultiplier(ranks?.[id])); // Weightless is a self-grant on every Base hit.
     }
 
     if (baseIds.includes('burning')) {
-      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount', power), event.attacker);
+      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount', power*rankMultiplier(ranks?.burning)), event.attacker);
     }
     if (baseIds.includes('frostbitten')) {
-      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount', power), event.attacker);
+      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount', power*rankMultiplier(ranks?.frostbitten)), event.attacker);
     }
     if (baseIds.includes('mirrored') && event.actualDamage > 0) {
-      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount', power);
+      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount', power*rankMultiplier(ranks?.mirrored));
       applyEnhanced(event.attacker, 'mirroredHealth', amount, 'Mirrored');
     }
-    if (baseIds.includes('spiritHeal')) applySpiritHeal(event, power);
+    if (baseIds.includes('spiritHeal')) applySpiritHeal(event, power*rankMultiplier(ranks?.spiritHeal));
     if (baseIds.includes('livingFlame')) {
-      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount', power);
+      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount', power*rankMultiplier(ranks?.livingFlame));
       const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount', power);
       applyAttributedAffliction(target, 'burningHealth', targetBurn, event.attacker);
       window.ResourceSystem?.addAffliction?.(event.attacker, 'kindlingHealth', selfKindling);
     }
 
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
-      if (baseIds.includes(id)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker });
+      if (baseIds.includes(id)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker, effectMultiplier: rankMultiplier(ranks?.[id]) });
     }
     if(!event.attacker?.ruinWallCoffin)applyFlourish(event);
   }
@@ -699,7 +771,7 @@
     if (!def || def.type !== 'Flourish' || def.alignment === 'Fey' || !allowsFlourishSlot(id, event.slotId) || id === 'fury' || id === 'ancestralMercy') return false; // Attack-tempo Flourishes require an attack rather than a block; illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
     const handler = FLOURISH_HANDLERS[id];
     if (typeof handler !== 'function') return false;
-    const power = getEnchantmentPowerMultiplier(event.weaponKey);
+    const power = getEnchantmentPowerMultiplier(event.weaponKey)*levelMultiplier(event.weaponKey,id,event.slotId);
     if (handler(event, def, power) === false) return false;
     logEvent(event.defensiveResult === 'block' ? 'Defensive Flourish triggered on block' : 'Defensive Flourish triggered on near-hit dodge');
     return true;
@@ -755,7 +827,7 @@
     if (!deps || !(context.rangePx > 0) || !(context.halfConeRad > 0)) return 0;
     const widened = context.halfConeRad * TUNING.LIVING_GUST_CONE_MULTIPLIER;
     const strength = Math.max(0, context.knockbackPxS)
-      * (1 + (TUNING.LIVING_GUST_KNOCKBACK_MULTIPLIER - 1) * getEnchantmentPowerMultiplier(context.weaponKey))
+      * (1 + (TUNING.LIVING_GUST_KNOCKBACK_MULTIPLIER - 1) * getEnchantmentPowerMultiplier(context.weaponKey)*levelMultiplier(context.weaponKey,'livingGust'))
       * TUNING.LIVING_GUST_PERIPHERAL_KNOCKBACK_MULTIPLIER
       * (window.WeaponShapeStats?.forKey?.(context.weaponKey, deps.getWeaponDefinition?.(context.weaponKey))?.power || 1); // Peripheral knockback bypasses ordinary hit modifiers, so apply shape Power explicitly once.
     let affected = 0;
@@ -791,7 +863,7 @@
     const deps = window.Combat?.deps;
     if (!deps?.player || wielder !== deps.player || !(removed > 0) || !hasBase('livingFlame')) return;
     const radius = Math.max(0, Number(deps.TILE) || 64) * TUNING.LIVING_FLAME_ROLL_TRANSFER_RADIUS_TILES;
-    const amount = removed * TUNING.LIVING_FLAME_ROLL_TRANSFER_MULTIPLIER * getEnchantmentPowerMultiplier();
+    const amount = removed * TUNING.LIVING_FLAME_ROLL_TRANSFER_MULTIPLIER * getEnchantmentPowerMultiplier()*levelMultiplier(weaponKey(),'livingFlame');
     for (const target of deps.hostileObjects || []) {
       if (!target || target.health <= 0 || target.areaId !== deps.getCurrentArea?.()) continue;
       if (Math.hypot(target.x - wielder.x, target.y - wielder.y) > radius) continue;
@@ -815,11 +887,11 @@
     return Object.values(DEFINITIONS).filter(def => def.type === type);
   }
 
-  function readOnlyValue(id) {
+  function readOnlyValue(id,key,slotId) {
     const el = document.createElement('div');
     el.className = 'settings-desc';
     const def = DEFINITIONS[id];
-    el.textContent = def ? `${def.icon || ''} ${def.displayName} · ${def.alignment}` : '— Empty —';
+    el.textContent = def ? `${def.icon || ''} ${def.displayName} · Lv ${appliedLevel(key,id,slotId)} · ${def.alignment}` : '— Empty —';
     if (def) el.title = def.description;
     return el;
   }
@@ -830,8 +902,8 @@
     const attunement = window.TrinketSystem?.debugLines?.() || [];
     return [
       `Weapon: ${key}`,
-      `Base: ${state.base.map(id => `${id} (${DEFINITIONS[id]?.alignment})`).join(', ') || 'none'}`,
-      ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => `${slot} Flourish: ${state.flourishes?.[slot] ? `${state.flourishes[slot]} (${DEFINITIONS[state.flourishes[slot]]?.alignment})` : '—'}`),
+      `Base: ${state.base.map(id => `${id} Lv ${appliedLevel(key,id)} (${DEFINITIONS[id]?.alignment})`).join(', ') || 'none'}`,
+      ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => `${slot} Flourish: ${state.flourishes?.[slot] ? `${state.flourishes[slot]} Lv ${appliedLevel(key,state.flourishes[slot],slot)} (${DEFINITIONS[state.flourishes[slot]]?.alignment})` : '—'}`),
       `Tothal ${counts.Tothal} · Hronal ${counts.Hronal} · Kanthic ${counts.Kanthic} · Ohthic ${counts.Ohthic} · Fey ${counts.Fey} (neutral)`,
       `Immundanity: ${getWeaponImmundanity(key)}`,
       `Enchantment power: ×${getEnchantmentPowerMultiplier(key).toFixed(2)}`,
@@ -869,7 +941,7 @@
       const label = document.createElement('div');
       label.className = 'settings-label';
       label.innerHTML = `<div class="settings-name">Base Enchantment ${i + 1}</div><div class="settings-desc">Applies to every qualifying hit made with this weapon.</div>`;
-      row.append(label, readOnlyValue(state.base[i]));
+      row.append(label, readOnlyValue(state.base[i],key));
       section.appendChild(row);
     }
 
@@ -880,7 +952,7 @@
       label.className = 'settings-label';
       const ability = window.Combat?.abilities?.get?.(window.Combat?.loadout?.getSlot?.(slotId));
       label.innerHTML = `<div class="settings-name">${slotId.toUpperCase()} Flourish · ${ability?.label || 'Empty'}</div><div class="settings-desc">${flourishTriggerText(slotId)}</div>`;
-      row.append(label, readOnlyValue(state.flourishes?.[slotId]));
+      row.append(label, readOnlyValue(state.flourishes?.[slotId],key,slotId));
       section.appendChild(row);
     }
 
@@ -969,6 +1041,7 @@
     isFlourishUnlocked,
     unlockFromState,
     unlockedOptions,
+    formulaIds, formulaLevel, formulaNumber, rollFormulaState, appliedLevel, levelMultiplier,
     cleanWeaponState,
     diagnosticsLines,
     getCompanionTargetPowerMultiplier,

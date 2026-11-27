@@ -5,8 +5,8 @@
   const PREFIX = 'banditModular:'; // Unique per-captain keys prevent two drops from sharing enchantments or replacing a forged weapon.
   const BOUND_PREFIX = 'captainBound_'; // Self-contained pack identity preserving the weapon and its magic through custody.
   const MIN_STARS = 5; // Camp tier is zero-based; only five-to-eight-star ordinary captains qualify.
-  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight']); // Effects supported by the NPC hit event; omit player-only Living Gust.
-  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy']); // Never choose Sicced (player companion target lock) or Fey magic.
+  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight', 'livingGust', 'spiritHeal']); // Every non-Fey Base has a captain research source.
+  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy', 'sicced']); // Sicced can be recovered but cannot redirect the player's companion when held by a hostile.
   const FLOURISH_SLOTS = Object.freeze(['tap1', 'tap2', 'hold1']); // These are the NPC's real offensive Combo/Quick/Charged slots.
   const unlooted = new Map(); // Spawned captains' enchantments stay outside player gear until the corpse is searched.
   let deps = null; // HarlyaoRelics.init supplies the ordinary saved-gear, tool definition and texture services.
@@ -234,8 +234,9 @@
     const existing=fey?window.ModularWeapons.decode(entity.def.weaponKey):null;
     const choice = (existing&&all.find(pair=>pair.shaft===existing.shaft&&pair.head===existing.head))||choose(fey?all:(mixed.length?mixed:all),d.rnd||random);
     if (!choice) return entity;
-    const state = fey ? rollFeyEnchantments(capStars(tier), d.rnd || random) : rollEnchantments(capStars(tier), d.rnd || random);
-    if (!state) return entity;
+    const rolled = fey ? rollFeyEnchantments(capStars(tier), d.rnd || random) : rollEnchantments(capStars(tier), d.rnd || random);
+    if(!rolled)return entity;
+    const state=window.EnchantmentSystem?.rollFormulaState?.(rolled,fey?'fey':'captain',capStars(tier),d.rnd||random)||rolled; // Stable spawn roll.
     const uid = Date.now().toString(36) + '-' + (++serial).toString(36) + '-' + Math.floor((d.rnd || random)() * 0x10000).toString(36);
     const key = PREFIX + [choice.shaft, choice.head, metal, uid].join(':');
     const record = { ...choice, metal, uid, stars: capStars(tier), enchantments: state, ...(fey ? {origin:'Fey'} : {}) };
@@ -323,8 +324,8 @@
     if (!record || !deps?.ITEM_DEFS) return null;
     const label = boundLabel(record);
     const defs = window.EnchantmentSystem.DEFINITIONS; // Pack detail shows the actual recovered magic before registration.
-    const enchantmentLabels = [...record.enchantments.base.map(id => defs[id].displayName + ' (Base)'),
-      ...Object.entries(record.enchantments.flourishes).map(([slot, id]) => defs[id].displayName + ' (' + slot.toUpperCase() + ' Flourish)')];
+    const enchantmentLabels = [...record.enchantments.base.map(id => defs[id].displayName + ' (Base · Formula '+(record.enchantments.formulas?.[id]||1)+')'),
+      ...Object.entries(record.enchantments.flourishes).map(([slot, id]) => defs[id].displayName + ' (' + slot.toUpperCase() + ' Flourish · Formula '+(record.enchantments.formulas?.[id]||1)+')')];
     const def = { label, icon: '🗡️', cat: 'material', sellPrice: 90 + 30 * (record.enchantments.base.length + Object.keys(record.enchantments.flourishes).length),
       tags: [record.origin, 'Bound'], magicalStatus: 'bound', uniqueInventoryKey: true,
       desc: 'Still bound to its former owner. It cannot be equipped until Garanki Gabu re-registers it. Registration teaches him its enchantments: ' + enchantmentLabels.join('; ') + '.' };
@@ -386,7 +387,7 @@
       g.captainModularWeapons[record.key] = { shaft, head, metal, uid, stars, donors, origin };
       g.tools[record.key] = true;
       g.toolMastery[record.key] = { xp: 0 };
-      g.weaponEnchantments[record.key] = record.enchantments;
+      g.weaponEnchantments[record.key] = { base:[...record.enchantments.base], flourishes:{...record.enchantments.flourishes} }; // Research identity is consumed at registration, not an applied rank.
       if (record.visual) g.weaponEnchantmentVisuals[record.key] = record.visual;
       const learned = es.unlockFromState(record.enchantments, { deferSave: true }); // Base by ID; Flourishes by their exact slot.
       return { ok: true, toolKey: record.key, learned, price };

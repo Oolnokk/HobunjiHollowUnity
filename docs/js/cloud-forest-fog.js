@@ -363,16 +363,18 @@
     const currentArea = deps.getCurrentArea?.(); // One area read determines both lighting and which 3D mist policy applies.
     const cloudForest = deps.isCloudForestArea();
     const westernSlope = currentArea === WESTERN_SLOPE_ID;
-    const underground = !cloudForest && !westernSlope && isUndergroundFogArea(currentArea);
-    const active = cloudForest || underground || westernSlope;
+    const shiftBlizzard = window.TothalBlizzard?.stormIntensityFor?.(currentArea) || 0; // The same windblown snow density pipeline now applies to all four wilderness zones.
+    const snowy = westernSlope || shiftBlizzard > 0;
+    const underground = !cloudForest && !snowy && isUndergroundFogArea(currentArea);
+    const active = cloudForest || underground || snowy;
     const mistActive = active; // Kanthic uses the actual Cloud Forest mist cylinders and underground depth fog.
-    if (westernSlope) {
+    if (snowy) {
       const snowStrength = window.WeatherFX?.getPrecipitationStrength?.();
-      slopePrecipitationStrength = Number.isFinite(snowStrength) ? snowStrength
-        : (deps.calendar?.isRaining ? Math.max(0, Number(deps.calendar.rainStrength) || 0) : 0);
-      slopeWindStrength = clamp01(window.WeatherWind?.getStrengthForArea?.(WESTERN_SLOPE_ID) ?? 0);
-      slopeGustStrength = clamp01(window.WeatherWind?.gustForArea?.(WESTERN_SLOPE_ID) ?? 0);
-      slopeTargetScale = westernSlopeSnowOpacity(slopePrecipitationStrength, slopeWindStrength);
+      slopePrecipitationStrength = Math.max(shiftBlizzard * 6, Number.isFinite(snowStrength) ? snowStrength
+        : (deps.calendar?.isRaining ? Math.max(0, Number(deps.calendar.rainStrength) || 0) : 0));
+      slopeWindStrength = clamp01(window.WeatherWind?.getStrengthForArea?.(currentArea) ?? 0); // Preserve the ordinary normalized mist contract.
+      slopeGustStrength = clamp01(window.WeatherWind?.gustForArea?.(currentArea) ?? 0);
+      slopeTargetScale = Math.max(westernSlopeSnowOpacity(slopePrecipitationStrength, slopeWindStrength), shiftBlizzard);
       const elapsed = Math.max(0, Math.min(0.25, Number(dt) || 0)); // Clamp long tab-resume frames; never overshoot the Cloud Forest cap.
       slopeOpacityScale += (slopeTargetScale - slopeOpacityScale) * (1 - Math.exp(-elapsed / SLOPE_FADE_SECONDS));
       if (Math.abs(slopeOpacityScale - slopeTargetScale) < 0.0005) slopeOpacityScale = slopeTargetScale;
@@ -388,14 +390,14 @@
       attachedScene = activeScene;
     }
     syncUndergroundFog(underground && mistActive ? activeScene : null); // Never replace the Western Slope's or Cloud Forest's native depth fog.
-    group.visible = mistActive && (!westernSlope || slopeOpacityScale > 0.002);
-    if (!active || (westernSlope && !group.visible)) return; // Calm air skips lighting colors as well as all geometry/outline work.
+    group.visible = mistActive && (!westernSlope || slopeOpacityScale > 0.002); // Cloud Forest remains native; calm Slope skips mist.
+    if (!active || (snowy && !group.visible)) return; // Calm air skips lighting colors as well as all geometry/outline work.
 
     if (cloudForest) {
       const skyRoot = namedInScene(activeScene, 'hobunji_dynamic_skydome');
       if (skyRoot) skyRoot.visible = false;
       updateFogLighting(activeScene);
-    } else if (westernSlope) {
+    } else if (snowy) {
       // Snow uses the outdoor day/night palette, but sky state and lunar
       // diagnostics are too expensive to re-query at every rendered frame.
       // The Slope's own scene fog, skydome and background remain untouched.
@@ -416,8 +418,8 @@
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
-    const strengthScale = westernSlope ? slopeOpacityScale : 1;
-    const driftScale = westernSlope ? 1.5 + slopeWindStrength * 2.5 + (slopePrecipitationStrength >= 3 ? 2.5 : 0) : 1;
+    const strengthScale = cloudForest ? 1 : snowy ? slopeOpacityScale : 1; // Existing Cloud Forest mist stays full opacity even during mild snow.
+    const driftScale = snowy ? 1.5 + (slopeWindStrength + shiftBlizzard) * 2.5 + (slopePrecipitationStrength >= 3 ? 2.5 : 0) : 1; // Extreme shift adds drift beyond normalized ambient wind.
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];

@@ -129,11 +129,15 @@ for (const [tier, expected] of [[4,2],[5,3],[6,4],[7,5]]) {
 // Exercise seeded selection across many roll orders, not just the fixed fixture RNG.
 let seed = 139;
 const rng = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+const reachableCaptainIds = new Set(); // Every non-Fey formula must have an early source.
 for (let i=0;i<500;i++) {
   const state=cap.rollEnchantments(8,rng);
+  for(const id of [...state.base,...Object.values(state.flourishes)])reachableCaptainIds.add(id);
   assert(state && state.base.length===2 && Object.keys(state.flourishes).length===3, '8-star weapon never loses a promised enchantment');
   for (const [slot,id] of Object.entries(state.flourishes)) assert(catalogWindow.EnchantmentSystem.allowsFlourishSlot(id,slot));
 }
+
+for(const def of Object.values(definitions))if(def.alignment!=='Fey')assert(reachableCaptainIds.has(def.id),'missing captain Formula I/II source: '+def.id);
 
 (async () => {
   const below = await window.BanditCombat.makeEntity({}, 'captain', 3, 0, 0);

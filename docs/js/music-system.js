@@ -1764,7 +1764,8 @@
     const weatherAudible = exterior || acoustics.indoors; // Wind crosses building entrances with the existing low-pass / attenuation, never leaking into unrelated dungeons.
     const windRegion = weatherRegionForArea(currentArea); // Uses the same parent-zone mapping as Western Slope snow and indoor blizzard audio.
     const actualWind = window.WeatherWind?.getStrengthForArea?.(windRegion, deps.calendar);
-    const wind01 = weatherAudible ? Math.max(0, Math.min(1, Number.isFinite(actualWind) ? actualWind : (deps.calendar.isRaining && windRegion === 'map_western_slope' ? 1 : (deps.calendar.isRaining ? (deps.calendar.rainStrength || 0) / 3 : 0)))) : 0;
+    const windCap = window.TothalBlizzard?.stormIntensityFor?.(windRegion) > 0 ? 1.85 : 1; // Extreme Tothal winds raise both existing wind-loop volumes above any ordinary blizzard.
+    const wind01 = weatherAudible ? Math.max(0, Math.min(windCap, Number.isFinite(actualWind) ? actualWind : (deps.calendar.isRaining && windRegion === 'map_western_slope' ? 1 : (deps.calendar.isRaining ? (deps.calendar.rainStrength || 0) / 3 : 0)))) : 0;
     // Existing two recordings now crossfade with real regional wind (including clear dry katabatic wind), not just rainfall.
     setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.38) / 0.62 * acoustics.volume, acoustics.indoors);
     setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * wind01 * 0.8 * acoustics.volume, acoustics.indoors);
@@ -1804,7 +1805,8 @@
     }
     const outdoors = currentArea === 'farm' || currentArea === 'town' || deps._isZoneArea(currentArea);
     const acoustics = weatherAcousticsForArea(currentArea); // Keeps the outdoor rain mix alive, but muffled, throughout building interiors.
-    const intensity = ((outdoors || acoustics.indoors) && deps.calendar.isRaining && weatherRegionForArea(currentArea) !== 'map_western_slope')
+    const shiftBlizzard = window.TothalBlizzard?.stormIntensityFor?.(weatherRegionForArea(currentArea)) || 0; // Snow uses wind audio in all four zones, not the ordinary rain loops.
+    const intensity = ((outdoors || acoustics.indoors) && deps.calendar.isRaining && weatherRegionForArea(currentArea) !== 'map_western_slope' && shiftBlizzard === 0)
       ? Math.min(1, (deps.calendar.rainStrength || 0) / 3)
       : 0;
     const weights = rainLayerWeights(intensity);

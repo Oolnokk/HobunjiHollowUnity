@@ -300,9 +300,10 @@
   }
   function syncNearbyFlocks(session){
     const player=tilePos(deps?.player);
+    const canSpawn = !window.TothalBlizzard?.isShelteringFor?.(session.area); // Only creation is storm-gated; distant flocks must continue unloading for performance.
     for(const nest of session.nests){
       const distance=dist(player,tilePos(nest));
-      if(distance<=NEST_NEAR_PLAYER_TILES+9&&!nest.flockLoaded){
+      if(canSpawn&&distance<=NEST_NEAR_PLAYER_TILES+9&&!nest.flockLoaded){
         let spawned=0;
         for(let i=0;i<FLOCK_SIZE;i++){
           if(nest.deadBirdSlots.has(i))continue; // Previously killed individuals remain absent after unloading/re-entering.
@@ -338,7 +339,7 @@
           nest.deadBirdSlots=readDeadSlots(existing,nest); // A new civil day creates a new wildlife population.
         }
       }
-      syncNearbyFlocks(existing);
+      syncNearbyFlocks(existing); // Nearby creation is storm-gated inside; distant birds still retire.
       return existing.nests.length;
     }
     if(existing)cleanupSession(existing);
@@ -352,7 +353,7 @@
       session.nests.push(nest);
       debug.flocks++;
     }
-    syncNearbyFlocks(session);
+    syncNearbyFlocks(session); // Keep nest furniture and distant-bird cleanup; defer only new hunters during storms.
     return session.nests.length;
   }
   function updateWild(dt){
@@ -360,13 +361,40 @@
     for(const old of [...sessions.values()])if(old.area!==area)cleanupSession(old); // Release unloaded flocks and nest visuals without leaking another area's actors.
     const session=sessions.get(area);
     if(!session||session.disposed)return;
+    const stormShelter = !!window.TothalBlizzard?.isShelteringFor?.(area); // Wild flocks retreat to their native nests; trained companions stay player-directed.
     session.flockSyncTimer-=dt;
-    if(session.flockSyncTimer<=0){session.flockSyncTimer=2;syncNearbyFlocks(session);} // No duplicate RAF or per-frame whole-zone spawn search.
+    if(session.flockSyncTimer<=0){session.flockSyncTimer=2;syncNearbyFlocks(session);} // The shared synchronizer can still retire distant birds during storms.
     for(const state of session.birds){
       const a=state.actor;
       if(!alive(a,area)){
         if(a?.health<=0)rememberBirdDeath(session,state.nest,state.slot);
         continue;
+      }
+      if (stormShelter) {
+        if (state.leg) {
+          if (state.phase !== 'return') flight(a, state, state.home, 'return', 7); // Abort a hunt and follow the normal flight path home.
+          else if (advance(a, state, dt)) { state.phase = 'rest'; a.pingdortFlightPose = 'perched'; }
+        }
+        if (!state.leg) {
+          if (!state._tothalNestShelter) {
+            state._tothalNestShelter = true; // Hidden at the authored nesting ledge, not a despawn.
+            state._tothalNestVisibility = {
+              avatar: a.avatarRef?.group?.visible, shadow: a.groundShadow?.visible,
+            }; // Restore independent prior LOD visibility, including birds already hidden for unrelated reasons.
+            if (a.avatarRef?.group) a.avatarRef.group.visible = false;
+            if (a.groundShadow) a.groundShadow.visible = false;
+          }
+          state.phase = 'rest'; state.target = null;
+        }
+        continue;
+      }
+      if (state._tothalNestShelter) {
+        state._tothalNestShelter = false;
+        const wasVisible = state._tothalNestVisibility || {}; // Each render object had its own pre-storm visibility.
+        delete state._tothalNestVisibility;
+        if (a.avatarRef?.group) a.avatarRef.group.visible = wasVisible.avatar ?? true;
+        if (a.groundShadow) a.groundShadow.visible = wasVisible.shadow ?? true;
+        state.cooldown = Math.max(2.5, state.cooldown); // Resume hunting from the real perch after the storm ends.
       }
       const at=tilePos(a),predator=predatorNear(area,at);
       if(predator&&state.phase!=='flee'){
