@@ -132,7 +132,7 @@
       gate.innerHTML = `
         <div class="folder-save-primary-gate-card">
           <div class="folder-save-primary-gate-title">💾 Primary Save Folder</div>
-          <div class="folder-save-primary-gate-copy">Your save folder “${esc(status.folderName || 'Save Folder')}” is remembered. Reconnect it and the folder will be loaded before farmers and worlds are shown.</div>
+          <div class="folder-save-primary-gate-copy">Your save folder “${esc(status.folderName || 'Save Folder')}” is remembered. Reconnect to load its saved progress before farmers and worlds are shown, or use browser fallback to preserve this device’s working copy.</div>
           <div class="folder-save-primary-gate-status" data-folder-primary-status></div>
           <div class="folder-save-primary-gate-actions">
             <button type="button" class="folder-save-primary-gate-fallback" data-folder-primary-browser>Use browser fallback</button>
@@ -219,6 +219,14 @@
         }
       })();
       if (skipOnce) {
+        // Browser Drive access tokens cannot survive a reload. Offer the existing
+        // explicit reconnect/load or browser fallback gate instead of silently
+        // resuming with a disconnected primary folder.
+        const phase = window.HobunjiQuickSave?.festivalStatus?.()?.phase; // An intentional festival/quick-load handoff takes precedence.
+        if (skipOnce === 'folder-loaded-in-settings' && window.HobunjiBrowserDrive?.isSupported?.() && (!phase || phase === 'idle')) {
+          const status = await waitForCoreStatus();
+          if (status.transport === 'google-drive-browser' && status.folderName) return showReconnectGate(status);
+        }
         startupMode = 'folder-already-applied';
         return startupMode;
       }
@@ -305,6 +313,9 @@
     }
     if (status.state !== 'ready') return { ok: false, changed: false, message: status.lastError || 'Folder access was not completed.' };
 
+    if (status.transport === 'google-drive-browser' && !confirm('Use this Google Drive save folder? Loading replaces this device’s working save. If the folder is empty, the game initializes it from this device. Preserve newer progress first.')) {
+      return { ok: false, changed: false, message: 'Drive folder connected; load or initialize it explicitly when ready.' };
+    }
     const result = await localSave.loadFromFolder();
     const succeeded = folderActionSucceeded(result);
     const afterMeta = localStorage.getItem(SAVE_META_KEY) || ''; // Fresh local metadata after the folder either loaded or adopted the browser save.
@@ -496,9 +507,10 @@
     if (!statusEl) return;
     const text = !status.supported ? 'Folder saves are not supported in this browser; using browser fallback.'
       : !status.folderName ? 'No primary save folder connected.'
-      : status.state === 'needs-permission' ? `Primary folder “${status.folderName}” needs permission.`
+      : status.state === 'needs-permission' ? `Primary folder “${status.folderName}” needs permission.${status.lastError ? ' ' + status.lastError : ''}`
       : status.lastError ? `Primary folder “${status.folderName}”: ${status.lastError}`
       : status.autoSyncArmed ? `Primary folder “${status.folderName}” is connected and autosyncing.`
+      : status.transport === 'google-drive-browser' && !status.driveCanWrite ? `Google Drive “${status.folderName}” connected; load the folder or recover before saving.`
       : `Primary folder “${status.folderName}” is connected; load or save to choose direction.`;
     // Same self-triggering-observer hazard noted in promoteEmptySaveGate above.
     if (statusEl.textContent !== text) statusEl.textContent = text;
@@ -528,7 +540,7 @@
     if (!row.classList.contains('folder-save-settings-primary')) row.classList.add('folder-save-settings-primary');
     const name = row.querySelector('.settings-name'); // Existing heading rewritten so folder storage is not described as a mere backup.
     const desc = row.querySelector('.settings-desc'); // Existing description explains runtime cache versus portable folder truth.
-    const descText = 'Recommended save method. The game uses browser storage as a working cache while running, then syncs characters, worlds, and farm layouts to this portable folder.';
+    const descText = 'Recommended save method. Connect a local folder or Google Drive in supported browsers. The game syncs characters, worlds and farm layouts to the selected portable folder.';
     if (name && name.textContent !== 'Primary Save Folder') name.textContent = 'Primary Save Folder';
     if (desc && desc.textContent !== descText) desc.textContent = descText;
 
@@ -587,6 +599,13 @@
   async function handleSettingsFolderAction(button, mode) {
     setBusy(button, true, mode === 'reconnect' ? 'Reconnecting…' : 'Opening Folder…');
     try {
+      if (mode === 'reconnect' && localSave.getStatus().transport === 'google-drive-browser') {
+        const status = await localSave.reconnect(); // Reauth must not reload over newer live progress.
+        if (status.state !== 'ready') alert(status.lastError || 'Drive reconnect failed.');
+        else alert(status.driveCanWrite ? 'Drive reconnected. Use Save to Folder to preserve your current progress.' : 'Drive reconnected, but its previous baseline is unavailable or changed. Preserve current progress separately before using Load Folder.');
+        refreshSettingsButtons(status);
+        return;
+      }
       const result = await establishPrimaryFolder(mode);
       if (!result.ok) {
         if (result.message) alert(result.message);

@@ -139,9 +139,8 @@ Google's OAuth layer, while native file operations remain confined to the
 specific user-selected directory. Keep the OAuth client private/test-only
 until Google Cloud restricted-scope consent requirements are satisfied.
 
-The old Netlify cloud-save login is disabled **inside Android only**. Web-hosted
-legacy Netlify save accounts are not deleted and the browser edition still has
-its legacy interface pending a separate web/desktop authorization migration.
+For migration of old web-only account saves using the archived recovery
+deployment, see [HOSTING.md](../HOSTING.md).
 
 ### Legacy local-folder synchronization (optional fallback)
 

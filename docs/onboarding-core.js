@@ -1034,13 +1034,6 @@
         </a>
       </div>
       ${_localSaveFolderSectionHtml()}
-      <div class="sl-section sl-local-save-section">
-        <div class="sl-section-label">Cloud</div>
-        <div class="sl-local-save-row">
-          <span class="sl-local-save-status">Sign in to sync saves across devices.</span>
-          <button type="button" class="sl-local-save-btn" id="slSourceCloud">☁ Cloud Save</button>
-        </div>
-      </div>
       ${_dbSourceSectionHtml()}
       <div class="sl-footer">
         <span></span>
@@ -1227,14 +1220,6 @@
     _el.querySelector('#slSourceContinue')?.addEventListener('click', () => {
       _saveFlowStep = 'character';
       rerenderSaveSelect();
-    });
-
-    _el.querySelector('#slSourceCloud')?.addEventListener('click', () => {
-      if (window.NetlifyCloudSave?.openPanel) {
-        window.NetlifyCloudSave.openPanel();
-      } else {
-        alert('Cloud Save has not initialized yet. Reload the Netlify deployment and try again.');
-      }
     });
 
     // Local Save Folder controls — see _localSaveFolderSectionHtml above and

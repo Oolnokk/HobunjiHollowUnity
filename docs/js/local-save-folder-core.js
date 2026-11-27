@@ -26,6 +26,7 @@
     preRestore: 'pre-restore.json',
   });
   const MANIFEST_FILE_NAME = 'manifest.json';
+  const DRIVE_COMMIT_MARKER = 'hobunji-write-in-progress.json'; // Browser transaction marker, visible through native folder handles too.
   const LEGACY_SAVE_FILE_NAME = 'hobunji-save.json';
   const SAVE_META_KEY = 'hobunjiSaveMeta';
   const PROVENANCE_KEY = 'folderSaveProvenance'; // Preserved on unchanged entities; writer history for full saves lives in the manifest.
@@ -67,7 +68,7 @@
   }
 
   function isSupported() {
-    return typeof window.showDirectoryPicker === 'function' && typeof indexedDB !== 'undefined';
+    return (typeof window.showDirectoryPicker === 'function' || window.HobunjiBrowserDrive?.isSupported?.()) && typeof indexedDB !== 'undefined';
   }
 
   function openDb() {
@@ -85,7 +86,7 @@
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
-      req.onsuccess = () => resolve(window.HobunjiAndroidFiles?.restoreHandle?.(req.result) ?? req.result ?? null); // Restore Android SAF directory token when read from IndexedDB.
+      req.onsuccess = () => { try { resolve(window.HobunjiAndroidFiles?.restoreHandle?.(req.result) ?? window.HobunjiBrowserDrive?.restoreHandle?.(req.result) ?? req.result ?? null); } catch (error) { reject(error); } }; // Restore native or browser Drive descriptor; never persist an access token.
       req.onerror = () => reject(req.error);
     });
   }
@@ -94,7 +95,7 @@
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(window.HobunjiAndroidFiles?.serializeHandle?.(value) ?? value, key); // Preserve normal native handles; serialize Android SAF tokens.
+      tx.objectStore(STORE).put(window.HobunjiAndroidFiles?.serializeHandle?.(value) ?? window.HobunjiBrowserDrive?.serializeHandle?.(value) ?? value, key); // Preserve normal native handles; serialize Android SAF tokens.
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -145,6 +146,8 @@
       supported: isSupported(),
       state: _state,
       folderName: _handle?.name || null,
+      transport: _handle?.assertDriveUnchanged ? 'google-drive-browser' : 'local-folder',
+      driveCanWrite: _handle?.driveCanWrite === true,
       lastSyncedAt: _lastSyncedAt || null,
       lastWriterProvenance: _lastKnownFolderProvenance ? { ..._lastKnownFolderProvenance } : null,
       lastError: _lastError || null,
@@ -479,6 +482,14 @@
     const digest = delta?.digests.get(key);
     // Changed payloads are serialized only when written; no full JSON buffer
     // survives the delta scan while disk safety guards perform asynchronous I/O.
+    if (_handle.assertDriveUnchanged && old && digest === old.digest && old.stamp) {
+      // All Drive file IDs and versions were checked before this commit and will be
+      // checked again before publishing/acknowledging its manifest. Avoid per-file
+      // round trips for unchanged bytes.
+      next.set(key, old);
+      work.unchanged++;
+      return;
+    }
     const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
     if (old && digest === old.digest && old.stamp) {
       // A deleted or externally modified disk file cannot be called saved just
@@ -557,8 +568,11 @@
       await writeTrackedFile(dirHandle, dirName, filename, entity, delta, next, work);
     }
     for await (const [name, entry] of dirHandle.entries()) {
-      if (entry.kind === 'file' && !keep.has(name)) {
-        try { await dirHandle.removeEntry(name); } catch {}
+      if (entry.kind === 'file' && name.toLowerCase().endsWith('.json') && !name.startsWith('.hobunji-') && !keep.has(name)) {
+        // Drive backup versions and non-save files may also be visible through Windows/SAF.
+        try { await dirHandle.removeEntry(name); } catch (error) {
+          if (_handle.assertDriveUnchanged && error?.name !== 'NotFoundError') throw error;
+        }
       }
     }
   }
@@ -778,7 +792,21 @@
     return latest;
   }
 
+  async function folderEntryExists(handle, name) {
+    try { await handle.getFileHandle(name); return true; }
+    catch (error) { if (error?.name === 'NotFoundError') return false; throw error; }
+  }
+
+  async function assertNoInterruptedDriveCommit() {
+    if (await folderEntryExists(_handle, DRIVE_COMMIT_MARKER)) {
+      const error = new Error('An interrupted or active browser Drive save was detected. Close other devices and use Save Recovery or inspect the Drive versions.');
+      error.name = 'InterruptedDriveCommit';
+      throw error;
+    }
+  }
+
   async function readFolderSnapshot() {
+    await assertNoInterruptedDriveCommit();
     const characterRead = await readEntities(CHARACTERS_DIR); // Keeps unreadable canonical files visible to the caller instead of silently dropping them.
     const worldRead = await readEntities(WORLDS_DIR); // Same corruption tracking for worlds; missing a world can otherwise erase save selection.
     const characters = characterRead.entities;
@@ -817,6 +845,10 @@
       farm.missingCanonicalBackups.push('manifest.json: expected ' + declaredFarmCount + ' canonical farm layout(s), found ' + actualFarmCount);
     }
     const hasPortableFarmLayouts = portableVersion >= PORTABLE_SAVE_VERSION || Object.keys(farm.layouts).length > 0;
+    if (_handle.assertDriveUnchanged && !manifestExists && !characters.length && !worlds.length && await folderEntryExists(_handle, LEGACY_SAVE_FILE_NAME)) {
+      throw new Error('This Drive folder contains an older single-file save. Back it up and migrate it with the original game before initializing the current format.');
+    }
+    await assertNoInterruptedDriveCommit(); // A concurrent browser publication may have started during the read.
     return {
       exists: manifestExists || characters.length > 0 || worlds.length > 0 || corruptEntityFiles.length > 0,
       savedAt: Number(manifest?.savedAt) || 0,
@@ -861,7 +893,16 @@
 
   async function inspectConnectedFolder() {
     if (_state !== 'ready' || !_handle) return null;
-    const folder = await readFolderSnapshot();
+    let folder;
+    try { folder = await readFolderSnapshot(); }
+    catch (error) {
+      if (error?.name !== 'InterruptedDriveCommit') throw error;
+      _lastError = error.message; // Keep the folder connected for explicit checkpoint recovery, but never load mixed canonical files.
+      _lastKnownFolderMeta = null;
+      _lastKnownFarmLayoutFingerprint = null;
+      _folderSupportsFarmLayouts = false;
+      return null;
+    }
     const validWorldIds = new Set((folder.meta.worlds || []).map(world => String(world?.id || '')).filter(Boolean));
     const canonicalCorruption = canonicalCorruptionMessage(folder); // Shown in diagnostics/settings while keeping the folder connected for deliberate recovery.
     _ignoredFarmLayoutBackupFiles = folder.ignoredFarmLayoutBackupFiles || []; // Visible through the mobile folder-save status.
@@ -934,8 +975,18 @@
   }
 
   async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto', reason = null } = {}) {
-    if (_state !== 'ready' || !_handle) return getStatus();
+    if (_state !== 'ready' || !_handle) {
+      if (_handle?.assertDriveUnchanged && !automatic) { _lastError = 'Google Drive is not connected. Reconnect before saving.'; _lastAction = 'save-error'; notify(); }
+      return getStatus();
+    }
     if (automatic && !_autoSyncArmed) return getStatus();
+    const festivalPhase = window.HobunjiQuickSave?.festivalStatus?.().phase; // All folder transports share the same disposable-preview isolation.
+    if (festivalPhase && festivalPhase !== 'idle' && festivalPhase !== 'restored') {
+      _lastError = 'Exit Festival Test before saving to the primary folder.';
+      _lastAction = 'save-blocked-festival-test';
+      notify();
+      return getStatus();
+    }
     if (automatic && window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause freezes the canonical folder; explicit saves still pass.
       window.HobunjiAutosavePause.noteBlocked?.('folder-autosync');
       return getStatus();
@@ -960,9 +1011,11 @@
         notify();
         return getStatus();
       }
+      if (!_handle.beginDriveCommit) await assertNoInterruptedDriveCommit(); // Native writers must respect a browser's visible transaction marker.
+      const driveVerified = _handle.assertDriveUnchanged ? await _handle.assertDriveUnchanged() : false; // Verify every Drive revision before any canonical write.
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
       if (automatic && !force && recoveryKind === 'auto' && !_recoveryNeedsRefresh && delta && !delta.changed && !_lastError
-        && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
+        && (driveVerified || (await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()))) {
         _lastSaveWork = { written: 0, unchanged: delta.digests.size };
         _unchangedAutosavesSkipped++;
         _lastAction = 'autosync-skipped-unchanged';
@@ -1031,6 +1084,7 @@
       }
 
       _lastDataLossRisk = null;
+      await _handle.beginDriveCommit?.(force && recoveryKind === 'restore'); // Mark before the first canonical file changes.
 
       const nextFiles = new Map(); // The new per-file baseline is published only after the canonical commit succeeds.
       const work = { written: 0, unchanged: 0 }; // Last save's filesystem work, visible without developer tools.
@@ -1050,6 +1104,7 @@
         catch (error) { _lastPatternMirror = { error: String(error?.message || error) }; }
       }
 
+      await _handle.assertDriveUnchanged?.(); // Verify untouched files before publishing the manifest.
       const savedAt = Date.now();
       const committedWriter = writerProvenance(); // The manifest records farm-only saves without rewriting unrelated character/world JSON.
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
@@ -1063,7 +1118,8 @@
         worldCount: (meta.worlds || []).length,
         farmLayoutCount: _farmLayoutCount,
       });
-      try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
+      if (!_handle.beginDriveCommit) { try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {} } // Retain an older portable file when using Drive; it may contain independent recovery data.
+      await _handle.finishDriveCommit?.(); // Remove the marker only after the entire canonical publication verifies.
 
       _committedFileState = nextFiles;
       try { _lastManifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile()); }
@@ -1112,6 +1168,11 @@
       _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
+      if (_handle?.assertDriveUnchanged) {
+        stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
+        _handle.invalidateIncompleteDriveCommit?.();
+        if (!_handle.driveAuthorized) _state = 'needs-permission';
+      }
     }
     // The checkpoint writer already mirrored the affected slots. Reconcile the full history
     // when a folder is first armed, a restore completes, or a write may have failed.
@@ -1143,6 +1204,7 @@
   async function _saveLockProgressImpl({ characterId, worldId, lockId, record }) {
     try {
       if (!canSaveLockProgress(characterId)) throw new Error('Fast lock progress save has no verified folder baseline. Use the full save.');
+      await _handle.assertDriveUnchanged?.();
       const profile = window.__hobunjiPlayerProfile; // Prevent an in-flight lock modal from changing another character after a world switch.
       if (String(profile?.characterId) !== String(characterId) || String(profile?.worldId) !== String(worldId)) {
         throw new Error('Lock progress save belongs to another active character or world.');
@@ -1187,10 +1249,13 @@
       character.chestLockProgress[worldId] ||= {};
       character.chestLockProgress[worldId][lockId] = safeRecord;
       const raw = JSON.stringify(character); // One character, not the farm, its backups or rolling recovery snapshots.
+      await _handle.beginDriveCommit?.(); // The targeted character+manifest write is also a multi-file commit.
+      if (!_handle.beginDriveCommit) await assertNoInterruptedDriveCommit();
       const writable = await handle.createWritable();
       await writable.write(raw);
       await writable.close();
       const stamp = diskStamp(await handle.getFile());
+      await _handle.assertDriveUnchanged?.();
       const manifest = await readJsonFile(_handle, MANIFEST_FILE_NAME);
       if (!manifest || Number(manifest.savedAt) !== _lastSyncedAt) {
         throw new Error('Primary save manifest is inconsistent after the lock progress write.');
@@ -1198,6 +1263,7 @@
       const savedAt = Math.max(Date.now(), _lastSyncedAt + 1); // Lock acknowledgements must advance even when two writes finish in the same millisecond.
       const committedWriter = writerProvenance() || manifest.writerProvenance || null; // Targeted lock commits also advance last-writer metadata.
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, { ...manifest, savedAt, writerProvenance: committedWriter });
+      await _handle.finishDriveCommit?.();
       const manifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile());
       _committedFileState = new Map(_committedFileState); // Publish the new character fingerprint only after both canonical writes succeed.
       _committedFileState.set(key, { digest: contentFingerprint(raw), stamp });
@@ -1218,6 +1284,11 @@
       _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
+      if (_handle?.assertDriveUnchanged) {
+        stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
+        _handle.invalidateIncompleteDriveCommit?.();
+        if (!_handle.driveAuthorized) _state = 'needs-permission';
+      }
     }
     notify({ refreshRecovery: Boolean(_lastError) }); // This targeted write changes no recovery checkpoint.
     return getStatus();
@@ -1242,8 +1313,15 @@
     try {
       _committedFileState = null; // Explicit folder loads invalidate previous browser->disk comparisons.
       _lastManifestStamp = null;
+      if (_handle.beginDriveLoad) {
+        stopAutoSync();
+        while (_syncPromise) await _syncPromise;
+        stopAutoSync();
+        await _handle.beginDriveLoad(); // Capture a remote version baseline before the explicit import.
+      }
       const folder = await readFolderSnapshot();
       if (!folder.exists) {
+        await _handle.finishDriveLoad?.(); // Empty folder initialization is an explicit user choice.
         _lastAction = 'initialized-empty-folder';
         const status = await syncNow({ automatic: false });
         return {
@@ -1279,6 +1357,8 @@
       }
 
       _ignoredFarmLayoutBackupFiles = folder.ignoredFarmLayoutBackupFiles || []; // Show ignored copies in the mobile save diagnostics.
+      if (_handle.finishDriveLoad && folder.corruptFarmLayoutFiles.length) throw new Error('Google Drive farm files are corrupt. Recover them before writing.');
+      await _handle.finishDriveLoad?.(); // Reject changes made during the folder read before importing or arming autosync.
       const browserMeta = readBrowserMeta();
       const browserLayouts = readBrowserFarmLayouts(browserMeta, false);
       const metaChanged = !browserMeta || !saveMetaMatches(browserMeta, folder.meta);
@@ -1331,6 +1411,7 @@
     } catch (error) {
       _lastError = String(error?.message || error);
       _lastAction = 'reconcile-error';
+      if (_handle?.beginDriveLoad) { _handle.invalidateDriveBaseline(); stopAutoSync(); if (!_handle.driveAuthorized) _state = 'needs-permission'; }
       notify();
       return {
         ok: false,
@@ -1405,7 +1486,7 @@
     try {
       while (_syncPromise) await _syncPromise; // Finish every older writer before opening the native root chooser.
       stopAutoSync(); // A writer finishing during the drain must not re-arm the previous root.
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const handle = await (window.HobunjiBrowserDrive?.isSupported?.() ? window.HobunjiBrowserDrive.pickFolder() : window.showDirectoryPicker({ mode: 'readwrite' }));
       pickerCompleted = true;
       await rememberSelectedFolder(handle);
       switchCommitted = true;
@@ -1452,7 +1533,7 @@
     try {
       while (_syncPromise) await _syncPromise; // Native Drive picker may replace the selected root before returning.
       stopAutoSync();
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Same native picker invocation as normal selection.
+      const handle = await (window.HobunjiBrowserDrive?.isSupported?.() ? window.HobunjiBrowserDrive.pickFolder() : window.showDirectoryPicker({ mode: 'readwrite' })); // Same native picker invocation as normal selection.
       pickerCompleted = true;
       await rememberSelectedFolder(handle);
       _state = 'ready';
@@ -1489,6 +1570,7 @@
   async function reconnect() {
     if (!_handle) return chooseFolder();
     try {
+      if (_handle.assertDriveUnchanged) { stopAutoSync(); while (_syncPromise) await _syncPromise; stopAutoSync(); }
       const granted = await ensurePermission(_handle, true);
       _state = granted ? 'ready' : 'needs-permission';
       stopAutoSync();
@@ -1497,7 +1579,6 @@
       if (granted) {
         await inspectConnectedFolder();
         _lastAction = 'permission-restored-awaiting-choice';
-        _lastError = '';
       } else {
         _lastAction = 'permission-needed';
       }
@@ -1510,7 +1591,18 @@
     return getStatus();
   }
 
+  async function prepareDriveRecovery() {
+    if (_state !== 'ready' || !_handle?.beginDriveLoad) return; // Existing native recovery behavior is unchanged.
+    stopAutoSync();
+    while (_syncPromise) await _syncPromise;
+    stopAutoSync();
+    await _handle.beginDriveLoad(true);
+    await _handle.finishDriveLoad(); // Explicit recovery accepts a fresh baseline, never an automatic retry.
+  }
+
   async function forget() {
+    stopAutoSync();
+    while (_syncPromise) await _syncPromise; // Do not clear a handle while the canonical writer still uses it.
     stopAutoSync();
     _handle = null;
     _state = 'not-configured';
@@ -1568,6 +1660,7 @@
     loadFromFolder,
     reconcileConnectedFolder,
     readPrimarySnapshot,
+    prepareDriveRecovery,
     readRecoveryCheckpoint,
     readRecoveryCheckpoints,
     writeRecoveryCheckpoint,

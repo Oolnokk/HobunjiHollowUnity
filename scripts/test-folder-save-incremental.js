@@ -147,7 +147,17 @@ async function main() {
   assert.equal(firstStamp.lastWriterDeviceId, 'incremental-test-device', 'portable manifest records last-writer identity');
   const characterBytes = await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text();
   assert.equal(JSON.parse(characterBytes).folderSaveProvenance.lastWriterDeviceId, 'incremental-test-device');
+  // The native Windows filesystem also exposes Drive recovery versions.
+  const savedVersions = folder.folders.get('characters');
+  const previousName = '.hobunji-previous-farmer-char.json-12345678-1234-4123-8123-123456789012';
+  const pendingName = '.hobunji-pending-farmer-char.json-12345678-1234-4123-8123-123456789013';
+  await seedLegacy(savedVersions, previousName, { id: 'char', nickname: 'Previous' });
+  await seedLegacy(savedVersions, pendingName, { id: 'char', nickname: 'Pending' });
+  await seedLegacy(savedVersions, 'notes.txt', { note: 'keep me' });
   const repeatExplicit = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.ok(savedVersions.files.has(previousName), 'native save preserves Drive previous version');
+  assert.ok(savedVersions.files.has(pendingName), 'native save preserves interrupted staged version');
+  assert.ok(savedVersions.files.has('notes.txt'), 'native save preserves non-save files');
   assert.equal(repeatExplicit.lastError, null);
   assert.equal(lastChange?.refreshRecovery, false, 'routine explicit save already handled its recovery slots');
   assert.equal(repeatExplicit.saveFileWork.written, 0, 'explicit save no longer rewrites unchanged character/world files to timestamp them');
@@ -417,6 +427,20 @@ async function main() {
   const newFormatStatus = await window.LocalSaveFolder.chooseFolder();
   assert.equal(newFormatStatus.lastWriterProvenance.lastWriterDeviceId, 'manifest-writer',
     'the manifest writer wins over legacy entity stamps when both exist');
+
+  const markerName = 'hobunji-write-in-progress.json';
+  await seedLegacy(legacyFolder, markerName, { version: 1, startedAt: 1500 });
+  const interrupted = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(interrupted.state, 'ready', 'interrupted folder remains available for recovery');
+  assert.match(interrupted.lastError, /interrupted or active browser Drive save/i);
+  const beforeBlockedWrites = counters.writes.length;
+  const blockedLoad = await window.LocalSaveFolder.loadFromFolder();
+  assert.equal(blockedLoad.ok, false, 'native restore rejects a browser mixed revision');
+  await assert.rejects(() => window.LocalSaveFolder.readPrimarySnapshot(), /interrupted or active browser Drive save/i);
+  const blockedSave = await window.LocalSaveFolder.syncNow({ force: true, automatic: false });
+  assert.match(blockedSave.lastError, /interrupted or active browser Drive save/i);
+  assert.equal(counters.writes.length, beforeBlockedWrites, 'even a forced native save cannot replace an active browser transaction');
+  assert.ok(legacyFolder.files.has(markerName), 'the interrupted transaction marker is not silently removed');
 
   console.log('OK  incremental saves, cross-device provenance, legacy disk fallback, lock-progress fast commits, quota rollback, single-pass no-op serialization, guarded layouts, external edits, recovery and large-farm stress');
 }

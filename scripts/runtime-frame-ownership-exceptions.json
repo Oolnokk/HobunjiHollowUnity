@@ -405,15 +405,6 @@
     "line": 556
   },
   {
-    "file": "docs/js/netlify-cloud-save.js",
-    "owner": "NetlifyCloudSave",
-    "classification": "one-shot",
-    "function": "MutationObserver callback (body observer)",
-    "reason": "Guarded by _bodyObserverScheduled, this coalesces a storm of body-mutation events into a single deferred call to ensureLauncher/ensureSettingsRow/renderSettingsRow on the next frame; it is not a self-perpetuating loop, only triggered again by future mutations.",
-    "migrationStage": "not-planned",
-    "line": 786
-  },
-  {
     "file": "docs/js/onboarding-character-creation-camera-composition.js",
     "owner": "OnboardingCharacterCreationCameraComposition",
     "classification": "bounded-animation",

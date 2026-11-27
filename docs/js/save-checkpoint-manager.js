@@ -881,6 +881,7 @@
         return { ok: true, browserOnly: true };
       }
 
+      if (folderRecoveryAvailable()) await folderApi()?.prepareDriveRecovery?.(); // Disconnected Drive must not block browser-only recovery.
       preRestore = await preservePreRestore();
 
       if (folderRecoveryAvailable()) {
