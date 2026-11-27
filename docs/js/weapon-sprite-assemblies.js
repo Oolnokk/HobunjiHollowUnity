@@ -335,7 +335,7 @@
       metalOptions: options.metalOptions || null, masteryLevel: options.masteryLevel || (() => 0), resolveAsset: imageUrl, // Live XP rank drives authored non-metal VFX, while metal still uses plating/mastery options.
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
-      groundTrail:{ready:false,active:false,x:0,y:0,z:0,px:0,pz:0}, // Per-hand world-space slack endpoint; never feeds the shared pendulum.
+      groundTrail:{ready:false,active:false,grounded:false,release:0,x:0,y:0,z:0,px:0,pz:0}, // Per-hand world-space slack endpoint; never feeds the shared pendulum.
       idleHeadMotion:{yaw:null,leanX:0,leanZ:0,renderedYaw:null,side:0,perp:null,tipReady:false,tipX:0,tipZ:0,tipY:0,returnX:0,returnZ:0,previousAttack:false,previousProgress:0,sawStrike:false,source:'initial'}, cameraPosition:null, // Retained logical heading and smoothed lean, separate from pendulum.
       lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, movementRoot:null, turnRoot:null, turnYaw:null, turnRate:0, // Character movement source supplied by gameplay, not the weapon's animated joint.
       angularVelocity: new THREE.Vector3(), pivotVelocity: new THREE.Vector3(), hasPhysicsVelocity: false, physicsLength: 0, // Persistent world-space pendulum momentum and measured lever length.
@@ -949,7 +949,7 @@
 
   // The fitted connector is a reach LIMIT, not a rigid rod. Keep the last
   // visible endpoint per hand; the shared taut pendulum remains the attack driver.
-  function resolveGroundSlack(trail, direction, length, available, vx, vz, restX, restZ, dt, pivot) {
+  function resolveGroundSlack(trail, direction, length, available, vx, vz, restX, restZ, dt, pivot, releaseBlend=0) {
     const floorY = Number.isFinite(available) ? Math.max(-length, Math.min(length, -available)) : -length;
     let x=direction.x*length, y=direction.y*length, z=direction.z*length; // Unconstrained pendulum target.
     const grounded=y<floorY;
@@ -966,11 +966,14 @@
         x=rear>1e-8?restX/rear*drag:0;z=rear>1e-8?restZ/rear*drag:0;
       }
     }
-    if(trail.ready&&(grounded||trail.active)){
-      const blend=dt>0?1-Math.exp(-HEAD_SETTLE_RATE*dt):0;
-      // In ground contact a moving haft does not instantly carry the grounded head with it.
-      const dx=dt>0&&trail.active?pivot.x-trail.px:0, dz=dt>0&&trail.active?pivot.z-trail.pz:0;
-      const prevX=trail.x-(Math.abs(dx)<=3?dx:0),prevZ=trail.z-(Math.abs(dz)<=3?dz:0);
+    const release=trail.ready&&trail.active?(trail.release||0):0; // Finite release: never perpetually chase a moving airborne target.
+    const dx=pivot.x-trail.px,dz=pivot.z-trail.pz;
+    if(trail.ready&&(grounded||release>0)&&dx*dx+dz*dz<=9){
+      const blend=grounded?(dt>0?1-Math.exp(-HEAD_SETTLE_RATE*dt):0)
+        :Math.min(1,Math.max(releaseBlend,release>0?dt/release:1));
+      // Only a previously grounded head retains its world position as the haft moves.
+      const follow=dt>0&&grounded&&trail.grounded;
+      const prevX=trail.x-(follow?dx:0),prevZ=trail.z-(follow?dz:0);
       x=prevX+(x-prevX)*blend;z=prevZ+(z-prevZ)*blend;
       if(!grounded)y=trail.y+(y-trail.y)*blend;
     }
@@ -978,7 +981,9 @@
     const flat=Math.hypot(x,z), maxFlat=Math.sqrt(Math.max(0,length*length-y*y));
     if(flat>maxFlat&&flat>0){x*=maxFlat/flat;z*=maxFlat/flat;} // Project into the reach disk without re-normalizing slack.
     trail.x=x;trail.y=y;trail.z=z;trail.px=pivot.x;trail.pz=pivot.z;trail.ready=true;
-    trail.active=grounded||Math.hypot(x-direction.x*length,y-direction.y*length,z-direction.z*length)>1e-4;
+    trail.grounded=grounded;
+    trail.release=grounded?.3:Math.max(0,release-Math.max(0,dt));
+    trail.active=grounded||trail.release>0&&Math.hypot(x-direction.x*length,y-direction.y*length,z-direction.z*length)>1e-4;
     return trail;
   }
 
@@ -1000,7 +1005,7 @@
         state.hasPivot = false; // Re-equipping resets old idle momentum rather than launching the suspended head.
         state.hasMovementPosition=false;state.turnRoot=null;state.turnYaw=null;state.turnRate=0;
         resetIdleHeadMotion(state.idleHeadMotion);
-        state.groundTrail.ready=state.groundTrail.active=false;
+        state.groundTrail.ready=state.groundTrail.active=state.groundTrail.grounded=false;state.groundTrail.release=0;
         state.hasPhysicsVelocity = false;
         state.angularVelocity.set(0, 0, 0);
       }
@@ -1221,7 +1226,7 @@
     const bodyVZ=(state.actorMotionValid?q.velocity.z:0)+turnZ;
     advanceIdleHeadMotion(state.idleHeadMotion,state.attacking,state.progress,state.sf,state.hf,pivot,bodyVX,bodyVZ,dt,state.idleHeadMotion.yaw??Math.atan2(normal.x,normal.z),headDeadzone());
     state.groundClearance=null;
-    if (state.dualWieldHidden) {state.groundTrail.ready=state.groundTrail.active=false;return;} // Only visible hands own live floor contact.
+    if (state.dualWieldHidden) {state.groundTrail.ready=state.groundTrail.active=state.groundTrail.grounded=false;state.groundTrail.release=0;return;} // Only visible hands own live floor contact.
     // Use a continuous per-hand endpoint for ground contact; the connector can
     // become slack but cannot exceed the permanent fit and authored pose reach.
     const idleQ=!state.attacking?idleHeadQuaternion(state,pivot,normal,q.headQ,dt):null;
@@ -1229,9 +1234,11 @@
     const available=contact?pivot.y-(floor+.035+liveDrop*attachmentScale*headScale):null;
     const renderDirection=q.target.copy(state.direction); // Reuse post-physics scratch; do not mutate the shared direction.
     const trail=state.groundTrail;
-    if(!state.attacking&&!state.fishingFlailHeadSpin&&(Number.isFinite(available)||trail.active)){
+    const slackWindup=state.attacking&&trail.active&&state.progress<state.wf&&!state.fishingFlailHeadSpin&&dt>0; // Return to authored full reach before Strike.
+    if(!state.fishingFlailHeadSpin&&(!state.attacking&&(Number.isFinite(available)||trail.active)||slackWindup)){
+      const releaseBlend=slackWindup?Math.min(1,Math.max(0,state.progress/(state.wf||1))):0;
       resolveGroundSlack(trail,state.direction,maxReach,available,bodyVX,bodyVZ,
-        bodyWorld?-bodyWorld[8]:0,bodyWorld?-bodyWorld[10]:0,dt,pivot);
+        bodyWorld?-bodyWorld[8]:0,bodyWorld?-bodyWorld[10]:0,dt,pivot,releaseBlend);
       const actual=Math.hypot(trail.x,trail.y,trail.z);
       if(actual>1e-10)renderDirection.set(trail.x/actual,trail.y/actual,trail.z/actual);
       if(actual<maxReach-1e-8){
@@ -1241,7 +1248,7 @@
         chainSpan.copy(topLocal).sub(bottomLocal).normalize();
       }
       if(Number.isFinite(available))state.groundClearance={length:actual,maxLength:maxReach,fittedScale:fixedScale,trailing:trail.active,slack:maxReach-actual,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor,headMinY:pivot.y+trail.y-liveDrop*attachmentScale*headScale,reason:-available>maxReach?'unreachable':'solved'};
-    }else{trail.ready=trail.active=false;}
+    }else{trail.ready=trail.active=trail.grounded=false;trail.release=0;}
     const worldQ = planeQuaternion(q.headUp.copy(renderDirection).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
