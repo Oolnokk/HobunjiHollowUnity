@@ -200,7 +200,7 @@ async function checkRetryRecovery() {
     delayRetry: async ms => {
       delays.push(ms);
       assert.equal(updates.snapshot().phase, 'retrying');
-      assert.match(updates.snapshot().error, /HTTP 504/);
+      assert.ok(updates.snapshot().error, 'Retry exposes a concise failure reason');
       if (duringDelay) await duringDelay();
     },
   });
@@ -224,6 +224,21 @@ async function checkRetryRecovery() {
   assert.deepEqual(delays, [5000]);
   assert.equal(updates.snapshot().phase, 'current');
   assert.equal(updates.snapshot().error, null);
+  for (const [error, expected] of [
+    [new Error('Cannot parse releases feed: Error: Request timed out\nXML: private'), /timed out/],
+    [new Error('Request has been aborted by the server'), /aborted/],
+    [Object.assign(new Error('connection failed'), { code: 'ERR_CONNECTION_RESET' }), /ERR_CONNECTION_RESET/],
+    [Object.assign(new Error('server unavailable'), { code: 'HTTP_ERROR_503' }), /HTTP 503/],
+    [new Error('Cannot download "https://example.invalid/asset", status 502: Bad Gateway'), /HTTP 502/],
+  ]) {
+    failure = error;
+    recoverOnAttempt = attempts + 2;
+    delays.length = 0;
+    await updates.checkNow();
+    assert.deepEqual(delays, [5000]);
+    assert.equal(updates.snapshot().phase, 'current');
+    assert.match(logs.at(-1)[1], expected);
+  }
   failure = malformed;
   delays.length = 0;
   await updates.checkNow();
@@ -248,16 +263,32 @@ async function checkRetryRecovery() {
   assert.equal(updates.snapshot().phase, 'downloading');
   const beforeDownloadError = logs.length;
   updater.emit('error', timeout);
+  assert.equal(updates.snapshot().phase, 'downloading', 'Do not expose retry before the download promise settles');
+  const beforeSettlement = attempts;
+  await updates.checkNow();
+  assert.equal(attempts, beforeSettlement, 'No new check while the failed download is still settling');
   rejectDownload(timeout);
   await Promise.resolve();
   assert.equal(updates.snapshot().phase, 'error');
   assert.match(updates.snapshot().message, /Download failed/);
   assert.equal(logs.length, beforeDownloadError + 1);
   assert.deepEqual(delays, []);
+  downloadReject = new Promise((_resolve, reject) => { rejectDownload = reject; });
+  await updates.checkNow();
+  updater.emit('update-cancelled');
+  assert.equal(updates.snapshot().phase, 'cancelled');
+  const beforeCancelSettlement = attempts;
+  await updates.checkNow();
+  assert.equal(attempts, beforeCancelSettlement);
+  rejectDownload(new Error('cancelled'));
+  await Promise.resolve();
+  assert.equal(updates.snapshot().phase, 'idle');
+  assert.equal(updates.snapshot().targetVersion, null);
+  assert.equal(updates.snapshot().error, null);
   downloadReject = null;
   await updates.checkNow();
   assert.equal(updates.snapshot().phase, 'current');
-  console.log('Windows desktop updater: bounded retries, recovery, safe errors and download rejection OK');
+  console.log('Windows desktop updater: bounded retries, recovery, safe errors, download settlement and cancellation OK');
 }
 
 checkUpdater().then(checkRetryRecovery).catch(error => {

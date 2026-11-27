@@ -22,7 +22,9 @@ function waitForRetry(ms) {
 // Do not expose upstream response bodies, cookies, XML or stack traces in the UI or logs.
 function describeUpdateError(error) {
   const headline = String(error?.message || error || '').split(/\r?\n/, 1)[0]; // Electron may wrap the HTTP error in a feed-parse error.
-  const status = Number(error?.statusCode || headline.match(/\b(?:HttpError:|HTTP(?: status)?[: ]+|status code[: ]+)\s*(\d{3})\b/i)?.[1]);
+  const code = String(error?.code || ''); // Only allowlisted codes are included in diagnostics.
+  const status = Number(error?.statusCode || code.match(/^HTTP_ERROR_(\d{3})$/)?.[1] ||
+    headline.match(/\b(?:HttpError:|HTTP(?: error| status)?[: ]+|status(?: code)?[: ]+)\s*(\d{3})\b/i)?.[1]);
   if (Number.isInteger(status) && status >= 400 && status <= 599) {
     const retryable = [408, 429, 500, 502, 503, 504].includes(status);
     const reason = status === 429 ? 'The update server is rate limiting requests.'
@@ -35,7 +37,8 @@ function describeUpdateError(error) {
   }
   const networkCode = (String(error?.code || '') + ' ' + headline).match(/\b(?:ETIMEDOUT|ESOCKETTIMEDOUT|ECONNRESET|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ERR_TIMED_OUT|ERR_CONNECTION_(?:RESET|REFUSED|CLOSED|TIMED_OUT|ABORTED)|ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE)\b/)?.[0];
   if (networkCode) return { retryable: true, detail: 'Could not reach the update server (' + networkCode + ').' };
-  const code = String(error?.code || '');
+  if (/\bRequest timed out\b/i.test(headline)) return { retryable: true, detail: 'The update request timed out.' };
+  if (/\bRequest has been aborted by the server\b/i.test(headline)) return { retryable: true, detail: 'The update server aborted the request.' };
   if (['ERR_UPDATER_INVALID_RELEASE_FEED', 'ERR_UPDATER_INVALID_UPDATE_INFO', 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND', 'ERR_UPDATER_NO_PUBLISHED_VERSIONS', 'ERR_UPDATER_LATEST_VERSION_NOT_FOUND'].includes(code)) {
     return { retryable: false, detail: 'The published update metadata is missing or invalid (' + code + ').' };
   }
@@ -44,6 +47,9 @@ function describeUpdateError(error) {
   }
   if (['ERR_UPDATER_INVALID_SIGNATURE', 'ERR_UPDATER_INVALID_UPDATE_FILE', 'ERR_CHECKSUM_MISMATCH'].includes(code)) {
     return { retryable: false, detail: 'The update failed integrity verification (' + code + ').' };
+  }
+  if (/No update filepath provided|installer declined to start/i.test(headline)) {
+    return { retryable: false, detail: 'The downloaded installer could not be started.' };
   }
   return { retryable: false, detail: 'An unexpected updater error occurred.' };
 }
@@ -59,8 +65,8 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
   const releaseLabel = isFriendsEdition ? 'approved Friends' : 'main'; // Used in update-window status text.
   let updateWindow = null; // Sole update screen, not a second game instance.
   let checkActive = false; // Deduplicates launch, timer and menu update checks.
-  let checkGeneration = 0; // Identifies the check that owns a returned download promise.
-  let checkEventError = null; // An error event during metadata discovery belongs to the pending check.
+  let downloadPending = false; // Blocks new checks until electron-updater clears its download promise.
+  let checkEventError = null; // A metadata error event belongs to the pending check.
   let installActive = false; // Disallows multiple updater restart requests.
   let started = false; // Registers updater and IPC event handlers once.
   let dismissedVersion = null; // Respect Later for the current update during this launch.
@@ -131,9 +137,8 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
       publish({ phase: 'unsupported', message: 'Updates are available after installing the Windows build.' });
       return;
     }
-    if (checkActive || installActive || ['downloading', 'downloaded', 'saving', 'installing'].includes(state.phase)) return;
+    if (checkActive || downloadPending || installActive || ['downloading', 'downloaded', 'saving', 'installing'].includes(state.phase)) return;
     checkActive = true;
-    const generation = ++checkGeneration; // Prevent a rejected old download from replacing a newer check's status.
     try {
       for (let attempt = 0; attempt <= CHECK_RETRY_DELAYS_MS.length; attempt++) {
         checkEventError = null;
@@ -147,19 +152,24 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
           if (checkEventError) throw checkEventError;
           // Auto-download is a separate promise. Consume rejections without retrying large downloads.
           if (result?.downloadPromise) {
-            void result.downloadPromise.catch(error => {
-              if (generation === checkGeneration && state.phase === 'downloading') {
-                reportFailure('Download failed. Check Now to try again.', error);
-              }
+            downloadPending = true;
+            void result.downloadPromise.then(() => {
+              downloadPending = false;
+              if (state.phase === 'cancelled') finishCancellation();
+            }, error => {
+              downloadPending = false;
+              if (state.phase === 'cancelled') finishCancellation();
+              else if (state.phase === 'downloading') reportFailure('Download failed. Check Now to try again.', error);
             });
           }
           if (state.phase === 'checking') {
             publish({ phase: 'unsupported', message: 'Update checking is unavailable in this installation.' });
-          }
+          } else if (state.phase === 'cancelled' && !downloadPending) finishCancellation();
           return;
         } catch (error) {
           if (state.phase !== 'checking') {
             if (state.phase === 'downloading') reportFailure('Download failed. Check Now to try again.', error);
+            else if (state.phase === 'cancelled') finishCancellation();
             return;
           }
           const { retryable, detail } = describeUpdateError(error);
@@ -212,6 +222,10 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
     }
   }
 
+  function finishCancellation() {
+    publish({ phase: 'idle', targetVersion: null, message: 'Update download was cancelled. Check Now to try again.', percent: 0, error: null });
+  }
+
   function start({ autoCheck = true } = {}) {
     if (started) return;
     started = true;
@@ -249,15 +263,20 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
         checkEventError = error; // The pending metadata check owns retry/error publication.
         return;
       }
-      if (state.phase === 'error' || state.phase === 'retrying') return;
+      // For an auto-download, the returned promise settles only after the library clears its internal lock.
+      // A synchronous throw during discovery is handled by checkNow's catch.
+      if (state.phase === 'downloading' && (checkActive || downloadPending)) return;
+      if (['error', 'retrying', 'cancelled'].includes(state.phase)) return;
       if (state.phase === 'installing') cancelPreparedRestart();
       const message = state.phase === 'downloading' ? 'Download failed. Check Now to try again.'
         : 'Could not finish the update. Check Now to try again.';
       reportFailure(message, error);
     });
-    autoUpdater.on('update-cancelled', () => publish({
-      phase: 'idle', message: 'Update download was cancelled.', percent: 0,
-    }));
+    autoUpdater.on('update-cancelled', () => {
+      if (downloadPending || checkActive) {
+        publish({ phase: 'cancelled', message: 'Finishing download cancellation…', percent: 0, error: null });
+      } else finishCancellation();
+    });
 
     ipcMain.handle(CHANNELS.status, event => { requireUpdateWindow(event); return snapshot(); });
     ipcMain.handle(CHANNELS.check, event => { requireUpdateWindow(event); void checkNow(); });
