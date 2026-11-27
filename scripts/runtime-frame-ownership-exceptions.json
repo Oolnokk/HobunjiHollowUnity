@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "Defers loading-label rendering to the next paints before worker-backed den carving, mine generation or their synchronous fallbacks; each deferral runs once per scene-load request.",
     "migrationStage": "not-planned",
-    "line": 15035
+    "line": 15103
   },
   {
     "file": "docs/game.js",
