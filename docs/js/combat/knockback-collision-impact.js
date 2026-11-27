@@ -94,9 +94,9 @@
 
   function impactSoundSource(entity, descriptor, popupCredit) {
     const combat = window.Combat?.deps; // Uses the existing enemy collection and player identity.
-    if (entity === combat?.player || entity.isCompanion) return null;
+    if (entity === combat?.player || (entity.isCompanion && !entity.banditCompanion)) return null;
     const hostile = window.CombatHealthRecoveryPolicy?.isHostileEntity?.(entity)
-      || combat?.hostileObjects?.has?.(entity) || entity.hostile === true || entity.def?.hostile === true || entity.isBandit === true;
+      || combat?.hostileObjects?.has?.(entity) || entity.hostile === true || entity.def?.hostile === true || entity.isBandit === true || entity.banditCompanion === true;
     if (!hostile && popupCredit !== true) return null; // Credited hits can also strike otherwise passive quarry.
     const areaId = entity.areaId || entity.area; // Never reinterpret an off-area actor as local.
     if (!areaId || !Number.isFinite(entity.x) || !Number.isFinite(entity.y)) return null;
