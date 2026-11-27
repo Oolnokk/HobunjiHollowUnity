@@ -706,8 +706,8 @@
     const scene = options.scene || state.deps?.getActiveScene?.();
     const originalMessage = String(text || '').trim(); // Preserve the authored source; only the ambient bubble is rephrased.
     const isNewborn = !!options.speakerId && !!window.RomanceFamily?.isBasketBaby?.(options.speakerId); // Authoritative saved age, not an inferred baby-looking sprite.
-    const carriedBaby = isNewborn ? window.FamilyBabyAmbientVoice?.anchorFor?.(options.speakerId) : null; // Reuse the visible baby burden in either parent's arms/back.
-    if (isNewborn && window.FamilyBabyAmbientVoice?.isProxyActive?.(options.speakerId) && !carriedBaby) return null; // A thrown or temporarily hidden infant must never babble from the invisible basket walker.
+    const carriedBaby = options.speakerId ? window.FamilyBabyAmbientVoice?.anchorFor?.(options.speakerId) : null; // Reuse the visible baby burden in either parent's arms/back.
+    if (options.speakerId && window.FamilyBabyAmbientVoice?.isProxyActive?.(options.speakerId) && !carriedBaby) return null; // A thrown or temporarily hidden infant must never babble from the invisible basket walker.
     const speechRoot = carriedBaby?.group || root; // A carried infant's NPC walker is deliberately hidden at the old basket spot.
     let message = isNewborn
       ? (options.babyAmbient === true && originalMessage ? originalMessage
@@ -906,8 +906,8 @@
     if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId)) return false; // Great Fey use scripted conversations, not proximity greetings (player or NPC).
     if (walker?.rec?.ambientGreetings === false) return false; // Dynamic family NPCs now use the normal greeting pipeline at each age.
     const newborn = !!walker?.rec?.isChild && !!window.RomanceFamily?.isBasketBaby?.(speakerId); // Only saved basket-phase babies use this path.
-    const babyAnchor = newborn ? window.FamilyBabyAmbientVoice?.anchorFor?.(speakerId) : null; // When carried, the real walker can remain at the original cradle.
-    if (newborn && window.FamilyBabyAmbientVoice?.isProxyActive?.(speakerId) && !babyAnchor) return false; // The 5 Hz greeting scan must not fire while the newborn proxy is airborne or invisible.
+    const babyAnchor = walker?.rec?.isChild ? window.FamilyBabyAmbientVoice?.anchorFor?.(speakerId) : null; // When carried, the real walker can remain at the original cradle.
+    if (walker?.rec?.isChild && window.FamilyBabyAmbientVoice?.isProxyActive?.(speakerId) && !babyAnchor) return false; // The 5 Hz greeting scan must not fire while the newborn proxy is airborne or invisible.
     if (!speakerId || (babyAnchor?.mapId || walker.area) !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
     // The active event remains in this list through its final opacity fade,
@@ -952,7 +952,7 @@
     state.greeted.add(key);
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
-    applyGreetingHeadTurn(walker, target); // Ordinary villagers/toddlers retain their existing heading/neck behavior.
+    if (!babyAnchor) applyGreetingHeadTurn(walker, target); // Do not animate the hidden source walker of a carried toddler.
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.

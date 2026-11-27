@@ -5,7 +5,7 @@
   // training is rendered here directly instead of post-processing whatever
   // markup the core renderer happened to create. During ordinary index.html
   // parsing this keeps the core synchronous, just like the former single file.
-  const CORE_SRC = 'js/farm-panel-core.js?v=20261125childVatStomp3';
+  const CORE_SRC = 'js/farm-panel-core.js?v=20261126familyAudit3';
 
   let stableDeps = null; // Holds the live Stable save and UI dependencies.
   let expandedStableId = null; // Tracks the animal training row expanded in the Stable panel.

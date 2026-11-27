@@ -80,7 +80,7 @@
   const SUBTAB_SELECTOR = '.menu-section, .farm-section, .farm-storage-col, .progress-skills, .perk-trees, .inv-grid-area, .inv-equip-section, .inv-key-section, .inv-pack-clothing, .inv-gear-extra-section, [data-ctrl-subtab]'; // Large authored sections qualify; individual cards, perk rows and tab bars do not.
   const MENU_SUBTAB_PRIORITY_BY_PANE = Object.freeze({ // Used by controller sub-tab cycling to put frequently checked pages before one-time configuration.
     mpInventory: ['invGridArea', 'invEquipSection', 'invKeySection', 'invPackClothing'],
-    mpFarm: ['farmSectionLayout', 'farmSectionLivestock', 'farmSectionStorage', 'farmSectionBuildings', 'farmSectionFoodProcessing', 'farmSectionDew', 'farmSectionFurniture', 'farmSectionCustomize', 'farmhandsSection'],
+    mpFarm: ['farmSectionLayout', 'farmSectionLivestock', 'farmSectionFamily', 'farmSectionStorage', 'farmSectionBuildings', 'farmSectionFoodProcessing', 'farmSectionDew', 'farmSectionFurniture', 'farmSectionCustomize', 'farmhandsSection'],
     mpTasks: ['tasksSectionQuestLog', 'tasksSectionRumors', 'tasksSectionWanted'],
     mpSettings: ['settingsSectionAudio', 'settingsSection7', 'settingsSection6', 'settingsSection0', 'settingsSection8', 'settingsSection1', 'settingsSection9', 'settingsSection10', 'settingsSection11', 'settingsSection2', 'settingsSection3', 'settingsSection4', 'settingsSection5'],
   });

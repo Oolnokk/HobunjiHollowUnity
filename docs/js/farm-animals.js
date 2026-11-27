@@ -202,7 +202,7 @@
   // Deposits up to `amount` held Plant/Meat Fodder into a specific barn
   // trough's empty slots (one unit per slot, never stacked) — called from
   // the trough's in-world panel (see game.js's openTroughPanel).
-  function depositFeedToTrough(barnId, troughIndex, itemKey, amount = 1) {
+  function depositFeedToTrough(barnId, troughIndex, itemKey, amount = 1, source = 'bag') {
     if (!deps.hasFarmPermission('livestock')) return { ok: false, message: "Only the farm's owner (or a granted farmhand) can manage livestock." };
     if (itemKey !== 'plantFodder' && itemKey !== 'meatFodder') return { ok: false, message: 'Troughs only hold Plant Fodder or Meat Fodder.' };
     const farmBuildings = deps.getFarmBuildings();
@@ -211,15 +211,24 @@
     const troughs = _ensureBarnTroughs(barn);
     const trough = troughs[troughIndex];
     if (!trough) return { ok: false, message: 'No trough there.' };
-    const held = deps.inventory[itemKey] || 0;
-    let moved = 0;
-    for (let i = 0; i < trough.slots.length && moved < amount && moved < held; i++) {
-      if (trough.slots[i] == null) { trough.slots[i] = itemKey; moved++; }
-    }
+    const storage = source === 'storage' ? window.FarmProduction?.familyStorageAccess?.() : null; // Family workers use farm fodder, never the player's held stack.
+    if (source === 'storage' && !storage) return { ok: false, message: 'Storage permission required.' };
+    const stock = storage ? storage.load() : deps.inventory;
+    const held = stock[itemKey] || 0;
+    const empty = []; // Reserve slots without mutating the trough until storage commits.
+    for (let i = 0; i < trough.slots.length && empty.length < amount && empty.length < held; i++) if (trough.slots[i] == null) empty.push(i);
+    const moved = empty.length;
     if (moved <= 0) return { ok: false, message: troughTotal(trough) >= TROUGH_CAPACITY ? 'That trough is full.' : `No ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to add.` };
-    deps.inventory[itemKey] -= moved;
-    deps.clampInventoryStack(itemKey);
-    deps.saveFarmLayout();
+    const originalStock = storage ? { ...stock } : null; // Retain original feed stock for a failed layout write.
+    if (storage) {
+      if (storage.save({ ...stock, [itemKey]: held - moved }) === false) return { ok: false, message: 'Could not save fodder withdrawal.' };
+    } else { stock[itemKey] -= moved; deps.clampInventoryStack(itemKey); }
+    for (const index of empty) trough.slots[index] = itemKey;
+    if (deps.saveFarmLayout() === false && storage) {
+      for (const index of empty) trough.slots[index] = null;
+      if (storage.save(originalStock) === false) deps.debugLog?.('Family fodder rollback could not restore storage; check saved farm data.','error');
+      return { ok: false, message: 'Could not save trough refill.' };
+    }
     deps.refreshTroughVisual?.(barnId, troughIndex);
     return { ok: true, message: `Added ${moved} ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to the trough (${troughTotal(trough)}/${TROUGH_CAPACITY}).` };
   }
@@ -1427,7 +1436,7 @@
 
   // Gives the ready resource item and resets the cooldown — called from
   // the animal's own "Collect" action button (see _farmAnimalOnAction).
-  function collectResource(livestockId, itemKey = null) {
+  function collectResource(livestockId, itemKey = null, workerId = null) {
     const list = deps.loadWorldLivestock();
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
@@ -1449,9 +1458,10 @@
     // without replacing it — hearts stay relevant at every rank.
     const husbandryRank = window.PerkSystem?.rank('farming', 'husbandry') || 0; // 0-5
     const heartStars = Math.round((hearts - 2.5) / (HEART_MAX / 2) * (1 + husbandryRank * 0.15));
-    const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars));
+    const baseStars = workerId ? (window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1) : (deps.rollItemStars?.('farming') || 3);
+    const stars = Math.max(1, Math.min(5, baseStars + (workerId ? Math.round((hearts - 2.5) / (HEART_MAX / 2)) : heartStars))); // Family quality excludes player perks.
     deps.recordItemQuality?.(resDef.itemKey, stars, 1);
-    deps.awardFarmingXp?.();
+    if (!workerId) deps.awardFarmingXp?.(); // Family usefulness is awarded only by the chore scheduler.
     // Higher hearts also shorten the regen cooldown — up to 40% faster at
     // a full 5 hearts, never below 1 day.
     const nextDays = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08))); // Shared husbandry timing for both resource channels.
@@ -1459,6 +1469,58 @@
     else { rec.resourceReady = false; rec.daysUntilResource = nextDays; }
     deps.saveWorldLivestock(list);
     return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
+  }
+
+  // Enumerate actionable jobs only on the existing half-second family planner, never the animal frame loop.
+  function familyJobs() {
+    if (!deps?.hasFarmPermission?.('livestock')) return [];
+    const jobs = [], list = deps.loadWorldLivestock();
+    const barns = new Map((deps.getFarmBuildings() || []).filter(b => b.kind === 'barn' && b.stage === 'built' && !b.nursery && b.tier !== 'nursery').map(b => [b.id, b]));
+    const live = new Map(); // Avoid temporary arrays while reading the live herd.
+    for (const animal of deps.animalObjects || []) if (animal?.livestockId) live.set(animal.livestockId, animal);
+    const stock = window.FarmProduction?.familyStorageAccess?.()?.load() || {};
+    const farmVisible = deps.getCurrentArea?.() === 'farm'; // Visible work must target an actual spawned animal.
+    const seenTroughs = new Set(); // A shared trough receives a single claim regardless of herd size.
+    for (const rec of list) {
+      if (!rec?.id || rec.lifeStage === 'baby' || !rec.barnId) continue; // Stored/stabled animals cannot produce phantom farm jobs.
+      const animal = live.get(rec.id), barn = barns.get(rec.barnId);
+      const canHandle = !!barn && !animal?._harvestFrozen && !animal?._vatWorkPose && !rec.assignedVatId && (!farmVisible || !!animal);
+      const c = Math.floor(animal?.col ?? barn?.col ?? rec.col), r = Math.floor(animal?.row ?? barn?.row ?? rec.row);
+      if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
+      const common = { source: 'livestock', livestockId: rec.id, c, r };
+      if (canHandle && !rec.outdoorProductionLocked && !isHarvesting()) {
+        const products = [deps.LIVESTOCK_RESOURCE_DEFS[rec.kind], ...additionalResourceDefs(rec.kind)].filter(Boolean);
+        for (const product of products) {
+          const primary = product === deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
+          if ((primary ? rec.resourceReady : rec.additionalResources?.[product.itemKey]?.ready)
+              && (deps.inventory[product.itemKey] || 0) < window.InventoryStacks.MAX_TOTAL)
+            jobs.push({ ...common, key: 'livestock:' + rec.id + ':' + product.itemKey, job: 'livestockCollect', itemKey: product.itemKey, activity: 'collecting livestock goods' });
+        }
+      }
+      if (canHandle && Number.isFinite(deps.calendar?.day) && rec.lastPettedDay !== deps.calendar.day)
+        jobs.push({ ...common, key: 'livestock:' + rec.id + ':pet', job: 'livestockPet', activity: 'petting livestock' });
+      if (barn && rec.troughIndex != null) {
+        const key = 'trough:' + barn.id + ':' + rec.troughIndex;
+        const trough = _ensureBarnTroughs(barn)[rec.troughIndex];
+        const itemKey = feedKeysForDiet(dietFor(rec.kind)).find(item => stock[item] > 0);
+        if (!seenTroughs.has(key) && itemKey && trough?.slots?.some(slot => slot == null)) {
+          seenTroughs.add(key);
+          jobs.push({ ...common, key, job: 'livestockFeed', barnId: barn.id, troughIndex: rec.troughIndex, itemKey, c: barn.col + Math.floor((barn.w || 1) / 2), r: barn.row + (barn.h || 1) - 1, activity: 'refilling livestock troughs' });
+        }
+      }
+    }
+    return jobs;
+  }
+  function applyFamilyJob(job, workerId) {
+    if (!workerId) return false;
+    const current = familyJobs().find(candidate => candidate.key === job.key && candidate.job === job.job && candidate.itemKey === job.itemKey);
+    if (!current || current.c !== job.c || current.r !== job.r) return false; // Moving animals and edited buildings invalidate the old claim.
+    if (job.job === 'livestockCollect') return collectResource(job.livestockId, job.itemKey, workerId).ok === true;
+    if (job.job === 'livestockFeed') return depositFeedToTrough(job.barnId, job.troughIndex, job.itemKey, 1, 'storage').ok === true;
+    if (job.job !== 'livestockPet') return false;
+    const list = deps.loadWorldLivestock(), rec = list.find(entry => entry.id === job.livestockId);
+    if (!rec || rec.lastPettedDay === deps.calendar.day) return false;
+    rec.lastPettedDay = deps.calendar.day; deps.saveWorldLivestock(list); return true;
   }
 
   // Advances every housed animal's resource cooldown by one day — called
@@ -2101,7 +2163,7 @@
     feedKeysForDiet,
     tickResources,
     tickHearts,
-    livestockStatus,
+    livestockStatus, familyJobs, applyFamilyJob,
     isHarvesting,
     updateHarvestInteraction,
     addToStable,

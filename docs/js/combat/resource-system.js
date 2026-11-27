@@ -961,7 +961,7 @@
   }
 
   function applyHealthAfflictionDamage(entity, amount, cause = 'affliction') {
-    if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // No bleed/poison can hurt a newborn hidden under its physical carry proxy.
+    if ((window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0; // No bleed/poison can hurt a newborn hidden under its physical carry proxy.
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount * statModifier(entity, 'incomingHealthDamage'), { kind: "damage", source: "afflictionTick" }); // Glass Fang / False Courage change actual DoT Health loss without creating extra affliction buildup. // Enhanced Health absorbs DoT through the same transaction path as direct damage.
     const remaining = enhanced.ordinaryRemaining;
@@ -1232,7 +1232,7 @@
   }
 
   function spendFooting(entity, amount, reason = "hit", options = {}) {
-    if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // Newborns do not enter prone/footing damage from combat.
+    if ((window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0; // Newborns do not enter prone/footing damage from combat.
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
     if (!options.effectiveCost) amount *= footingLossMultiplier(entity); // Wind's accumulator already contains the mitigated cost; never apply resistance twice.
@@ -1330,7 +1330,7 @@
   }
 
   function applyDamage(entity, amount, opts = {}) {
-    if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // Preserve the saved family member through every shared NPC damage path.
+    if ((window.RomanceFamily?.isProtectedFamilyChild?.(entity?.rec?.id || entity?.id) ?? window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id))) return 0; // Preserve the saved family member through every shared NPC damage path.
     if (!(amount > 0)) return 0;
     entity.lastAttackReceivedAt = nowMs();
 

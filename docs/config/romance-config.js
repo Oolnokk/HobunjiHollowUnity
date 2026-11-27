@@ -191,7 +191,7 @@
         maxLevel: 5, xpPerLevelFactor: 40, // Repeated family chores grow one general usefulness rank.
         adultStartLevel: 2, youngStartLevel: 1,
         intelligenceXpMultiplier: { adult: 1, child: 0.5, toddler: 0.25 },
-        jobXp: { till: 6, dig: 6, seed: 8, harvest: 12, squeeze: 12 },
+        jobXp: { till: 6, dig: 6, seed: 8, harvest: 12, squeeze: 12, livestockCollect: 12, livestockFeed: 4, livestockPet: 4, processingLoad: 8, processingCollect: 8 }, // Family chores use the same usefulness progression.
       },
     },
   };

@@ -124,8 +124,10 @@ assert.equal(rebound.burden.group.children[0].material.map, newerFront, 'reloade
 assert.equal(rebound.burden.group.children[1].material.map, newerBack, 'reloaded baby uses the live new back texture');
 assert.equal(rebound.burden.group.children[0].geometry.width, .37, 'reloaded baby proxy updates its real scaled width');
 assert.equal(rebound.burden.data.carryable.handTargets.left.x, .37 * .40, 'hand grips follow new infant dimensions');
-carry.sync(child, rebuiltWalker, 'toddler', persist);
-assert.equal(carry.snapshot().babies.length, 0, 'toddler transition retires carrying proxy');
+assert(carry.sync(child, rebuiltWalker, 'toddler', persist), 'toddlers keep the physical carry proxy');
+assert.equal(carry.snapshot().babies.length, 1);
+carry.sync(child, rebuiltWalker, 'child', persist);
+assert.equal(carry.snapshot().babies.length, 0, 'older child transition retires carrying proxy');
 assert.equal(newerRoot.visible, true);
 child.carryBy = 'spouse'; // Restore a save made while an NPC was holding the baby.
 carry.sync(child, rebuiltWalker, 'basket', persist);

@@ -325,13 +325,17 @@
   function _workerRequiredResult() {
     return { ok: false, workerRequired: true, message: 'Assign housed Small livestock to this squeezing vat before starting it.' };
   }
+  function availableVatWorker(vatId) {
+    const worker = assignedWorkerForVat(vatId);
+    return worker && (!worker.familyWorker || !window.RomanceFamily?.isFamilyWorkUnavailable?.(worker.id)) ? worker : null;
+  }
   function _guardSqueezingVatStart(vat) {
     if (!vat || vat.__smallWorkerStartGuard) return;
     if (deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return;
     const originalOnAction = vat.onAction; // Used to block manual inputs before game.js consumes the selected ingredient.
     if (typeof originalOnAction === 'function') {
       vat.onAction = function guardedSqueezingAction(action) {
-        if (action === 'obj_process_' + vat.furnitureKey && !vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
+        if (action === 'obj_process_' + vat.furnitureKey && !vat.getJob?.() && !availableVatWorker(vat.id)) {
           window.__farmLog?.(`[squeezing-vat] blocked manual start without housed Small livestock worker vat=${vat.id}`, 'livestock');
           return _workerRequiredResult();
         }
@@ -341,7 +345,7 @@
     const originalStartTimedJob = vat.startTimedJob; // Used to protect livestock/other programmatic starts through the public processor API.
     if (typeof originalStartTimedJob === 'function') {
       vat.startTimedJob = function guardedTimedSqueezingStart(options) {
-        if (!vat.getJob?.() && !assignedWorkerForVat(vat.id)) {
+        if (!vat.getJob?.() && !availableVatWorker(vat.id)) {
           window.__farmLog?.(`[squeezing-vat] blocked timed start without housed Small livestock worker vat=${vat.id}`, 'livestock');
           return _workerRequiredResult();
         }
@@ -417,7 +421,7 @@
   function autoSqueezeAtVat(vatId, colorKey) {
     const vat = findVatById(vatId);
     const worker = assignedWorkerForVat(vatId);
-    if (!vat || !worker) return false;
+    if (!vat || !worker || (worker.familyWorker && window.RomanceFamily?.isFamilyWorkUnavailable?.(worker.id))) return false;
     _guardSqueezingVatStart(vat);
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;
