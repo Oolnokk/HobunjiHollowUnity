@@ -4,9 +4,10 @@ const window={}; // Runtime config and API with no browser dependency.
 for(const path of ['docs/config/modular-weapons.js','docs/js/modular-weapons.js']) vm.runInNewContext(fs.readFileSync(path,'utf8'),{window,console});
 const api=window.ModularWeapons, draft=JSON.parse(JSON.stringify(api.getConfig()));
 const key=Object.keys(draft.heads).find(k=>draft.heads[k].mount.type==='blade'&&!draft.heads[k].flailAssembly);
-const shaftKey=Object.keys(draft.shafts).find(k=>!draft.shafts[k].flailAssembly&&draft.shafts[k].mounts.some(m=>m.type==='eye')&&!draft.shafts[k].mounts.some(m=>m.type==='tang'));
+const shaftKey=Object.keys(draft.shafts).find(k=>!draft.shafts[k].flailAssembly&&draft.shafts[k].mounts.some(m=>m.type==='eye'));
 assert(key&&shaftKey);
 const head=draft.heads[key],shaft=draft.shafts[shaftKey];
+shaft.mounts=shaft.mounts.filter(m=>m.type==='eye'); // Deliberately construct an eye-only haft from a real catalog donor.
 head.alternativeMounts=[{id:'sleeve-1',type:'weight',start:{x:100,y:200},end:{x:150,y:200}},
 {id:'tang-1',type:'blade',start:{x:200,y:250},end:{x:200,y:300}}];
 shaft.overrides[key]={disallow:false};
