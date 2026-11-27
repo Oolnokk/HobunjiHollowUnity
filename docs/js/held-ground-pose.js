@@ -571,6 +571,7 @@
       debug.reason='dual-ready';debug.finalMinY=null;return false;
     }
     let min=amount?projectedContactY(contact.hull,s.matrix):original;
+    if(context.fitOnly){debug.reason='authored-action-fit-only';debug.finalMinY=min;return false;} // Do not replace a working tool's authored stroke.
     if(gripMinY!==null){
       const gripY=worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot).y; // Measure the fitted socket, including the weapon's local placement.
       debug.posteriorLift=Math.max(0,gripMinY-gripY);
@@ -590,7 +591,7 @@
     if(entry){
       if(!grounded)entry.valid=false; // Midair the height above the floor is changing: recalculate every frame.
       else if(entry.valid){
-        if(entry.mesh===mesh&&entry.itemKey===context.itemKey&&entry.amount===amount&&entry.gripZ===gripZ&&entry.fitIdentity===context.fitIdentity){
+        if(entry.mesh===mesh&&entry.itemKey===context.itemKey&&entry.amount===amount&&entry.gripZ===gripZ&&entry.fitIdentity===context.fitIdentity&&entry.preserveOrientation===!!context.preserveOrientation&&entry.gripContext===context.gripContext){
           worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
           if(reuseStillValid(entry,holder,s.pivot.y-y)){
             reuseApply(entry,holder,parent.matrixWorld,s);
@@ -610,7 +611,8 @@
     if(min<target) {
       worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
       debug.gripY=s.pivot.y;
-      angle=solveContactRotation(s,contact,s.matrix,target,secondary?a=>reachable(a,amount):null);
+      if(context.preserveOrientation){s.clearanceStrategy='orientation-preserved';angle=0;} // A loaded ranged weapon or upright torch can lift but not lose its authored heading.
+      else angle=solveContactRotation(s,contact,s.matrix,target,secondary?a=>reachable(a,amount):null);
       debug.clearanceStrategy=s.clearanceStrategy;
       if(entry&&grounded){entry.q0.copy(holder.quaternion);entry.p0.copy(holder.position);entry.pivotHeight=s.pivot.y-y;} // Pre-correction stance.
       if(angle&&!rotateAroundGrip(holder,parent.matrixWorld,s.holder,s.pivot,s.axis,angle,s)){
@@ -638,7 +640,7 @@
         entry.liftY=debug.gripLift;
         s.parentInverse.copy(parent.matrixWorld).invert();
         entry.grip.copy(s.point.copy(s.pivot).applyMatrix4(s.parentInverse)).sub(entry.p0).applyQuaternion(s.q.copy(entry.q0).invert());
-        entry.mesh=mesh;entry.itemKey=context.itemKey;entry.amount=amount;entry.gripZ=gripZ;entry.fitIdentity=context.fitIdentity;
+        entry.mesh=mesh;entry.itemKey=context.itemKey;entry.amount=amount;entry.gripZ=gripZ;entry.fitIdentity=context.fitIdentity;entry.preserveOrientation=!!context.preserveOrientation;entry.gripContext=context.gripContext;
         entry.angleDeg=angle*180/Math.PI;entry.gripLift=debug.gripLift;
         entry.valid=true;
       }
