@@ -387,3 +387,38 @@ assert.ok(assemblies.includes('const profile=sharedSource?sharedSource.groundPro
   assert.equal(hdc({children:[motes,{userData:{},children:[]}]}),true,'a real overlay beside the motes still counts');
   console.log('held ground pose: enchantment mote children are non-solid');
 }
+
+// A flat fallback must not leave the sprite face-down (back of the art, mirrored) and must keep the weapon's
+// heading. Deterministic sweep of orientations with a real Three sprite; the case count guards against a
+// sweep that never reaches the fallback.
+if(THREE){
+  const rgba=new Uint8ClampedArray(4*16*4).fill(255);
+  const w={document:{createElement:()=>({getContext:()=>({drawImage(){},getImageData(){return {data:rgba};}})})}};
+  vm.runInNewContext(fs.readFileSync('docs/js/held-ground-pose.js','utf8'),{window:w});
+  const solver=w.HeldGroundPose;solver.configurePreview(THREE);solver.setPreviewEnabled(true);
+  const parent=new THREE.Group(),holder=new THREE.Group(),weapon=new THREE.Group();
+  parent.add(holder);holder.add(weapon);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(.5,2),new THREE.MeshBasicMaterial());
+  plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
+  const ctx={preview:true,rig:{parent},itemKey:'sweep',fitIdentity:'sweep',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile:null,allowFit:false};
+  let seed=12345;const rnd=()=>{seed=(seed*1664525+1013904223)%4294967296;return seed/4294967296;};
+  let flatCases=0;
+  for(let i=0;i<400;i++){
+    holder.position.set(0,.12+rnd()*.5,0);
+    holder.quaternion.setFromEuler(new THREE.Euler(rnd()*Math.PI*2,rnd()*Math.PI*2,rnd()*Math.PI*2));
+    parent.updateMatrixWorld(true);
+    const before=plane.matrixWorld.elements,heading0=new THREE.Vector2(before[4],before[6]).normalize();
+    solver.constrainWeapon(holder,weapon,{...ctx,itemKey:'sweep'+i});parent.updateMatrixWorld(true);
+    const result=solver.snapshot();
+    if(result.clearanceStrategy!=='flat-face-up')continue;
+    flatCases++;
+    const e=plane.matrixWorld.elements,front=new THREE.Vector3(e[8],e[9],e[10]).normalize();
+    assert.ok(front.y>.999,'flat fallback keeps the front face up');
+    assert.ok(Math.abs(new THREE.Vector2(e[4],e[6]).normalize().dot(heading0)-1)<1e-6,'flat fallback keeps the weapon heading');
+    assert.ok(Math.abs(e[5])<1e-6,'sprite long axis is horizontal');
+    assert.ok(result.finalMinY>=.035-1e-6,'flat fallback clears the floor');
+    close(result.gripPivotDrift,0);
+  }
+  assert.ok(flatCases>=20,`sweep reached the flat fallback (${flatCases} cases)`);
+  console.log('held ground pose: flat fallback keeps front face up and heading ('+flatCases+' cases)');
+}
