@@ -192,8 +192,26 @@ async function ready(page) {
     assert.notEqual(await page.locator('#preview').evaluate(canvas=>canvas.toDataURL()),sleevePixels,'Actual unguided bitmap changes when switching to a distinct tang');
     assert.match(await page.locator('#pair-mount-type-status').innerText(),/#2 tang/);
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts['pick-shovel'].overrides['porakaneki-greatclub'].mountTypeMode),'tang');
+    // Reproduce the user's actual quota error at the storage boundary, not a mocked compositor.
+    await page.evaluate(()=>{
+      const original=Storage.prototype.setItem; // Preserve writes unrelated to this draft.
+      window.__restoreDraftStorage=()=>{Storage.prototype.setItem=original;delete window.__restoreDraftStorage;};
+      Storage.prototype.setItem=function(key,value){
+        if(key==='hobunji.modularWeapons.v5')throw new DOMException('Test quota exceeded','QuotaExceededError');
+        return original.call(this,key,value);
+      };
+    });
+    const tangPixels=await page.locator('#preview').evaluate(canvas=>canvas.toDataURL());
     await page.locator('#pair-mount-type').selectOption('both');
     await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.mountSockets==='0:eye,1:tang');
+    assert.notEqual(await page.locator('#preview').evaluate(canvas=>canvas.toDataURL()),tangPixels,'Quota failure does not block the updated bitmap');
+    assert.equal(await page.locator('#draft-storage-warning').isVisible(),true);
+    assert.match(await page.locator('#draft-storage-error').innerText(),/quota exceeded/i);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts['pick-shovel'].overrides['porakaneki-greatclub'].mountTypeMode),'tang','Previous persisted draft survives');
+    await page.evaluate(()=>window.__restoreDraftStorage());
+    await page.locator('#draft-storage-retry').click();
+    assert.equal(await page.locator('#draft-storage-warning').isHidden(),true);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts['pick-shovel'].overrides['porakaneki-greatclub'].mountTypeMode),'both','Retry saves live draft after capacity returns');
     await page.locator('#assembly-elements').evaluate(panel=>{panel.open=true;});
     await page.locator('#assembly-mount-elements .assembly-element-row').nth(1).getByRole('button',{name:'Select line'}).click(); // Restore the source workspace after the persistence reload.
     // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.

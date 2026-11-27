@@ -124,6 +124,16 @@
   let activeRegionId = null; // Stable ID prevents selection jumping when undo/import removes another region.
   const activeRegion = () => (chosenShaft().rigRegions || []).find(region => region.id === activeRegionId);
   const msg = text => { byId('status').textContent = text; }; // Readable status without devtools.
+  function syncDraftPersistence() {
+    const result=api.draftPersistence(); // Sticky warning survives ordinary status messages and preview refreshes.
+    byId('draft-storage-warning').hidden=result.ok!==false;
+    byId('draft-storage-error').textContent=result.ok===false?result.error:'';
+    return result.ok!==false;
+  }
+  window.addEventListener('beforeunload',event=>{
+    if(api.draftPersistence().ok!==false)return;
+    event.preventDefault();event.returnValue=''; // Browser-controlled reminder to export before losing in-memory edits.
+  });
   let bridgeView = null; // Last composed preview bitmap and its logical frame, for painting bridge strokes over it.
   let pendingStrokes = []; // Bridge stroke being drawn (applied on release), in composed-frame source-pixel coordinates.
   let pendingKey = ''; // Pair the pending strokes belong to.
@@ -165,13 +175,14 @@
     try {
       data = JSON.parse(JSON.stringify(api.replace(data, true))); // Persist the validated draft and keep Undo/Redo history intact.
       record();
+      const stored=syncDraftPersistence(); // Preview and history are committed even if browser persistence fails.
       if (preserveInputs) {
-        msg('Pair-specific adjustment saved. The full rig and source previews reflect these values without replacing the active input.');
+        msg((stored?'Pair-specific adjustment saved.':'Pair-specific adjustment applied in memory.')+' The full rig and source previews reflect these values without replacing the active input.');
         drawIdentity(); // Refresh the pair-specific contact, damage and scale diagnostics without deleting the active input.
         updateRigTree(); // Rig output must match the same corrected pair as the live preview.
         preview(); // Rebuild only the assembled artwork; do not recreate #fields during a number input change.
       } else {
-        msg('Draft saved. Mounts and pair settings applied to the assembled preview.');
+        msg(stored?'Draft saved. Mounts and pair settings applied to the assembled preview.':'Draft applied in memory. Browser storage failed; export before leaving.');
         render();
       }
     } catch (error) { msg('Save failed: ' + error.message); }
@@ -692,6 +703,7 @@
         : 'Rigid combination: the usual baked modular head and bridge geometry applies.';
   }
   function render() {
+    syncDraftPersistence(); // Covers startup, import, reset, undo and redo.
     bandDrag=null; // A selection or undo cancels the in-flight rectangle.
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
     drawIdentity(); // Name/slot/rope diagnostics remain accessible on mobile without developer tools.
@@ -1211,6 +1223,7 @@
   gesture('shaft-canvas'); gesture('head-canvas');
   for (const mode of ['draw', 'move', 'rotate']) byId('gizmo-' + mode).onclick = () => setGizmoMode(mode); // Tool mode buttons.
   setGizmoMode('draw');
+  byId('draft-storage-retry').onclick=()=>save(); // Reattempt persistence of the current validated draft, without deleting unrelated data.
   byId('export').onclick = () => {
     const blob = new Blob(['// Foundry directed mount lines and per-combination corrections.\nwindow.MODULAR_WEAPON_CONFIG = ' + JSON.stringify(data, null, 2) + ';\n'], { type: 'text/javascript' }); // Drop-in source, no eval on imports.
     const url = URL.createObjectURL(blob), anchor = document.createElement('a'); // Existing mobile browser download behavior.

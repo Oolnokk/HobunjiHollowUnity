@@ -60,4 +60,20 @@ cfg=api.replace(draft);
 const distinct=api.attachmentRig(cfg.shafts[pk],cfg.heads[hk],api.settings(pk,hk));
 assert.notDeepEqual(distinct.children[0].children[0].worldMatrix,rig.children[0].children[0].worldMatrix);
 assert.equal(api.rigidMountAssignments(cfg.shafts[pk],cfg.heads[hk],{mountTypeMode:'both'}).length,2);
-console.log('Pair mount type override tests passed.');
+// Simulate a full browser store; live configuration, cache revision and retry must remain usable.
+const previous=JSON.stringify(api.getConfig()); // Existing persisted draft must survive a failed write.
+let stored=previous,blocked=true;
+window.localStorage={setItem(key,value){assert.equal(key,'hobunji.modularWeapons.v5');if(blocked){const err=new Error('Quota exceeded');err.name='QuotaExceededError';throw err;}stored=value;}};
+const quotaDraft=JSON.parse(previous);
+quotaDraft.shafts[pk].overrides[hk].mountTypeMode='eye';
+const beforeRev=api.diagnostics('').revision;
+const live=api.replace(quotaDraft,true);
+assert.equal(api.draftPersistence().ok,false);
+assert.equal(stored,previous,'Failed write must not erase previous stored draft');
+assert.equal(api.settings(pk,hk).mountTypeMode,'eye');
+assert.equal(live.shafts[pk].overrides[hk].mountTypeMode,'eye','Return current live validated configuration after storage failure');
+assert.equal(api.diagnostics('').revision,beforeRev+1);
+assert.equal(api.attachmentRig(live.shafts[pk],live.heads[hk],api.settings(pk,hk)).children[0].index,0);
+blocked=false;assert.equal(api.persistDraft().ok,true);
+assert.equal(JSON.parse(stored).shafts[pk].overrides[hk].mountTypeMode,'eye','Retry persists the current live draft');
+console.log('Pair mount type override and storage-failure tests passed.');

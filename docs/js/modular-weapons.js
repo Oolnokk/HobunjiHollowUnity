@@ -161,6 +161,19 @@
   seedDonorBands(config);
   let headKeys = new WeakMap(Object.entries(config.heads).map(([key,head])=>[head,key])); // Resolve pair-only mount mode for object-based matching calls.
   let revision = 0; // Discards stale preview renders after edits.
+  let draftPersistence = {ok:null,error:null}; // Last attempted browser save; independent of the live validated rig.
+  function persistDraft() {
+    try {
+      const storage=global.localStorage; // Access itself can throw when storage is disabled.
+      if(!storage)throw new Error('Browser storage is unavailable.');
+      storage.setItem(DRAFT_KEY,JSON.stringify(config));
+      draftPersistence={ok:true,error:null};
+    } catch(error) {
+      draftPersistence={ok:false,error:error?.message || String(error)};
+      global.__farmLog?.('[Foundry] Draft applied in memory, browser save failed: '+draftPersistence.error,'warn');
+    }
+    return {...draftPersistence}; // Report durable persistence separately from successful validation and rendering.
+  }
   let migratedPairFits = 0; // Counts upgraded old presets for the existing in-game diagnostic surface.
 
   function finite(value, fallback, min, max) {
@@ -956,7 +969,7 @@
     revision++;
     canvases.clear();
     boredCanvases.clear(); // Any renamed/moved/reshaped bore recomposes from the original source art.
-    if (persist) global.localStorage?.setItem(DRAFT_KEY, JSON.stringify(config));
+    if (persist) persistDraft(); // A full/disabled store must never prevent returning the validated in-memory configuration.
     return config;
   }
   function decode(key) {
@@ -1322,13 +1335,16 @@
       migratedPairFits = needsPairFitUpgrade ? migrateOldPairFits(draft) : 0; // Keep deliberately edited pair corrections intact.
       replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || needsWarCleaverUpgrade || repairedTangDirection || migratedPairFits > 0);
     }
+    // Never mark a draft migration complete if its updated configuration could not be stored.
+    if(draftPersistence.ok!==false) {
     if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
     if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
     if (needsWarCleaverUpgrade) storage?.setItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY, '1');
     if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
     if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
+    }
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, matchesRigidMount, rigidMountAssignments, rigidMountMode,
+  global.ModularWeapons = { getConfig: () => config, replace, persistDraft, draftPersistence:()=>({...draftPersistence}), settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, matchesRigidMount, rigidMountAssignments, rigidMountMode,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanShorteningBands, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
