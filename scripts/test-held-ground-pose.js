@@ -311,10 +311,10 @@ if(THREE){
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   const d=solver.snapshot().dual;
   assert.equal(solver.snapshot().contactHullBuilds,hullBuilds,'neither hand rebuilds the shared contact hull');
-  assert.ok(d.right.angleDeg!==0 && d.left.angleDeg===0 && d.left.gripLift>0,'the offhand uses lift to preserve its authored rotation');
+  assert.ok(d.right.angleDeg!==0&&d.left.angleDeg!==0,'each weapon independently rotates to clear the floor');
   assert.ok(d.right.finalMinY>=.035-1e-5&&d.left.finalMinY>=.035-1e-5,'both weapons clear floor');
   close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);
-  close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).sub(beforeLeft).distanceTo(new THREE.Vector3(0,d.left.gripLift,0)),0);
+  close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(beforeLeft),0);
   close(d.right.gripPivotDrift,0);close(d.left.gripPivotDrift,0);
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
@@ -338,7 +338,7 @@ if(THREE){
     close(md[side].gripPivotDrift,0);
   }
   close(mirrorRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(mirrorBeforeRight),0);
-  close(mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld).sub(mirrorBeforeLeft).distanceTo(new THREE.Vector3(0,md.left.gripLift,0)),0);
+  close(mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(mirrorBeforeLeft),0);
   weapon.scale.x=1;
   // Unsupported live basis must keep the fixed geometry, not lengthen copies.
   plane.rotation.x=0;parent.updateMatrixWorld(true);
@@ -394,8 +394,8 @@ if(THREE){
   solver.constrainWeapon(holder,weapon,dualContext);
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   assert.ok(solver.snapshot().dual.right.posteriorLift>0);
-  assert.ok(solver.snapshot().dual.left.posteriorLift>0);
-  assert.notEqual(solver.snapshot().dual.right.posteriorLift,solver.snapshot().dual.left.posteriorLift);
+  assert.equal(solver.snapshot().dual.left.posteriorLift,0);
+  assert.equal(solver.snapshot().dual.left.gripLift,0);
   close(solver.snapshot().angleDeg,0);
 
   holder.position.y=.8;

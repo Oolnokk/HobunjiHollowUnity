@@ -78,6 +78,19 @@ vm.runInNewContext(source, {
   location: { href: 'https://example.test/game.html', pathname: '/game.html' },
 });
 const api = window.HobunjiWeaponSpriteAssemblies; // Public debug and authoring API.
+{
+  // Opposite haft headings converge to the same rearward rest, and travel still overrides it.
+  for(const z of [-1,1]){
+    const state={direction:{x:0,y:-1,z:0,set(x,y,z){Object.assign(this,{x,y,z});}}};
+    api.resolveTrailingDirection(state,0,0,0,z,-.5,.1,0,-1);
+    assert.ok(state.direction.z<0);
+    api.resolveTrailingDirection(state,1,0,0,z,-.5,.1,0,-1);
+    assert.equal(state.trailHeading.x,-1);
+  }
+}
+assert.equal(api.easeIdleHeadYaw(0,1,0),0);
+assert.ok(api.easeIdleHeadYaw(0,1,1/60)>0&&api.easeIdleHeadYaw(0,1,1/60)<.1);
+assert.ok(api.easeIdleHeadYaw(Math.PI-.1,-Math.PI+.1,1/60)>Math.PI-.1);
 assert.ok(Math.abs(api.bodyYawRate(.1,Math.PI-.1,-Math.PI+.1)-2)<1e-10,'turn speed crosses the yaw wrap without a kick');
 assert.equal(api.bodyYawRate(.1,0,Math.PI),0,'a facing reset does not drag the flail');
 assert.equal(api.bodyYawRate(0,0,.2),0,'a paused redraw does not drive turn drag');

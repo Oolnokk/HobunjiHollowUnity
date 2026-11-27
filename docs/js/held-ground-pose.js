@@ -705,7 +705,7 @@
     s.clearanceStrategy=strategy;
     return angle;
   }
-  function solveContactRotation(s,contact,matrix,target,reachable){
+  function solveContactRotation(s,contact,matrix,target,reachable,rotationOnly=false){
     let count=0,lowest=null;
     for(const v of contact.points){
       const p=s.samples[count]||=new (three().Vector3)();
@@ -722,7 +722,7 @@
     // Keep the ordinary rotation and raise the whole weapon by the smallest amount (up to LIFT_LIMIT) that makes
     // it work. The caller lifts the residual, so the pose changes continuously instead of jumping to a different
     // orientation the moment the plain rotation stops fitting.
-    angle=liftedRotation(s,target,reachable);
+    angle=rotationOnly?null:liftedRotation(s,target,reachable);
     s.clearanceStrategy='radial-lift';
     if(angle!==null)return angle;
     if(reachable){ // A second hand's reach must not make the primary-held blade cut the floor.
@@ -857,7 +857,8 @@
       if(current.invisible&&side==='right')continue;
       if(!grip?.position){results[side]={reason:'no-grip'};continue;}
       let posteriorLift=0; // Each visible copy has its own fitted grip and world height.
-      if(d.gripMinY!==null){
+      const rotationOnly=side==='left'&&!current.invisible; // Keep the visible offhand anchored to its authored grip.
+      if(!rotationOnly&&d.gripMinY!==null){
         localGrip(grip.position,s.grip);
         posteriorLift=Math.max(0,d.gripMinY-s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld).y);
         if(posteriorLift>0){
@@ -865,18 +866,7 @@
           root.updateMatrixWorld(true);
         }
       }
-      if(side==='left'){
-        // A vertical correction preserves the authored character-space yaw and depth.
-        const original=projectedContactY(d.contact.hull,copy.matrixWorld);
-        const gripLift=current.invisible?0:Math.max(0,d.target-original);
-        if(gripLift>0){
-          liftNode(root,d.plane.matrixWorld,root.matrixWorld,gripLift,s);
-          root.updateMatrixWorld(true);
-        }
-        results.left={reason:gripLift?'offhand-floor-lift':posteriorLift?'posterior-lift':'already-clear',
-          angleDeg:0,originalMinY:original-posteriorLift,finalMinY:original+gripLift,gripPivotDrift:0,gripLift,posteriorLift};
-        continue;
-      }
+      if(current.invisible)continue; // The socket-only copy has no sprite to clear.
       // Same rule as a single weapon: solved once while grounded and reused, solved every frame while midair.
       const reusable=!previewThree&&Math.abs(root.scale.x-1)<1e-6&&Math.abs(root.scale.y-1)<1e-6&&Math.abs(root.scale.z-1)<1e-6;
       const grounded=Number.isFinite(d.floor)&&reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
@@ -901,7 +891,7 @@
       if(min<d.target){
         localGrip(grip.position,s.grip);
         s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld);
-        angle=solveContactRotation(s,d.contact,copy.matrixWorld,d.target,null);
+        angle=solveContactRotation(s,d.contact,copy.matrixWorld,d.target,null,rotationOnly);
         strategy=s.clearanceStrategy;
         if(entry&&grounded){entry.q0.copy(root.quaternion);entry.p0.copy(root.position);entry.pivotHeight=s.pivot.y-d.floor;} // Pre-correction stance.
         if(angle&&!rotateAroundGrip(root,d.plane.matrixWorld,root.matrixWorld,s.pivot,s.axis,angle,s)){
@@ -911,7 +901,7 @@
         root.updateMatrixWorld(true);
         min=projectedContactY(d.contact.hull,copy.matrixWorld);
         gripPivotDrift=s.point.copy(s.grip).applyMatrix4(copy.matrixWorld).distanceTo(s.pivot);
-        if(min<d.target-1e-7){
+        if(!rotationOnly&&min<d.target-1e-7){
           gripLift=d.target-min;
           liftNode(root,d.plane.matrixWorld,root.matrixWorld,gripLift,s);
           root.updateMatrixWorld(true);

@@ -141,7 +141,7 @@
   function resetIdleHeadMotion(m,resetYaw=false) {
     m.leanX=m.leanZ=m.returnX=m.returnZ=0;
     m.tipReady=m.previousAttack=m.sawStrike=false;m.previousProgress=0;
-    if(resetYaw){m.yaw=m.renderedYaw=m.perp=null;m.side=0;m.source='initial';}
+    if(resetYaw){m.yaw=m.displayYaw=m.renderedYaw=m.perp=null;m.side=0;m.source='initial';}
   }
   function bodyYawRate(deltaTime, previousYaw, yaw) {
     if(!(deltaTime>0)||!Number.isFinite(previousYaw))return 0;
@@ -201,13 +201,19 @@
     const x=Math.sin(yaw),z=Math.cos(yaw);
     normal.set(x,-(up.x*x+up.z*z)/Math.max(1e-8,up.y),z);
   }
-  function idleHeadQuaternion(state,pivot,normal,out) {
+  function easeIdleHeadYaw(previous,target,dt){
+    if(!Number.isFinite(previous))return target;
+    const delta=Math.atan2(Math.sin(target-previous),Math.cos(target-previous)); // Follow the short arc across the yaw wrap.
+    return previous+delta*(1-Math.exp(-5*Math.max(0,dt)));
+  }
+  function idleHeadQuaternion(state,pivot,normal,out,dt) {
     const q=state.scratch,motion=state.idleHeadMotion; // Each actual hand has its own baked tip; dual wield still shares actor motion and rope physics.
     const deadRad=headDeadzone();
     const camera=state.cameraPosition||global.SharedAttackPose?.getCameraPosition?.()||global.PerpRotation?.liveCameraPosition?.();
     const rawYaw=Number.isFinite(motion.yaw)?motion.yaw:Math.atan2(normal.x,normal.z);
     const viewYaw=camera&&Math.hypot(camera.x-pivot.x,camera.z-pivot.z)>1e-8?Math.atan2(camera.x-pivot.x,camera.z-pivot.z):null;
-    const yaw=clampIdleHeadYaw(motion,rawYaw,viewYaw,deadRad);motion.renderedYaw=yaw;
+    motion.displayYaw=easeIdleHeadYaw(motion.displayYaw,rawYaw,dt);
+    const yaw=clampIdleHeadYaw(motion,motion.displayYaw,viewYaw,deadRad);motion.renderedYaw=yaw;
     const lean=Math.min(deadRad,Math.PI/2-1e-5,Math.hypot(motion.leanX,motion.leanZ));
     if(lean<=1e-8)return out.setFromAxisAngle(q.axisUp,yaw);
     leanHeadBasis(motion.leanX,motion.leanZ,lean,yaw,q.headUp,q.tmp);
@@ -945,13 +951,16 @@
   // stops, the last heading is kept instead of falling back to a fixed angle (the
   // haft's up-vector or +Z), and the pendulum direction eases toward it instead of
   // snapping. The vertical component is never allowed below the floor-safe value.
-  function resolveTrailingDirection(state, velocityX, velocityZ, shaftX, shaftZ, solveY, dt) {
+  function resolveTrailingDirection(state, velocityX, velocityZ, shaftX, shaftZ, solveY, dt, restX=0, restZ=0) {
     const heading = state.trailHeading || (state.trailHeading = { x: 0, z: 0, valid: false });
     const direction = state.direction;
     const speedSq = velocityX * velocityX + velocityZ * velocityZ;
     if (Number.isFinite(speedSq) && speedSq > HEAD_MOVE_EPSILON * HEAD_MOVE_EPSILON) {
       const speed = Math.sqrt(speedSq);
       heading.x = -velocityX / speed; heading.z = -velocityZ / speed; heading.valid = true; // Dragged behind the travel direction.
+    } else if (restX*restX+restZ*restZ>1e-8 && dt>0) {
+      const length=Math.hypot(restX,restZ); // Both idle hands settle toward the actor's rear.
+      heading.x=restX/length;heading.z=restZ/length;heading.valid=true;
     } else if (!heading.valid) {
       let x = direction.x, z = direction.z; // First contact while already standing: the pendulum's own lean, then the haft.
       if (x * x + z * z < 1e-8) { x = shaftX; z = shaftZ; }
@@ -1202,13 +1211,15 @@
     if (state.dualWieldHidden) return; // Hidden original owns the ONE pendulum and fitted length, but not live floor contact.
     // Ground contact can now change only the direction of the already
     // fitted rope. No frame, jump, or pendulum swing can make it longer.
-    const idleQ=!state.attacking?idleHeadQuaternion(state,pivot,normal,q.headQ):null;
+    const idleQ=!state.attacking?idleHeadQuaternion(state,pivot,normal,q.headQ,dt):null;
     const liveDrop=contact&&idleQ?tiltedHeadDrop(contact,idleQ):null; // Conservative live support, never resizing fitted rope.
     const available=contact?pivot.y-(floor+.035+liveDrop*attachmentScale*headScale):null;
     if(contact&&Number.isFinite(available)&&!state.fishingFlailHeadSpin) {
       const solve=pose.ropeClearance(state.physicsLength,1,state.direction.y,available);
       if(solve?.trailing) {
-        resolveTrailingDirection(state,q.velocity.x+turnX,q.velocity.z+turnZ,q.shaftUp.x,q.shaftUp.z,solve.directionY,dt); // Keeps the last drag heading once the actor stops; no snap to a default angle.
+        const restBody=!state.attacking?bodyWorld:null; // Travel and turning take priority over the shared resting direction.
+        resolveTrailingDirection(state,q.velocity.x+turnX,q.velocity.z+turnZ,q.shaftUp.x,q.shaftUp.z,solve.directionY,dt,
+          restBody?-restBody[8]:0,restBody?-restBody[10]:0);
         state.angularVelocity.multiplyScalar(.25);
       }
       state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor,headMinY:pivot.y+state.physicsLength*state.direction.y-liveDrop*attachmentScale*headScale,reason:solve?'solved':'unreachable'};
@@ -1440,7 +1451,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    resolveTrailingDirection, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    resolveTrailingDirection, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
