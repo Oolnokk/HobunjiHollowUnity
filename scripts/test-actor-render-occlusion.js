@@ -77,6 +77,7 @@ const renderer={
   getContext(){return gl;},
   render(scene,camera){
     drawCalls++;
+    assert(scene.children.length<=8,'query scene never retains more meshes than the per-frame probe budget');
     assert.equal(this.autoClear,false,'query pass never clears the real scene depth');
     for(const mesh of scene.children)if(mesh.visible){
       assert(mesh.scale.x>=11 && mesh.scale.y>=11 && mesh.scale.z>=11,
@@ -331,6 +332,20 @@ api.beginFrame(context());
 assert.equal(api.snapshot().corpseCandidates,0,'missing registry cannot hide any corpses');
 api.endFrame();win.CreatureDeath=deathWindow.CreatureDeath;
 
+// Populate many independently tracked actors and rotate queries over them.
+api.setGpuEnabled(true);
+api.reset();cameraWorld.set(0,0,0);camera.position.set(0,0,0);
+camera.quaternion=new Quaternion();visualScene=rootScene;
+const crowd=Array.from({length:64},(_,i)=>({root:makeRoot(11,'crowd_'+i),area:'town'})); // All fit the frustum and are outside the near exemption.
+for(let i=0;i<30;i++){
+  api.beginFrame({...context(),walkers:crowd,hostiles:[]});
+  api.probeAfterBase();api.endFrame();
+  assert(api.snapshot().proxySlots<=8,'proxy slots are bounded across round-robin reuse');
+  assert(crowd.every(w=>w.root.visible),'crowd visibility is restored');
+}
+assert.equal(api.snapshot().proxySlots,8,'crowd fills but cannot expand the pool');
+assert(api.snapshot().tracked>=64,'query history still belongs to each actor');
+api.reset();
 api.setGpuEnabled(true);
 forcedFailure=true;
 api.beginFrame(context());
