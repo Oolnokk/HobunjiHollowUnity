@@ -888,13 +888,11 @@
     part.matrixWorldNeedsUpdate = true;
   }
 
-  // Idle head artwork stays world-up. Measure the vertical offset from its
-  // rope attachment to its authored contact edge, or all layer bounds.
-  // The stance owner already accepts tool-slot clearance. Only modular flails
-  // extend the weapon ground-contact path to those non-weapon slots.
-  function playerGroundSlot(runtime,itemKey,holder) {
+  // Use the registered definition, not a key prefix: re-registered captain
+  // loot has the same modular tool roles as a forged weapon.
+  function playerGroundSlot(runtime,itemKey,holder,def) {
     if(!runtime?.activeSlot||runtime.itemKey!==itemKey)return false;
-    return runtime.activeSlot==='weapon'||(itemKey.startsWith('modular:')&&
+    return runtime.activeSlot==='weapon'||(!!def?.modular&&def.slots?.includes(runtime.activeSlot)&&
       global.WeaponToolStances?.groundPoseEligible?.(runtime.activeSlot,itemKey,holder)===true);
   }
 
@@ -905,6 +903,8 @@
       !(runtime?.activeSlot&&runtime.activeSlot!=='weapon'&&holder?.userData?.authoredToolActionActive===true);
   }
 
+  // Idle head artwork stays world-up. Measure the vertical offset from its
+  // rope attachment to its authored contact edge, or all layer bounds.
   function idleHeadContact(state,unit,profile) {
     const head=state.config.flail.head,visual=head.visualTransform;
     const cached=state.groundHeadContact; // Head geometry is static under its moving suspension; alpha trace only when image/geometry changes.
@@ -1102,9 +1102,10 @@
     const runtime=pose?.enabled?.()&&!sharedSource
       &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
       ?global.WeaponToolStances?.getRuntimeState?.():null;
-    const profile=sharedSource?sharedSource.groundProfile:(preview||playerGroundSlot(runtime,state.itemKey,root.parent)
+    const profile=sharedSource?sharedSource.groundProfile:(preview||playerGroundSlot(runtime,state.itemKey,root.parent,state.originalDef)
       ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null);
     state.groundProfile=profile; // No separate metadata lookup or mutable physical fit for the visible replicas.
+    state.groundSlot=profile?(sharedSource?sharedSource.groundSlot:preview?'preview':runtime?.activeSlot):null; // Mobile diagnostic: identifies the stance that supplied live floor contact.
     const floor=profile?pose.groundY():null; // The fitted length is a maximum; zero rope-minimum does not disable floor contact.
     const contact=Number.isFinite(floor)&&idleGroundContactAllowed(state,runtime,root.parent)?idleHeadContact(state,unit,profile):null;
     // Fixed Light fit uses upright contact; live trailing accounts for tilt separately.
@@ -1371,7 +1372,8 @@
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
       fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, sourceFallback: fx.sourceFallback, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(fx.config.fixedMasteryRank ?? s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
-      groundClearance: s.groundClearance || null, // Mobile diagnostics for shortened and trailing connectors.
+      groundSlot: s.root.parent?s.groundSlot??null:null, // Which equipped stance owns the shared tether.
+      groundClearance: s.root.parent?s.groundClearance||null:null, // Mobile diagnostics for shortened and trailing connectors.
       idleHead: s.config.flail?{yaw:s.idleHeadMotion.yaw,renderedYaw:s.idleHeadMotion.renderedYaw,leanX:s.idleHeadMotion.leanX,leanZ:s.idleHeadMotion.leanZ,source:s.idleHeadMotion.source}:null, // Phone-visible head motion diagnosis.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {

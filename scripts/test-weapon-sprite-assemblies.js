@@ -364,20 +364,21 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
 }
 
 { // The real player slot gate shares the weapon slack solver with modular tools.
-  const item='modular:fishingmace:harpoonflail'; // Representative modular identity.
+  const item='modular:fishing-mace:grapple-flail:nativeCopper'; // Representative modular identity.
+  const def={modular:{},slots:['weapon','axe','hoe','shovel','pick','harpoon']}; // Synthetic all-role definition; real catalog coverage lives in test-modular-tool-work-poses.
   const holder={visible:true,userData:{}}; // Same action flag and visibility used by the stance owner.
   const previous=window.WeaponToolStances;
   window.WeaponToolStances={groundPoseEligible:(slot,key,root)=>!!slot&&!!key&&root.visible&&!root.userData.headRelativeBackPlane};
   for(const slot of ['weapon','axe','hoe','shovel','pick','harpoon']){
     const runtime={activeSlot:slot,itemKey:item}; // Active item identity and actual tool role.
-    assert.equal(api.playerGroundSlot(runtime,item,holder),true,slot);
+    assert.equal(api.playerGroundSlot(runtime,item,holder,def),true,slot);
     assert.equal(api.idleGroundContactAllowed({},runtime,holder),true,slot);
     holder.userData.authoredToolActionActive=true;
     assert.equal(api.idleGroundContactAllowed({},runtime,holder),slot==='weapon',slot+' work stroke releases the tether');
     holder.userData.authoredToolActionActive=false;
     assert.equal(api.idleGroundContactAllowed({attacking:true},runtime,holder),false);
     assert.equal(api.idleGroundContactAllowed({fishingFlailHeadSpin:true},runtime,holder),false);
-    assert.equal(api.playerGroundSlot(runtime,'modular:other',holder),false);
+    assert.equal(api.playerGroundSlot(runtime,'modular:other',holder,def),false);
     const trail={grounded:false},direction={x:0,y:-1,z:0}; // Same production tether in every eligible role.
     api.resolveGroundSlack(trail,direction,1,.3,{x:0,y:0,z:0});
     api.resolveGroundSlack(trail,direction,1,.3,{x:.4,y:0,z:.2});
@@ -386,12 +387,13 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
     assert.ok(Math.abs(Math.hypot(trail.x,trail.y,trail.z)-1)<1e-8);
   }
   assert.equal(api.playerGroundSlot({activeSlot:'harpoon',itemKey:'torch'},'torch',holder),false,'non-modular tools stay on their legacy path');
-  assert.equal(api.playerGroundSlot(null,item,holder),false,'no player runtime cannot opt into ground drag');
+  assert.equal(api.playerGroundSlot(null,item,holder,def),false,'no player runtime cannot opt into ground drag');
   holder.visible=false;
-  assert.equal(api.playerGroundSlot({activeSlot:'axe',itemKey:item},item,holder),false);
+  assert.equal(api.playerGroundSlot({activeSlot:'axe',itemKey:item},item,holder,def),false);
   holder.visible=true;holder.userData.headRelativeBackPlane=true;
-  assert.equal(api.playerGroundSlot({activeSlot:'axe',itemKey:item},item,holder),false);
-  assert.match(source,/preview\|\|playerGroundSlot\(runtime,state.itemKey,root.parent\)/,'the actual renderer uses the shared gate');
+  assert.equal(api.playerGroundSlot({activeSlot:'axe',itemKey:item},item,holder,def),false);
+  assert.equal(api.playerGroundSlot({activeSlot:'ranged',itemKey:item},item,{visible:true,userData:{}},def),false,'unregistered tool roles cannot opt in');
+  assert.match(source,/preview\|\|playerGroundSlot\(runtime,state.itemKey,root.parent,state.originalDef\)/,'the actual renderer uses the shared gate');
   assert.match(source,/idleGroundContactAllowed\(state,runtime,root.parent\)\?idleHeadContact/,'work strokes bypass pinning without removing the fit');
   window.WeaponToolStances=previous;
 }
