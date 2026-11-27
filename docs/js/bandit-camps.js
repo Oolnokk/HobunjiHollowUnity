@@ -1494,6 +1494,9 @@
         }
         const lootStarted=window.performance?.now?.() ?? Date.now(); // Measure only the active loot input.
         if (trophyKey) window.NpcGifting?.registerTribalTrophyItems?.(deps.ITEM_DEFS, deps.inventoryItems); // Defensive registration when a corpse is opened before NPC gifting initialized.
+        // Save the unique bound weapon before consuming the corpse or awarding repeatable ordinary loot.
+        const captainWeapon = !trophyKey && c._banditCaptainArmament ? window.BanditCaptainArmaments?.grantCorpseWeapon?.(c) : null;
+        if (!trophyKey && c._banditCaptainArmament && !captainWeapon) return { ok: false, message: 'Could not collect the bound weapon. Try again.' };
         const parts = grantBanditLoot(trophyKey ? { [trophyKey]: 1 } : deps.rollLootPool(c.def.lootPool, { entity: c }));
         if (trophyKey) c.corpseLooted = true; // Mark the actual source before despawn, not only the temporary interaction object.
         if (!trophyKey) { // Ordinary bandits, ghouls and liches retain every existing corpse bonus; tribe hunters receive their trophy only.
@@ -1502,7 +1505,6 @@
           grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
           const relic = window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
           if (relic) parts.push('🗡️ Bound ' + relic.label);
-          const captainWeapon = window.BanditCaptainArmaments?.grantCorpseWeapon?.(c); // Transfer the exact worn captain weapon; its donor parts remain undiscovered.
           if (captainWeapon) parts.push('⚒️ ' + captainWeapon);
           for (const item of banditWornClothingItems(c.rosterRecord, c)) {
             deps.getPackClothing().push(item);
@@ -1516,7 +1518,7 @@
           c.corpseLooted = true;
           if(c.caveBodyId)window.CaveSiteSystem?.recordBodyLooted?.(c);
         }
-        else { deps.corpseObjects.delete(c); deps.despawnCreature(c); }
+        else { deps.corpseObjects.delete(c); deps.despawnCreature(c); if (captainWeapon) window.BanditCaptainArmaments?.discard?.(c); }
         deps.refreshItemScroll();
         deps.buildInventoryGrid(); // This is a no-op when the Pack is closed.
         if (deps.isMenuOpen?.() !== false) deps.buildPackClothingSection();

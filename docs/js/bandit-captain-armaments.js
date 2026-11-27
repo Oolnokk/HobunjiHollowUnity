@@ -3,6 +3,7 @@
 (() => {
   'use strict';
   const PREFIX = 'banditModular:'; // Unique per-captain keys prevent two drops from sharing enchantments or replacing a forged weapon.
+  const BOUND_PREFIX = 'captainBound_'; // Self-contained pack identity preserving the weapon and its magic through custody.
   const MIN_STARS = 5; // Camp tier is zero-based; only five-to-eight-star ordinary captains qualify.
   const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight']); // Effects supported by the NPC hit event; omit player-only Living Gust.
   const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy']); // Never choose Sicced (player companion target lock) or Fey magic.
@@ -250,29 +251,123 @@
     entity._captainEnchantmentFx?.update(dt);
   }
 
+  // The pack key is the portable save/custody authority until ownership is transferred.
+  function boundKeyFor(entity) {
+    const r = entity?._banditCaptainArmament;
+    if (!r?.key || !r.enchantments) return null;
+    return BOUND_PREFIX + encodeURIComponent(JSON.stringify([r.key, r.stars, r.origin || 'Captain', r.enchantments, r.visual || null]));
+  }
+
+  function decodeBoundKey(key) {
+    if (typeof key !== 'string' || !key.startsWith(BOUND_PREFIX)) return null;
+    try {
+      const payload = JSON.parse(decodeURIComponent(key.slice(BOUND_PREFIX.length)));
+      if (!Array.isArray(payload) || payload.length !== 5) return null;
+      const [toolKey, stars, origin, raw, visual] = payload;
+      if (typeof toolKey !== 'string' || !toolKey.startsWith(PREFIX) || !Number.isInteger(stars) || stars < 1 || stars > 8 ||
+          !['Captain', 'Fey'].includes(origin)) return null;
+      const parts = window.ModularWeapons?.decode?.(toolKey);
+      const config = window.ModularWeapons?.getConfig?.();
+      const es = window.EnchantmentSystem;
+      if (!parts || !config || !es?.cleanWeaponState) return null;
+      const enchantments = es.cleanWeaponState(raw); // Same legacy-ID migration as equipped weapons.
+      const ids = [...enchantments.base, ...Object.values(enchantments.flourishes)];
+      if (!ids.length || ids.some(id => !es.DEFINITIONS?.[id] || (es.DEFINITIONS[id].alignment === 'Fey') !== (origin === 'Fey'))) return null;
+      const donors = [config.shafts[parts.shaft].sourceShape, config.heads[parts.head].sourceShape]; // Derive donor identity from the catalog.
+      return { ...parts, key: toolKey, uid: toolKey.split(':').pop(), stars, origin, donors, enchantments,
+        ...(visual && typeof visual === 'object' && ['alignment','colorAlignment','dyeId','effectId'].every(k => typeof visual[k] === 'string')
+          ? { visual: { alignment: visual.alignment, colorAlignment: visual.colorAlignment, dyeId: visual.dyeId, effectId: visual.effectId } } : {}) };
+    } catch (_) { return null; }
+  }
+
+  function boundLabel(record) {
+    const baseKey = window.ModularWeapons.itemKey(record.shaft, record.head, record.metal);
+    return 'Bound ' + (record.origin === 'Fey' ? 'Fey-touched ' : "Captain's ") + (deps?.TOOL_ITEM_DEFS?.[baseKey]?.label || 'Modular Weapon');
+  }
+
+  function ensureBoundItemDef(key) {
+    const record = decodeBoundKey(key);
+    if (!record || !deps?.ITEM_DEFS) return null;
+    const label = boundLabel(record);
+    const defs = window.EnchantmentSystem.DEFINITIONS; // Pack detail shows the actual recovered magic before registration.
+    const enchantmentLabels = [...record.enchantments.base.map(id => defs[id].displayName + ' (Base)'),
+      ...Object.entries(record.enchantments.flourishes).map(([slot, id]) => defs[id].displayName + ' (' + slot.toUpperCase() + ' Flourish)')];
+    const def = { label, icon: '🗡️', cat: 'material', sellPrice: 90 + 30 * (record.enchantments.base.length + Object.keys(record.enchantments.flourishes).length),
+      tags: [record.origin, 'Bound'], magicalStatus: 'bound', uniqueInventoryKey: true,
+      desc: 'Still bound to its former owner. It cannot be equipped until Garanki Gabu re-registers it. Registration teaches him its enchantments: ' + enchantmentLabels.join('; ') + '.' };
+    deps.ITEM_DEFS[key] = def;
+    if (Array.isArray(deps.inventoryItems) && !deps.inventoryItems.some(entry => entry.key === key))
+      deps.inventoryItems.push({ key, icon: def.icon, label: label.toUpperCase(), max: 1 });
+    return def;
+  }
+
+  function boundWeaponsInInventory() {
+    return Object.keys(deps?.inventory || {}).filter(key => deps.inventory[key] > 0 && key.startsWith(BOUND_PREFIX))
+      .map(boundKey => ({ boundKey, record: decodeBoundKey(boundKey) })).filter(entry => entry.record);
+  }
+
   function grantCorpseWeapon(entity, options = {}) {
-    const record = entity?._banditCaptainArmament, inventory = gear();
-    if (!record || !inventory || !deps?.TOOL_ITEM_DEFS || !window.EnchantmentSystem?.cleanWeaponState) return null;
-    if (!registerDefinition(record.key, record)) return null;
-    inventory.tools ||= {}; inventory.toolMastery ||= {}; inventory.captainModularWeapons ||= {};
-    inventory.weaponEnchantments ||= {}; inventory.weaponEnchantmentVisuals ||= {};
-    const newlyOwned = !inventory.tools[record.key]; // The corpse can be searched once but repeated calls must not repeat writes.
-    if (newlyOwned) {
-      inventory.captainModularWeapons[record.key] = { shaft: record.shaft, head: record.head, metal: record.metal, uid: record.uid, stars: record.stars, donors: record.donors, ...(record.origin ? {origin:record.origin} : {}) };
-      inventory.tools[record.key] = true;
-      inventory.toolMastery[record.key] = { xp: 0 };
-      inventory.weaponEnchantments[record.key] = window.EnchantmentSystem.cleanWeaponState(record.enchantments);
-      if (record.visual) inventory.weaponEnchantmentVisuals[record.key] = { ...record.visual };
+    const boundKey = boundKeyFor(entity), record = decodeBoundKey(boundKey);
+    if (!record || !deps?.inventory || !ensureBoundItemDef(boundKey)) return null;
+    const label = boundLabel(record);
+    if (entity._captainWeaponLooted || gear()?.tools?.[record.key]) return label;
+    const before = deps.inventory[boundKey];
+    deps.inventory[boundKey] = 1; // No equippable weapon or learned magic exists yet.
+    if (options.deferSave === true) return label; // Rootledoot caller snapshots this key in the atomic reward transaction.
+    let saved = true; // A thrown storage failure must leave the loot retryable just like an explicit rejection.
+    if (before !== 1) {
+      try { saved = typeof deps.saveMemberWorldData === 'function' && deps.saveMemberWorldData() !== false; }
+      catch (error) { saved = false; window.__farmLog?.('[captain-armaments] Bound weapon save failed: ' + String(error), 'warn'); }
     }
-    if(options.deferSave===true) return deps.TOOL_ITEM_DEFS[record.key]?.label || 'Fey weapon'; // Caller owns the atomic gear/member transaction; retain the unlooted record until commit.
-    unlooted.delete(record.key); // Player gear is the enchantment authority from this point forward.
-    entity._captainEnchantmentFx?.dispose?.();
-    entity._captainEnchantmentFx = null;
-    if (newlyOwned) {
-      deps.saveGearInventory?.(); // Persist the new character-owned tool before the caller's deferred member/world loot save.
-      deps.buildEquipmentSlots?.(); // Refresh only after a real equipment change; repeated corpse interactions stay cheap.
+    if (!saved) {
+      if (before === undefined) delete deps.inventory[boundKey]; else deps.inventory[boundKey] = before;
+      deps.showToast?.('Could not save the bound weapon. Search the body again.', false);
+      return null;
     }
-    return deps.TOOL_ITEM_DEFS[record.key]?.label || 'Captain\'s modular weapon';
+    entity._captainWeaponLooted = true; // Repeated corpse reads cannot mint another copy.
+    unlooted.delete(record.key);
+    entity._captainEnchantmentFx?.dispose?.(); entity._captainEnchantmentFx = null;
+    return label;
+  }
+
+  function registrationPrice(record) {
+    return window.HarlyaoRelics?.unbindPrice?.(record.enchantments, record.origin) ?? null; // Reuse the established unbinding fee and Fey surcharge.
+  }
+
+  function registerBoundWeapon(boundKey) {
+    const record = decodeBoundKey(boundKey), g = gear(), es = window.EnchantmentSystem;
+    if (!record || !g || deps?.inventory?.[boundKey] !== 1 || g.tools?.[record.key]) return { ok: false, reason: 'not-owned' };
+    if (window.DelversGuild?.isMember?.() !== true) return { ok: false, reason: 'license' };
+    if (record.origin === 'Fey' && window.FeyArmamentQuest?.completed?.() !== true) return { ok: false, reason: 'quest' };
+    const price = registrationPrice(record);
+    if (!Number.isFinite(price) || price < 0 || !es?.unlockFromState) return { ok: false, reason: 'unavailable' };
+    const baseKey = window.ModularWeapons.itemKey(record.shaft, record.head, record.metal);
+    if (!deps.TOOL_ITEM_DEFS?.[baseKey]?.modular || !deps.TOOL_ITEM_DEFS[baseKey].slots?.includes('weapon')) return { ok: false, reason: 'invalid-weapon' };
+    const result = window.GearMemberTransaction?.run?.({ inventoryKeys: [boundKey], mutate() {
+      if ((Number(deps.inventory.gold) || 0) < price) return { ok: false, reason: 'gold', price };
+      deps.inventory.gold = (Number(deps.inventory.gold) || 0) - price;
+      delete deps.inventory[boundKey];
+      g.tools ||= {}; g.toolMastery ||= {}; g.captainModularWeapons ||= {};
+      g.weaponEnchantments ||= {}; g.weaponEnchantmentVisuals ||= {};
+      const { shaft, head, metal, uid, stars, donors, origin } = record;
+      g.captainModularWeapons[record.key] = { shaft, head, metal, uid, stars, donors, origin };
+      g.tools[record.key] = true;
+      g.toolMastery[record.key] = { xp: 0 };
+      g.weaponEnchantments[record.key] = record.enchantments;
+      if (record.visual) g.weaponEnchantmentVisuals[record.key] = record.visual;
+      const learned = es.unlockFromState(record.enchantments, { deferSave: true }); // Base by ID; Flourishes by their exact slot.
+      return { ok: true, toolKey: record.key, learned, price };
+    } }) || { ok: false, reason: 'unavailable' };
+    if (!result.ok) {
+      if (result.reason === 'gold') deps.showToast?.('Garanki requires ' + price + 'g to re-register this weapon.', false);
+      return result;
+    }
+    registerDefinition(record.key, record);
+    deps.buildInventoryGrid?.(); deps.buildEquipmentSlots?.();
+    es.logEvent?.(result.learned.length ? 'Garanki learned: ' + result.learned.join(', ') : 'Garanki re-registered a captain weapon');
+    deps.showToast?.('Weapon re-registered to you.' + (result.learned.length ? ' Garanki learned: ' + result.learned.join(', ') : ''), true);
+    window.HarlyaoRelics?.render?.();
+    return result;
   }
 
   function releaseUnownedDefinition(key,d=deps) {
@@ -320,8 +415,9 @@
   window.BanditCaptainArmaments = Object.freeze({
     PREFIX, MIN_STARS, capStars, enchantmentCount, rollEnchantments, eligiblePairs, permittedDonors,
     init, restore, registerDefinition, equip, grantCorpseWeapon, unlootedEnchantmentState, emitHit, tick, discard, rollFeyEnchantments,
+    boundKeyFor, decodeBoundKey, ensureBoundItemDef, boundWeaponsInInventory, boundLabel, registrationPrice, registerBoundWeapon,
     debugSnapshot: entity => ({ key: entity?._banditCaptainArmament?.key || null, stars: entity?._banditCaptainArmament?.stars || 0,
       donors: entity?._banditCaptainArmament?.donors || [], enchantments: entity?._banditCaptainArmament?.enchantments || null,
-      registeredUnlooted: unlooted.size }), // Mobile-visible enemy inspection through the existing dev snapshot.
+      registeredUnlooted: unlooted.size, boundInPack: boundWeaponsInInventory().length }), // Mobile-visible enemy inspection through the existing dev snapshot.
   });
 })();

@@ -213,6 +213,7 @@
 
   // ── World-inventory (bound) side ────────────────────────────────
   function ensureBoundItemDef(key) {
+    if (typeof key === 'string' && key.startsWith('captainBound_')) return window.BanditCaptainArmaments?.ensureBoundItemDef?.(key) || null;
     const relic = decodeBoundKey(key);
     if (!relic || !deps?.ITEM_DEFS) return null;
     const shape = SHAPES[relic.shape];
@@ -234,7 +235,7 @@
   }
 
   function ensureInventoryItemDefs(inventory = deps?.inventory) {
-    for (const key of Object.keys(inventory || {})) if (key.startsWith(BOUND_PREFIX) || key.startsWith(FEY_BOUND_PREFIX)) ensureBoundItemDef(key);
+    for (const key of Object.keys(inventory || {})) if (key.startsWith(BOUND_PREFIX) || key.startsWith(FEY_BOUND_PREFIX) || key.startsWith('captainBound_')) ensureBoundItemDef(key);
   }
 
   function grantBoundRelic(relic = makeRelic()) {
@@ -569,6 +570,22 @@
 
     window.TownMagicCheckpoint?.renderCustody?.(list, { heading, note, row, button, esc }); // Confiscated items stay visible first on small screens; Garanki owns the legal registration UI.
     window.ArtifactCollection?.render?.(list, { heading, note, row, button });
+    // Captain registration uses Garanki's existing licensed services without requiring artifact donations.
+    const captains = window.BanditCaptainArmaments;
+    const captainWeapons = captains?.boundWeaponsInInventory?.() || [];
+    if (captainWeapons.length) {
+      list.appendChild(heading('Captain weapon registration'));
+      list.appendChild(note("A Delver's Guild license permits re-registration. Garanki learns the weapon's enchantments when its binding is transferred to you."));
+      for (const { boundKey, record } of captainWeapons) {
+        const price = captains.registrationPrice(record);
+        const feyBlocked = record.origin === 'Fey' && !feyServiceUnlocked();
+        const licensed = window.DelversGuild?.isMember?.() === true;
+        list.appendChild(row('🗡️', esc(captains.boundLabel(record)),
+          esc(describeEnchantments(record.enchantments).join(' · ')),
+          [button(feyBlocked ? 'Finish The Knotworked Armament' : !licensed ? 'Guild license required' : `Re-register (${price}g)`,
+            () => captains.registerBoundWeapon(boundKey), !licensed || feyBlocked || !Number.isFinite(price) || (deps.inventory.gold || 0) < price)]));
+      }
+    }
     // Bound relics
     list.appendChild(heading(feyServiceUnlocked() ? 'Bound relics · Harlyao and Fey' : 'Bound relics · Harlyao'));
     if (!window.ArtifactCollection?.unlocked?.('unbind')) list.appendChild(note('Donate your first artifact to unlock weapon unbinding.'));
@@ -596,7 +613,7 @@
     // Enchant a weapon
     list.appendChild(heading('Enchant a weapon'));
     if (window.DelversGuild && !window.DelversGuild.canEnchant()) list.appendChild(note('New enchanting is illegal. Bring Garanki four distinct artifacts and speak with him privately at his tent to earn his trust.'));
-    const weapons = ownedWeaponKeys().filter(key => feyServiceUnlocked() || gear()?.harlyaoRelics?.[key]?.origin !== 'Fey'); // Hidden Fey gear cannot enter the service panel before the dialogue unlock.
+    const weapons = ownedWeaponKeys().filter(key => feyServiceUnlocked() || (gear()?.harlyaoRelics?.[key]?.origin !== 'Fey' && gear()?.captainModularWeapons?.[key]?.origin !== 'Fey')); // Hidden Fey gear cannot enter the service panel before the dialogue unlock.
     if (!weapons.length) { list.appendChild(note('You own no weapons.')); return; }
     const equipped = window.Combat?.deps?.currentWeaponKey?.();
     if (!weapons.includes(selectedWeaponKey)) selectedWeaponKey = weapons.includes(equipped) ? equipped : weapons[0];
@@ -657,6 +674,7 @@
   function debugSnapshot() {
     return {
       bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, origin: entry.origin, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments, entry.origin) })),
+      boundCaptains: window.BanditCaptainArmaments?.boundWeaponsInInventory?.() || [], // Mobile diagnostics include pending registrations.
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
       latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
       unlocks: ES()?.unlockedOptions?.() || null,
