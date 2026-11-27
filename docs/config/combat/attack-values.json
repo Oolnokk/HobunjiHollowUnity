@@ -56,7 +56,7 @@
 
   "quickAttacks": {
     "WINDUP_S": 0.1125, "STRIKE_S": 0.105, "COST_COMMIT": 60, "CONDITIONAL_REFUND_FRACTION": 0.5, "HOLD_S": 0.48125,
-    "BONUS_EFFECT_COOLDOWN_S": 5, "BONUS_EFFECT_POWER_MULTIPLIER": 2.0,
+    "BONUS_EFFECT_COOLDOWN_S": 5, "BONUS_EFFECT_POWER_MULTIPLIER": 2.0, "OPPORTUNITY_GRACE_S": 3.0,
     "RANGE_SCALE": 0.6, "LUNGE_TILE_MUL": 4.5,
     "techniques": {
       "opportunistJab": { "label": "Opportunist Jab", "condKey": "enemyStriking", "halfConeDeg": 16, "rangeMul": 0.95,

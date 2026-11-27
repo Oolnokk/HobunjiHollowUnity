@@ -23,7 +23,7 @@
     "js/combat/combat-input.js?v=20261123autoTargetDisabled1",
     "js/combat/attack-pose-templates.js?v=20261115h01bf772",
     "js/combat/combat-combo.js?v=20261126h0b2c6f0",
-    "js/combat/combat-quickattacks.js?v=20261126planarRebase1",
+    "js/combat/combat-quickattacks.js?v=20261127heeaa3a0",
     "js/combat/combat-mounted.js?v=20261126planarRebase1",
     "js/combat/combat-counter-shield.js?v=20261126planarRebase1",
     "js/combat/combat-blink-dodge.js?v=20261126planarRebase1",

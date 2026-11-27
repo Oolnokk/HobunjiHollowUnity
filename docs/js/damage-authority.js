@@ -55,6 +55,8 @@
   function hit(target, amount, fromX, fromY, knockbackPxS, opts) {
     const reg = registry();
     if (!target) return undefined;
+    const healthBefore = Number(target.health); // Used below to tell a connected strike from a dodged/blocked one.
+    const noteConnected = () => { if (opts?.attacker && Number(target.health) < healthBefore) window.Combat?.noteStrikeConnected?.(opts.attacker); }; // Closes Opportunist Jab's counter window (combat-tutorial-partner.js).
     if (reg?.isPlayer(target) && !reg.isLocalPlayer(target)) {
       if (!remoteHandler) { record(target, amount, opts, 'unhandled', 'remote-player'); return undefined; }
       const result = remoteHandler(target, amount, fromX, fromY, knockbackPxS, opts);
@@ -63,10 +65,12 @@
     }
     if (reg ? reg.isLocalPlayer(target) : target === deps.getLocalPlayer?.()) {
       const result = deps.damageLocalPlayer(amount, fromX, fromY, knockbackPxS, opts);
+      noteConnected();
       record(target, amount, opts, 'local', 'local-player');
       return result;
     }
     const result = deps.damageCreature(target, amount, fromX, fromY, knockbackPxS, opts);
+    noteConnected();
     record(target, amount, opts, 'creature', 'creature');
     return result;
   }

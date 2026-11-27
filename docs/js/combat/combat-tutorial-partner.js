@@ -64,6 +64,35 @@
     return Number.isFinite(number) ? number : fallback;
   }
 
+  function simNowMs() {
+    return Number(window.SimClock?.now?.()) || (typeof performance !== 'undefined' ? performance.now() : Date.now()); // Gameplay clock (AGENTS #13); presentation timers stay on performance.now().
+  }
+
+  function opportunityGraceMs() {
+    const configured = Number(combat.quickAttackData?.OPPORTUNITY_GRACE_S); // attack-values.json quickAttacks.OPPORTUNITY_GRACE_S
+    return Math.max(0, Number.isFinite(configured) ? configured : 3) * 1000;
+  }
+
+  // Opportunist Jab's counter window. A staged enemy attack opens it at windup and keeps it open through
+  // strike and recovery plus a configurable grace afterwards, but ONLY while that attack has not hit anyone:
+  // once its strike connects the window is closed for the rest of that attack, so it rewards dodging,
+  // blocking and interrupting rather than trading blows. Attackers that are not staged actions (modular
+  // animal attacks, ranged windups) keep the plain windup/strike rule.
+  function opportunityWindowOpen(target, phase) {
+    if (!target) return false;
+    const connected = finite(target._oppStartMs) > 0 && finite(target._oppConnectedMs) >= finite(target._oppStartMs); // Its latest staged strike landed.
+    if (trackedOpportunityPhase(target)) return !connected; // Windup, strike and recovery of a live staged attack.
+    if (phase === 'windup' || phase === 'strike') return true; // Unstaged attackers: plain windup/strike rule.
+    return !connected && simNowMs() < finite(target._oppGraceUntilMs); // Grace after a staged attack ended without hitting.
+  }
+
+  // Called by every hit resolver once an attacker has actually reduced its victim's Health.
+  function noteStrikeConnected(attacker) {
+    if (!attacker) return;
+    attacker._oppConnectedMs = simNowMs();
+    attacker._oppGraceUntilMs = 0;
+  }
+
   function actorFacing(actor) {
     if (!actor) return 0;
     if (actor === combat.deps?.player && Number.isFinite(Number(actor.angle))) return Number(actor.angle);
@@ -149,6 +178,11 @@
   function syncActorOpportunity(actor) {
     if (!actor) return;
     const phase = trackedOpportunityPhase(actor); // Staged phase is mirrored for legacy readers such as combat-quickattacks.js.
+    if (actor._oppHadPhase && !phase && !(finite(actor._oppConnectedMs) >= finite(actor._oppStartMs))) {
+      actor._oppGraceUntilMs = simNowMs() + opportunityGraceMs(); // A staged attack that finished without hitting leaves a short punish window.
+    }
+    if (actor._oppHadPhase && !phase) actor._oppEndedMs = simNowMs(); // Read by the Quick Attack condition recorder to size the grace window.
+    actor._oppHadPhase = !!phase;
     actor._quickAttackOpportunityPhase = phase;
     if (phase === 'windup' || phase === 'strike') {
       actor.telegraphState = phase;
@@ -173,12 +207,15 @@
       trackedActors.add(owner);
     }
     actions.add(action);
+    owner._oppStartMs = simNowMs(); // New attack: any earlier connect/grace no longer applies.
+    owner._oppGraceUntilMs = 0;
 
     const originalCancel = action.cancel?.bind(action); // Cancellation must clear the condition immediately rather than one frame later.
     if (originalCancel) {
       action.cancel = () => {
         originalCancel();
         untrack(owner, action);
+        if (!trackedByActor.get(owner)?.size) owner._oppHadPhase = false; // Interrupted attacks leave no grace window; only a completed whiff does.
         syncActorOpportunity(owner);
       };
     }
@@ -272,7 +309,7 @@
     const maxHealth = Math.max(0, finite(target.maxHealth)); // Authored maximum remains the low-Health threshold baseline.
     const attackWindow = attackOpportunityPhase(target); // Opportunist is true only during windup/strike, never recovery/idle.
     const conditions = {
-      enemyStriking: attackWindow === 'windup' || attackWindow === 'strike',
+      enemyStriking: opportunityWindowOpen(target, attackWindow),
       exhausted: !!target.exhaustion?.active || (maxStamina > 0 && staminaForCondition <= maxStamina * 0.20),
       behind: behindDot < -0.35,
       lowHealth: finite(target.health) > 0 && maxHealth > 0 && healthForCondition <= maxHealth * 0.30,
@@ -298,6 +335,7 @@
   }
 
   combat.attackOpportunityPhase = attackOpportunityPhase;
+  combat.noteStrikeConnected = noteStrikeConnected; // Hit resolvers call this once an attack has really reduced its victim's Health.
   combat.getQuickAttackConditions = getQuickAttackConditions;
   if (combat.quickAttackData) combat.quickAttackData.getConditions = getQuickAttackConditions;
   combat.__quickAttackConditionContractInstalled = true;

@@ -103,6 +103,7 @@
   let COST_COMMIT = 60; // Up-front quick-attack commitment; configured by attack-values.json and spent in onTap().
   let CONDITIONAL_REFUND_FRACTION = 0.5; // Fraction of the actual post-modifier spend restored after at least one cooldown-ready conditional proc.
   let BONUS_EFFECT_COOLDOWN_S = 5; // Global default used to gate the stronger conditional package; individual techniques may override with bonusEffectCooldownS.
+  let OPPORTUNITY_GRACE_S = 3; // Seconds Opportunist Jab's window stays open after a staged enemy attack ends WITHOUT hitting (see combat-tutorial-partner.js).
   let BONUS_EFFECT_POWER_MULTIPLIER = 2; // Multiplies mastery-derived conditional affliction/debuff strength; core bonus damage/knockback stay explicitly authored per technique.
   const bonusCooldownUntilMs = new Map(); // Enemy -> bonus cooldown end. One clock per enemy, shared by every weapon and Quick Attack; read by combat, the opportunity reticle, and mobile diagnostics.
   let HOLD_S = 0.48125; // post-strike pause before easing back to neutral
@@ -470,7 +471,7 @@
   // Read-only data export for game.js's bandit AI and diagnostics.
   window.Combat.quickAttackData = {
     TECHNIQUES, WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
-    BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
+    BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER, OPPORTUNITY_GRACE_S,
     RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose, getReachProfile,
     bonusEffectCooldownS, bonusEffectCooldownRemaining, isBonusEffectReady, beginBonusEffectCooldown, resetBonusEffectCooldowns,
     cooldownSnapshot: () => Object.fromEntries([...bonusCooldownUntilMs.entries()].map(([enemy, until]) => [enemy?.id || enemy?.name || 'enemy', Math.max(0, round1((until - performance.now()) / 1000))])),
@@ -498,12 +499,13 @@
     if (cfg.CONDITIONAL_REFUND_FRACTION != null) CONDITIONAL_REFUND_FRACTION = cfg.CONDITIONAL_REFUND_FRACTION;
     if (cfg.BONUS_EFFECT_COOLDOWN_S != null) BONUS_EFFECT_COOLDOWN_S = Math.max(0, Number(cfg.BONUS_EFFECT_COOLDOWN_S) || 0);
     if (cfg.BONUS_EFFECT_POWER_MULTIPLIER != null) BONUS_EFFECT_POWER_MULTIPLIER = Math.max(0, Number(cfg.BONUS_EFFECT_POWER_MULTIPLIER) || 0);
+    if (cfg.OPPORTUNITY_GRACE_S != null) OPPORTUNITY_GRACE_S = Math.max(0, Number(cfg.OPPORTUNITY_GRACE_S) || 0);
     if (cfg.HOLD_S != null) HOLD_S = cfg.HOLD_S;
     if (cfg.RANGE_SCALE != null) RANGE_SCALE = cfg.RANGE_SCALE;
     if (cfg.LUNGE_TILE_MUL != null) LUNGE_TILE_MUL = cfg.LUNGE_TILE_MUL;
     Object.assign(window.Combat.quickAttackData, {
       WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
-      BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
+      BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER, OPPORTUNITY_GRACE_S,
       RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose, getReachProfile,
     });
   };

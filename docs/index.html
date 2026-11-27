@@ -336,7 +336,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/sim-clock.js?v=20261124mp1"></script> <!-- Shared gameplay clock; must precede resource-system and combat timers. -->
   <script src="js/actor-registry.js?v=20261124mp1"></script> <!-- Stable actor ids + the players list; must precede game.js. -->
-  <script src="js/damage-authority.js?v=20261124mp1"></script> <!-- Target-aware damage routing; initialised by game.js. -->
+  <script src="js/damage-authority.js?v=20261127h7a090f4"></script> <!-- Target-aware damage routing; initialised by game.js. -->
   <script src="js/time-consensus.js?v=20261125mp2"></script> <!-- Co-op rules for who may advance time (sleep consensus, knock-out revive window, longest skip wins). Initialised by game.js. -->
   <script src="js/time-consensus-hud.js?v=20261125mp3"></script> <!-- Countdown panel for the co-op revive window and sleep votes (needs TimeConsensus + RuntimeFrameScheduler at load). -->
   <script src="js/shared-cutscene.js?v=20261126mp5"></script> <!-- Co-op cutscene rules: everyone paused and watching, crowd scenes place other players in the crowd. Initialised by game.js. -->
@@ -2425,6 +2425,13 @@
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingFlipPngPortraits"><span class="toggle-slider"></span></span>
           </label>
+          <label data-dev-only class="settings-row" id="devQuickRecorderRow">
+            <div class="settings-label">
+              <div class="settings-name">Record Quick Attack Conditions</div>
+              <div class="settings-desc">Tick on before a fight, untick afterwards: copies a report of how often and how long each Quick Attack condition (counter window, exhausted, behind, low health) was active on nearby enemies, with suggested thresholds that match "behind". <span id="devQuickRecorderStatus"></span></div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="devQuickRecorderToggle"><span class="toggle-slider"></span></span>
+          </label>
           <div data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Teleport to Den</div>
@@ -2860,7 +2867,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="dialogue"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
-  <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
+  <script src="js/combat/combat-tutorial-partner.js?v=20261127h148e04b"></script>
   <script src="js/combat/combat-tutorial.js?v=20261009hd195c4f"></script>
   <!-- Festival scripts are maintained in their manifest. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="festival"></script>
@@ -2877,6 +2884,7 @@
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
   <script src="js/combat/quick-attack-bonus-indicator.js?v=20261125deepAudit1"></script>
+  <script src="js/combat/quick-attack-condition-recorder.js?v=20261127recorder1"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->

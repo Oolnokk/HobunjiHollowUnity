@@ -1396,6 +1396,7 @@
         ? window.DamageAuthority.hit(struckPlayer, amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c })
         : deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
     }
+    if (c && Number(target?.health) < beforeHealth) window.Combat?.noteStrikeConnected?.(c); // A landed strike closes Opportunist Jab's counter window for this attack.
     if (c?._banditCaptainArmament || c?.ruinWallCoffin) {
       const afterHealth = Number(target?.health); // Uses the actual victim (player or NPC), so allied skirmishes can proc enchantments too.
       const actualDamage = Number.isFinite(beforeHealth) && Number.isFinite(afterHealth)

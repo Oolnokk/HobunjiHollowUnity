@@ -164,7 +164,7 @@ assert.equal(player.telegraphState, 'strike', 'legacy readers also receive the p
 playerAction.t = 0.7;
 Combat.update(0);
 assert.equal(Combat.attackOpportunityPhase(player), 'recover', 'player staged attacks expose recovery distinctly');
-assert.equal(Combat.getQuickAttackConditions(Combat.deps, player, frontAttacker).enemyStriking, false, 'recovery is not an Opportunist opening');
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, player, frontAttacker).enemyStriking, true, 'recovery of a staged attack that has not hit is still an Opportunist opening');
 playerAction.cancel();
 assert.equal(Combat.attackOpportunityPhase(player), null, 'cancelled player attack clears the opening');
 
@@ -202,7 +202,36 @@ Combat.update(0);
 assert.equal(Combat.attackOpportunityPhase(stagedEnemy), 'strike', 'humanoid/special staged enemies expose strike');
 enemyAction.t = 0.75;
 Combat.update(0);
-assert.equal(Combat.getQuickAttackConditions(Combat.deps, stagedEnemy, player).enemyStriking, false, 'humanoid recovery does not qualify');
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, stagedEnemy, player).enemyStriking, true, 'humanoid recovery stays open while its strike has not hit');
+
+// Counter-window rule: the opening only exists while the enemy's strike has not connected.
+let fakeNowMs = 100000;
+window.SimClock = { now: () => fakeNowMs };
+Combat.quickAttackData.OPPORTUNITY_GRACE_S = 3;
+const hitEnemy = actor({ id: 'hit-enemy' });
+const hitAction = Combat.beginStagedAction({ windupS: 0.5, strikeS: 0.2, recoverS: 0.3, data: { isBandit: true, attacker: hitEnemy } });
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, hitEnemy, player).enemyStriking, true, 'windup opens the counter window');
+hitAction.t = 0.55; Combat.update(0);
+Combat.noteStrikeConnected(hitEnemy); // Its strike reduced the victim's Health.
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, hitEnemy, player).enemyStriking, false, 'a landed strike closes the window immediately');
+hitAction.t = 0.8; Combat.update(0);
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, hitEnemy, player).enemyStriking, false, 'recovery stays closed after the strike landed');
+hitAction.t = 5; Combat.update(0);
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, hitEnemy, player).enemyStriking, false, 'no grace period follows a connected attack');
+
+const whiffEnemy = actor({ id: 'whiff-enemy' });
+const whiffAction = Combat.beginStagedAction({ windupS: 0.5, strikeS: 0.2, recoverS: 0.3, data: { isBandit: true, attacker: whiffEnemy } });
+whiffAction.t = 5; Combat.update(0); // Finished without ever connecting (dodged, blocked or out of range).
+assert.equal(Combat.attackOpportunityPhase(whiffEnemy), null);
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, whiffEnemy, player).enemyStriking, true, 'a whiffed attack leaves a grace window');
+fakeNowMs += 2900;
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, whiffEnemy, player).enemyStriking, true, 'grace holds until OPPORTUNITY_GRACE_S');
+fakeNowMs += 200;
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, whiffEnemy, player).enemyStriking, false, 'grace expires');
+const nextAction = Combat.beginStagedAction({ windupS: 0.5, strikeS: 0.2, recoverS: 0.3, data: { isBandit: true, attacker: hitEnemy } });
+assert.equal(Combat.getQuickAttackConditions(Combat.deps, hitEnemy, player).enemyStriking, true, 'a new attack reopens the window after an earlier connect');
+nextAction.cancel();
+delete window.SimClock;
 
 const tutorialTarget = actor({ id: 'oddclaw', combatTutorialHostile: true });
 tutorialTarget._banditAction = { t: 0.1, windupS: 0.5, strikeS: 0.2, recoverS: 0, phase: 'windup', cancelled: false };
