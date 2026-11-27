@@ -179,11 +179,88 @@
       rotation: finite(raw.rotation, 0, -360, 360), scale: finite(raw.scale, 1, 0.1, 8),
       ...(raw.behind === true ? { behind: true } : {}) };
   }
-  function drawJunction(ctx, image, piece) { // ctx already maps source pixels; draws the piece centred and rotated.
+  // Inward ink preserves alpha, frame, grip, contact and collision hull. Each component
+  // is inked before compositing, so a foreground primitive also outlines its seam.
+  function outlineComponentPixels(rgba, width, height) {
+    const stride = width * 4; // Four RGBA bytes per pixel, no row wrapping.
+    let changed = 0; // Used to skip unnecessary canvas uploads.
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const i = y * stride + x * 4; // Current component pixel, never a neighboring component.
+      if (rgba[i + 3] < 128 || !(rgba[i] || rgba[i + 1] || rgba[i + 2])) continue;
+      if (x === 0 || x === width - 1 || y === 0 || y === height - 1 ||
+          rgba[i - 1] < 128 || rgba[i + 7] < 128 ||
+          rgba[i - stride + 3] < 128 || rgba[i + stride + 3] < 128) {
+        rgba[i] = rgba[i + 1] = rgba[i + 2] = 0;
+        changed++;
+      }
+    }
+    return changed;
+  }
+  const outlinedSources = new WeakMap(); // Separate moving-head variants, never mutate the original PNG.
+  function outlinedImage(source) {
+    if (!source) return source;
+    if (outlinedSources.has(source)) return outlinedSources.get(source);
+    try {
+      const canvas = document.createElement('canvas'); // Native dimensions keep all layer-local anchors unchanged.
+      canvas.width = source.naturalWidth || source.width;
+      canvas.height = source.naturalHeight || source.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(source, 0, 0);
+      const raster = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = outlineComponentPixels(raster.data, canvas.width, canvas.height) ? canvas : source;
+      if (result === canvas) ctx.putImageData(raster, 0, 0);
+      outlinedSources.set(source, result);
+      return result;
+    } catch (error) {
+      global.__farmLog?.('[Foundry] Component outline unavailable: ' + error.message, 'warn');
+      global.console?.warn?.('Modular weapon component outline unavailable:', error);
+      return source;
+    }
+  }
+  function componentPainter(canvas) {
+    let scratch = null, rasterCtx = null; // One temporary bitmap per composition, released after the cached result is built.
+    return function paint(context, bounds, draw) {
+      const t = context.getTransform(); // Include every authored transform before measuring or inking.
+      const corners = [[bounds.left,bounds.top],[bounds.right,bounds.top],
+        [bounds.left,bounds.bottom],[bounds.right,bounds.bottom]].map(([x,y]) =>
+        [t.a*x+t.c*y+t.e,t.b*x+t.d*y+t.f]);
+      const x = Math.max(0, Math.floor(Math.min(...corners.map(p=>p[0]))) - 2);
+      const y = Math.max(0, Math.floor(Math.min(...corners.map(p=>p[1]))) - 2);
+      const right = Math.min(canvas.width, Math.ceil(Math.max(...corners.map(p=>p[0]))) + 2);
+      const bottom = Math.min(canvas.height, Math.ceil(Math.max(...corners.map(p=>p[1]))) + 2);
+      const width = right - x, height = bottom - y; // Read only the transformed artwork's padded rectangle.
+      if (width <= 0 || height <= 0) return;
+      if (!scratch) {
+        scratch = document.createElement('canvas');
+        scratch.width = canvas.width; scratch.height = canvas.height;
+        rasterCtx = scratch.getContext('2d', { willReadFrequently: true });
+      }
+      rasterCtx.setTransform(1,0,0,1,0,0);
+      rasterCtx.clearRect(x,y,width,height);
+      rasterCtx.save();
+      try {
+        rasterCtx.setTransform(t.a,t.b,t.c,t.d,t.e,t.f);
+        rasterCtx.imageSmoothingEnabled = context.imageSmoothingEnabled;
+        rasterCtx.imageSmoothingQuality = context.imageSmoothingQuality;
+        draw(rasterCtx);
+      } finally { rasterCtx.restore(); }
+      const pixels = rasterCtx.getImageData(x,y,width,height); // Immutable alpha is also the per-component ownership mask.
+      if (outlineComponentPixels(pixels.data,width,height)) rasterCtx.putImageData(pixels,x,y);
+      context.save();
+      try {
+        context.setTransform(1,0,0,1,0,0);
+        context.drawImage(scratch,x,y,width,height,x,y,width,height); // Preserve caller's foreground/behind composite operation.
+      } finally { context.restore(); }
+    };
+  }
+
+  function drawJunction(ctx, image, piece, paint = null) { // ctx already maps source pixels; draws the piece centred and rotated.
     ctx.save();
     if (piece.behind) ctx.globalCompositeOperation = 'destination-over'; // Slips under existing pixels.
     ctx.translate(piece.x, piece.y); ctx.rotate(piece.rotation * Math.PI / 180); ctx.scale(piece.scale, piece.scale);
-    ctx.drawImage(image, -image.width / 2, -image.height / 2);
+    const x = -image.width / 2, y = -image.height / 2; // Junction source coordinates.
+    if (paint) paint(ctx, {left:x,top:y,right:-x,bottom:-y}, target => target.drawImage(image,x,y));
+    else ctx.drawImage(image,x,y);
     ctx.restore();
   }
   function cleanBox(raw) {
@@ -279,7 +356,7 @@
       };
     }); // Saved operations and shared recipes stay unchanged when their area is transformed.
   }
-  function applyBridges(canvas, frame, bridges, junctionImages = {}, shaft = null) {
+  function applyBridges(canvas, frame, bridges, junctionImages = {}, shaft = null, paint = null) {
     // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
     const fill = global.ModularWeaponBridgeFill;
     if (!fill || !bridges?.strokes?.length) return;
@@ -335,7 +412,7 @@
           const area=(shaft.rigRegions||[]).find(region=>region.id===stroke._rigRegionId);
           if (area) {const t=regionAffine(area);ctx.transform(t.a,t.b,t.c,t.d,t.e,t.f);}
         }
-        drawJunction(ctx, piece, stroke); ctx.restore();
+        drawJunction(ctx, piece, stroke, paint); ctx.restore();
         image = ctx.getImageData(0, 0, canvas.width, canvas.height);
         continue;
       }
@@ -346,6 +423,7 @@
     }
     flush();
     if (global.ModularWeaponsKeepReference) canvas.modularReference = reference; // Editor only: live revert previews.
+    outlineComponentPixels(image.data, canvas.width, canvas.height); // Finish exposed brush-generated edges without undoing intentionally blended seams.
     ctx.putImageData(image, 0, 0);
   }
   function cleanTransform(raw, partial = false, fallbackAnimation = 'sweep') {
@@ -705,6 +783,7 @@
         layers: [{ id: 'modular-head', sprite: head.sprite, material: 'metal' }],
       };
     } // Head-owned flails retain their entire original Tool Hub head and untouched authored contact.
+    recipe.flail.head.modularOutline = true; // Separate moving layers use cached inward ink in both runtime and rest-pose previews.
     const shaftArt = shaftArtTransform(shaft); // A moved/scaled shaft PNG moves its physical rope contact with it, not the separate attachment rig.
     if (shaftArt.enabled && Number.isFinite(recipe.flail.haftAnchor?.x) && Number.isFinite(recipe.flail.haftAnchor?.y)) {
       recipe.flail.haftAnchor = duplicatePoint(recipe.flail.haftAnchor, shaftArt);
@@ -1034,6 +1113,7 @@
       canvas.width = Math.max(1, Math.ceil(frame.width * pixelScale)); canvas.height = Math.max(1, Math.ceil(frame.height * pixelScale));
       canvas.modularFrame = frame;
       const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
+      const paint = componentPainter(canvas); // Rasterize and outline each independent primitive at final bitmap resolution.
       ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
       ctx.translate(-frame.left, -frame.top);
       const protectedCanvas = shaft.fireAssembly ? document.createElement('canvas') : null; // Preserve nonmetal living-shaft pixels when the forged HEAD receives metal/verdigris.
@@ -1056,10 +1136,14 @@
             context.translate(225+art.x,602+art.y);
             context.scale(art.scaleX,art.scaleY);context.translate(-225,-602);
           }
-          if (shaft.crop) {
-            context.beginPath(); context.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); context.clip();
-          }
-          context.drawImage(image, 0, 0, 450, 1204);
+          const draw = target => { // Crop inside the isolated component so its cut edge receives ink too.
+            if (shaft.crop) {
+              target.beginPath(); target.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); target.clip();
+            }
+            target.drawImage(image, 0, 0, 450, 1204);
+          };
+          if (context === ctx) paint(context, visibleBounds(image), draw);
+          else draw(context); // The original alpha-only nonmetal protection mask needs no RGB processing.
           context.restore(); // Shaft-art transform also applies to the nonmetal mask; forged heads stay independent.
         }
       }
@@ -1078,7 +1162,8 @@
             context.save();
             if (mounting.regionId) context.transform(area.a, area.b, area.c, area.d, area.e, area.f);
             context.transform(t.a, t.b, t.c, t.d, t.e, t.f);
-            context.drawImage(headImage, 0, 0, 450, 1204);
+            if (eraseShaft) context.drawImage(headImage, 0, 0, 450, 1204);
+            else paint(context, visibleBounds(headImage), target => target.drawImage(headImage, 0, 0, 450, 1204));
             context.restore();
           }
           context.restore();
@@ -1092,7 +1177,7 @@
       else {
         if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
         else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
-        applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft); // All strokes and expanded recipes follow the same parent rig as head primitives.
+        applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft, paint); // All strokes and expanded recipes follow the same parent rig as head primitives.
       }
       if (protectedCtx) {
         const rgba = protectedCtx.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -1180,7 +1265,7 @@
     if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
     if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanShorteningBands, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,

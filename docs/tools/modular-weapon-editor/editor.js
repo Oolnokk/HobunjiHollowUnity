@@ -311,7 +311,7 @@
         ...flail.head.layers.map(layer=>layer.sprite)]; // Load one original chain and ALL moving head layers.
       const images=await Promise.all(paths.map(src=>api.loadImage(src,'../../')));
       if(ticket!==serial)return; // Fast mobile head/haft changes must never repaint an old recipe on the current canvas.
-      const plan=draw.layout(recipe,composed,images[0],images.slice(1)); // Pure rest-pose rig coordinates, source-accurate anchor and layer offsets.
+      const plan=draw.layout(recipe,composed,images[0],images.slice(1).map(image=>flail.head.modularOutline ? api.outlinedImage(image) : image)); // Pure rest-pose rig coordinates, source-accurate anchor and layer offsets.
       const result=draw.render(canvas,plan,guides);
       status.textContent='Complete rest-pose rig · '+result.layerCount+' moving head layer(s)'
         +' · connector reach '+result.reach.toFixed(1)+' px'

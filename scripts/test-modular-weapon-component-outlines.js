@@ -1,0 +1,36 @@
+// Regression for automatic inward component outlines, including composited seams.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const window = {}; // DOM-free shared compositor entry point.
+const context = vm.createContext({ window, console });
+for (const path of ['docs/config/modular-weapons.js','docs/js/modular-weapons.js']) vm.runInContext(fs.readFileSync(path,'utf8'),context,{filename:path});
+const outline = window.ModularWeapons.outlineComponentPixels;
+const W=7,H=5; // Small RGBA fixture with transparent padding and an existing black pixel.
+const rgba=new Uint8ClampedArray(W*H*4);
+const put=(x,y,color)=>rgba.set(color,(y*W+x)*4);
+const get=(x,y)=>Array.from(rgba.slice((y*W+x)*4,(y*W+x)*4+4));
+for(let y=1;y<=3;y++)for(let x=1;x<=5;x++)put(x,y,[180,90,40,255]);
+put(1,1,[0,0,0,255]);
+put(0,0,[19,18,17,0]);
+const alpha=Array.from(rgba.filter((_,i)=>i%4===3));
+assert.equal(outline(rgba,W,H),11);
+assert.deepEqual(get(1,1),[0,0,0,255]);
+assert.deepEqual(get(2,2),[180,90,40,255]);
+assert.deepEqual(get(5,2),[0,0,0,255]);
+assert.deepEqual(get(0,0),[19,18,17,0]);
+assert.deepEqual(Array.from(rgba.filter((_,i)=>i%4===3)),alpha);
+assert.equal(outline(rgba,W,H),0,'Inking must be idempotent');
+const edge=new Uint8ClampedArray([60,70,80,255, 20,30,40,100]);
+assert.equal(outline(edge,2,1),1);
+assert.deepEqual(Array.from(edge),[0,0,0,255,20,30,40,100]);
+const front=new Uint8ClampedArray(W*H*4);
+for(let y=1;y<=3;y++)for(let x=3;x<=5;x++)front.set([90,100,120,255],(y*W+x)*4);
+outline(front,W,H);
+assert.deepEqual(Array.from(front.slice((2*W+3)*4,(2*W+3)*4+4)),[0,0,0,255],'Foreground piece has black seam where it overlays colored background');
+assert.deepEqual(Array.from(front.slice((2*W+4)*4,(2*W+4)*4+4)),[90,100,120,255]);
+const source=fs.readFileSync('docs/js/modular-weapons.js','utf8');
+assert.match(source,/else paint\(context, visibleBounds\(headImage\)/);
+assert.match(source,/drawJunction\(ctx, piece, stroke, paint\)/);
+assert.match(source,/recipe\.flail\.head\.modularOutline = true/);
+console.log('Modular weapon component outline regressions passed.');
