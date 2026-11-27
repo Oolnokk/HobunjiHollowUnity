@@ -165,6 +165,7 @@ const vm = require('node:vm');
   actorWin.HobunjiCliffFallImpact = { resolve(_actor, fall) {
     proneImpacts++;
     assert(fall.dropWorld > 0, 'knockdown impact uses the real remaining fall height');
+    assert.equal(fall.popupCredit,true,'prone cliff landing preserves initiating hit credit');
     return { lethal: false };
   } };
   const interrupted = { ...fleeing, x: 7.5 * 55, y: 10.5 * 55, prone: false,
@@ -172,7 +173,7 @@ const vm = require('node:vm');
   assert(actorWin.CreatureCliffClimb.navigate(interrupted, 2.5 * 55, 10.5 * 55, 110, .03));
   actorWin.CreatureCliffClimb.update(interrupted, .12, null);
   interrupted.prone = true;
-  assert(actorWin.CreatureCliffClimb.knockOff(interrupted, 'knocked prone while descending'),
+  assert(actorWin.CreatureCliffClimb.knockOff(interrupted, 'knocked prone while descending', true),
     'a midair knockdown interrupts the voluntary downhill hop');
   for (let i = 0; i < 30; i++) if (interrupted._cliffClimb) actorWin.CreatureCliffClimb.update(interrupted, .03, null);
   assert.equal(interrupted._cliffClimb, null, 'the interrupted descent lands and clears movement ownership');

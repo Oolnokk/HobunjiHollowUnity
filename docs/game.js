@@ -859,8 +859,8 @@
             const healthLost = impactHealth > 0 ? window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' }) : 0; // Actual branch impact loss.
             const footingLost = window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch'); // Actual branch impact Footing.
             if (popupCredit) {
-              window.WorldPopupText?.showCombatEffect?.(target, 'health', healthLost, true);
-              window.WorldPopupText?.showCombatEffect?.(target, 'footing', footingLost, true);
+              const healthPopup = window.WorldPopupText?.showCombatEffect?.(target, 'health', healthLost, true, 'impact'); // Actual branch-landing Health popup, if visible.
+              const footingPopup = window.WorldPopupText?.showCombatEffect?.(target, 'footing', footingLost, true, 'impact'); if (healthPopup != null || footingPopup != null) window.WorldPopupText?.showImpactCallout?.(target);
             }
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
@@ -1105,7 +1105,7 @@
         }
         if (entity._cliffClimb) {
           if (entity._cliffClimb.phase === 'fall') { entity.proneThrowT = 0; return true; }
-          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone')) {
+          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone', entity._knockbackCollisionImpact?.popupCredit === true)) {
             entity.proneThrowT = 0;
             return true;
           }
@@ -1120,7 +1120,7 @@
           startX: entity.x, startY: entity.y, endX: entity.x, endY: entity.y,
           startSurfaceY: airborneY, endSurfaceY: groundY, visualSurfaceY: airborneY,
           elapsed: 0, duration: window.FormatUtils.clamp(0.14 + dropTiers * 0.055, 0.16, 0.36),
-          dropWorld, dropTiers, dirX: 0, dirY: 0,
+          dropWorld, dropTiers, dirX: 0, dirY: 0, popupCredit: entity._knockbackCollisionImpact?.popupCredit === true, // Carry the credited throw into the actual airborne landing.
         }; // Same animation and collision-cost pipeline as a shove off an actual ledge.
         entity._banditLungeHopCurrent = 0;
         entity._climbLeap = null;
@@ -3707,7 +3707,7 @@
         entity._knockbackLedgeAir = { // Persists the original ledge height while horizontal knockback travels over lower terrain.
           originSurfaceY,
           ledgeX: blockedAt.x, ledgeY: blockedAt.y,
-          dirX, dirY, radiusPx,
+          dirX, dirY, radiusPx, popupCredit: impactState?.popupCredit === true, // Retain ownership if a later wall impact consumes the horizontal state.
           preflightLandingX: landing.x, preflightLandingY: landing.y,
           preflightLandingSurfaceY: landing.surfaceY,
         };
@@ -3769,7 +3769,7 @@
           startSurfaceY: air.originSurfaceY, endSurfaceY: landing.surfaceY,
           visualSurfaceY: air.originSurfaceY,
           elapsed: 0, duration, dropWorld, dropTiers,
-          popupCredit: entity._knockbackCollisionImpact?.popupCredit === true, // Transfer credit before horizontal motion is cancelled.
+          popupCredit: (entity._knockbackCollisionImpact?.popupCredit ?? air.popupCredit) === true, // Latest shove wins; retain credit across a resolved horizontal impact.
           dirX: air.dirX, dirY: air.dirY,
         };
         entity._knockbackLedgeAir = null;
@@ -3853,7 +3853,7 @@
         const dirY = speed > 1e-6 ? velocityY / speed : 0;
         const blockedAt = swept.blockedAt || { x: entity.x, y: entity.y }; // First rejected swept center retained specifically for collider classification.
         const descriptor = swept.knockbackDescriptorOverride || knockbackCollisionDescriptorAt(blockedAt.x, blockedAt.y, radiusPx, dirX, dirY);
-        return api.resolve(entity, descriptor, TILE, knockbackImpactHooks(entity, descriptor, dirX, dirY));
+        if (entity._knockbackLedgeAir && entity._knockbackCollisionImpact) entity._knockbackLedgeAir.popupCredit = entity._knockbackCollisionImpact.popupCredit === true; return api.resolve(entity, descriptor, TILE, knockbackImpactHooks(entity, descriptor, dirX, dirY)); // Capture current shove before the resolver consumes it.
       }
 
       // Which placed decorative-furniture keys the player can interact with
@@ -5782,7 +5782,7 @@
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
         if (c?._downed) return false; // A downed companion is untargetable until it is revived (js/companion-downed.js).
         if (!environmentalImpact && window.Combat?.attach?.blocksDamage(c, dmgOpts, fromX, fromY)) return false; // A creature sitting on a host (honeyfuzzle Swarm) is immune to that host's attacks (js/combat/combat-attach.js).
-        if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
+        if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing', window.WorldPopupText?.isLocalCombatSource?.(dmgOpts.attacker) === true); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
         // their own swept 3D Box3 collision and deliberately bypass this.
