@@ -559,7 +559,7 @@
         const grips=window.HobunjiHandToolGrips;
         clearanceContext.fitOnly=activeSlot!=='weapon'&&(attackInProgress||authoredToolActionActive||(activeSlot==='ranged'&&(!!window.RangedWeapons?.playerActionState?.()||!!window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()))); // Preserve established length, never rotate a working stroke.
         clearanceContext.preserveOrientation=!!targetPose?.worldUpright||(activeSlot==='ranged'&&window.RangedWeapons?.isLoaded?.(itemKey)!==false); // Flame up and loaded reticle bearing are authored constraints.
-        clearanceContext.allowFit=activeSlot!=='ranged'&&(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
+        clearanceContext.allowFit=activeSlot!=='ranged'&&!torchIdle&&(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
         if(clearanceContext.allowFit&&mesh&&clearance.needsFit(clearanceContext,mesh))grips?.applyHeldItemPlacement?.(mesh,itemKey,clearanceContext.gripContext||'melee',scaleIdentity);
         // Size every weapon from the authored LIGHT neutral, regardless of
         // which stance actually owns this frame. Restore the live pose before baking.
@@ -611,7 +611,7 @@
           // still gets contact clearance, but never a fabricated shortening band.
           if(!adjusted&&activeSlot!=='weapon'&&!clearanceContext.fitOnly&&!clearanceContext.flexibleHaft&&clearance.needsCarryFallback?.()){
             adjusted=clearance.constrainCarry?.(this,mesh,{rig:clearanceContext.rig,itemKey,grip:clearanceContext.primary?.position,
-              preserveOrientation:clearanceContext.preserveOrientation||!!clearanceContext.secondary,
+              preserveOrientation:true, // Unsupported sprite bases have no proven calibrated rotation pivot; translate both sockets instead.
               otherGrips:clearanceContext.secondary?[clearanceContext.secondary.position]:null});
           }
           if(adjusted) {
