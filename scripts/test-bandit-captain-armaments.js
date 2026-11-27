@@ -13,14 +13,16 @@ class Group {
 }
 const scene = () => { const root = new Group(); return root; };
 const gear = { tools: {}, weaponEnchantments: {}, weaponEnchantmentVisuals: {} };
-let savedGearCount = 0; // Records real captain-loot gear persistence without relying on a browser save UI.
+let savedGearCount = 0; // Counts durable pack saves; registration uses the real gear/member transaction.
+const bag = { gold: 10000 }, itemDefs = {};
+let allowSave = true, licensed = false, feyComplete = false;
 const eventLog = [];
 const catalogWindow = {}; // Load the real catalogue/slot eligibility instead of a stale mock that permits Fury on Held slots.
 vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-enchantments.js', 'utf8'), { window: catalogWindow });
 const definitions = catalogWindow.EnchantmentSystem.DEFINITIONS;
 const window = {
   THREE: { Group }, GameRandom: { random: () => 0.37 }, EnemyLoadoutRules: { ruleFor: () => null },
-  EnchantmentSystem: { DEFINITIONS: definitions, allowsFlourishSlot: catalogWindow.EnchantmentSystem.allowsFlourishSlot, cleanWeaponState: raw => JSON.parse(JSON.stringify(raw)) },
+  EnchantmentSystem: { DEFINITIONS: definitions, allowsFlourishSlot: catalogWindow.EnchantmentSystem.allowsFlourishSlot, cleanWeaponState: raw => catalogWindow.EnchantmentSystem.cleanWeaponState(raw), unlockFromState: raw => { gear.enchantmentUnlocks ||= {}; for (const id of raw.base) gear.enchantmentUnlocks[id] = true; for (const [slot,id] of Object.entries(raw.flourishes)) gear.enchantmentUnlocks[id+'@'+slot] = true; return [...raw.base,...Object.values(raw.flourishes)]; } },
   CombatAttackEvents: { hit: (_base, patch) => { eventLog.push(patch); return patch; } },
   Combat: { poses: { SWEEP_POSE: { id: 'real-sweep' } } },
   WeaponEnchantmentVFX: { ALIGNMENTS: Object.fromEntries(['Tothal', 'Hronal', 'Kanthic', 'Ohthic', 'Fey'].map(id => [id, { dyeIds: ['dye'], effects: [{ id: 'orb' }] }])),
@@ -43,10 +45,10 @@ const culturalWeapons = ['workhammer', 'hatchet', 'fishingmace', 'fishingspear',
 window.WeaponTrustBanditLoadouts = { allowedMeleeShapes: species => species === 'mao-ao' ? culturalWeapons : ['workhammer', 'hatchet'] };
 window.WEAPON_TRUST_VISIT_CONFIG = { gifts: [{ shapeKey: 'warCleaver' }], bandits: { weaponShapePool: culturalWeapons } };
 const deps = {
-  TOOL_ITEM_DEFS: toolDefs, METAL_DEFS: metals, HELD_SHAPE_DEFS: shapes,
+  TOOL_ITEM_DEFS: toolDefs, ITEM_DEFS: itemDefs, inventory: bag, inventoryItems: [], METAL_DEFS: metals, HELD_SHAPE_DEFS: shapes,
   rnd: () => 0.37, getGearInventory: () => gear, ensureToolTexture: () => {},
   makeToolPlaneMesh: key => { const mesh = new Group(); mesh.userData.toolPlane = { isObject3D: true, rotation: { z: 0 } }; mesh.itemKey = key; return mesh; },
-  buildEquipmentSlots: () => {}, saveGearInventory: () => { savedGearCount++; },
+  buildEquipmentSlots: () => {}, saveMemberWorldData: () => { if (!allowSave) return false; savedGearCount++; return true; },
 };
 function entity() {
   const owner = new Group(), stage = scene(), existing = new Group();
@@ -68,6 +70,12 @@ window.BanditCombat = {
 };
 load('docs/js/bandit-captain-armaments.js');
 const cap = window.BanditCaptainArmaments;
+window.DelversGuild = { isMember: () => licensed };
+window.FeyArmamentQuest = { completed: () => feyComplete };
+window.HarlyaoRelics = { unbindPrice: () => 100 };
+window.CharacterMetaSave = { update(fn) { if (!allowSave) return false; fn({}, {}); return true; } };
+load('docs/js/gear-member-transaction.js');
+window.GearMemberTransaction.init({ ...deps, captureMemberWorldData: () => ({}) });
 assert.equal(cap.init(deps), 0);
 window.BanditCombat.init(deps);
 
@@ -154,22 +162,49 @@ for (let i=0;i<500;i++) {
   assert.equal(eventLog[1].slotId, 'hold2', 'counter-riposte still applies Base effects');
 
   const before = JSON.stringify(modular.unlockedParts([], gear, toolDefs));
+  const boundKey = cap.boundKeyFor(first);
+  allowSave = false;
+  assert.equal(cap.grantCorpseWeapon(first), null, 'a rejected pack save leaves the corpse retryable');
+  assert.equal(bag[boundKey], undefined);
+  allowSave = true;
   const name = cap.grantCorpseWeapon(first);
-  assert.match(name, /Captain's/);
+  assert.match(name, /Bound Captain's/);
+  assert.equal(bag[boundKey], 1);
+  assert.equal(gear.tools[weapon.key], undefined, 'bound loot cannot enter equipment');
+  assert.equal(gear.enchantmentUnlocks, undefined, 'loot does not teach any enchantment');
+  assert.equal(savedGearCount, 1);
+  assert.equal(cap.unlootedEnchantmentState(weapon.key), null);
+  delete itemDefs[boundKey];
+  assert.equal(cap.ensureBoundItemDef(boundKey).uniqueInventoryKey, true, 'pack identity rehydrates after reload');
+  assert.equal(cap.registerBoundWeapon(boundKey).reason, 'license');
+  licensed = true;
+  const goldBefore = bag.gold;
+  allowSave = false;
+  assert.equal(cap.registerBoundWeapon(boundKey).reason, 'save');
+  assert.equal(bag[boundKey], 1);
+  assert.equal(bag.gold, goldBefore);
+  assert.equal(gear.enchantmentUnlocks, undefined);
+  allowSave = true;
+  assert.equal(cap.registerBoundWeapon(boundKey).ok, true);
+  assert.equal(bag[boundKey], undefined);
   assert.equal(gear.tools[weapon.key], true);
   assert.equal(gear.captainModularWeapons[weapon.key].stars, 5);
-  assert.equal(savedGearCount, 1, 'looting a new captain weapon persists gear immediately');
   assert.equal(gear.weaponEnchantments[weapon.key].base.length, 2);
-  assert.equal(cap.unlootedEnchantmentState(weapon.key), null, 'post-loot magic is now gear-owned');
-  assert.equal(JSON.stringify(modular.unlockedParts([], gear, toolDefs)), before, 'having the complete rare weapon must not unlock either donor or any Foundry recipe');
-  assert.equal(gear.tools.hatchet_nativeCopper, undefined, 'neither full donor weapon was granted');
-  assert.equal(cap.grantCorpseWeapon(first), name, 'retained corpse loot is idempotent');
-  assert.equal(savedGearCount, 1, 'repeated corpse reads do not perform expensive redundant gear saves');
+  for (const id of weapon.enchantments.base) assert.equal(gear.enchantmentUnlocks[id], true);
+  assert.equal(JSON.stringify(modular.unlockedParts([], gear, toolDefs)), before, 're-registration must not unlock donor recipes');
+  assert.equal(gear.tools.hatchet_nativeCopper, undefined);
+  assert.equal(cap.grantCorpseWeapon(first), name);
+  assert.equal(savedGearCount, 1);
+  assert.equal(cap.registerBoundWeapon(boundKey).ok, false, 'registration cannot be repeated');
   assert.deepEqual(Object.keys(gear.tools), [weapon.key]);
 
+  const secondBound = cap.boundKeyFor(second);
   cap.grantCorpseWeapon(second);
-  assert.equal(Object.keys(gear.tools).length, 2, 'two independent captains can both be looted even with the same pair and metal');
+  assert.equal(bag[secondBound], 1);
+  assert.equal(cap.registerBoundWeapon(secondBound).ok, true);
+  assert.equal(Object.keys(gear.tools).length, 2);
   assert.equal(gear.weaponEnchantments[weapon2.key].base.length + Object.keys(gear.weaponEnchantments[weapon2.key].flourishes).length, 5);
+  for (const [slot,id] of Object.entries(weapon2.enchantments.flourishes)) assert.equal(gear.enchantmentUnlocks[id+'@'+slot], true);
   delete toolDefs[weapon.key]; delete toolDefs[weapon2.key];
   assert.equal(cap.restore(), 2, 'save restore must re-register both independent weapon definitions');
   assert(toolDefs[weapon.key] && toolDefs[weapon2.key]);
@@ -257,11 +292,17 @@ for (let i=0;i<500;i++) {
     assert.equal(boss.def.weaponKey,record.key);
     const saveCount=savedGearCount;
     if(tier===0){
-      assert.match(cap.grantCorpseWeapon(boss,{deferSave:true}),/Fey-touched/);
+      const boundKey = cap.boundKeyFor(boss);
+      assert.match(cap.grantCorpseWeapon(boss,{deferSave:true}),/Bound Fey-touched/);
+      assert.equal(bag[boundKey],1);
+      assert.equal(gear.tools[record.key],undefined);
+      assert.equal(cap.registerBoundWeapon(boundKey).reason,'quest');
       assert.equal(savedGearCount,saveCount,'atomic owner performs the save, not the weapon helper');
       assert(cap.unlootedEnchantmentState(record.key),'the record remains available until transaction completion');
       cap.discard(boss);
-      assert(toolDefs[record.key],'owned weapon survives encounter cleanup');
+      assert.equal(toolDefs[record.key],undefined,'bound pack loot needs no live tool definition');
+      feyComplete=true;
+      assert.equal(cap.registerBoundWeapon(boundKey).ok,true);
       assert.equal(cap.unlootedEnchantmentState(record.key),null);
       delete toolDefs[record.key];
       cap.restore();

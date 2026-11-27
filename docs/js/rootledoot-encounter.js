@@ -248,7 +248,8 @@
     if(!rec.boss||!deps.canReceiveRoot?.()){deps.toast?.('No room for Fey Heftroot.',false);return false;}
     const previous=journal.capture(rec.key); // Transaction rolls back the locale, pending harvest and buff alongside gear and bag.
     const cooking=window.CookingSystem, stacks=cooking?.getFoodEffectStacks?.('feySight')||0;
-    const transaction=window.GearMemberTransaction?.run?.({inventoryKeys:['feyHeftroot'],mutate(){
+    const boundKey=window.BanditCaptainArmaments?.boundKeyFor?.(rec.boss); // Roll back the unique bound reward along with the root.
+    const transaction=window.GearMemberTransaction?.run?.({inventoryKeys:['feyHeftroot',boundKey].filter(Boolean),mutate(){
       const weapon=window.BanditCaptainArmaments?.grantCorpseWeapon?.(rec.boss,{deferSave:true});
       if(!weapon)return {ok:false,reason:'weapon'};
       deps.giveRoot();cooking?.consumeFeySight?.();
