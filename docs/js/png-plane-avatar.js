@@ -1779,6 +1779,15 @@
     return false;
   }
 
+  // One-shot sampler for geometry seated on a fully built portrait. The caller owns the result and can discard this after spawn.
+  function makePortraitSurfaceSampler(mesh) {
+    if(!mesh?.isSkinnedMesh||!mesh.skeleton)return null;
+    mesh.updateWorldMatrix(true,false);mesh.updateMatrixWorld(true);mesh.skeleton.update(); // Refresh real skin matrices after the spawn-time torso hunch.
+    const out=mesh.position.clone(),scratch={bindPoint:out.clone(),deformed:out.clone(),bonePoint:out.clone(),boneMatrix:mesh.bindMatrix.clone()};
+    const inverse=mesh.matrixWorld.clone().invert();
+    return (u,v)=>sampleSkinnedPortraitSurface(mesh,u,v,out,scratch)?out.applyMatrix4(inverse):null;
+  }
+
   // Resolves an authored source-pixel coordinate through the same live torso/head
   // skinning used by the portrait SkinnedMesh. This remains avatar-instance
   // data so species-level cached anchors cannot be reused for a different pose.
@@ -2210,6 +2219,7 @@
     resolveSkinnedPortraitRoot,
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,
+    makePortraitSurfaceSampler,
     trackPortraitTexture,
     getPortraitsFlipped: () => portraitsFlipped,
     setPortraitsFlipped,

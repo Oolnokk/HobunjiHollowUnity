@@ -179,10 +179,12 @@ const server = http.createServer((request, response) => {
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
     await page.addScriptTag({url:'/docs/js/combat/combat-minion.js'});
+    await page.addScriptTag({url:'/docs/js/png-plane-avatar.js'});
     await page.addScriptTag({url:'/docs/js/faceted-rocks.js'});
     const skeletonResult=await page.evaluate(async()=>{
       const T=THREE,canvas=document.createElement('canvas');canvas.width=canvas.height=100;
-      const ctx=canvas.getContext('2d');ctx.fillRect(10,5,80,55);ctx.fillRect(39,60,22,34); // Large head and narrow lower torso.
+      const ctx=canvas.getContext('2d');ctx.fillRect(20,5,60,55);ctx.fillRect(10,45,80,27);ctx.fillRect(39,60,22,34);
+      const head=document.createElement('canvas');head.width=head.height=100;head.getContext('2d').fillRect(20,5,60,55);
       const results=[];
       const garment=document.createElement('canvas');garment.width=48;garment.height=48;
       const gc=garment.getContext('2d');gc.fillStyle='#ac885f';gc.fillRect(3,3,42,42);gc.fillStyle='#000';gc.fillRect(3,3,42,2);
@@ -194,29 +196,32 @@ const server = http.createServer((request, response) => {
         const inkIndex=(4*48+20)*4,bodyIndex=(20*48+20)*4;
         const pantsInk=Array.from(after.slice(inkIndex,inkIndex+4)).every((v,i)=>v===bytes[inkIndex+i]);
         const pantsEffect=theme==='hronal'?after[bodyIndex]<bytes[bodyIndex]:after[bodyIndex+2]>bytes[bodyIndex+2];
-        const group=new T.Group(),back=new T.Group(),portrait=new T.Group(),hammer=new T.Group();
-        group.add(back,hammer);back.add(portrait);hammer.position.set(2,0,0);
-        const nodes=Array.from({length:7},(_,i)=>{const b=new T.Bone();b.name='torso'+i;b.position.set(0,i===0?-.43:.055,0);b.userData.hobunjiSplineRest={x:b.position.x,y:b.position.y,z:b.position.z};return b;});
-        portrait.add(nodes[0]);for(let i=1;i<nodes.length;i++)nodes[i-1].add(nodes[i]);
-        const avatar={backPlane:back,backPortraitMesh:portrait,modelWidth:1,modelHeight:1,backCanvas:canvas,ruinNeckNormalized:{x:.5,y:.60},ruinBackSplineNodes:nodes};
+        const group=new T.Group(),back=new T.Group(),hammer=new T.Group();
+        group.add(back,hammer);hammer.position.set(2,0,0);
+        const plain=new T.Mesh(new T.PlaneGeometry(1,1),new T.MeshBasicMaterial());plain.name='test-rear-portrait';
+        const rig=window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin(T,plain,{x:.5,y:.60},true,{width:1,height:1,sourceCanvas:canvas,headCanvas:head});
+        const portrait=rig.mesh;back.add(portrait);
+        rig.splineNodes[2].position.z+=.07;rig.splineNodes[3].position.y-=.025; // Genuine deformation before placement.
+        group.updateMatrixWorld(true);
+        const avatar={backPlane:back,backPortraitMesh:portrait,modelWidth:1,modelHeight:1,backCanvas:canvas,ruinRearHeadCanvas:head};
         const dispose=window.MinionCombat.attachRuinBackSpikes(T,avatar,{ruinSkeletonTheme:theme,ruinSkeletonSeed:7});
         group.updateMatrixWorld(true);const layer=group.getObjectByName('ruin-skeleton-back-stalagmites');
         if(!layer){results.push({theme,missing:true});continue;}
         const mesh=layer.children[0],positions=mesh.geometry.attributes.position,point=new T.Vector3(),anchors=mesh.geometry.userData.iceGrowthAnchors;
-        let baseInside=true,baseVertices=0,maxZ=-Infinity;
+        let baseInside=avatar.ruinBackSpikeInfo.seated>0,baseVertices=0,maxZ=-Infinity;
         for(let i=0;i<positions.count;i++){
           point.fromBufferAttribute(positions,i);const ground=point.y<-.014;point.applyMatrix4(mesh.matrixWorld);
           maxZ=Math.max(maxZ,point.z);
-          if(ground){baseVertices++;if(anchors&&anchors.length===positions.count*3){point.fromArray(anchors,i*3).applyMatrix4(mesh.matrixWorld);baseInside&&=point.y<-.10&&point.y>-.44&&Math.abs(point.x)<.12;}}
+          if(ground)baseVertices++; // Geometry is displaced to the actual skin, so the old rectangular world-space bounds are deliberately no longer applicable.
         }
         const before=layer.getWorldPosition(new T.Vector3());hammer.position.x+=20;group.updateMatrixWorld(true);
         const unaffected=before.distanceTo(layer.getWorldPosition(new T.Vector3()))<1e-8;
-        const attached=nodes.slice(0,5).includes(layer.parent);const surface=theme!=='hronal'||mesh.userData.facetedRock===true;
+        const attached=layer.parent===portrait;const surface=theme!=='hronal'||mesh.userData.facetedRock===true;
         dispose();results.push({theme,baseInside,baseVertices,attached,unaffected,surface,maxZ,pants,pantsInk,pantsEffect,disposed:layer.parent===null});
       }
       return results;
     });
-    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>.12&&result.pants&&result.pantsInk&&result.pantsEffect&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
+    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>.25&&result.pants&&result.pantsInk&&result.pantsEffect&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
     await page.evaluate(() => {
       window.__iceFireTargets = new Map(); // The real composer registers its fire targets through this minimal existing contract.
       window.__iceSolids = new Map(); // Collision callback truthiness is checked both frozen and melting.
