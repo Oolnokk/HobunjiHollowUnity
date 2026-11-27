@@ -888,6 +888,21 @@
     part.matrixWorldNeedsUpdate = true;
   }
 
+  // Use the registered definition, not a key prefix: re-registered captain
+  // loot has the same modular tool roles as a forged weapon.
+  function playerGroundSlot(runtime,itemKey,holder,def) {
+    if(!runtime?.activeSlot||runtime.itemKey!==itemKey)return false;
+    return runtime.activeSlot==='weapon'||(!!def?.modular&&def.slots?.includes(runtime.activeSlot)&&
+      global.WeaponToolStances?.groundPoseEligible?.(runtime.activeSlot,itemKey,holder)===true);
+  }
+
+  function idleGroundContactAllowed(state,runtime,holder) {
+    // Legacy work strokes can be active even without a combat visual timeline.
+    // Keep the physical fit during the stroke, but release the pinned head.
+    return !state.attacking&&!state.fishingFlailHeadSpin&&
+      !(runtime?.activeSlot&&runtime.activeSlot!=='weapon'&&holder?.userData?.authoredToolActionActive===true);
+  }
+
   // Idle head artwork stays world-up. Measure the vertical offset from its
   // rope attachment to its authored contact edge, or all layer bounds.
   function idleHeadContact(state,unit,profile) {
@@ -1087,11 +1102,12 @@
     const runtime=pose?.enabled?.()&&!sharedSource
       &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
       ?global.WeaponToolStances?.getRuntimeState?.():null;
-    const profile=sharedSource?sharedSource.groundProfile:(preview||runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
+    const profile=sharedSource?sharedSource.groundProfile:(preview||playerGroundSlot(runtime,state.itemKey,root.parent,state.originalDef)
       ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null);
     state.groundProfile=profile; // No separate metadata lookup or mutable physical fit for the visible replicas.
+    state.groundSlot=profile?(sharedSource?sharedSource.groundSlot:preview?'preview':runtime?.activeSlot):null; // Mobile diagnostic: identifies the stance that supplied live floor contact.
     const floor=profile?pose.groundY():null; // The fitted length is a maximum; zero rope-minimum does not disable floor contact.
-    const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
+    const contact=Number.isFinite(floor)&&idleGroundContactAllowed(state,runtime,root.parent)?idleHeadContact(state,unit,profile):null;
     // Fixed Light fit uses upright contact; live trailing accounts for tilt separately.
     // Fit the connector in the neutral, vertically hanging reference pose, not
     // its transient pendulum direction. Reuse the physical fit on every frame.
@@ -1356,7 +1372,8 @@
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
       fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, sourceFallback: fx.sourceFallback, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(fx.config.fixedMasteryRank ?? s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
-      groundClearance: s.groundClearance || null, // Mobile diagnostics for shortened and trailing connectors.
+      groundSlot: s.root.parent?s.groundSlot??null:null, // Which equipped stance owns the shared tether.
+      groundClearance: s.root.parent?s.groundClearance||null:null, // Mobile diagnostics for shortened and trailing connectors.
       idleHead: s.config.flail?{yaw:s.idleHeadMotion.yaw,renderedYaw:s.idleHeadMotion.renderedYaw,leanX:s.idleHeadMotion.leanX,leanZ:s.idleHeadMotion.leanZ,source:s.idleHeadMotion.source}:null, // Phone-visible head motion diagnosis.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
@@ -1497,7 +1514,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    resolveGroundSlack, canPinGroundHead, slackConnectorScale, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    playerGroundSlot, idleGroundContactAllowed, resolveGroundSlack, canPinGroundHead, slackConnectorScale, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {

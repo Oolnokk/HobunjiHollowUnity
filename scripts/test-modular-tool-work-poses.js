@@ -142,6 +142,54 @@ const sweepingHarpoon = key('fishing-spear', 'fishing-mace'); // A normal swingi
 const thrustingHarpoon = key('pick-shovel', 'fishing-mace'); // A non-spinning modular harpoon.
 const flailHarpoon = key('fishing-mace', 'grapple-flail'); // A flexible fishing head carried on an ordinary tool-worthy haft.
 for (const k of [sweepingHarpoon, thrustingHarpoon, flailHarpoon]) assert(defs[k]?.slots.includes('harpoon'), k + ' must qualify for fishing');
+// Ground-drag integration: real Foundry definitions, the real equipped stance
+// runtime, and registered captain loot use the exact same flail slot gate.
+context.document={currentScript:{src:'https://example.test/docs/js/weapon-sprite-assemblies.js'}};
+context.location={pathname:'/docs/index.html'};
+load('docs/js/weapon-sprite-assemblies.js');
+load('docs/js/bandit-captain-armaments.js');
+const assemblies=window.HobunjiWeaponSpriteAssemblies; // Actual gameplay gate and tether solver.
+const captain=window.BanditCaptainArmaments; // Real registration preserves the source definition's modular roles.
+captain.init(deps);
+const captainKey='banditModular:fishing-mace:grapple-flail:nativeCopper:audit1';
+assert(captain.registerDefinition(captainKey,{shaft:'fishing-mace',head:'grapple-flail',metal:'nativeCopper'}));
+assert(defs[captainKey].weaponAssembly.flail);
+const originalSlot=active.slot; // Restore the fixture before the remaining fishing tests.
+const originalEquipment={...deps.equipmentSlots};
+const groundHolder={visible:true,userData:{}}; // Actual stance eligibility only needs holder visibility and back-plane metadata.
+let eligibleRoles=0; // Count actual catalog tool roles, not hypothetical combinations.
+for(const [k,def] of Object.entries(defs)){
+  if(!def.modular||!def.weaponAssembly?.flail)continue;
+  for(const slot of def.slots){
+    active.slot=slot;deps.equipmentSlots[slot]=k;
+    const runtime=stances.getRuntimeState();
+    assert.equal(runtime.itemKey,k);
+    assert.equal(assemblies.playerGroundSlot(runtime,k,groundHolder,def),true,k+' '+slot);
+    if(slot==='weapon')continue;
+    eligibleRoles++;
+    assert(assemblies.idleGroundContactAllowed({},runtime,groundHolder));
+    const trail={grounded:false},direction={x:0,y:-1,z:0}; // Independent ground state, shared production tether.
+    assemblies.resolveGroundSlack(trail,direction,1,.3,{x:0,y:0,z:0});
+    assemblies.resolveGroundSlack(trail,direction,1,.3,{x:.4,y:0,z:.2});
+    assert(trail.grounded&&Math.abs(trail.x+.4)<1e-8&&Math.abs(trail.z+.2)<1e-8);
+    assemblies.resolveGroundSlack(trail,direction,1,.3,{x:2,y:0,z:.2});
+    assert(Math.abs(Math.hypot(trail.x,trail.y,trail.z)-1)<1e-8);
+    groundHolder.userData.authoredToolActionActive=true;
+    assert.equal(assemblies.idleGroundContactAllowed({},runtime,groundHolder),false);
+    groundHolder.userData.authoredToolActionActive=false;
+    assert.equal(assemblies.idleGroundContactAllowed({fishingFlailHeadSpin:true},runtime,groundHolder),false);
+  }
+}
+assert(eligibleRoles>0);
+active.slot='harpoon';deps.equipmentSlots.harpoon=captainKey;
+assert(assemblies.playerGroundSlot(stances.getRuntimeState(),captainKey,groundHolder,defs[captainKey]));
+assert.equal(assemblies.playerGroundSlot(stances.getRuntimeState(),flailHarpoon,groundHolder,defs[flailHarpoon]),false,'stale item cannot borrow active slot');
+active.slot='ranged';deps.equipmentSlots.ranged=captainKey;
+assert.equal(assemblies.playerGroundSlot(stances.getRuntimeState(),captainKey,groundHolder,defs[captainKey]),false,'invalid role is rejected');
+active.slot=originalSlot;
+for(const slot of Object.keys(deps.equipmentSlots))delete deps.equipmentSlots[slot];
+Object.assign(deps.equipmentSlots,originalEquipment);
+
 const fishingContext = vm.createContext({ window, deps: { equipmentSlots: { harpoon: sweepingHarpoon }, TOOL_ITEM_DEFS: defs } });
 vm.runInContext(fishingSource.slice(startFishingSelector, endFishingSelector) + '\nthis.select = selectedFishingThrowAnimation;', fishingContext);
 const sweepingThrow = fishingContext.select();
