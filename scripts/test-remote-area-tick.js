@@ -94,31 +94,82 @@ rat.init({ getCurrentArea: () => currentArea, tickHostiles: () => ticks.push(1) 
 rat.update(1);
 assert.equal(ticks.length, 0, 'players in the local area are ticked by the normal loop');
 
-// Stage 3: an occupied zone nobody built is built once per round (calm only), then populated and ticked.
+// Stage 3: an occupied zone nobody built is announced, painted, then built (one at a time, calm only), populated and ticked.
 {
-  const buildLog = [], popLog = [];
-  w.AreaScope.ensureScene = a => { buildLog.push(a); built.add(a); return true; };
+  const buildLog = [], popLog = [], announced = [];
+  let throwOnBuild = false;
+  w.AreaScope.ensureScene = a => { if (throwOnBuild) throw new Error('build boom'); buildLog.push(a); built.add(a); return true; };
+  let queue = [];
+  w.requestAnimationFrame = cb => { queue.push(cb); return queue.length; };
+  const nextFrame = () => { const run = queue; queue = []; for (const cb of run) cb(); };
   let calm = false;
   guest.areaId = 'map_new1'; ticks.length = 0;
   rat.init({ getCurrentArea: () => currentArea, isCalm: () => calm,
+    announce: a => announced.push(a),
     populate: () => { popLog.push(currentArea); return true; },
     tickHostiles: () => ticks.push(currentArea) });
   rat.update(1);
-  assert.deepEqual(buildLog, [], 'not built while the host is not calm (cutscene/paused)');
+  assert.deepEqual(announced, [], 'not announced or built while the host is not calm (cutscene/paused/dialogue)');
+  assert.equal(queue.length, 0);
   calm = true;
   rat.update(1);
-  assert.deepEqual(buildLog, ['map_new1'], 'built when calm');
-  assert.deepEqual(Array.from(popLog), ['map_new1'], 'populated on first scoped tick, same round as the build');
+  assert.deepEqual(Array.from(announced), ['map_new1'], 'the notice goes out first');
+  assert.deepEqual(buildLog, [], 'the blocking build never runs inside the update itself');
+  assert.equal(rat.isBuilding(), true);
+  nextFrame();
+  assert.deepEqual(buildLog, [], 'one painted frame is not enough: the notice must be on screen');
+  nextFrame();
+  assert.deepEqual(buildLog, ['map_new1'], 'built after two frames');
+  assert.equal(rat.isBuilding(), false);
+  rat.update(1);
+  assert.deepEqual(Array.from(popLog), ['map_new1'], 'populated on the first scoped tick after the build');
   assert.deepEqual(Array.from(ticks), ['map_new1']);
   rat.update(1);
   assert.deepEqual(buildLog, ['map_new1'], 'built exactly once');
   assert.equal(currentArea, 'map_a', 'building never moves the local area');
+
+  // Two unbuilt zones at once: one build in flight at a time.
   const g2 = { x: 0, y: 0, health: 100, areaId: 'map_new2' };
   reg.registerPlayer(g2, { playerId: 'g2' });
-  buildLog.length = 0; guest.areaId = 'map_new3'; // two unbuilt zones at once
+  buildLog.length = 0; announced.length = 0; guest.areaId = 'map_new3';
   rat.update(1);
-  assert.equal(buildLog.length, 1, 'at most one zone is built per round');
+  assert.equal(announced.length, 1, 'only one zone is announced/built at a time');
+  rat.update(1);
+  assert.equal(announced.length, 1, 'the second waits while the first is in flight');
+  nextFrame(); nextFrame();
+  assert.equal(buildLog.length, 1);
+  rat.update(1);
+  assert.equal(announced.length, 2, 'the next zone starts once the first finished');
+  nextFrame(); nextFrame();
+  assert.equal(buildLog.length, 2);
   reg.unregisterPlayer(g2);
-  assert.ok(rat.getDebug().built >= 2);
+
+  // A host that never gets a calm moment still builds after the bounded wait.
+  calm = false; built.delete('map_new1'); guest.areaId = 'map_new1'; announced.length = 0; buildLog.length = 0;
+  for (let i = 0; i < 33; i++) rat.update(1); // each update advances at most 0.6 s: 33 x 0.6 = 19.8 s
+  assert.equal(announced.length, 0, 'still waiting for a calm moment');
+  rat.update(1);
+  assert.equal(announced.length, 1, 'built anyway after the 20 s cap');
+  nextFrame(); nextFrame();
+  assert.deepEqual(buildLog, ['map_new1']);
+
+  // A failing build is contained and does not wedge the builder.
+  built.delete('map_new1'); announced.length = 0; calm = true; throwOnBuild = true;
+  const warn2 = ctx.console.warn; ctx.console.warn = () => {};
+  const errorsBefore = rat.getDebug().errors;
+  rat.update(1); nextFrame(); nextFrame();
+  ctx.console.warn = warn2;
+  assert.equal(rat.getDebug().errors, errorsBefore + 1);
+  assert.equal(rat.isBuilding(), false, 'a failed build releases the in-flight flag');
+  throwOnBuild = false;
+  rat.update(1); nextFrame(); nextFrame();
+  assert.ok(built.has('map_new1'), 'and the next attempt can succeed');
+
+  // Without requestAnimationFrame (headless/unit), the build still runs, right after the notice.
+  delete w.requestAnimationFrame;
+  built.delete('map_new1'); announced.length = 0; buildLog.length = 0;
+  rat.update(1);
+  assert.equal(announced.length, 1); assert.deepEqual(buildLog, ['map_new1']);
+  assert.ok(rat.getDebug().built >= 3);
 }
 console.log('remote area tick tests passed');

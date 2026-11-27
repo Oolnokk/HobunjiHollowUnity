@@ -33,6 +33,9 @@
   let accum = 0;
   const POPULATE_INTERVAL_S = 5;  // Den/herd top-up for a remote zone, like the local den check cadence.
   const stats = { ticks: 0, skippedUnbuilt: 0, built: 0, populated: 0, errors: 0, lastAreas: [] };
+  const MAX_CALM_WAIT_S = 20; // After this long without a calm moment the zone is built anyway.
+  const waitingSince = new Map(); // area -> seconds the build has been deferred waiting for a calm host.
+  let building = false;
   let populateAccum = 0;
   const populated = new Set();
 
@@ -53,6 +56,24 @@
     return out;
   }
 
+  // Frames the host must render before the (blocking) build starts so the notice is actually on screen.
+  function afterPaint(callback) {
+    const raf = window.requestAnimationFrame;
+    if (typeof raf !== 'function') { callback(); return; }
+    raf.call(window, () => raf.call(window, callback));
+  }
+
+  function startBuild(scope, area) {
+    building = true;
+    waitingSince.delete(area);
+    try { deps.announce?.(area); } catch (error) { console.warn('[RemoteAreaTick] announce failed', error); }
+    afterPaint(() => {
+      try { if (scope.ensureScene(area)) stats.built++; }
+      catch (error) { stats.errors++; console.warn('[RemoteAreaTick] build failed for', area, error); }
+      finally { building = false; }
+    });
+  }
+
   function update(dt) {
     if (!enabled || !deps || !window.TimeConsensus?.shouldGate?.()) return;
     accum += Math.max(0, Number(dt) || 0);
@@ -65,15 +86,17 @@
     populateAccum += step;
     const populateNow = populateAccum >= POPULATE_INTERVAL_S;
     if (populateNow) populateAccum = 0;
-    let builtThisRound = false;
     for (const area of targetAreas()) {
       if (!scope.hasScene(area)) {
-        // Stage 3: nobody has built this guest's zone on the host. Build at most ONE zone per round (a build is a
-        // multi-second synchronous cost) and only at a calm moment; ticking starts next round.
-        if (!builtThisRound && scope.ensureScene && deps.isCalm?.() !== false) {
-          try { builtThisRound = true; if (scope.ensureScene(area)) stats.built++; } catch (error) { stats.errors++; console.warn('[RemoteAreaTick] build failed for', area, error); }
+        // Stage 3: nobody has built this guest's zone on the host. The build is one synchronous multi-second call, so it never
+        // runs inside this update: startBuild() tells the host why the game is about to stall, lets that paint, then builds.
+        // One zone at a time, at a calm moment (bounded wait: a host stuck in combat must not leave the guest in a void).
+        if (!building && scope.ensureScene) {
+          const waitedS = (waitingSince.get(area) ?? (waitingSince.set(area, 0), 0)) + step;
+          waitingSince.set(area, waitedS);
+          if (deps.isCalm?.() !== false || waitedS >= MAX_CALM_WAIT_S) startBuild(scope, area);
         }
-        if (!scope.hasScene(area)) { stats.skippedUnbuilt++; continue; }
+        stats.skippedUnbuilt++; continue;
       }
       try {
         scope.with(area, () => {
@@ -93,6 +116,7 @@
     init, update, targetAreas,
     setEnabled(on) { enabled = !!on; accum = 0; return enabled; },
     isEnabled: () => enabled,
+    isBuilding: () => building,
     getDebug: () => ({ enabled, ...stats, lastAreas: stats.lastAreas.slice() }),
     INTERVAL_S,
   };
