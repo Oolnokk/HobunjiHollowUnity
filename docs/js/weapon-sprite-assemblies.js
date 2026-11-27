@@ -51,7 +51,8 @@
           const image = global.ModularWeapons.outlinedImage(source.image);
           if (image === source.image) return source;
           const variant = source.clone(); // Preserve the canonical texture filters and color space.
-          variant.image = image;
+          if (variant.source && THREE.Source) variant.source = new THREE.Source(image); // Modern Three clones share Source; do not overwrite the original.
+          else variant.image = image; // Legacy Three textures store image directly.
           variant.needsUpdate = true;
           return variant;
         }).catch(error => { images.delete(key); throw error; });
