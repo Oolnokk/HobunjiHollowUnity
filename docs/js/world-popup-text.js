@@ -1165,6 +1165,10 @@
     const halfFovTan = Math.tan(((Number(camera.fov) || 42) * Math.PI / 180) / 2);
     const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
     let rowLayouts = null; // Allocate only if a live row needs layout; damage numbers and emojis do not.
+    // Anchor transforms are identical for a root/mode within this update. Keep the cached base
+    // separate from the animated offset, and never carry it into the next frame.
+    const shareAnchors = state.active.length > 1; // Single popups need no cache.
+    let floatAnchors = null, rowAnchors = null; // Lazily allocate one map per text mode, never one map per actor.
     let scatterUp = null; // Camera up is computed once, only on frames with a scattered popup.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
@@ -1173,15 +1177,28 @@
           state.active.splice(index, 1);
           dispose(event);
         }
+        // getSide/sample/onDispose are callbacks; any of them may change an actor's pose.
+        floatAnchors?.clear(); rowAnchors?.clear();
         continue;
       }
       const progress = event.interactionPrompt ? 0 : Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
-      const center = popupAnchorWorld(event.root, event.mode);
+      let center;
+      if (progress < 1 && shareAnchors && (event.mode === 'floatPlus' || event.mode === 'centeredFiveRow')) {
+        const anchors = event.mode === 'floatPlus' ? (floatAnchors ||= new Map()) : (rowAnchors ||= new Map()); // Mode-specific, current-frame cache.
+        if (!anchors.has(event.root)) anchors.set(event.root, popupAnchorWorld(event.root, event.mode));
+        const base = anchors.get(event.root);
+        if (base) {
+          const scratch = _updateScratch.popupCenter ||= new state.deps.THREE.Vector3(); // Mutable per-event offset, not the cached anchor.
+          scratch.copy(base);
+          center = scratch;
+        }
+      } else if (progress < 1) center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
         finishedRewards.push(event); // Also covers a player root lost during a scene change.
         rowLayouts?.delete(event.root); // Remaining rows retain the original same-frame compaction behavior.
         dispose(event);
         state.active.splice(index, 1);
+        floatAnchors?.clear(); rowAnchors?.clear(); // Scene removal listeners can move any actor.
         continue;
       }
       // Interaction prompts are world-anchored, so a camera pushed against a
@@ -1300,7 +1317,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Combat numbers scatter in Float+; collisions emit one oversized IMPACT!!! callout.',
+      latestChange: 'Combat numbers scatter in Float+ with one oversized IMPACT!!! per collision; simultaneous popups share actor anchors, not animation offsets.',
       lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
