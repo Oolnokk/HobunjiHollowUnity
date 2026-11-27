@@ -14,6 +14,16 @@
     poison: [new THREE.Color(0x8fa431), new THREE.Color(0x4e611d)],
     vomit: [new THREE.Color(0xa88e42), new THREE.Color(0x756527)],
   }; // Shared liquid geometry with separate venom and infection palettes.
+  const TYPES = {
+    'blood-drip': { palette: 'blood', lane: 'drip' },
+    'poison-drip': { palette: 'poison', lane: 'drip' },
+    'wound-spurt': { palette: 'blood', lane: 'spray' },
+    'blood-spew': { palette: 'blood', lane: 'spray', mouth: true },
+    'poison-spew': { palette: 'poison', lane: 'spray', mouth: true },
+    vomit: { palette: 'vomit', lane: 'spray', mouth: true },
+  }; // Separate drip and spray timing per actor while sharing existing particle geometry.
+  const TYPE_GAP_MS = 90; // Leave this much time between different colors/origins in the same lane.
+  const played = new WeakMap(); // Per-actor last rendered emission in each lane.
   const RANDOM = Math.random; // Cosmetic randomness must never advance the gameplay RNG.
   const cadence = new WeakMap(); // Separate visual timers for each actor and emission kind.
   const opaqueSamples = new WeakMap(); // Small alpha samples cached by the portrait/garment's current image.
@@ -32,7 +42,7 @@
     ? sightEndpointFloor.y - 0.016 : undefined;
 
   function emit(actor, type, intervalMs = 0) {
-    if (!actor || actor.state === 'corpse' || actor.state === 'dying') return;
+    if (!Object.hasOwn(TYPES, type) || !actor || actor.state === 'corpse' || actor.state === 'dying') return;
     const now = performance.now(); // Presentation cadence and lifetime use real milliseconds.
     let times = cadence.get(actor);
     if (intervalMs && now - (times?.[type] ?? -Infinity) < intervalMs) return;
@@ -178,9 +188,9 @@
     const plane = avatar?.userData.neckRig.skinnedPlane || actor.avatarRef?.frontPlane || window.CharacterVisuals?.portraitMeshOf?.(root);
     if (!plane) return;
     const image = avatar?.userData.sourceCanvas || plane.material?.map?.image; // Garment and portrait art may have different source dimensions.
-    const color = type === 'poison-drip' ? PALETTES.poison : type === 'vomit' ? PALETTES.vomit : PALETTES.blood;
+    const style = TYPES[type], color = PALETTES[style.palette]; // Both poison presentations use the same green palette.
     let emitted = false;
-    if (type === 'blood-spew' || type === 'vomit') {
+    if (style.mouth) {
       const mouth = window.SharedAttackPose?.mouthPixel?.(avatar); // Same authored mouth coordinate as head-anchored held tools.
       if (mouth && portraitApi.resolveSkinnedPixelWorldPosition(avatar, mouth, origin)) {
         stats.authoredMouthSprays++;
@@ -234,6 +244,7 @@
       stats.emitted[type] = (stats.emitted[type] || 0) + 1;
       stats.last = type;
     }
+    return emitted;
   }
 
   function land(p, now, deps) {
@@ -292,6 +303,38 @@
     }
   }
 
+  function presentPending(scene, area, now, camera, deps) {
+    for (const event of pending) {
+      if (event.scene === scene && event.area === area && !event.actor.avatarRef?.group) roots.set(event.actor, null);
+    }
+    let unresolved = roots.size; // Stop scanning as soon as the queued actors' roots are found.
+    if (unresolved) window.CharacterVisuals?.forEachCharacter?.(area, (_kind, root, actor) => {
+      if (roots.get(actor) !== null) return false;
+      roots.set(actor, root);
+      return --unresolved === 0;
+    });
+    let kept = 0; // Compact the queue in place, retaining effects waiting for another frame.
+    for (const event of pending) {
+      if (event.scene !== scene || event.area !== area || now - event.now > 850) continue;
+      let lanes = played.get(event.actor); // Keep one lane for drips and one for sprays.
+      if (!lanes) { lanes = {}; played.set(event.actor, lanes); }
+      const key = TYPES[event.type].lane; // All portrait and pants cones from one wound-spurt stay in a single event.
+      const lane = lanes[key] ||= { at: -Infinity };
+      if (lane.blockedFrame === lastFrame || (lane.type !== event.type && now - lane.at < TYPE_GAP_MS)) {
+        lane.blockedFrame = lastFrame; // A later event in this lane cannot overtake a deferred event.
+        pending[kept++] = event;
+        continue;
+      }
+      const root = event.actor.avatarRef?.group || roots.get(event.actor) || window.RemotePlayerAvatar?.getWalker?.(event.actor)?.root;
+      if (root?.parent && root.visible && present(event, root, now, camera, deps)) {
+        lane.at = now; // Use the actual draw time so even slow render frames keep the bursts distinct.
+        lane.type = event.type;
+      }
+    }
+    pending.length = kept;
+    roots.clear();
+  }
+
   function drawFrame({ frame, scene, camera }) {
     if (lastFrame === frame.id) return; // Still once per frame with RenderHooks' per-pass A/B mode.
     lastFrame = frame.id;
@@ -306,22 +349,7 @@
     puddleBatch ||= makeBatch(MAX_PUDDLES * PUDDLE_SIDES * 3, false);
     if (particleBatch.parent !== scene) scene.add(particleBatch, puddleBatch);
     camera.updateWorldMatrix(true, false); // The projection below needs this frame's inverse before the native renderer.
-    for (const event of pending) {
-      if (event.scene === scene && event.area === area && !event.actor.avatarRef?.group) roots.set(event.actor, null);
-    }
-    let unresolved = roots.size; // Stop scanning as soon as the queued actors' roots are found.
-    if (unresolved) window.CharacterVisuals?.forEachCharacter?.(area, (_kind, root, actor) => {
-      if (roots.get(actor) !== null) return false;
-      roots.set(actor, root);
-      return --unresolved === 0;
-    });
-    for (const event of pending) {
-      if (event.scene !== scene || event.area !== area || now - event.now > 850) continue;
-      const root = event.actor.avatarRef?.group || roots.get(event.actor) || window.RemotePlayerAvatar?.getWalker?.(event.actor)?.root;
-      if (root?.parent && root.visible) present(event, root, now, camera, deps);
-    }
-    pending.length = 0;
-    roots.clear();
+    if (pending.length) presentPending(scene, area, now, camera, deps);
 
     const pp = particleBatch.geometry.attributes.position, pc = particleBatch.geometry.attributes.color;
     let count = 0;
@@ -359,7 +387,7 @@
     }
     puddles.length = count;
     publish(puddleBatch, count * PUDDLE_SIDES * 3);
-    if (!particles.length && !puddles.length) {
+    if (!particles.length && !puddles.length && !pending.length) {
       scene.remove(particleBatch, puddleBatch); // Keep GPU buffers pooled but remove both objects from idle/streamed scene traversal.
       currentScene = currentArea = null; // Do not pin an evicted wilderness scene while this hook sleeps.
       hooks.setEnabled(ID, false);
@@ -375,7 +403,7 @@
 
   window.AfflictionFluidVfx = Object.freeze({
     emit,
-    debugSnapshot: () => ({ ...stats, emitted: { ...stats.emitted }, particles: particles.length, puddles: puddles.length,
-      latestChange: 'Bleeding and poison drips leave short-lived projected puddles. Stamina punishments and infection use posed fluid sprays.' }),
+    debugSnapshot: () => ({ ...stats, emitted: { ...stats.emitted }, particles: particles.length, puddles: puddles.length, queued: pending.length, staggerMs: TYPE_GAP_MS,
+      latestChange: 'Internal poison uses the green mouth spray. Different drip or spray types on the same actor are staggered.' }),
   });
 })();

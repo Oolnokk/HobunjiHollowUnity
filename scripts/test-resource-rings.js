@@ -395,6 +395,17 @@ assert.equal(ResourceSystem.getAffliction(shatteredStaminaTriggerEntity, 'bleedi
   assert.deepEqual(emitted.splice(0), ['vomit'], 'the recolored spew is tied to the vomiting event');
   context.GameRandom.random = originalRandom;
   configured.pukeChancePerSec = 0;
+  ResourceSystem.removeAffliction(sick, 'infectedStamina', 100);
+  ResourceSystem.tick(sick, 0.1);
+  assert.deepEqual(emitted.splice(0), ['poison-spew'], 'poison caused by vomiting uses only the green mouth spray');
+  ResourceSystem.addAffliction(sick, 'poisonedHealth', 5);
+  ResourceSystem.removeAffliction(sick, 'poisonedHealth', 1);
+  ResourceSystem.tick(sick, 0.1);
+  assert.deepEqual(emitted.splice(0), ['poison-drip', 'poison-spew'], 'mixed poison keeps both visuals through a partial cleanse');
+  ResourceSystem.removeAffliction(sick, 'poisonedHealth', 100);
+  ResourceSystem.addAffliction(sick, 'poisonedHealth', 5);
+  ResourceSystem.tick(sick, 0.1);
+  assert.deepEqual(emitted.splice(0), ['poison-drip'], 'a fresh external poison does not inherit the internal source');
   delete context.AfflictionFluidVfx;
 }
 

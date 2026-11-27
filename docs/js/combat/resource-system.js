@@ -735,10 +735,14 @@
     return entity?.maxStamina || 0; // Existing non-Health afflictions default to Stamina.
   }
 
-  const bleedingSources = new WeakMap(); // Source bits follow this affliction table until Bleeding is fully removed.
-  const SHARP_BLEEDING = 1, BLUNT_BLEEDING = 2; // Older resource tables without a source still render standard blood drips.
+  const fluidSources = {
+    __proto__: null,
+    bleedingHealth: { flags: new WeakMap(), spraySource: 'blunt' },
+    poisonedHealth: { flags: new WeakMap(), spraySource: 'internal' },
+  }; // Source bits follow each affliction table until that affliction fully clears.
+  const DRIP_SOURCE = 1, SPRAY_SOURCE = 2; // Older resource tables without a source use drips.
 
-  function setAffliction(entity, id, amount, bleedingSource = 'sharp') {
+  function setAffliction(entity, id, amount, fluidSource) {
     const def = AFFLICTIONS[id];
     if (!def) return;
     const locked = entity?._immutableAfflictions?.[id]; // Makes ordinary add/remove/cleanse calls no-ops after an immutable amount is installed.
@@ -748,12 +752,13 @@
       return;
     }
     const next = round1(clamp(amount, 0, maxAfflictionAmount(entity, def))); // The capped, rounded amount determines whether a source joined the stack.
-    if (id === 'bleedingHealth') {
-      const previous = entity.afflictions[id] || 0; // A partial cleanse preserves both visual sources until the stack reaches zero.
-      if (next <= 0) bleedingSources.delete(entity.afflictions);
+    const fluid = fluidSources[id]; // Only Bleeding and Poisoned Health track fluid presentation.
+    if (fluid) {
+      const previous = entity.afflictions[id] || 0; // Partial cleanses preserve both sources until this stack reaches zero.
+      if (next <= 0) fluid.flags.delete(entity.afflictions);
       else if (next > previous) {
-        const sources = previous > 0 ? bleedingSources.get(entity.afflictions) || SHARP_BLEEDING : 0; // Unattributed existing buildup is standard bleeding.
-        bleedingSources.set(entity.afflictions, sources | (bleedingSource === 'blunt' ? BLUNT_BLEEDING : SHARP_BLEEDING));
+        const sources = previous > 0 ? fluid.flags.get(entity.afflictions) || DRIP_SOURCE : 0; // Legacy buildup still drips when a second source joins.
+        fluid.flags.set(entity.afflictions, sources | (fluidSource === fluid.spraySource ? SPRAY_SOURCE : DRIP_SOURCE));
       }
     }
     entity.afflictions[id] = next;
@@ -794,14 +799,14 @@
     return converted;
   }
 
-  function addAffliction(entity, id, amount, bleedingSource) {
+  function addAffliction(entity, id, amount, fluidSource) {
     if (!(amount > 0)) return 0;
     const family = AFFLICTIONS[id]?.family; // Used to apply Thickblood once at the central buildup path.
     const player = window.Combat?.deps?.player; // Used to restrict the player's active potion modifier to the player.
     if (family === "damage" && entity === player) amount *= window.AlchemySystem?.getIncomingDamageAfflictionMultiplier?.() || 1;
     if (entity === player && !AFFLICTIONS[id]?.immutable && ['damage', 'control', 'offensiveDebuff', 'defensiveDebuff'].includes(family)) amount *= statModifier(entity, 'incomingAffliction'); // Venomous Blood magnifies harmful buildup only, never enhancements or immutable Shambling Footing.
     const before = getAffliction(entity, id);
-    setAffliction(entity, id, before + amount, bleedingSource);
+    setAffliction(entity, id, before + amount, fluidSource);
     const added = round1(getAffliction(entity, id) - before);
     if (id === "windblownStamina" && getAffliction(entity, id) > 0) { // Even a capped successful reapplication changes direction.
       windDirections.delete(entity);
@@ -1468,9 +1473,9 @@
     const bleed = getAffliction(entity, "bleedingHealth");
     if (bleed <= 0) return;
     if (dt > 0 && entity.health > 0) {
-      const sources = bleedingSources.get(entity.afflictions) || SHARP_BLEEDING; // Sample before the final tick can clear the source bits.
-      if (sources & SHARP_BLEEDING) window.AfflictionFluidVfx?.emit(entity, 'blood-drip', 380);
-      if (sources & BLUNT_BLEEDING) window.AfflictionFluidVfx?.emit(entity, 'blood-spew', 850);
+      const sources = fluidSources.bleedingHealth.flags.get(entity.afflictions) || DRIP_SOURCE; // Sample before the final tick can clear the source bits.
+      if (sources & DRIP_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'blood-drip', 380);
+      if (sources & SPRAY_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'blood-spew', 850);
     }
     const amount = Math.min(bleed, cfg.bleedTickPerSec * dt);
     removeAffliction(entity, "bleedingHealth", amount);
@@ -1498,7 +1503,11 @@
   function resolvePoisonTick(entity, dt, cfg) {
     const poison = getAffliction(entity, "poisonedHealth");
     if (poison <= 0) return;
-    if (dt > 0 && entity.health > 0) window.AfflictionFluidVfx?.emit(entity, 'poison-drip', 440);
+    if (dt > 0 && entity.health > 0) {
+      const sources = fluidSources.poisonedHealth.flags.get(entity.afflictions) || DRIP_SOURCE; // Sample before the final damaging tick clears the stack.
+      if (sources & DRIP_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'poison-drip', 440);
+      if (sources & SPRAY_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'poison-spew', 850);
+    }
     const amount = Math.min(poison, cfg.poisonTickPerSec * dt);
     removeAffliction(entity, "poisonedHealth", amount);
     applyHealthAfflictionDamage(entity, amount, 'poisonedHealth');
@@ -1541,7 +1550,7 @@
     const windedAmount = round1(clamp(2 + window.GameRandom.random() * infected * .28, 1, 14));
     const poisonAmount = round1(clamp(windedAmount * .22, .2, 4));
     addAffliction(entity, "windedStamina", windedAmount);
-    addAffliction(entity, "poisonedHealth", poisonAmount);
+    addAffliction(entity, "poisonedHealth", poisonAmount, 'internal');
     window.AfflictionFluidVfx?.emit(entity, 'vomit');
     return { windedAmount, poisonAmount };
   }
