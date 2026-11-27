@@ -32,10 +32,10 @@ jobs:
       - name: Validate save entrypoints
         run: |
           node --check docs/js/browser-drive-folder.js
-          node --check docs/js/netlify-cloud-save.js
           node --check docs/js/save-startup-gate.js
           node --check docs/onboarding-core.js
-          node scripts/test-netlify-cloud-save-static-preview.js
+          node scripts/test-browser-drive-folder.js
+          node scripts/test-save-snapshot-cache-parts.js
           test -f docs/index.html
           test "$(du -sb docs | cut -f1)" -lt 1073741824
       - name: Configure GitHub Pages

@@ -202,7 +202,7 @@ before resuming if you chose to force exit.
 
 - This first installer and its auto-updates are **not code signed**. Windows SmartScreen may warn; production distribution should be code signed.
 - The main game's Three.js dependencies are bundled for offline play, but some
-  opt-in editor features still require internet. Use the existing Google Drive for Desktop save folder; legacy Netlify account recovery is available on the original web deployment.
+  opt-in editor features still require internet. Use the existing Google Drive for Desktop save folder. See [HOSTING.md](../HOSTING.md) for migration of older web-only account saves.
 - Windows smoke tests are required to verify the native folder picker, remembered
   permissions and full updater download/install/restart cycle. Unit tests alone
   cannot exercise Windows filesystem permissions or unsigned installer prompts.

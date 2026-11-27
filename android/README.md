@@ -139,9 +139,8 @@ Google's OAuth layer, while native file operations remain confined to the
 specific user-selected directory. Keep the OAuth client private/test-only
 until Google Cloud restricted-scope consent requirements are satisfied.
 
-Legacy Netlify account sign-in is not available in the Android or Windows app
-or on GitHub Pages. Existing Netlify saves remain recoverable on the original
-deployment during migration; see [HOSTING.md](../HOSTING.md).
+For migration of old web-only account saves using the archived recovery
+deployment, see [HOSTING.md](../HOSTING.md).
 
 ### Legacy local-folder synchronization (optional fallback)
 

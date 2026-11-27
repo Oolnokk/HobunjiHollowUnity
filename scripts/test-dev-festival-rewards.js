@@ -132,8 +132,8 @@ assert.match(read('docs/js/festival-potluck-contest.js'), /recordFestivalMask\?\
   'post-Gorkunash helm prize is journaled by its actual doorstep reward handler');
 assert.match(read('docs/js/folder-save-primary.js'), /startupMode = 'festival-test-browser'/,
   'normal refresh cannot pull the primary folder over the active sandbox');
-assert.match(read('docs/js/netlify-cloud-save.js'), /function festivalCloudWriteBlocked\(/,
-  'Netlify sync must not upload temporary festival worlds');
+assert.match(read('docs/js/local-save-folder-core.js'), /save-blocked-festival-test/,
+  'all canonical folder transports must block temporary festival worlds, including internal autosync');
 assert.match(read('docs/js/save-checkpoint-manager.js'), /function festivalCheckpointBlocked\(/,
   'manual and recovery checkpoints must not overwrite canonical saves during a test');
 assert.match(read('docs/js/folder-save-primary.js'), /const guarded = festivalTestSaveGuard\(\)/,

@@ -938,6 +938,13 @@
   async function _syncNowImpl({ automatic = false, force = false, snapshot = null, recoveryKind = 'auto', reason = null } = {}) {
     if (_state !== 'ready' || !_handle) return getStatus();
     if (automatic && !_autoSyncArmed) return getStatus();
+    const festivalPhase = window.HobunjiQuickSave?.festivalStatus?.().phase; // All folder transports share the same disposable-preview isolation.
+    if (festivalPhase && festivalPhase !== 'idle' && festivalPhase !== 'restored') {
+      _lastError = 'Exit Festival Test before saving to the primary folder.';
+      _lastAction = 'save-blocked-festival-test';
+      notify();
+      return getStatus();
+    }
     if (automatic && window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause freezes the canonical folder; explicit saves still pass.
       window.HobunjiAutosavePause.noteBlocked?.('folder-autosync');
       return getStatus();

@@ -295,7 +295,7 @@
     if (!localSave) return 'Local Folder Unavailable';
     const status = localSave.getStatus?.() || {};
     if (status.folderName) return `Load “${status.folderName}”`;
-    return 'Choose Local Save Folder';
+    return window.HobunjiBrowserDrive?.isSupported?.() ? 'Choose Save Folder (Local / Google Drive)' : 'Choose Local Save Folder';
   }
 
   async function loadLocalFolder(button) {
@@ -351,7 +351,6 @@
       <div class="sl-section">
         <div class="sl-section-label">Restore</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:6px;">
-          ${window.NetlifyCloudSave?.isAvailableHere?.() ? '<button type="button" class="ob-tab" id="hobunjiEmptySaveCloud">☁ Legacy Cloud Save</button>' : ''}
           <button type="button" class="ob-tab" id="hobunjiEmptySaveFolder">💾 ${localFolderLabel()}</button>
         </div>
       </div>
@@ -361,14 +360,6 @@
            style="display:inline-flex;align-items:center;text-decoration:none;min-height:44px;">🧪 Preview Map</a>
         <button type="button" class="ob-start-btn" id="hobunjiEmptySaveCreate">＋ Create New Farmer</button>
       </div>`;
-
-    gate.querySelector('#hobunjiEmptySaveCloud')?.addEventListener('click', () => {
-      if (window.NetlifyCloudSave?.isAvailableHere?.()) {
-        window.NetlifyCloudSave.openPanel();
-      } else {
-        alert('Legacy Cloud Save is unavailable here. Open your previous Netlify deployment to recover an existing account save.');
-      }
-    });
 
     gate.querySelector('#hobunjiEmptySaveFolder')?.addEventListener('click', event => loadLocalFolder(event.currentTarget));
     gate.querySelector('#hobunjiEmptySaveCreate')?.addEventListener('click', () => {
@@ -451,7 +442,7 @@
       freshCreatorPresent: !!getFreshCreatorCard(),
       gatePresent: !!document.getElementById(GATE_ID),
       creationChosen,
-      cloud: window.NetlifyCloudSave?.getStatus?.() || null,
+      drive: window.HobunjiBrowserDrive?.getDebug?.() || null,
       localFolder: window.LocalSaveFolder?.getStatus?.() || null,
       saveSelect: {
         portraitBackingSize: SAVE_PORTRAIT_BACKING_SIZE,

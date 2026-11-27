@@ -12,7 +12,7 @@ In repository Settings → Pages choose GitHub Actions. After merging, the
 deployment workflow publishes docs/ to
 https://oolnokk.github.io/HobunjiHollowUnity/. The Pages origin has separate
 browser storage; it does not inherit Netlify's browser saves or permissions.
-Keep the original Netlify deployment until old account saves have been recovered.
+**Before merging the cutover PR:** lock/pin the original Netlify production deployment or change its production branch to `legacy/netlify-save-recovery-20261127` and verify that the original site and its account/Blob recovery still work. The cutover removes the Netlify runtime and functions from main; allowing the old site to auto-deploy main would strand remote-only saves. Do not delete the Netlify site or its data. The archived recovery branch is pinned at 87ff588f8679a0ee541e56f896075032135144a8.
 
 ## Browser Drive setup
 
@@ -54,8 +54,4 @@ Do not migrate a disposable Festival Test timeline.
 
 Do not disable the old service, delete Identity/Blobs, or change DNS until
 existing saves have been recovered and the production Drive round trip has
-passed. The legacy client and server functions are intentionally retained for
-recovery on their original host, not used by Pages or native applications.
-After verification remove the legacy client, Netlify functions, configuration
-and package dependencies in a follow-up cutover. This is an explicit
-data-preservation gate, not a requirement to run Netlify for the new game.
+passed. The legacy client, server functions, configuration, and dependencies are removed from the new game and retained only on the archived recovery branch. Verify the archived deployment on the original site before merging this PR, and verify that existing saves have been recovered before decommissioning that site. This is an explicit data-preservation gate, not a runtime dependency of the new game.

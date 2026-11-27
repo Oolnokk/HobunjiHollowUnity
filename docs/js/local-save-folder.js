@@ -8,14 +8,13 @@ document.write('<script src="js/autosave-pause.js?v=20261109festivalaudit4"><\/s
 document.write('<script src="js/quick-save.js?v=20261109festivalaudit3"><\/script>'); // Dev Companion quick save/load; its pending load is applied by FolderSavePrimary at boot.
 document.write('<script src="js/browser-drive-config.js?v=20261127drive1"><\/script>');
 document.write('<script src="js/browser-drive-folder.js?v=20261127drive2"><\/script>');
-document.write('<script src="js/local-save-folder-core.js?v=20261127drive2"><\/script>');
-document.write('<script src="js/folder-save-primary.js?v=20261127drive2"><\/script>');
+document.write('<script src="js/local-save-folder-core.js?v=20261127driveCutover1"><\/script>');
+document.write('<script src="js/folder-save-primary.js?v=20261127driveCutover1"><\/script>');
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20261115provenance2"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20261119h4abbbe7"><\/script>');
 document.write('<script src="js/save-checkpoint-manager.js?v=20261127drive2"><\/script>');
 document.write('<script src="js/folder-save-quit-guard.js?v=20261118hf0115e7"><\/script>');
 document.write('<script src="js/folder-save-debug-ui.js?v=20261115diskFarmCompare2"><\/script>');
-document.write('<script src="js/netlify-cloud-save.js?v=20261127pagesMigration1"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');
-document.write('<script src="js/save-startup-gate.js?v=20261127pagesMigration1"><\/script>');
+document.write('<script src="js/save-startup-gate.js?v=20261127driveCutover1"><\/script>');

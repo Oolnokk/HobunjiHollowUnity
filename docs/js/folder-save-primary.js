@@ -132,7 +132,7 @@
       gate.innerHTML = `
         <div class="folder-save-primary-gate-card">
           <div class="folder-save-primary-gate-title">💾 Primary Save Folder</div>
-          <div class="folder-save-primary-gate-copy">Your save folder “${esc(status.folderName || 'Save Folder')}” is remembered. Reconnect it and the folder will be loaded before farmers and worlds are shown.</div>
+          <div class="folder-save-primary-gate-copy">Your save folder “${esc(status.folderName || 'Save Folder')}” is remembered. Reconnect to load its saved progress before farmers and worlds are shown, or use browser fallback to preserve this device’s working copy.</div>
           <div class="folder-save-primary-gate-status" data-folder-primary-status></div>
           <div class="folder-save-primary-gate-actions">
             <button type="button" class="folder-save-primary-gate-fallback" data-folder-primary-browser>Use browser fallback</button>
@@ -219,6 +219,13 @@
         }
       })();
       if (skipOnce) {
+        // Browser Drive access tokens cannot survive a reload. Offer the existing
+        // explicit reconnect/load or browser fallback gate instead of silently
+        // resuming with a disconnected primary folder.
+        if (window.HobunjiBrowserDrive?.isSupported?.()) {
+          const status = await waitForCoreStatus();
+          if (status.transport === 'google-drive-browser' && status.folderName) return showReconnectGate(status);
+        }
         startupMode = 'folder-already-applied';
         return startupMode;
       }
