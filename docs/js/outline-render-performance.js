@@ -111,7 +111,13 @@
     return null;
   }
 
+  // A scene that opts in with userData.hobunjiOutlineSequenceNeutral is an isolated proxy scene (the actor and
+  // distant-scenery occlusion probes) that is never added to the world and never touches its matrices. It is not a
+  // base frame and must not end the world scene's matrix-reuse sequence, or every later pass re-walks the whole scene.
+  const isSequenceNeutralScene = scene => scene?.userData?.hobunjiOutlineSequenceNeutral === true;
+
   function classifyPass(renderer, scene, camera) {
+    if (isSequenceNeutralScene(scene)) return 'other';
     const mask = Number(camera?.layers?.mask ?? 0) >>> 0;
     const override = scene?.overrideMaterial || null;
     const target = renderer.getRenderTarget?.() || null;
@@ -827,6 +833,7 @@
   function updateSequence(renderer, scene, pass, endedAt, reused) {
     // The isolated mist pass reuses world depth without modifying world matrices.
     if (pass === 'mist' && scene?.userData?.cloudForestMistRedraw) return;
+    if (isSequenceNeutralScene(scene)) return; // Isolated probe scenes leave the world scene's reuse sequence intact.
     if (pass === 'base') {
       reuseSequenceByRenderer.set(renderer, { scene, baseAt: endedAt });
       return;

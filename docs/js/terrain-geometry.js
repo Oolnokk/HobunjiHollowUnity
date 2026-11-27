@@ -774,7 +774,8 @@
     const group = deps.pathWallBuilder.build([panel], opts);
     group.name = 'PathBrickSurfaceChunk';
 
-    const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+    const matrix = new THREE.Matrix4(); // Reused for clipping, raising, and compacting each brick instance.
+    const elements = matrix.elements; // Column-major translation occupies indices 12 through 14.
     let anyKept = false;
     group.traverse(o => {
       if (!o.isInstancedMesh) return;
@@ -783,18 +784,18 @@
       const brickBounds = o.geometry?.boundingBox; // Local authored brick shape shared by this instanced mesh.
       let kept = 0;
       for (let i = 0; i < n; i++) {
-        o.getMatrixAt(i, m);
-        m.decompose(p, q, s);
-        if (!splineData.containsPoint(p.x, p.z)) continue;
-        if (pathBrickTouchesPermanentWater(m, brickBounds, splineData.isPermanentWaterAt)) continue; // Reject brick edges reaching river/stream/waterfall tiles.
+        o.getMatrixAt(i, matrix);
+        const x = elements[12], z = elements[14]; // World-space center used for corridor clipping and the plateau lookup.
+        if (!splineData.containsPoint(x, z)) continue;
+        if (pathBrickTouchesPermanentWater(matrix, brickBounds, splineData.isPermanentWaterAt)) continue; // Reject brick edges reaching river/stream/waterfall tiles.
         // Re-lift this one instance onto its own tile's elevation tier —
         // see elevTierAt's comment in preparePathSplineData. The panel
         // itself was built flat at the zone's base Y, so every brick
         // needs its own per-instance correction rather than one offset
         // for the whole chunk.
-        const tier = splineData.elevTierAt ? splineData.elevTierAt(p.x, p.z) : 0;
-        if (tier) { p.y += tier * deps.PLATEAU_UNIT; m.compose(p, q, s); }
-        if (kept !== i) o.setMatrixAt(kept, m);
+        const tier = splineData.elevTierAt?.(x, z) || 0; // Raises the brick even when it stays at its original index.
+        if (tier) elements[13] += tier * deps.PLATEAU_UNIT;
+        if (tier || kept !== i) o.setMatrixAt(kept, matrix);
         kept++;
       }
       o.count = kept;

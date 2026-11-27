@@ -28,6 +28,7 @@
   const frustum = THREE ? new THREE.Frustum() : null; // Shared frustum for all actors in a frame.
   const viewMatrix = THREE ? new THREE.Matrix4() : null; // Camera projection * inverse-world matrix.
   const scene = THREE ? new THREE.Scene() : null; // Tiny isolated proxy scene, never added to gameplay world.
+  if (scene) (scene.userData ||= {}).hobunjiOutlineSequenceNeutral = true; // Its render must not end the world scene's matrix-reuse sequence (outline-render-performance.js).
   const geometry = THREE ? new THREE.BoxGeometry(1, 1, 1) : null; // A single shared conservative query cuboid.
   const eye = THREE ? new THREE.Vector3() : null; // World-space eye for parented cutscene cameras and immediate occlusion wakeups.
   const eyeRotation = THREE?.Quaternion ? new THREE.Quaternion() : null; // Cached world-space camera orientation.

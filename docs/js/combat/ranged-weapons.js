@@ -1727,6 +1727,7 @@
       // RangedWeapons.init receives separate deps from Combat.init. Use the live Combat damage adapter for player shots so wearable combat modifiers, skill/mastery interceptors, and damage attribution see the same hit. Enemy friendly-fire remains on the original independent callback.
       const playerDamageCreature = window.Combat?.deps?.damageCreature || deps.damageCreature; // Live player-shot damage route; the bare callback is a safe fallback during isolated module tests.
       playerDamageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, attacker: deps.player, rangedTrinketDamageMultiplier: p.rangedTrinketDamageMultiplier, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier });
+      window.EnchantmentSystem?.applyRangedSpiritHeal?.(p.owner || deps.player, c, p.itemKey, Math.max(0, healthBefore - Math.max(0, Number(c?.health) || 0))); // Use the actual projectile source and resolved Health loss, even after a weapon swap.
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       const killed = healthBefore > 0 && Math.max(0, Number(c?.health) || 0) <= 0; // Used to route mastery only on kills, matching mastery-policy's combat progression contract.
       const masteryPolicy = window.HobunjiMasteryPolicy; // Used to bypass the absent production awardRangedMastery callback while retaining it as a compatibility fallback.

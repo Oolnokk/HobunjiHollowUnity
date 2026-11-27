@@ -735,7 +735,7 @@
       window.ActorRegistry.setLocalAreaResolver(() => window.AreaScope ? window.AreaScope.listenerArea() : currentArea); // player.areaId is not always rewritten on a map swap; the listener's REAL area even during a remote-area tick.
       // Co-op time rules (beds, Wait/Sleep, blackouts) live in js/time-consensus.js; a knocked-out local avatar cannot act until revived or the skip lands.
       window.SharedCutscene.init({ tilePx: TILE });
-      window.RemoteAreaTick?.init({ tickPre: dt => window.WildernessSimulationLOD?.tick?.(dt), tickHostiles: dt => updateHostiles(dt), populate: () => window.WildlifeSpawn?.populateZone?.(), isCalm: () => !cutscenePreviewActive && !paused, getCurrentArea: () => currentArea }); // updateHostiles is a hoisted declaration below.
+      window.RemoteAreaTick?.init({ tickPre: dt => window.WildernessSimulationLOD?.tick?.(dt), tickHostiles: dt => updateHostiles(dt), populate: () => window.WildlifeSpawn?.populateZone?.(), isCalm: () => !cutscenePreviewActive && !paused && !dialogueOpen, announce: () => showToast('A friend is arriving in a new area. One moment...', true), getCurrentArea: () => currentArea }); // updateHostiles is a hoisted declaration below.
       let _timeKnockoutLock = null;
       window.TimeConsensus.init({
         tilePx: TILE,
@@ -21452,8 +21452,8 @@
           if (climb) window.ClimbSystem.startClimb(climb);
           return;
         }
-        if (activeAction === 'obj_door_toggle') {
-          const door = resolveObjActionTarget(activeAction); // Existing authored-wooden-door target and onAction own opening/collision.
+        if (activeAction === 'obj_ruin_site_door' || activeAction === 'obj_door_toggle') {
+          const door = activeAction === 'obj_ruin_site_door' ? ruinEntranceAt() : resolveObjActionTarget(activeAction); // Existing authored-wooden-door target and onAction own opening/collision.
           const result = door?.onAction?.(activeAction) || { ok: false, message: 'No door here.' };
           if (result.message) showToast(result.message, result.ok !== false);
           if (result.ok !== false && !result.deferMemberSave) saveMemberWorldData();
@@ -22426,6 +22426,7 @@
       const SLAB_H     = 0.5;   // thickness of all ground slabs
       const TRENCH_TOP = -0.5;  // top surface of trench
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
+      const PATH_TOP   = NORMAL_TOP + 0.075; // Standing height for PATH tiles, near the lower quartile of paved brick center heights.
       const RAISED_TOP = +0.5;  // top surface of raised bed
       // World-Y rise per plateau elevation tier (absolute units shared by each
       // merged tile's elevTier and authored ramp.rampElevation values — see
@@ -23574,6 +23575,7 @@
       // Surface top Y for water placement and player standing
       function tileSurfaceY(type) {
         switch (type) {
+          case TileType.PATH:      return PATH_TOP;
           case TileType.TRENCH:    return TRENCH_TOP;
           case TileType.RIVER:     return RIVER_TOP;
           case TileType.STREAM:    return STREAM_TOP;
@@ -27635,6 +27637,7 @@
         const _cabStart = performance.now();
         try {
           const buttons = computeActionButtonsImpl(context); // Ripe crops claim the primary world-action slot even while food or a flask is held.
+          if (window.AdventuringTools?.isHoldingTorch?.()) return buttons; // Never reorder the reserved Swing/Throw slots.
           const harvestIndex = buttons.findIndex(button => button.action === 'harvest' && button.allowed); // Used to move only an actionable crop ahead of held-item defaults.
           if (harvestIndex > 0) buttons.unshift(buttons.splice(harvestIndex, 1)[0]);
           return buttons;
@@ -27673,14 +27676,16 @@
           .map(button => ({ ...button, worldInteraction: true, inputAction: 'interact', style: 'secondary' }));
         const ruinDoorActions = currentArea === 'map_i_dev_random_ruin'
           ? window.DevRandomRuinInteractions?.getDoorActionButtons?.() || [] : []; // Native V50 transit doors use their existing validated proximity/action owner.
-        return torchActions.concat(woodenDoorActions, ruinDoorActions);
+        const siteDoor = ruinEntranceAt(reticle); // Wilderness entrance uses the same validated object as ordinary Interact.
+        const siteActions = (siteDoor?.getButtons?.() || []).map(button => ({ ...button, worldInteraction: true, inputAction: 'interact', style: 'secondary', promptRoot: siteDoor.promptRoot || siteDoor.mesh }));
+        return torchActions.concat(siteActions, woodenDoorActions, ruinDoorActions);
       }
 
       function campfireActionButtons(nearbyActions) {
         if (!nearbyActions?.length || heldMode !== 'tool') return null;
         const primaryAction = toolActions[activeTool]?.[0]; // Preserves the equipped tool's first action, including Swing Torch, at a nearby campfire.
         if (!primaryAction) return null;
-        if (activeTool === 'adventuring') return [adventuringToolActionButtons()[0], nearbyActions[0]];
+        if (activeTool === 'adventuring') return adventuringToolActionButtons(); // Stow the torch before opening the campfire menu.
         const reticle = getReticleTile(); // Shares the current aimed tile with the ordinary tool action bar.
         const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col]; // Supplies the normal contextual primary-action wording.
         const [fallbackIcon] = actionLabels[primaryAction] || ['🔧']; // Keeps the tool's existing action icon.
@@ -27692,7 +27697,17 @@
         }, nearbyActions[0]]; // Campfire takes only Action 2, never Action 1.
       }
 
+      function ruinEntranceAt(reticle = getReticleTile()) {
+        const sites = window.RuinSites; // Direct tile-index lookups only; no per-frame scan of wilderness sites.
+        if (!sites?.objectAt) return null;
+        const aimed = sites.objectAt(currentArea, reticle.col, reticle.row);
+        if (aimed?.type === 'ruin_door') return aimed;
+        const standing = sites.objectAt(currentArea, Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+        return standing?.type === 'ruin_door' ? standing : null;
+      }
+
       function computeActionButtonsImpl(context = null) {
+        if (window.AdventuringTools?.isHoldingTorch?.()) return adventuringToolActionButtons(); // Held torch owns both tool slots before contextual world overrides.
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
         if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
@@ -27774,6 +27789,8 @@
         }
 
         const furnitureAim = getReticleTile(); // Directly aimed chairs and surface objects take priority over a merely nearby NPC.
+        const siteDoor = ruinEntranceAt(furnitureAim); // The entrance prompt is reachable from its approach, not only its blocked door tile.
+        if (siteDoor) return (siteDoor.getButtons?.() || []).map(button => ({ ...button, worldInteraction: true, promptRoot: siteDoor.promptRoot || siteDoor.mesh }));
         const rubbleButtons = !farmEditMode ? window.Shattercasks?.contextButtons?.(furnitureAim) : null; // Aimed Shattercask blast rubble; exact reticle tile (sticky while in reach), like corpse loot.
         if (rubbleButtons) {
           const eligible = eligibleWorldButtons(rubbleButtons);
@@ -28355,6 +28372,7 @@
 
             function _abtFire() {
               const act = el.dataset.action;
+              if (window.AdventuringTools?.isHoldingTorch?.() && ((el.id === 'btnAction1' && act !== 'torch_swing') || (el.id === 'btnAction2' && act !== 'torch_throw'))) return; // Ignore a stale touch action during equip refresh.
               if (!act || el.classList.contains('abt-hidden')) return;
               activeAction = act;
               // Navigation/interaction actions always fire; tool actions respect swing cooldown.
@@ -28433,6 +28451,7 @@
               // Hold-to-dig/fill must start on press (not release) so the charge
               // can run for its full duration while the button stays held.
               const act = el.dataset.action;
+              if (window.AdventuringTools?.isHoldingTorch?.() && ((el.id === 'btnAction1' && act !== 'torch_swing') || (el.id === 'btnAction2' && act !== 'torch_throw'))) return; // Do not begin a stale contextual hold.
               _pressedArchAction = act; // Retain the original action throughout this pointer's press/release pair.
               const physicalInputAction=({btnAction1:'action1',btnAction2:'action2',btnAction3:'action3',btnItemAction1:'itemAction1',btnItemAction2:'itemAction2'})[el.id]||null;
               if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch:' + ev.pointerId)){
@@ -29174,6 +29193,7 @@
         const el = document.getElementById('btnAction' + slotIndex);
         const action = el?.dataset.action;
         const buttons = computeActionButtons();
+        if (window.AdventuringTools?.isHoldingTorch?.() && slotIndex <= 2) return buttons[slotIndex - 1] || null; // Ignore stale DOM context from the previous held mode.
         return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
       }
       function runActionButtonAtSlot(slotIndex, inputActionId = `action${slotIndex}`) {
@@ -29251,8 +29271,7 @@
           if (heldMode === 'tool' && activeTool === 'weapon') return button.dataset.action !== toolActions.weapon[slot - 1];
           if (heldMode === 'tool' && activeTool === 'ranged') return button.dataset.action !== (slot === 1 ? 'shoot' : 'ammo_select');
           if (heldMode === 'tool' && activeTool === 'adventuring')
-            return button.dataset.action !== toolActions.adventuring[slot - 1]
-              && !(slot === 2 && button.dataset.action === 'campfire_menu'); // The torch's own actions are not world overrides, and campfire Action 2 cannot block Swing Torch.
+            return button.dataset.action !== toolActions.adventuring[slot - 1] && !window.AdventuringTools?.isHoldingTorch?.(); // A stale contextual arch cannot block the held torch.
           return true; // Any visible non-combat action in item/other modes supersedes a pending weapon attack.
         },
       });
@@ -29296,6 +29315,12 @@
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
+        }
+        if (phase === 'press' && (actionId === 'action1' || actionId === 'action2') && window.AdventuringTools?.isHoldingTorch?.()
+          && !menuOpen && !dialogueOpen && !paused && !farmEditMode && !window.__mapEditorGizmoActive
+          && !window._desktopSelectionArc?.toolMenuOpen?.() && !window._desktopSelectionArc?.entryMenuOpen?.()) {
+          runActionButtonAtSlot(actionId === 'action1' ? 1 : 2, actionId);
+          return; // In ordinary gameplay no context claim or placement override may take the two held torch slots.
         }
         if (window.FarmworkUI?.isPlanning?.()) {
           if (['action1', 'action2', 'action3'].includes(actionId)) {
@@ -30279,6 +30304,7 @@
           if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press', 'mouse:' + e.button); return; } // preventDefault also stops middle-click autoscroll.
+          if ((mouseAction === 'action1' || mouseAction === 'action2') && window.AdventuringTools?.isHoldingTorch?.()) { runInputAction(mouseAction, 'press', 'mouse:' + e.button, e); return; }
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press', 'mouse:' + e.button);

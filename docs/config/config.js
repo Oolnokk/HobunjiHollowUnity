@@ -418,7 +418,7 @@
   }
 
   function isRoadChunk(group) {
-    return !!(group?.isGroup && group.name === 'WallBuilder_Instances' && group.userData?.cullSphere);
+    return !!(group?.isGroup && group.name === 'PathBrickSurfaceChunk' && group.userData?.cullSphere);
   }
 
   function elevateRoadChunk(group, map) {

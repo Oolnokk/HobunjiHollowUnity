@@ -13,7 +13,7 @@ const baseline = { // Relative order anchors from the first migration, not an ex
   farm: ['farm-editor', 'farm-plot-editor', 'farmwork-ui'], // The farm bootstrap owns these modules in their original parser order.
   qol: ['toast-notifications', 'location-arrival', 'qol-hotkeys', 'inventory-search'],
   guild: ['delvers-guild-story', 'town-magic-checkpoint', 'delvers-vault-signal'],
-  render: ['npc-view-frustum-cull', 'instanced-mesh-view-cull', 'grass-billboard-render-chunks', 'scissor-depth-snapshot', 'actor-render-occlusion'],
+  render: ['npc-view-frustum-cull', 'instanced-mesh-view-cull', 'grass-billboard-render-chunks', 'actor-render-occlusion'],
   'farm-buildings': ['farm-buildings', 'farm-troughs', 'house-pieces'],
 };
 const groups = [...html.matchAll(/data-classic-group="([a-z][a-z0-9-]*)"/g)].map(m => m[1]); // Discovers future groups without changing this file.

@@ -3,7 +3,7 @@
 
 // A ground material can be colored in the wilderness but have depthWrite:false.
 // That is allowed in the base world pass, but must not make held tools x-ray
-// through the floor OUTSIDE the actor's local ground exception.
+// through the floor: held parts always use ordinary solid-world depth.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8');
@@ -43,26 +43,9 @@ assert.equal(eligible.depthWrite, false, 'the original wilderness material is re
 assert.equal(unsupported.depthWrite, false, 'fallback material recovers its original world draw setting');
 assert.equal(coldCompile.depthWrite, false, 'uncompiled material recovers its original world draw setting');
 
-// The filter's actual two modes remain directional: a ground fragment within
-// the circle is omitted from depth rebuilding; outside the circle it writes.
-const shaderStart = source.indexOf('  function installGroundElevationShader(');
-const shaderEnd = source.indexOf('  function isRoadXrayMesh(', shaderStart);
-assert(shaderStart >= 0 && shaderEnd > shaderStart);
-const shaderCode = source.slice(shaderStart, shaderEnd);
-assert.ok(shaderCode.includes('dot(offsetFromActor, offsetFromActor) <= ${(XRAY_CIRCLE_RADIUS * XRAY_CIRCLE_RADIUS).toFixed(6)}'),
-  'the authored three-tile circle has not been expanded or inverted');
-assert.match(shaderCode, /if \(uHobunjiXrayElevationEnabled > 1\.5\) \{ if \(hobunjiXrayNearFloor < 0\.5\) discard; \}/,
-  'mode 2 still isolates the local floor for stencil punching');
-assert.match(shaderCode, /else if \(hobunjiXrayNearFloor > 0\.5\) discard;/,
-  'mode 1 removes the local floor when reconstructing depth for held gear');
-const testDistance = (x, z) => x * x + z * z <= 2.25;
-assert.equal(!testDistance(0.5, 0.5), false, 'inside ground is excluded from the depth rebuild');
-assert.equal(!testDistance(2.5, 0.5), true, 'outside ground must be able to occlude the weapon');
-
-assert.match(source, /if \(group\.regions\.length\) lastForcedGroundDepthMaterials \+= forceGroundDepthForHeldReplay\(groundMaterials, depthMaterialStates\);/,
-  'the local floor-exception path rebuilds its registered ground depth');
-assert.match(source, /else if \(ordinaryGroundMaterials\.size\) lastForcedGroundDepthMaterials \+= forceGroundDepthForHeldReplay\(ordinaryGroundMaterials, depthMaterialStates\);/,
-  'ordinary above-floor equipment also rebuilds missing ground depth instead of x-raying outside the circle');
+// The replay's source wiring: every held part is ordinary, and missing ground depth is repaired for it.
+assert.match(source, /if \(ordinaryGroundMaterials\.size\) lastForcedGroundDepthMaterials \+= forceGroundDepthForHeldReplay\(ordinaryGroundMaterials, depthMaterialStates\);/,
+  'ordinary above-floor equipment rebuilds missing ground depth instead of x-raying through the floor');
 assert.match(source, /hideOrdinaryDepthRedraws\(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes, ordinarySnapshot, originalCameraMask\)/,
   'the optimized ordinary replay retains the precise ground leaves whose base material omitted depth');
 assert.match(source, /restoreMaterialStates\(depthMaterialStates\);/,
@@ -70,4 +53,4 @@ assert.match(source, /restoreMaterialStates\(depthMaterialStates\);/,
 assert.match(source, /forcedGroundDepthMaterials: lastForcedGroundDepthMaterials/,
   'the mobile debug snapshot exposes whether any missing ground depth was repaired');
 
-console.log('held ground x-ray direction: outside has real ground depth, inside keeps the authored floor exception');
+console.log('held ground depth: ordinary gear never sees through the floor; missing wilderness ground depth is repaired and restored');

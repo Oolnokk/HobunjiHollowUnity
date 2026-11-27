@@ -17,7 +17,7 @@
   // window.PixelProbe assignment if pixel-probe.js below hasn't loaded
   // yet.
   const scriptUrls = [
-    "js/rain-planes.js?v=20261123h66dee6c",
+    "js/rain-planes.js?v=20261126hc3b219e",
     "js/environment-surface-micro-plateau.js?v=20261102snowMaterialIsolation1",
     "js/environment-surface-pixel-probe.js?v=20261106charge879"
   ]; // Versioned game modules owned by this group.

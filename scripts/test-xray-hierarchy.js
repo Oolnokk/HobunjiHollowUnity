@@ -10,15 +10,12 @@ const render = fs.readFileSync(path.join(root, 'js', 'held-object-render-order.j
 
 const store = { 'hobunji.xrayHierarchy.v1': '{"feet.groundXray":"on"}' }; // Simulate a developer who enabled the retired rule.
 const panels = [];
-let floorPunchTestEnabled = true; // Captures mobile A/B toggle changes in the fake renderer.
 const win = {
   DevCompanion: { registerPanel: spec => { panels.push(spec); return true; } },
   HeldObjectRenderOrder: {
     snapshot: () => ({ rankedPortraitActors: 2, frontPortraitMasks: 1, handsBehindFrontPlane: 1, stencilBits: 8,
       frontPortraitGearCandidates: 3, frontPortraitMaskedGear: 2, forcedGroundDepthMaterials: 3,
-      elevationShaderFallbacks: 0, xrayOrdinaryMeshes: 5,
-      floorPunch: { enabled: floorPunchTestEnabled, punches: 12, fallbacks: 2 } }),
-    setFloorPunchEnabled(value) { floorPunchTestEnabled = value !== false; return floorPunchTestEnabled; },
+      }),
   },
   __hobunjiGameStarted: true,
 };
@@ -101,55 +98,13 @@ assert.ok(view.actions.every(action => !action.path?.length), 'there is no misle
 assert.ok(view.actions.some(action => action.id === 'reset' && action.label === 'Reset all to repo' && action.confirm), 'explicit confirmed reset to repository defaults exists');
 assert.ok(view.actions.some(action => action.id === 'focus-stage' && action.options.length === 2), 'render passes are explicit choices');
 assert.ok(view.actions.some(action => action.id === 'focus-layer' && action.options.length === 2), 'held stage has only hands+tools and feet while linked');
-const circleCheckbox = view.actions.find(action => action.id === 'toggle-ground-zone');
-assert.ok(circleCheckbox?.checkbox && circleCheckbox.checked === false, 'world-space circular X-ray zone is hidden by default');
+assert.ok(!view.actions.some(action => action.id === 'toggle-ground-zone' || action.id === 'toggle-floor-punch'), 'the retired ground-zone circle and floor-punch controls are gone');
 assert.ok(view.rows.some(row => row[0] === 'Ground depth overrides (last replay)' && row[1] === '3'),
   'phone panel shows how many missing-depth ground material overrides ran across held replay groups');
-assert.ok(view.rows.some(row => row[0] === 'Ordinary held parts' && row[1] === '5'),
-  'phone diagnostic distinguishes above-floor ordinary gear from floor-exempt equipment');
-assert.ok(view.rows.some(row => row[0] === 'Floor punch calls / fallbacks' && row[1] === '12 / 2'),
-  'phone report distinguishes floor-punch permission from evidence it actually executed');
-assert.ok(view.rows.some(row => row[0] === 'Ground shader fallbacks' && row[1] === '0'),
-  'phone panel reports failed ground shader compatibility');
-assert.deepStrictEqual(panel.onAction('toggle-floor-punch', { checked: false }), { ok: true },
-  'mobile A/B control disables stencil floor punch to isolate its contribution');
-assert.equal(panel.render().actions.find(action => action.id === 'toggle-floor-punch').checked, false);
-assert.deepStrictEqual(JSON.parse(X.diagnosticReport()).xrayDiagnosis.stencilAndReplay.floorPunch, { enabled: false, punches: 12, fallbacks: 2 },
-  'mobile clipboard diagnosis reports the selected floor-punch path and its actual use');
-assert.deepStrictEqual(panel.onAction('toggle-floor-punch', { checked: true }), { ok: true },
-  'the full renderer floor-punch path can be restored from the same menu');
-assert.equal(JSON.parse(X.diagnosticReport()).xrayDiagnosis.stencilAndReplay.xrayOrdinaryMeshes, 5,
-  'the copied report identifies the ordinary held source path without requiring mobile devtools');
-assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: true }), { ok: true }, 'Dev Companion checkbox enables the visualizer');
-assert.strictEqual(X.get('ground.showZone'), 'on', 'debug preview state changes without changing the ground mask');
-// Mock the 3D scene only for the debug overlay. It must not create persistent
-// depth/billboard registrations or leave a circle behind while gameplay is paused.
-class PreviewGroup {
-  constructor() { this.children = []; this.userData = {}; this.position = { set: (x, y, z) => { this.xyz = [x, y, z]; } }; }
-  add(child) { this.children.push(child); child.parent = this; }
-  traverse(visitor) { visitor(this); this.children.forEach(visitor); }
-}
-class PreviewMesh {
-  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.rotation = {}; this.userData = {}; }
-}
-class PreviewGeometry { dispose() {} }
-class PreviewMaterial { constructor(params) { Object.assign(this, params); } dispose() {} }
-win.THREE = { Group: PreviewGroup, Mesh: PreviewMesh, CircleGeometry: PreviewGeometry,
-  RingGeometry: PreviewGeometry, MeshBasicMaterial: PreviewMaterial, DoubleSide: 2 };
-const previewScene = { isScene: true, children: [],
-  add(mesh) { this.children.push(mesh); }, remove(mesh) { this.children = this.children.filter(item => item !== mesh); } };
-assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.25, z: -2.75, elevation: 1 }, 1.5), true);
-const previewCircle = previewScene.children[0];
-assert.deepStrictEqual(previewCircle.xyz, [3.25, 1.025, -2.75], 'ground circle previews the actual world X/Z and foot elevation');
-assert.strictEqual(previewCircle.children.length, 2, 'debug circle has fill and ring');
-assert.ok(previewCircle.children.every(mesh => mesh.material.depthWrite === false && mesh.userData.noOutline === true
-  && !mesh.userData.hobunjiDepthReplayInert), 'debug geometry neither writes depth nor enters retained background registries');
-assert.strictEqual(X.updateGroundZone(previewScene, { x: 3.5, z: -2.5, elevation: 2 }, 1.5), true);
-assert.strictEqual(previewScene.children[0], previewCircle, 'moving reuses the original debug geometry');
-assert.deepStrictEqual(previewCircle.xyz, [3.5, 2.025, -2.5]);
-assert.deepStrictEqual(panel.onAction('toggle-ground-zone', { checked: false }), { ok: true }, 'checkbox disables the visualizer');
-assert.strictEqual(previewScene.children.length, 0, 'unchecking removes the overlay immediately, even without another frame');
-assert.strictEqual(X.get('ground.showZone'), 'off');
+assert.equal(JSON.parse(X.diagnosticReport()).xrayDiagnosis.stencilAndReplay.forcedGroundDepthMaterials, 3,
+  'the copied report carries the remaining replay evidence without requiring mobile devtools');
+assert.strictEqual(X.get('ground.showZone'), undefined, 'the retired zone visualizer rule no longer exists');
+assert.strictEqual(X.updateGroundZone, undefined, 'the zone preview renderer is gone');
 assert.ok(view.actions.some(action => action.group === 'World depth and airborne replay'), 'depth controls are grouped by actual render pass');
 assert.ok(view.actions.some(action => action.group === 'Front portrait occlusion'), 'front-art masking has its own direct controls');
 assert.ok(view.rows.some(r => /Front mask stencil/.test(r[0]) && /2 \/ 3/.test(r[1])), 'mobile diagnostics show actual masking coverage');
@@ -198,7 +153,6 @@ assert.strictEqual(X.DIAGNOSTIC_PRESETS.find(p => p.id === 'front-mask-off')?.ru
 assert.equal(panel.onAction('focus-preset', { value: 'not-a-preset' }).ok, false, 'unknown preset is rejected');
 X.set('hand.frontPlaneMask', 'off');
 X.set('actors.order', 'near');
-X.set('ground.showZone', 'on'); // Leave the visual debugging circle visible throughout render experiments.
 X.moveLayer('actor.hands', '__end');
 const pretestRules = Object.fromEntries(X.keys().map(key => [key, X.get(key)])); // Simulates the user's custom pre-diagnosis configuration.
 const pretestOrder = X.describeLayers().map(layer => layer.id); // Capture the exact non-default custom rank arrangement.
@@ -214,8 +168,8 @@ for (const experiment of X.DIAGNOSTIC_PRESETS) {
   assert.ok(pending.rows.find(row => row[0] === 'Selected next experiment')?.[1].includes(experiment.label),
     'pending selection clearly names the next experiment');
   assert.deepStrictEqual(panel.onAction('apply-preset', {}), { ok: true }, 'diagnostic preset applies from shipped defaults');
-  for (const key of X.keys()) assert.equal(X.get(key), key === 'ground.showZone' ? pretestRules[key] : experiment.rules[key] ?? X.RULES[key].default,
-    experiment.id + ' resets rendering choices while preserving the optional visible debugging circle');
+  for (const key of X.keys()) assert.equal(X.get(key), experiment.rules[key] ?? X.RULES[key].default,
+    experiment.id + ' resets rendering choices to the repository defaults');
   assert.equal(X.get('layers.manualOrder'), experiment.rules['layers.manualOrder'] ?? 'off',
     'the experiment does not inherit another color sort switch');
   if (experiment.id === 'tool-before-hand') {
@@ -273,7 +227,7 @@ assert.equal(Y.restoreBeforePresets(), false, 'prevents restoring a stale backup
 // Saved older diagnostic backups, including retired pet settings, remain recoverable.
 const oldRules = { ...pretestRules };
 oldRules['shoulderPet.presentation'] = 'world-depth'; // Legacy, now ignored, must not invalidate saved backups.
-delete oldRules['ground.showZone'];
+oldRules['ground.showZone'] = 'on'; // Saved before the zone visualizer was retired: an unknown rule must not invalidate the backup.
 store['hobunji.xrayHierarchy.diagnostics.v1'] = JSON.stringify({
   version: 1, active: 'baseline',
   original: { rules: oldRules, drawOrder: pretestOrder, stage: 'held', layer: 'actor.hands' },
@@ -286,7 +240,7 @@ assert.strictEqual(oldPanels.length, 1, 'legacy backup still shows the X-ray com
 assert.ok(oldPanels[0].render().actions.some(action => action.id === 'restore-original'), 'legacy backup keeps its restore action');
 assert.strictEqual(oldWin.XrayHierarchy.restoreBeforePresets(), true, 'legacy backup restores despite missing new debug-only rules');
 assert.strictEqual(oldWin.XrayHierarchy.get('shoulderPet.presentation'), undefined);
-assert.strictEqual(oldWin.XrayHierarchy.get('ground.showZone'), 'off');
+assert.strictEqual(oldWin.XrayHierarchy.get('ground.showZone'), undefined);
 global.window = win;
 panel.onAction('reset', {});
 assert.equal(panel.render().actions.find(action => action.id === 'focus-preset').value, 'baseline',
@@ -308,7 +262,7 @@ assert.ok(/updateFrontPlaneHands\(held, scene, camera\)/.test(render), 'hand rul
 assert.ok(/handsBehindFrontPlane: lastHandsBehindFrontPlane/.test(render), 'snapshot exposes the hand counter');
 assert.ok(/withPortraitDrawOrder\(renderer, overlayDrawOrder, \(\) => rawRender\.call\(renderer, scene, camera\)\)/.test(render),
   'actual gear/hand/foot overlay color draws inherit actor depth and manual layer sorting');
-assert.ok(/const supplementDepth = !group\.regions\.length && canLockColorMask && !rebuildAirborne/.test(render),
+assert.ok(/const supplementDepth = canLockColorMask && !rebuildAirborne/.test(render),
   'airborne ordinary gear cannot reuse a sky-masked base depth buffer');
 assert.ok(/backgroundHidden = backgroundMeshes\.length && !supplementDepth \? hideObjects\(backgroundMeshes\)/.test(render),
   'only the selective depth rebuild excludes backdrops, not the original scene or final depth restore');
