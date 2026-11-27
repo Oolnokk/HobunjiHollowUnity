@@ -166,11 +166,13 @@
     }
 
     function profileShoulderInParent(side) {
+      const fixed=avatarRoot.userData?.instanceHandShoulders?.[side]; // Instance anchors are already transformed by the portrait-binding owner; do not shift again.
+      if(fixed){shoulderSource[side]='instance-portrait-anchor';return new THREE.Vector3(fixed.x,fixed.y,fixed.z);}
       const anchorName = side === 'left' ? 'leftHandShoulder' : 'rightHandShoulder';
       const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
       if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
       shoulderSource[side] = 'attachment-rig-profile';
-      return new THREE.Vector3(Number(position.x), Number(position.y)+(Number(avatarRoot.userData?.shoulderYOffset)||0), Number(position.z));
+      return new THREE.Vector3(Number(position.x), Number(position.y), Number(position.z));
     }
 
     function installManualPoints() {

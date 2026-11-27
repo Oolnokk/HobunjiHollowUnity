@@ -964,6 +964,7 @@
     } : null; // Frozen per-avatar values drive only the walking branch of update; lunge/airborne/seated continue normally.
     const modelWidth = Number(options.modelWidth) || 0.9;
     const modelHeight = Number(options.modelHeight) || modelWidth;
+    const fixedPosterior=Number.isFinite(options.posteriorYOverride); // Keep instance anatomy fixed even if a shared species-scale refresh runs later.
     const gaitReachLimit=Number.isFinite(options.gaitReachLimit)&&options.gaitReachLimit>0?options.gaitReachLimit:Infinity; // Optional short-legged gait cap, cached for the existing solver.
     const stanceWidthFraction = Number(c.stanceWidthFraction) || 0.16;
     const footHeightFraction = Number(c.footHeightFraction) || 0.11;
@@ -1177,7 +1178,7 @@
     function setLegLengthMultiplier(multiplier, contactChanged = false) {
       if (state.disposed) return posteriorY;
       const raw = Number(multiplier); // Ratio of authored leg length to portrait Y, both in canonical world-size units.
-      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1;
+      const next = fixedPosterior ? 1 : Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1;
       if (!contactChanged && Math.abs(next - legLengthMultiplier) <= 1e-9) return posteriorY; // Width/head/age changes must not re-solve both bones or rebuild pants.
       legLengthMultiplier = next;
       const contact = (state.leftContactY + state.rightContactY) * .5; // Feet remain planted: leg growth moves the hip, not the shoe geometry.
@@ -2004,6 +2005,7 @@
       return {
         lastChange: 'Scaled sole envelopes drive grounded ankle height; pants depth push cannot sink a grounded shoe below its floor',
         motionMode: state.motionMode,
+        instancePosteriorFixed: fixedPosterior, gaitReachLimit: Number.isFinite(gaitReachLimit)?gaitReachLimit:null, // Mobile diagnostics for short-legged actors.
         footOrientation: {
           rootYawDeg: root.rotation.y * 180 / Math.PI,
           leftHipYawDeg: legChains.left.hip.rotation.y * 180 / Math.PI,

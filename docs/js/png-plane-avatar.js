@@ -2115,7 +2115,10 @@
     root.userData.visualCentroidLocalY = assemblyY; // Root zero is not generally the visual centroid because the assembly is vertically shifted.
     root.userData.visualCentroidLocalZ = anchorZ;
     root.userData.poseCentroidX = 0; // Floor-relative body-frame centroid for tool pose consumers.
-    root.userData.poseCentroidY = modelHeight * 0.5 + assemblyY;
+    const opaqueCenterY = options.posteriorAtOpaqueCenter && vBounds
+      ? modelHeight * (0.5 + placementRatio - (vBounds.top + vBounds.bottom + 1) / (2 * pxH)) : null; // Pixel-center convention; no additional canvas scan.
+    if (Number.isFinite(opaqueCenterY)) root.userData.posteriorYOverride = opaqueCenterY;
+    root.userData.poseCentroidY = opaqueCenterY ?? (modelHeight * 0.5 + assemblyY);
     root.userData.poseCentroidZ = anchorZ;
     // Hand/tool attach point: find the actual vertical midpoint of the rendered
     // avatar's opaque pixels (not a row inferred from portraitVerticalPlacementRatio,

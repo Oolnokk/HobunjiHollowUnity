@@ -486,12 +486,11 @@
     }
     characterBuildStatus.stage = 'portrait-model';
     const rootLegLayout=roster.rootledoot?rootledootLegLayout(frontCanvas.rootledootOpaqueHeightFraction,window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['kenkari::male']):null; // Shared live/Workshop anatomy, computed only at build time.
-    const originalPlacement=rootLegLayout?window.PNGPlaneAvatar.avatarPlacementRatioFor({profile}):null;
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
         backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
-        ...(rootLegLayout?{portraitPlacementRatioOverride:rootLegLayout.placementRatio}:{}),
+        ...(rootLegLayout?{portraitPlacementRatioOverride:rootLegLayout.placementRatio,posteriorAtOpaqueCenter:true}:{}),
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait', meshBudget: 'npc', // Enemies use the capped mesh budget.
         hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; HatOverflowPlane.attachToPlanes is called on those instead.
         mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
@@ -613,10 +612,25 @@
     // itself assumes its parent's local Y=0 is the floor (see its own comment).
     const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
-    const rootPosteriorY=rootLegLayout?modelHeight*rootLegLayout.posteriorFraction:null; // Floor-relative center of the actual opaque root, independent of transparent canvas padding.
+    const rootPosteriorY=rootLegLayout?(portrait.userData.posteriorYOverride??modelHeight*rootLegLayout.posteriorFraction):null; // Exact alpha midpoint from the same scan as the portrait; crop fraction is a fallback.
     if(rootLegLayout){
       portrait.userData.posteriorYOverride=rootPosteriorY;
-      portrait.userData.shoulderYOffset=(rootLegLayout.placementRatio-originalPlacement)*modelHeight; // Keep authored shoulders in the same place relative to the lowered root.
+      const rigProfile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+      const space=window.HobunjiCharacterPortraitAnchorSpace,metrics=space?.metricsForAvatarRoot?.(portrait,rigProfile);
+      const shoulders={}; // Resolve each authored shoulder exactly once; both wrapped and direct hand queries share it.
+      const reaches={};
+      const wristY=rootPosteriorY-modelHeight*(Number(rigProfile?.anatomy?.armLengthHeightPercentOffset)||0)/100;
+      for(const side of ['left','right']){
+        const key=side+'HandShoulder',p=metrics&&space.resolveAnchor(rigProfile,key,metrics);
+        if(!p||![p.x,p.y,p.z].every(Number.isFinite))continue;
+        shoulders[side]={x:p.x,y:p.y,z:p.z};reaches[side]=Math.max(.001,Math.hypot(p.y-wristY,p.z));
+      }
+      if(Object.keys(shoulders).length===2){
+        portrait.userData.instanceHandShoulders=shoulders;
+        portrait.userData.armLengthBySide=reaches;
+        portrait.userData.armLength=portrait.userData.scaledArmLength=(reaches.left+reaches.right)/2;
+        portrait.userData.armLengthSource='instance-shoulder-to-opaque-posterior';
+      }
       group.userData.rootledootLegLayout={...rootLegLayout,posteriorY:rootPosteriorY};
     }
     // Preserve the portrait box recipe on the converted animal-style root:
