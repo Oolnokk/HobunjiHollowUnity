@@ -128,6 +128,7 @@
       for (const [id, amount] of Object.entries(appliedEffects)) {
         if (window.WorldPopupText?.showCombatEffect?.(entity, id, amount, true, 'impact') != null) popupCount++;
       }
+      if (popupCount > 0) window.WorldPopupText?.showImpactCallout?.(entity); // One callout for the complete applied collision payload.
     }
 
     const tile = Math.max(0.001, finite(tilePx, 1));
