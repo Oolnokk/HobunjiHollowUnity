@@ -300,12 +300,16 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
 // Credit belongs to the actual movement, never a lingering last attacker.
 {
   const popups = [];
-  windowStub.WorldPopupText = { showCombatEffect(target, id, amount, credited) { if (credited) popups.push({ target, id, amount }); } };
+  windowStub.WorldPopupText = { showCombatEffect(target, id, amount, credited, source) { if (credited) { popups.push({ target, id, amount, source }); return popups.length; } } };
   const e = entity();
   const hooks = { dealHealthDamage(target, amount) { return { applied: Math.min(amount, 2), lethal: false }; } };
   Impact.begin(e, TILE, 1, true);
+  assert.equal(popups.length, 0, 'starting knockback cannot emit collision numbers');
   const impact = Impact.resolve(e, { kind: 'stone' }, TILE, hooks);
   assert.equal(impact.popupCredit, true);
+  assert.equal(impact.popupCount, 4);
+  assert(popups.every(p => p.source === 'impact'));
+  assert.equal(Impact.debugCreditSnapshot().lastImpact.popupCount, 4);
   assert.deepEqual(Object.fromEntries(popups.map(p => [p.id, p.amount])), { health: 2, footing: 20, shatteredStamina: 5, bruisedHealth: 4 });
   assert.equal(Impact.resolve(e, { kind: 'stone' }, TILE, hooks), null);
   assert.equal(popups.length, 4);
@@ -318,6 +322,14 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
   assert.equal(popups.length, 8, 'credited ledge landing displays its own effects');
   Impact.resolveStrength(fallTarget, { kind: 'stone' }, 1, TILE, hooks, { mode: 'ledge-fall' });
   assert.equal(popups.length, 8, 'natural falls have no combat popup credit');
+  assert.equal(Impact.debugCreditSnapshot().lastImpact.mode, 'ledge-fall');
+  const noContact = entity();
+  Impact.begin(noContact, TILE, 1, true);
+  Impact.cancel(noContact);
+  assert.equal(popups.length, 8, 'unobstructed motion cannot emit collision numbers');
+  const rejected = entity();
+  const rejectedImpact = Impact.resolveStrength(rejected, { kind: 'stone' }, 1, TILE, { dealHealthDamage: () => false }, { popupCredit: true });
+  assert.equal(rejectedImpact.appliedEffects.health, undefined, 'rejected Health is never reported as applied');
   delete windowStub.WorldPopupText;
 }
 
