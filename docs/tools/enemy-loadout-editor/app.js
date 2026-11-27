@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261127ruinTorsoInk2';
+import { EnemyPreview } from './preview.js?v=20261127ruinHronalInk3';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -1312,6 +1312,7 @@ function showRecord(record) {
       fact('Combat perks (' + def.combatPerkPointsSpent + ' points)', Object.entries(def.combatPerks || {}).map(([id, rank]) => (window.PerkSystem?.TREES.combat.find(p => p.id === id)?.name || id) + ' ' + rank).join(' · '), true),
     ] : []),
     fact('Weapon', def.weaponKey),
+    ...(record.ruinBackSpikeInfo?[fact('Back spike attachment',record.ruinBackSpikeInfo.carrier,true)]:[]),
     ...(record.roster.ruinSkeletonTheme?[fact('Ruin tradition',record.roster.ruinSkeletonTheme)]:[]),
     ...(record.roster.enchantedWeapon||record.captainArmament?[fact('Enchantments', [...(record.roster.enchantedWeapon||record.captainArmament).enchantments.base,...Object.values((record.roster.enchantedWeapon||record.captainArmament).enchantments.flourishes||{})].map(id=>window.EnchantmentSystem?.DEFINITIONS?.[id]?.displayName||id).join(' · '),true)]:[]),
     fact('Ranged', def.rangedWeaponKey),
@@ -1486,6 +1487,7 @@ for (const b of document.querySelectorAll('[data-tab]'))
     renderPools();
   };
 $('fitBtn').onclick = () => preview.fit();
+$('hideWeaponsToggle').onchange=()=>{preview.hideWeapons=$('hideWeaponsToggle').checked;};
 for (const b of document.querySelectorAll('[data-view]'))
   b.onclick = () => preview.view(b.dataset.view === 'back');
 $('orbitBtn').onclick = () => {

@@ -75,7 +75,7 @@ const files = [
   'js/combat/combat-bandit.js?v=20261127ruinTorsoInk2',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
   'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
-  'js/combat/combat-minion.js?v=20261127ruinTorsoInk2',
+  'js/combat/combat-minion.js?v=20261127ruinHronalInk3',
   'js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6',
   'js/combat/combat-animal-attacks.js?v=20261126h583b393', // Real animal special registry underlies the shared attachment system.
   'js/combat/combat-attach.js?v=20261126h901bb94', // One owner for attach/detach, dodge interruption and victim targeting.
@@ -529,6 +529,13 @@ export class EnemyPreview {
     );
   }
   render() {
+    if(!this.hideWeapons||!this.actor)return this.renderScene();
+    const holders=[this.actor._banditToolHolder,this.actor._banditRangedToolHolder,this.actor._banditFlaskToolHolder].filter(Boolean); // Inspection only; don't modify animation, pose or combat state.
+    const visible=holders.map(holder=>holder.visible);
+    try{holders.forEach(holder=>{holder.visible=false;});return this.renderScene();}
+    finally{holders.forEach((holder,i)=>{holder.visible=visible[i];});}
+  }
+  renderScene() {
     const renderer = this.renderer,
       scene = this.scene,
       camera = this.camera;
@@ -623,6 +630,7 @@ export class EnemyPreview {
       tier,
       seed,
       roster: copy(a.rosterRecord),
+      ruinBackSpikeInfo:a.avatarRef.ruinBackSpikeInfo?copy(a.avatarRef.ruinBackSpikeInfo):null, // Actual torso attachment, not the hammer.
       definition: copy(a.def),
       captainArmament:a._banditCaptainArmament?copy(a._banditCaptainArmament):null, // Preserve the rolled modular weapon when reviewing history.
       rigScale: a.avatarRef.rigScale || null,

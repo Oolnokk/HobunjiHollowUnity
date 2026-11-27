@@ -178,6 +178,36 @@ const server = http.createServer((request, response) => {
       'Ceiling ice must grow downward from the ceiling using real authored Furniture Editor facets and reversible growth');
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
+    await page.addScriptTag({url:'/docs/js/combat/combat-minion.js'});
+    await page.addScriptTag({url:'/docs/js/faceted-rocks.js'});
+    const skeletonResult=await page.evaluate(()=>{
+      const T=THREE,canvas=document.createElement('canvas');canvas.width=canvas.height=100;
+      const ctx=canvas.getContext('2d');ctx.fillRect(10,5,80,55);ctx.fillRect(39,60,22,34); // Large head and narrow lower torso.
+      const results=[];
+      for(const theme of ['hronal','tothal']){
+        const group=new T.Group(),back=new T.Group(),portrait=new T.Group(),hammer=new T.Group();
+        group.add(back,hammer);back.add(portrait);hammer.position.set(2,0,0);
+        const nodes=Array.from({length:7},(_,i)=>{const b=new T.Bone();b.name='torso'+i;b.position.set(0,i===0?-.43:.055,0);b.userData.hobunjiSplineRest={x:b.position.x,y:b.position.y,z:b.position.z};return b;});
+        portrait.add(nodes[0]);for(let i=1;i<nodes.length;i++)nodes[i-1].add(nodes[i]);
+        const avatar={backPlane:back,backPortraitMesh:portrait,modelWidth:1,modelHeight:1,backCanvas:canvas,ruinNeckNormalized:{x:.5,y:.60},ruinBackSplineNodes:nodes};
+        const dispose=window.MinionCombat.attachRuinBackSpikes(T,avatar,{ruinSkeletonTheme:theme,ruinSkeletonSeed:7});
+        group.updateMatrixWorld(true);const layer=group.getObjectByName('ruin-skeleton-back-stalagmites');
+        if(!layer){results.push({theme,missing:true});continue;}
+        const mesh=layer.children[0],positions=mesh.geometry.attributes.position,point=new T.Vector3();
+        let baseInside=true,baseVertices=0,maxZ=-Infinity;
+        for(let i=0;i<positions.count;i++){
+          point.fromBufferAttribute(positions,i);const ground=point.y<-.014;point.applyMatrix4(mesh.matrixWorld);
+          maxZ=Math.max(maxZ,point.z);
+          if(ground){baseVertices++;baseInside&&=point.y<-.10&&point.y>-.44&&Math.abs(point.x)<.12;}
+        }
+        const before=layer.getWorldPosition(new T.Vector3());hammer.position.x+=20;group.updateMatrixWorld(true);
+        const unaffected=before.distanceTo(layer.getWorldPosition(new T.Vector3()))<1e-8;
+        const attached=nodes.slice(0,5).includes(layer.parent);const surface=theme!=='hronal'||mesh.userData.facetedRock===true;
+        dispose();results.push({theme,baseInside,baseVertices,attached,unaffected,surface,maxZ,disposed:layer.parent===null});
+      }
+      return results;
+    });
+    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>0&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
     await page.evaluate(() => {
       window.__iceFireTargets = new Map(); // The real composer registers its fire targets through this minimal existing contract.
       window.__iceSolids = new Map(); // Collision callback truthiness is checked both frozen and melting.

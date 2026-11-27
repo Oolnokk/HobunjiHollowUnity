@@ -101,7 +101,7 @@
     let h=Math.imul(x+1,374761393)^Math.imul(y+1,668265263)^seed; // Deterministic portrait grain.
     h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;
   }
-  const inkFadeFor=(r,g,b)=>Math.max(0,Math.min(1,(Math.max(r,g,b)-24)/40)); // Frost/oil never lighten pure black or its dark outline fringe.
+  const inkFadeFor=(r,g,b)=>Math.max(0,Math.min(1,(Math.max(r,g,b)-24)/40)); // All traditions preserve pure black and its dark outline fringe.
   async function paintRuinPortraits(roster,canvases){
     const theme=roster.ruinSkeletonTheme; // Spawn-only treatment.
     if(!theme)return;
@@ -126,15 +126,16 @@
         for(let p=0;p<w*h;p++){
           const i=p*4; // RGBA byte offset.
           if(!data[i+3]||!(data[i]||data[i+1]||data[i+2]))continue;
-          const inkFade=inkFadeFor(data[i],data[i+1],data[i+2]); // Preserve black and dark antialiasing in both magical treatments.
-          if(theme!=='hronal'&&inkFade===0)continue;
+          const inkFade=inkFadeFor(data[i],data[i+1],data[i+2]); // Preserve black and dark antialiasing for every tradition.
+          if(inkFade===0)continue; // Charcoal must not repaint the outline either.
           if(oil){if(!mask[p])continue;const a=overlay[i+3]/255*inkFade;for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;}
           else{
             const x=p%w,y=Math.floor(p/w),seed=roster.ruinSkeletonSeed; // Fine and coarse stable texture.
             const grain=noise(x,y,seed),broad=noise(Math.floor(x/4),Math.floor(y/4),seed);
             if(theme==='hronal'){
               const gray=(data[i]*.25+data[i+1]*.6+data[i+2]*.15)*(.16+broad*.18);
-              data[i]=Math.max(2,gray+grain*9);data[i+1]=Math.max(2,gray*.85+grain*4);data[i+2]=Math.max(2,gray*.75);
+              const char=[gray+grain*9,gray*.85+grain*4,gray*.75]; // Soot darkens the body, not the original ink fringe.
+              for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-inkFade)+Math.min(data[i+c],char[c])*inkFade;
             }else{
               const sheen=(.24+.31*broad+.16*grain)*inkFade;
               data[i]=data[i]*(1-sheen)+183*sheen;data[i+1]=data[i+1]*(1-sheen)+224*sheen;data[i+2]=data[i+2]*(1-sheen)+249*sheen;
@@ -189,16 +190,18 @@
     if(!footprint){report('No opaque torso footprint below skull');return;}
     // Satellites spread up to 1.78 radii and their bases reach 1.44 more. Inset each seed edge by 3.3 radii.
     const radius=Math.min(width*.055,Math.min(footprint.width,footprint.height)/8);
+    const maxSpikeHeight=Math.min(width*.32,footprint.height*.9); // Long spikes on a large skull's tiny torso otherwise visually resemble a separate held object.
+    const minSpikeHeight=Math.min(width*.12,maxSpikeHeight*.45);
     const source=new THREE.Group(),geometry=new THREE.BoxGeometry(footprint.width-radius*6.6,.02,footprint.height-radius*6.6),material=new THREE.MeshBasicMaterial({visible:false}); // Torso-as-ground proxy.
     const support=new THREE.Mesh(geometry,material);support.userData.authoredPartId='ruin-skeleton-back';source.add(support);
     try{
       const stone=theme==='hronal';
       const layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
-        seed:roster.ruinSkeletonSeed,count:4,density:1,iceCluster:3,radius,iceHeightMin:width*.12,iceHeightMax:width*.32,
+        seed:roster.ruinSkeletonSeed,count:4,density:1,iceCluster:3,radius,iceHeightMin:minSpikeHeight,iceHeightMax:maxSpikeHeight,
         iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:.95,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1});
       if(!layer?.children?.length)throw new Error('Back stalagmite generator returned no geometry');
       layer.name='ruin-skeleton-back-stalagmites';layer.rotation.x=Math.PI/2; // Furniture Y becomes rear-facing Z.
-      layer.position.set(footprint.x,footprint.y,.012); // Ground vertices are at -.015, embedding bases .003 in the rear plane.
+      layer.position.set(footprint.x,footprint.y,.007); // Ground vertices start at -.015; embed roots .008 into the portrait to avoid floating seams.
       layer.userData.ruinTorsoFootprint={...footprint,radius}; // Spawn-time placement diagnosis.
       // Attach to a torso spline node, excluding the two uppermost nodes and every head/weapon joint.
       let carrier=avatar.backPortraitMesh||back,rest={x:0,y:0,z:0},nearest=Infinity,offset={x:0,y:0,z:0};
@@ -222,8 +225,9 @@
         }else{owned.push({geometry:node.geometry,material:node.material});}
       });
       carrier.add(layer);debug.spikes++;
+      avatar.ruinBackSpikeInfo={theme,carrier:carrier.name||'rear portrait',footprint:{...footprint},radius,minSpikeHeight,maxSpikeHeight}; // Workshop roll facts can identify the real attachment without devtools.
       let disposed=false;
-      return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);for(const entry of owned){entry.geometry.dispose();entry.material?.dispose();}};
+      return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);avatar.ruinBackSpikeInfo=null;for(const entry of owned){entry.geometry.dispose();entry.material?.dispose();}};
     }catch(error){report(error);}finally{geometry.dispose();material.dispose();}
   }
   function trailMovement(c,x0,y0,x1,y1,mode,tile){
