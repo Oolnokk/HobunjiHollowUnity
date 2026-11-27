@@ -1613,6 +1613,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
   const headCosmeticsOnly = renderOptions?.headCosmeticsOnly === true; // Front-view alpha source for the 'mask' head gate: the head sprite plus every head-slot cosmetic, without arms, torso, clothing or pauldrons.
   const skipHeadSprite = renderOptions?.skipHeadSprite === true; // Headless characters (Imlao): the head sprite is simply not drawn, so everything it would have hidden shows through.
+  const onlyTorsoSprite = renderOptions?.onlyTorsoSprite === true; // Unoccluded base torso art, before arms, clothing, skull or hair layers.
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   // Hat overflow bake (js/hat-overflow-plane.js): only the hat's own layers, drawn into a canvas padded by
@@ -1917,7 +1918,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatOnlyUrls = hatOnly ? [...hatOnlyBackLayers, ...hatUnderLayers, ...hatOverLayers].map(({ layer }) => layer.url).filter(Boolean) : null;
   let imgMap;
   // Fast synchronous path: all images already resolved in cache — avoid async overhead.
-  const _allUrls = onlyHeadSprite ? (headUrl ? [headUrl] : []) : hatOnly ? [...new Set(hatOnlyUrls)] : [...neededUrls]; // Alpha-only neck rig masks require the head PNG, not every outfit layer.
+  const _allUrls = onlyTorsoSprite ? [...new Set(baseTorsoLayers.map(({layer})=>layer.url).filter(Boolean))] : onlyHeadSprite ? (headUrl ? [headUrl] : []) : hatOnly ? [...new Set(hatOnlyUrls)] : [...neededUrls]; // Alpha-only neck rig masks require the head PNG, not every outfit layer.
   const _allResolved = _allUrls.every(url => layerImageOverrides?.has(url) || IMG_CACHE.get(url) instanceof Image);
   if (_allResolved) {
     imgMap = new Map(_allUrls.map(url => [url, layerImageOverrides?.get(url) || IMG_CACHE.get(url)]));
@@ -2125,6 +2126,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
     for (const key of order) drawEmoteLayers(hatDraw[key]);
+    if (_needsScale) ctx.restore();
+    return;
+  }
+
+  if (onlyTorsoSprite) {
+    drawBreathingLayers(baseTorsoLayers); // Identical rear sprite transform and authored scale; no subtraction of head pixels.
     if (_needsScale) ctx.restore();
     return;
   }

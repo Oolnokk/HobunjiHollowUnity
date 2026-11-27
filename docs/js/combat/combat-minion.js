@@ -140,7 +140,7 @@
       if(theme==='kanthic'){
         if(outline[p]){data[i]=data[i+1]=data[i+2]=0;continue;} // Exact authored-style black; preserve original alpha.
         if(!mask[p])continue;
-        const a=overlay[i+3]/255*.7; // Darker oil at 70% layer opacity; the independent black contour remains solid.
+        const a=overlay[i+3]/255*.85; // Darkened oil at 85% opacity; solid black contours remain unchanged.
         for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*.55*a;
       }else{
         const x=p%w,y=Math.floor(p/w),broad=coarse(x,y); // Smooth broad patches, no per-pixel grain.
@@ -180,15 +180,15 @@
     canvas.getContext('2d').drawImage(source,0,0);
     await paintRuinPortraits(roster,[canvas]);return canvas;
   }
-  function ruinTorsoFootprint(canvas,headCanvas,width,height,flipped=false){
+  function ruinTorsoFootprint(canvas,width,height,flipped=false){
     const w=canvas?.width,h=canvas?.height;
-    if(!(w>0&&h>0&&width>0&&height>0&&headCanvas?.width===w&&headCanvas?.height===h))return null;
-    const rgba=canvas.getContext('2d').getImageData(0,0,w,h).data,head=headCanvas.getContext('2d').getImageData(0,0,w,h).data;
-    const distance=new Uint16Array(w*h); // Chebyshev distance to transparent/head pixels; computed only during spawn.
+    if(!(w>0&&h>0&&width>0&&height>0))return null;
+    const rgba=canvas.getContext('2d').getImageData(0,0,w,h).data; // Torso-only alpha; never subtract the head or intersect the final hair-bearing composite.
+    const distance=new Uint16Array(w*h); // Chebyshev distance to transparent torso pixels; computed only during spawn.
     const max=Math.max(w,h)+1;
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){
       const p=y*w+x,i=p*4;
-      if(rgba[i+3]>=128&&head[i+3]<=12)distance[p]=x===0||y===0||x===w-1||y===h-1?1:max;
+      if(rgba[i+3]>=128)distance[p]=x===0||y===0||x===w-1||y===h-1?1:max;
     }
     for(let y=1;y<h;y++)for(let x=1;x<w-1;x++){
       const p=y*w+x;if(distance[p])distance[p]=Math.min(distance[p],1+Math.min(distance[p-1],distance[p-w-1],distance[p-w],distance[p-w+1]));
@@ -209,7 +209,7 @@
     if(!pixels.length)return null;
     const x0=(left/w-.5)*width,x1=((right+1)/w-.5)*width,y0=(.5-(bottom+1)/h)*height,y1=(.5-top/h)*height;
     const footprint={x:(x0+x1)/2,y:(y0+y1)/2,width:x1-x0,height:y1-y0,top:y1,bottom:y0,pixels:pixels.length,clearance};
-    const spacing=Math.min(width,height)*.045,spacing2=spacing*spacing; // Dense roots without duplicate or directly stacked centers.
+    const spacing=Math.min(width,height)*.064,spacing2=spacing*spacing; // Wider roots use more separation, maintaining the previous projected coverage.
     const dx=width/w,dy=height/h;
     function choose(x,z,unique){
       const px=(.5+(x+footprint.x)/width)*w-.5,py=(.5-(footprint.y-z)/height)*h-.5;
@@ -218,7 +218,7 @@
         if(unique&&pixel.nearest===0)continue;
         if(pixel.nearest>farthest){fallback=pixel;farthest=pixel.nearest;}
         if(unique&&pixel.nearest<spacing2)continue;
-        const d=((pixel.x-px)*dx)**2+((pixel.y-py)*dy)**2;
+        const d=((pixel.x-px)*dx)**2+((pixel.y-py)*dy)**2+(unique?Math.max(0,width*.07-(pixel.d-.5)*Math.min(dx,dy)/1.2)**2:0); // Prefer room for a thick base; silhouette clearance remains mandatory.
         if(d<best){best=d;chosen=pixel;}
       }
       chosen=chosen||fallback;
@@ -276,6 +276,53 @@
     }
     return {mesh,roots,update,tracker,dispose(){mesh.skeleton.dispose?.();geometry.dispose();material.dispose();}};
   }
+  function installRuinFrontOcclusion(THREE,mesh,front){
+    if(!front?.isMesh||!mesh?.material)return ()=>{};
+    const bit=0x80; // Temporary owner mask in the base color pass only; released before the held/water replay uses its owner bits.
+    const material=mesh.material,mask=new THREE.MeshBasicMaterial({
+      name:'ruin-own-front-stencil',colorWrite:false,depthTest:false,depthWrite:false,side:THREE.FrontSide,
+      stencilWrite:true,stencilWriteMask:bit,stencilFunc:THREE.AlwaysStencilFunc,stencilRef:bit,stencilFuncMask:bit,
+      stencilFail:THREE.KeepStencilOp,stencilZFail:THREE.KeepStencilOp,stencilZPass:THREE.ReplaceStencilOp
+    });
+    const oldBefore=mesh.onBeforeRender,oldAfter=mesh.onAfterRender;
+    let active=null; // Only the current growth draw may use this mask.
+    function clearBit(renderer){
+      const state=renderer.state.buffers.stencil;
+      state.setMask(bit);state.setClear(0);renderer.clear(false,false,true);state.setMask(0xff);
+    }
+    function finish(){
+      if(!active)return;
+      const renderer=active;active=null;
+      material.stencilWrite=false;material.stencilWriteMask=0xff;
+      clearBit(renderer);renderer.state.buffers.stencil.setTest(false);
+    }
+    mesh.onBeforeRender=function(renderer,scene,camera,geometry,drawMaterial,group){
+      oldBefore?.call(this,renderer,scene,camera,geometry,drawMaterial,group);
+      if(drawMaterial!==material||scene.overrideMaterial||!(camera.layers.mask&1)||window.HeldObjectRenderOrder?.replayingDepth||!front.visible||!front.layers.test(camera.layers))return;
+      for(let node=front.parent;node;node=node.parent)if(!node.visible)return;
+      const source=Array.isArray(front.material)?front.material[0]:front.material;
+      if(!source?.map||source.visible===false||!renderer.renderBufferDirect||!renderer.state?.buffers?.stencil)return;
+      const target=renderer.getRenderTarget?.();
+      if(target?!target.stencilBuffer:!renderer.getContext?.()?.getContextAttributes?.()?.stencil)return;
+      // FrontSide rasterization rejects back-facing triangles, including animated folds. The actual current alpha-tested portrait owns the mask.
+      const skinning=!!(front.isSkinnedMesh&&source.skinning);
+      if(mask.map!==source.map||mask.skinning!==skinning){mask.map=source.map;mask.skinning=skinning;mask.needsUpdate=true;}
+      mask.alphaTest=Number(source.alphaTest)||.01;mask.opacity=source.opacity??1;
+      mask.side=THREE.FrontSide;
+      try{
+        clearBit(renderer);active=renderer;
+        front.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse,front.matrixWorld);
+        front.normalMatrix.getNormalMatrix(front.modelViewMatrix);
+        if(skinning)front.skeleton.update(); // Front may not yet have been drawn, but uses the exact current rig.
+        renderer.renderBufferDirect(camera,scene,front.geometry,mask,front,null);
+        material.stencilWrite=true;material.stencilWriteMask=0;material.stencilFunc=THREE.NotEqualStencilFunc;
+        material.stencilRef=bit;material.stencilFuncMask=bit;
+        material.stencilFail=material.stencilZFail=material.stencilZPass=THREE.KeepStencilOp;
+      }catch(error){finish();report(error);}
+    };
+    mesh.onAfterRender=function(...args){try{finish();}finally{oldAfter?.apply(this,args);}};
+    return ()=>{finish();mesh.onBeforeRender=oldBefore;mesh.onAfterRender=oldAfter;mask.dispose();};
+  }
   function attachRuinBackSpikes(THREE,avatar,roster){
     const carrier=avatar.backPortraitMesh||avatar.backPlane,width=avatar.modelWidth,height=avatar.modelHeight;
     const theme=roster.ruinSkeletonTheme;
@@ -284,22 +331,23 @@
     if(!build){report('Stalagmite generator unavailable');return;}
     const flipped=window.PNGPlaneAvatar?.getPortraitsFlipped?.()===true;
     let footprint;
-    try{footprint=ruinTorsoFootprint(avatar.backCanvas,avatar.ruinRearHeadCanvas,width,height,flipped);}catch(error){report(error);return;}
-    if(!footprint){report('No visible non-head rear pixels');return;}
-    const radius=width*.05,maxSpikeHeight=width*.56,minSpikeHeight=width*.28; // More, narrower crystals with the existing height range.
+    try{footprint=ruinTorsoFootprint(avatar.ruinRearTorsoCanvas,width,height,flipped);}catch(error){report(error);return;}
+    if(!footprint){report('No opaque pixels in rear torso sprite');return;}
+    const radius=width*.05*Math.sqrt(12/6),maxSpikeHeight=width*.56,minSpikeHeight=width*.28; // Half as many clusters, sqrt(2) wider roots: equal nominal total base area before silhouette clipping.
     const source=new THREE.Group(),geometry=new THREE.BoxGeometry(footprint.width,.02,Math.max(.005,footprint.height)),material=new THREE.MeshBasicMaterial({visible:false});
     const support=new THREE.Mesh(geometry,material);support.userData.authoredPartId='ruin-skeleton-back';source.add(support);
-    let layer,rig;
+    let layer,rig,disposeOcclusion;
     try{
       const stone=theme==='hronal';
       layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
-        seed:roster.ruinSkeletonSeed,count:12,density:1,iceCluster:3,radius,iceHeightMin:minSpikeHeight,iceHeightMax:maxSpikeHeight,
+        seed:roster.ruinSkeletonSeed,count:6,density:1,iceCluster:3,radius,iceHeightMin:minSpikeHeight,iceHeightMax:maxSpikeHeight,
         iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:1,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1,mapSpikeOrigin:footprint.pick});
       const generated=layer?.children?.find(child=>child.isMesh);
       if(!generated)throw new Error('Back stalagmite generator returned no geometry');
       layer.name='ruin-skeleton-back-stalagmites';
       rig=rigRuinSpikeMesh(THREE,generated,footprint,width,height,carrier,flipped,stone);
       layer.remove(generated);layer.add(rig.mesh);
+      disposeOcclusion=installRuinFrontOcclusion(THREE,rig.mesh,avatar.frontPortraitMesh); // Own front alpha masks only its own growth material.
       const baseUpdate=layer.updateMatrixWorld;
       // Called by the normal scene matrix traversal after the rear portrait's bones; works in runtime, preview and corpse poses.
       layer.updateMatrixWorld=function(force){if(this.visible&&rig.update())avatar.ruinBackSpikeInfo.poseUpdates++;return baseUpdate.call(this,force);};
@@ -307,8 +355,8 @@
         anchors:rig.roots.map(({u,v})=>({u,v})),seated:rig.roots.length,poseUpdates:0}; // Mobile rig dump can inspect saved coordinates and pose refresh count.
       carrier.add(layer);carrier.updateWorldMatrix?.(true,false);carrier.updateMatrixWorld(true);debug.spikes++;
       let disposed=false;
-      return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);avatar.ruinBackSpikeInfo=null;rig.dispose();};
-    }catch(error){layer?.parent?.remove(layer);if(rig)rig.dispose();else layer?.traverse(node=>{if(node.isMesh){node.geometry?.dispose();node.material?.dispose();}});avatar.ruinBackSpikeInfo=null;report(error);}finally{geometry.dispose();material.dispose();}
+      return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);avatar.ruinBackSpikeInfo=null;disposeOcclusion?.();rig.dispose();};
+    }catch(error){layer?.parent?.remove(layer);disposeOcclusion?.();if(rig)rig.dispose();else layer?.traverse(node=>{if(node.isMesh){node.geometry?.dispose();node.material?.dispose();}});avatar.ruinBackSpikeInfo=null;report(error);}finally{geometry.dispose();material.dispose();}
   }
   function trailMovement(c,x0,y0,x1,y1,mode,tile){
     const theme=c?.ruinSkeletonTheme; // No trail work on ordinary enemies.
@@ -430,7 +478,7 @@
     shamblingFootingFraction: SHAMBLING_FOOTING_FRACTION,
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
-    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,paintRuinPants,paintRuinPixels,ruinTorsoFootprint,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
+    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,paintRuinPants,paintRuinPixels,ruinTorsoFootprint,installRuinFrontOcclusion,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
     makeEntity,
     makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });

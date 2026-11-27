@@ -9,7 +9,7 @@ const files = [
   'js/character-rig-scale.js?v=20261126he6d0d7e',
   'js/color-fill.js?v=20261117h93b0e83',
   'js/beard-hood-cutout.js?v=20261125pristineCloth1', // Painted beard/front-hood arbitration used by the shared portrait compositor.
-  'js/portrait-utils.js?v=20261126inkParity1',
+  'js/portrait-utils.js?v=20261127ruinTorsoOnly10',
   'js/portrait-breathing.js?v=20261028a',
   'js/npc-avatar-preview-utils.js?v=20261122hKasa3',
   'js/character-spine.js?v=20261126neckBlendConsolidate3', // Hunchback weights/deformation, read by the portrait skin, shoulder aim and leg solver.
@@ -72,10 +72,10 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261126spiritHealAudit1',
   'js/alchemy-system.js?v=20261125idleGate2',
   'js/combat/enemy-loadout-rules.js?v=20261127ruinViewer1',
-  'js/combat/combat-bandit.js?v=20261127ruinRearMask7',
+  'js/combat/combat-bandit.js?v=20261127ruinTorsoOnly10',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
   'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
-  'js/combat/combat-minion.js?v=20261127ruinSurfaceAnchors9',
+  'js/combat/combat-minion.js?v=20261127ruinTorsoOnly10',
   'js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6',
   'js/combat/combat-animal-attacks.js?v=20261126h583b393', // Real animal special registry underlies the shared attachment system.
   'js/combat/combat-attach.js?v=20261126h901bb94', // One owner for attach/detach, dodge interruption and victim targeting.
@@ -172,6 +172,7 @@ export class EnemyPreview {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       preserveDrawingBuffer: true,
+      stencil: true, // Own-front crystal masks use the same stencil capability as the game color target.
       alpha: false,
       powerPreference: 'low-power',
     });

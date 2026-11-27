@@ -21,26 +21,26 @@ for(const tradition of ['tothal','hronal']){
     assert.equal(canvas.data[ix(8,5)+3],255);
   }
 }
-// The full rear mask includes visible shoulders beside the head, not just a narrow band beneath it.
+// Torso-only alpha permits roots behind the skull/hair but excludes head-only art and arm-only pixels.
 const w=100,h=100,body=new Uint8ClampedArray(w*h*4),head=new Uint8ClampedArray(body.length);
-for(let y=3;y<60;y++)for(let x=20;x<80;x++){body[(y*w+x)*4+3]=255;head[(y*w+x)*4+3]=255;}
-for(let y=45;y<72;y++)for(let x=10;x<90;x++)body[(y*w+x)*4+3]=255;
+for(let y=3;y<60;y++)for(let x=20;x<80;x++)head[(y*w+x)*4+3]=255;
+for(let y=36;y<72;y++)for(let x=24;x<76;x++)body[(y*w+x)*4+3]=255;
 for(let y=60;y<92;y++)for(let x=42;x<63;x++)body[(y*w+x)*4+3]=255;
 const fixture=data=>({width:w,height:h,getContext:()=>({getImageData:()=>({data})})});
-const footprint=m.ruinTorsoFootprint(fixture(body),fixture(head),1,1);
-assert.ok(footprint&&footprint.width>.65&&footprint.top>0&&footprint.bottom<-.38&&footprint.clearance===3);
-let shoulder=false;for(let z=-.5;z<=.5;z+=.1)for(let x=-.5;x<=.5;x+=.1){
+const footprint=m.ruinTorsoFootprint(fixture(body),1,1);
+assert.ok(footprint&&footprint.width>.44&&footprint.top>.09&&footprint.bottom<-.38&&footprint.clearance===3);
+let overlapsHead=false;for(let z=-.5;z<=.5;z+=.1)for(let x=-.5;x<=.5;x+=.1){
   const root=footprint.project(x,z),px=Math.floor((.5-(root.x+footprint.x))*w),py=Math.floor((.5-(footprint.y-root.z))*h);
-  for(let oy=-3;oy<=3;oy++)for(let ox=-3;ox<=3;ox++){assert.equal(body[((py+oy)*w+px+ox)*4+3],255);assert.equal(head[((py+oy)*w+px+ox)*4+3],0);}
-  if(py<60)shoulder=true;
-}assert.ok(shoulder);
-const unique=new Set();for(let i=0;i<30;i++){const root=footprint.pick(0,0);assert.ok(root&&root.maxRadius>0);unique.add(root.x+','+root.z);}assert.equal(unique.size,30);
+  for(let oy=-3;oy<=3;oy++)for(let ox=-3;ox<=3;ox++)assert.equal(body[((py+oy)*w+px+ox)*4+3],255);
+  if(head[(py*w+px)*4+3])overlapsHead=true;
+}assert.ok(overlapsHead,'Head-overlapping torso must remain eligible');
+const unique=new Set();for(let i=0;i<12;i++){const root=footprint.pick(0,0);assert.ok(root&&root.maxRadius>0);unique.add(root.x+','+root.z);}assert.equal(unique.size,12);
 vm.runInNewContext(fs.readFileSync('docs/js/tool-metal-recolor.js','utf8'),{window,console});
 const eligible=new Uint8Array(100*100).fill(1);
 const oilPixels=new Uint8ClampedArray(100*100*4),oilOverlay=new Uint8ClampedArray(oilPixels.length);for(let p=0;p<100*100;p++){oilPixels.set([120,110,90,255],p*4);oilOverlay.set([17,35,70,255],p*4);}
-oilPixels.set([0,0,0,255],0);m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:8},oilPixels,100,100,oilOverlay);let oilInk=0,oilFill=0;for(let p=1;p<100*100;p++){const i=p*4;if(oilPixels[i]===0&&oilPixels[i+1]===0&&oilPixels[i+2]===0)oilInk++;if(oilPixels[i]===43&&oilPixels[i+1]===46&&oilPixels[i+2]===54)oilFill++;}assert.ok(oilInk>0&&oilFill>0);const thin=window.ToolMetalRecolor.buildOxidationOutlineMask(window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.45,{seed:8,blotchCount:6,separateBlotches:true,looseBlotches:true}),eligible,100,100,1);assert.ok(oilInk>thin.reduce((n,v)=>n+v,0));assert.deepEqual(Array.from(oilPixels.slice(0,4)),[0,0,0,255]);
+oilPixels.set([0,0,0,255],0);m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:8},oilPixels,100,100,oilOverlay);let oilInk=0,oilFill=0;for(let p=1;p<100*100;p++){const i=p*4;if(oilPixels[i]===0&&oilPixels[i+1]===0&&oilPixels[i+2]===0)oilInk++;if(oilPixels[i]===26&&oilPixels[i+1]===33&&oilPixels[i+2]===46)oilFill++;}assert.ok(oilInk>0&&oilFill>0);const thin=window.ToolMetalRecolor.buildOxidationOutlineMask(window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.45,{seed:8,blotchCount:6,separateBlotches:true,looseBlotches:true}),eligible,100,100,1);assert.ok(oilInk>thin.reduce((n,v)=>n+v,0));assert.deepEqual(Array.from(oilPixels.slice(0,4)),[0,0,0,255]);
 // Force an irregular patch across authored ink and up against a transparent boundary. Its outline should not leave a clearance moat.
-const cut=new Uint8ClampedArray(12*12*4),oil=new Uint8ClampedArray(cut.length),forced=new Uint8Array(144);for(let y=1;y<11;y++)for(let x=1;x<11;x++){const p=y*12+x;cut.set(x===1?[0,0,0,255]:[120,110,90,255],p*4);oil.set([17,35,70,255],p*4);if(x<=4&&y>=4&&y<=7)forced[p]=1;}m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:9},cut,12,12,oil,forced);assert.deepEqual(Array.from(cut.slice((5*12+1)*4,(5*12+1)*4+4)),[0,0,0,255]);assert.deepEqual(Array.from(cut.slice((5*12+2)*4,(5*12+2)*4+4)),[43,46,54,255]);assert.equal(cut[(5*12)*4+3],0);assert.deepEqual(Array.from(cut.slice((5*12+5)*4,(5*12+5)*4+4)),[0,0,0,255]);
+const cut=new Uint8ClampedArray(12*12*4),oil=new Uint8ClampedArray(cut.length),forced=new Uint8Array(144);for(let y=1;y<11;y++)for(let x=1;x<11;x++){const p=y*12+x;cut.set(x===1?[0,0,0,255]:[120,110,90,255],p*4);oil.set([17,35,70,255],p*4);if(x<=4&&y>=4&&y<=7)forced[p]=1;}m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:9},cut,12,12,oil,forced);assert.deepEqual(Array.from(cut.slice((5*12+1)*4,(5*12+1)*4+4)),[0,0,0,255]);assert.deepEqual(Array.from(cut.slice((5*12+2)*4,(5*12+2)*4+4)),[26,33,46,255]);assert.equal(cut[(5*12)*4+3],0);assert.deepEqual(Array.from(cut.slice((5*12+5)*4,(5*12+5)*4+4)),[0,0,0,255]);
 for(let seed=1;seed<=12;seed++){
   const mask=window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.28,{seed,blotchCount:9,separateBlotches:true});
   const visited=new Uint8Array(mask.length);let groups=0,area=0;

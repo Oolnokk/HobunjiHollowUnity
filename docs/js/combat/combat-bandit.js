@@ -444,10 +444,10 @@
     characterBuildStatus.stage = 'back-portrait';
     if (roster.rootledoot) await window.Rootledoots.paintPortrait(backCanvas,true);
     else await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
-    let ruinRearHeadCanvas=null; // Actual rear-facing skull mask, separate from the front neck calibration.
+    let ruinRearTorsoCanvas=null; // Unobstructed authored torso, including pixels hidden by skull/hair in the composite.
     if(['hronal','tothal'].includes(roster.ruinSkeletonTheme)){
-      ruinRearHeadCanvas=document.createElement('canvas');ruinRearHeadCanvas.width=backCanvas.width;ruinRearHeadCanvas.height=backCanvas.height;
-      await window.NpcAvatarPreview.renderProfileToCanvas(ruinRearHeadCanvas,profile,{portraitView:'behind',forceEyesOpen:true,onlyHeadSprite:true});
+      ruinRearTorsoCanvas=document.createElement('canvas');ruinRearTorsoCanvas.width=backCanvas.width;ruinRearTorsoCanvas.height=backCanvas.height;
+      await window.NpcAvatarPreview.renderProfileToCanvas(ruinRearTorsoCanvas,profile,{portraitView:'behind',forceEyesOpen:true,onlyTorsoSprite:true});
     }
     const themedPantsOverlay=roster.ruinSkeletonTheme?await window.PantsGarmentRenderer?.buildOverlayMask?.(frontCanvas,profile,{forceEyesOpen:true})?.catch(error=>{window.__farmLog?.('[ruin skeleton pants mask] '+error.message,'warn','combat');return null;}):null; // Compare ORIGINAL art; frost/char/oil are not clothing occluders.
     if(roster.ruinSkeletonTheme)await window.MinionCombat?.paintRuinPortraits?.(roster,[frontCanvas,neutralFrontCanvas,combatFrownCanvas,backCanvas]);
@@ -697,7 +697,7 @@
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       frontPortraitMesh: renderedFrontMesh, backPortraitMesh: renderedBackMesh, // Exact carriers used by frozen stance rendering.
-      ruinRearHeadCanvas, // Real rear skull exclusion mask for the surface growth.
+      ruinRearTorsoCanvas, // Original torso alpha, prior to skull/cosmetic compositing.
       handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
       handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes, spine,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
