@@ -110,6 +110,43 @@ const disabled = makeFixture({
 disabled.press(3);
 assert.deepEqual(disabled.state().selected, [], 'a disabled action must not execute or claim a hold');
 
+// Run the real HUD default-selection block and charge updater together. A
+// shallow trench offers Redig first, even while the player explicitly holds Fill.
+const hudStart = game.indexOf('const first = nonClimbBtns.find(');
+const hudEnd = game.indexOf('// The dodge button is climbing', hudStart);
+assert(hudStart >= 0 && hudEnd > hudStart, 'HUD default selection must exist');
+const selectDefault = game.slice(hudStart, hudEnd);
+const chargeUpdate = productionFunction('updateChargeAction');
+const makeHudCharge = Function('initialAction', 'buttons', [
+  "let activeTool = 'shovel', activeAction = initialAction, actionHeldDown = true, toolSwingT = 0;",
+  "let chargeAction = { tool: activeTool, action: initialAction, col: 2, row: 3, stage: 0, stages: [1, 2, 3] };",
+  "let canceled = null, completed = false, reticle = {col: 2, row: 3};",
+  "function cancelChargeAction(reason) { canceled = reason; chargeAction = null; }",
+  "function completeChargeAction() { completed = true; chargeAction = null; }",
+  "function getReticleTile() { return reticle; }",
+  "function spawnActionParticles() {} function beginChargeStage() {}",
+  chargeUpdate,
+  "function refresh(nonClimbBtns) {" + selectDefault + "}",
+  "return { refresh: () => refresh(buttons), tick: updateChargeAction, release: () => { actionHeldDown = false; }, move: () => { reticle = {col: 3, row: 3}; }, select: action => { activeAction = action; }, state: () => ({ activeAction, canceled, completed }) };",
+].join('\n'));
+const offered = [{action:'dig', allowed:true, style:'primary'}, {action:'fill', allowed:true, style:'secondary'}];
+const hudFill = makeHudCharge('fill', offered);
+for (let stage = 0; stage < 3; stage++) {
+  hudFill.refresh();
+  assert.equal(hudFill.state().activeAction, 'fill', 'HUD cannot replace an explicit in-progress Fill');
+  hudFill.tick();
+}
+assert.equal(hudFill.state().completed, true, 'Fill must complete across HUD refreshes');
+hudFill.refresh();
+assert.equal(hudFill.state().activeAction, 'dig', 'normal HUD default selection resumes after completion');
+for (const [interrupt, reason] of [['release', 'input released'], ['move', 'reticle moved'], ['select', 'tool/action changed']]) {
+  const held = makeHudCharge('fill', offered);
+  held[interrupt]('dig');
+  held.refresh();
+  held.tick();
+  assert.equal(held.state().canceled, reason, 'actual input or target changes must still cancel');
+}
+
 assert.match(game, /startChargeAction\(_chargeReticle, activeAction === 'fill' \? FILL_TRENCH_STAGES : _digStages\)/, 'actual resolved Fill must choose the fill stages');
 assert.match(game, /action: activeAction,\s*tool: activeTool,/, 'charge must commit the same resolved action it animates');
 assert.match(game, /cancelChargeAction\('input released'\)/, 'held-action release should report a useful mobile debug reason');

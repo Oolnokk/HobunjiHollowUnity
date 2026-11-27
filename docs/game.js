@@ -28353,7 +28353,8 @@
         // facing a tree is most likely to be in.
         const climbBtn = btns.find(b => b.action === 'climb_branch');
         const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
-        if (first) activeAction = first.action;
+        // The active charge owns its explicit action; a passive HUD refresh must not cancel it.
+        if (first && !chargeAction) activeAction = first.action;
         // The dodge button is climbing's only real trigger, so it's the
         // one that should visually say so — swaps to the climb/climb-down
         // icon+label while a target's in reach, back to the plain dodge
