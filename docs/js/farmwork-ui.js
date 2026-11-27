@@ -274,7 +274,30 @@
       <p class="fw-note">Plots start empty. Add/remove tiles equips the planning tool: Action 1 adds, Action 2 removes. Each plot fits within 7 × 7 tiles. Workers use Farm Storage seeds and follow their schedules.</p>
       <button class="fw-delete" data-fwdelete>${confirmDeleteId === chosen.id ? 'Confirm Remove (keeps soil/crops)' : 'Stop Assigning This Plot'}</button>`;
     }
+    const chores = window.RomanceFamily?.familyChores?.() || {};
+    const workerOptions = selected => '<option value="">None</option>' + people.map(person => `<option value="${esc(person.id)}" ${selected === person.id ? 'selected' : ''}>${esc(person.name)}</option>`).join('');
+    const stations = window.FarmProduction?.familyStations?.() || [];
+    html += `<div class="fw-settings" data-ctrl-transparent>
+      <h3>Livestock &amp; processing</h3>
+      <p class="fw-note">Assigned workers tend livestock or processors from 08:00–17:00 before returning to fieldwork. Fodder and selected processor inputs come from Farm Storage; goods go into your bag.</p>
+      <label>Livestock (feed, pet, collect)<select data-fwlivestock>${workerOptions(chores.livestock)}</select></label>
+      ${stations.map(station => {
+        const assignment = chores.processing?.[station.id] || {};
+        return `<div class="fw-settings" data-fwstation="${esc(station.id)}"><strong>${esc(station.label)} (${station.col}, ${station.row})</strong>
+          <label>Worker<select data-fwprocessworker>${workerOptions(assignment.workerId)}</select></label>
+          <label>Ingredient<select data-fwprocessinput><option value="">Collect only</option>${station.inputs.map(input => `<option value="${esc(input.key)}" ${assignment.inputKey === input.key ? 'selected' : ''}>${esc(input.label)} (${input.count} in storage)</option>`).join('')}</select></label></div>`;
+      }).join('')}
+      ${stations.length ? '' : '<p class="fw-note">Place a processing building to assign a worker.</p>'}
+      </div>`;
     view.innerHTML = html;
+    view.querySelector('[data-fwlivestock]')?.addEventListener('change', event => {
+      window.RomanceFamily?.setFamilyChore?.('livestock', '', event.target.value); render();
+    });
+    view.querySelectorAll('[data-fwstation]').forEach(row => {
+      const worker = row.querySelector('[data-fwprocessworker]'), input = row.querySelector('[data-fwprocessinput]');
+      const update = () => { window.RomanceFamily?.setFamilyChore?.('processing', row.dataset.fwstation, worker.value, input.value); render(); };
+      worker.addEventListener('change', update); input.addEventListener('change', update);
+    });
     if (visualPlots !== farmPlots || visualTiles.length !== farmPlots.length || visualTiles.some((tiles, i) => tiles !== farmPlots[i].tiles)) lastVisualAt = -Infinity;
     view.querySelectorAll('[data-fwnew]').forEach(button => button.addEventListener('click', () => create(button.dataset.fwnew)));
     view.querySelectorAll('[data-fwplot]').forEach(button => button.addEventListener('click', () => changePlot(button.dataset.fwplot)));
