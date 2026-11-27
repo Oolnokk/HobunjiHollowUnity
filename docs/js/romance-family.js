@@ -719,7 +719,7 @@
     // the next phase is rebuilt once with that phase's body/head scale.
     if (walker._childPhase && walker._childPhase !== phase && deps().despawnNpcWalker) {
       if (window.FamilyBabyBurdens?.isProxyActive?.(child.id)) return; // Finish the active carry/throw before rebuilding the source avatar at its new age.
-      window.FamilyBabyBurdens?.discard?.(child.id); // Retire the old proxy before destroying its source rig.
+      window.FamilyBabyBurdens?.discard?.(child.id, phase === 'toddler' && !!child.followPlayer); // Growth preserves a dropped baby's safe position/follow state.
       deps().despawnNpcWalker(walker);
       return;
     }
@@ -773,7 +773,7 @@
   }
 
   function onNewDay() {
-    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId })); // Squeezing is a child/toddler chore; spouses retain ordinary plot work.
+    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket' && !isFamilyWorkUnavailable(child.id)).map(child => ({ id: child.id, name: child.name, vatId: child.vatId })); // Squeezing is a child/toddler chore; spouses retain ordinary plot work.
     for (const worker of workers) {
       const status = window.DewVats?.squeezePileWithExternalWorker?.(worker.vatId);
       if (status === 'started') {
@@ -1143,9 +1143,14 @@
     const saved = JSON.parse(JSON.stringify(fam));
     // The shared Burden slots are not serialized. Save a safe nearby landing for
     // a baby held in the wilderness so reloading never sends them back home.
-    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player' && ['basket', 'toddler'].includes(phaseOf(c))) : [];
+    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player') : [];
     const spot = carried.length && window.FamilyBabyFollow?.savedCarrySpot?.();
-    if (spot) for (const child of carried) { child.carrySpot = { ...spot }; child.followPlayer = true; child.carryBy = null; child.carryPose = null; }
+    for (const child of carried) {
+      child.carryBy = null; child.carryPose = null; // Physical burden slots are not persisted.
+      const canFollow = ['basket', 'toddler'].includes(phaseOf(child)) && !!spot;
+      child.carrySpot = canFollow ? { ...spot } : null;
+      child.followPlayer = canFollow;
+    }
     return saved;
   }
   function restore(saved) {
@@ -1162,6 +1167,14 @@
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
     if (!fam.farmChores || typeof fam.farmChores !== 'object') fam.farmChores = { livestock: '', processing: {} }; // Legacy saves remain opt-in.
+    for (const child of fam.children) {
+      // Older saves may contain an unsaved hand/back slot; don't block ensureWalker on a nonexistent proxy.
+      if (child.carryBy) { child.carryBy = null; child.carryPose = null; child.followPlayer = !!child.carrySpot && !!child.followPlayer; }
+      if (!child.carrySpot || !window.FamilyBabyBurdens?.isAllowedArea?.(child.carrySpot.area)) {
+        child.carrySpot = null; child.followPlayer = false;
+      }
+      if (H?.rawDay && phaseOf(child) === 'child') child.followPlayer = false;
+    }
     delete fam.spouseVatId; // Retired adult vat jobs from older saves are discarded; clearFamilyWorkers above releases their runtime shifts.
     delete fam.spouseVatWorkerId; // No obsolete spouse vat ownership is written back on the next save.
     // Save migration: shorten an existing three-month gestation to one month. A pre-migration

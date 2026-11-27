@@ -215,13 +215,14 @@
     if (source === 'storage' && !storage) return { ok: false, message: 'Storage permission required.' };
     const stock = storage ? storage.load() : deps.inventory;
     const held = stock[itemKey] || 0;
-    let moved = 0;
-    for (let i = 0; i < trough.slots.length && moved < amount && moved < held; i++) {
-      if (trough.slots[i] == null) { trough.slots[i] = itemKey; moved++; }
-    }
+    const empty = []; // Reserve slots without mutating the trough until storage commits.
+    for (let i = 0; i < trough.slots.length && empty.length < amount && empty.length < held; i++) if (trough.slots[i] == null) empty.push(i);
+    const moved = empty.length;
     if (moved <= 0) return { ok: false, message: troughTotal(trough) >= TROUGH_CAPACITY ? 'That trough is full.' : `No ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to add.` };
-    stock[itemKey] -= moved;
-    if (storage) storage.save(stock); else deps.clampInventoryStack(itemKey);
+    if (storage) {
+      if (storage.save({ ...stock, [itemKey]: held - moved }) === false) return { ok: false, message: 'Could not save fodder withdrawal.' };
+    } else { stock[itemKey] -= moved; deps.clampInventoryStack(itemKey); }
+    for (const index of empty) trough.slots[index] = itemKey;
     deps.saveFarmLayout();
     deps.refreshTroughVisual?.(barnId, troughIndex);
     return { ok: true, message: `Added ${moved} ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to the trough (${troughTotal(trough)}/${TROUGH_CAPACITY}).` };
@@ -1476,9 +1477,9 @@
     const farmVisible = deps.getCurrentArea?.() === 'farm'; // Visible work must target an actual spawned animal.
     const seenTroughs = new Set(); // A shared trough receives a single claim regardless of herd size.
     for (const rec of list) {
-      if (!rec?.id || rec.lifeStage === 'baby' || (rec.lifeStage !== 'adult' && 'barnId' in rec && !rec.barnId)) continue;
+      if (!rec?.id || rec.lifeStage === 'baby' || !rec.barnId) continue; // Stored/stabled animals cannot produce phantom farm jobs.
       const animal = live.get(rec.id), barn = barns.get(rec.barnId);
-      const canHandle = !animal?._harvestFrozen && !animal?._vatWorkPose && !rec.assignedVatId && (!farmVisible || !!animal);
+      const canHandle = !!barn && !animal?._harvestFrozen && !animal?._vatWorkPose && !rec.assignedVatId && (!farmVisible || !!animal);
       const c = Math.floor(animal?.col ?? barn?.col ?? rec.col), r = Math.floor(animal?.row ?? barn?.row ?? rec.row);
       if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
       const common = { source: 'livestock', livestockId: rec.id, c, r };

@@ -267,9 +267,11 @@
       const target = familyChoreTarget({ id }, walker), claim = familyClaims.get(id);
       if (!target || !claim || previous !== claim) continue;
       claim.ageS += dt;
-      const at = walker?.area === 'farm' && walker.root && Math.hypot(walker.root.position.x - (claim.standC + .5), walker.root.position.z - (claim.standR + .5)) <= 1.2;
-      const unseen = deps.getCurrentArea?.() !== 'farm' && (!walker || walker.area !== deps.getCurrentArea?.());
-      if (at || (unseen && claim.ageS > 6)) claim.workedS += dt;
+      // A claim made during schedule planning is not proof that this NPC actually chose farmwork (newborn care, bed, outings can override it).
+      const active = walker && (!('currentScheduleTarget' in walker) || walker.currentScheduleTarget?.id === target.id);
+      const at = active && walker.area === 'farm' && walker.root && Math.hypot(walker.root.position.x - (claim.standC + .5), walker.root.position.z - (claim.standR + .5)) <= .8;
+      if (at) claim.workedS += dt;
+      else claim.workedS = 0; // Require continuous actual attendance; never complete phantom jobs from another map.
       if (claim.workedS >= 3) {
         releaseFamilyClaim(id);
         const assignments = familyChoreAssignments(id); // Revalidate actual assignment immediately before mutation.

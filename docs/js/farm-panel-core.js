@@ -126,12 +126,13 @@
   }
 
   function renderFamilyProgress() {
+    if (typeof document === 'undefined') return;
     const host = document.getElementById('farmFamilyProgress');
     if (!host) return;
     const family = window.RomanceFamily?.familyProgress?.() || [];
     const chores = window.RomanceFamily?.familyChores?.() || {};
     const fields = window.FarmPlotEditor?.plots?.() || [];
-    const stations = new Map((window.FarmProduction?.familyStations?.() || []).map(station => [station.id, station.label]));
+    const stations = new Map((window.FarmProduction?.familyStations?.({ includeInputs: false }) || []).map(station => [station.id, station.label]));
     const escape = deps?.esc || (value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])));
     const xpText = value => String(Math.round((Number(value) || 0) * 100) / 100);
     host.innerHTML = family.length ? family.map(member => {
@@ -154,6 +155,7 @@
     if (refresh) refresh.onclick = renderFamilyProgress;
   }
   function refreshVisibleFamilyProgress() {
+    if (typeof document === 'undefined') return;
     const pane = document.getElementById('mpFarm'), section = document.getElementById('farmSectionFamily');
     if (pane?.classList.contains('active') && section?.getClientRects?.().length) renderFamilyProgress();
   }

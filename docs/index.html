@@ -257,7 +257,7 @@
   <script src="js/creature-blink.js?v=20261126pingdortHead1"></script>
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-threat-response.js?v=20261123h48936ff"></script> <!-- Shared predator panic, close-range herd defense and alerted nest adults; consulted by WildlifeFoodWeb. -->
-  <script src="js/wildlife-food-web.js?v=20261126familyWork2"></script>
+  <script src="js/wildlife-food-web.js?v=20261126familyAudit3"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1"></script>
   <script src="js/foliage-generator.js?v=20261125treeRuntime2"></script>
@@ -430,7 +430,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
-  <script src="js/dew-vats.js?v=20261126familyWork2"></script>
+  <script src="js/dew-vats.js?v=20261126familyAudit3"></script>
   <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
@@ -450,11 +450,11 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261126familyWork2"></script>
+  <script src="js/farm-production.js?v=20261126familyAudit3"></script>
   <script src="js/honeyfuzzle-house.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle House: 1x1 queen/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialized by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261122cancelAnimal2"></script>
-  <script src="js/farm-animals.js?v=20261126familyWork2"></script>
+  <script src="js/farm-animals.js?v=20261126familyAudit3"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm-buildings"></script> <!-- Farm construction, barn troughs and modular house. -->
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
@@ -769,7 +769,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261126familyWork2"></script>
+  <script src="js/farm-panel.js?v=20261126familyAudit3"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -2871,7 +2871,7 @@
   <!-- Completed world-space loot and XP rewards move into the five-row, screen-fixed reading queue. -->
   <script src="js/reward-readout.js?v=20261107rewardReadout1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261126familyWork2"></script>
+  <script src="js/world-popup-text.js?v=20261126familyAudit3"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and

@@ -208,13 +208,14 @@
     return !!(entry && catalog[entry.key]?.method && catalog[entry.key]?.family !== 'seedMaker'
       && (!inputKey || outputsFor(entry.key, inputKey)?.length));
   }
-  function familyStations() {
-    const stock = familyStorageAccess()?.load() || {};
+  function familyStations({ includeInputs = true } = {}) {
+    if (!deps) return [];
+    const stock = includeInputs ? familyStorageAccess()?.load() || {} : {};
     const assignments = window.RomanceFamily?.familyChores?.()?.processing || {};
-    const stockedKeys = Object.keys(stock).filter(key => stock[key] > 0); // Read storage once when opening Farmwork.
+    const stockedKeys = includeInputs ? Object.keys(stock).filter(key => stock[key] > 0) : []; // Read storage once when opening Farmwork.
     const large = buildings.filter(entry => isFamilyStation(entry.id)).map(entry => {
       const selected = assignments[entry.id]?.inputKey;
-      const inputs = [...new Set([...stockedKeys, ...(selected ? [selected] : [])])]
+      const inputs = [...new Set([...stockedKeys, ...(includeInputs && selected ? [selected] : [])])]
         .filter(key => outputsFor(entry.key, key)?.length)
         .map(key => ({ key, label: deps.ITEM_DEFS[key]?.label || key, count: stock[key] || 0 }));
       return { id: entry.id, label: catalog[entry.key].label, col: entry.col, row: entry.row, inputs };
@@ -222,7 +223,7 @@
     for (const obj of deps?.processingFurnitureObjects || []) {
       if (!obj.familyEligible) continue;
       const selected = assignments[obj.id]?.inputKey;
-      const inputs = [...new Set([...stockedKeys, ...(selected ? [selected] : [])])]
+      const inputs = [...new Set([...stockedKeys, ...(includeInputs && selected ? [selected] : [])])]
         .filter(key => obj.familyRecipe?.(key)?.length)
         .map(key => ({ key, label: deps.ITEM_DEFS[key]?.label || key, count: stock[key] || 0 }));
       large.push({ id: obj.id, label: obj.label, col: obj.col, row: obj.row, inputs });
@@ -265,9 +266,9 @@
       if (!result?.ok) { storage.save(stock); return false; } // Rejected starts refund the reserved input.
       return true;
     }
-    return (job.job === 'processingCollect' ? collect(job.stationId) : enqueue(job.stationId, job.inputKey, 1, 'storage')).ok === true;
+    return (job.job === 'processingCollect' ? collect(job.stationId) : enqueue(job.stationId, job.inputKey, 1, 'storage', workerId)).ok === true;
   }
-  function enqueue(id, itemKey, count, source = 'bag') {
+  function enqueue(id, itemKey, count, source = 'bag', workerId = null) {
     if (!deps.hasFarmPermission('storage')) return { ok: false, message: 'Storage permission required.' };
     const entry = buildings.find(candidate => candidate.id === id); // Current building is resolved again at mutation time.
     if (!entry) return { ok: false, message: 'Building not found.' };
@@ -275,14 +276,13 @@
     if (!outputs) return { ok: false, message: 'That ingredient cannot be processed here.' };
     const stock = source === 'storage' ? deps.loadStorage() : deps.inventory; // Queue takes custody of raw input before it starts processing.
     if (!Number.isSafeInteger(count) || count < 1 || count > (Number(stock[itemKey]) || 0)) return { ok: false, message: 'Enter a quantity you own.' };
+    if (source === 'storage' && deps.saveStorage({ ...stock, [itemKey]: stock[itemKey] - count }) === false) return { ok: false, message: 'Could not save ingredient withdrawal.' };
     for (let index = 0; index < count; index++) {
-      const stars = source === 'bag' ? deps.consumeInput(itemKey) : 3; // Shared storage currently has no quality buckets; bag inputs retain actual quality.
-      if (source === 'storage') stock[itemKey]--;
+      const stars = workerId ? (window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1) : source === 'bag' ? deps.consumeInput(itemKey) : 3; // Family output uses their own usefulness; manual storage inputs retain default quality.
       const previous = entry.queue[entry.queue.length - 1]; // Coalesces identical quality batches without limiting queue capacity.
       if (previous?.itemKey === itemKey && previous.stars === stars) previous.count++;
       else entry.queue.push({ itemKey, count: 1, stars, outputs: copy(outputs) });
     }
-    if (source === 'storage') deps.saveStorage(stock);
     if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
     deps.saveMemberWorldData(); deps.saveFarmLayout();
     return { ok: true, message: 'Queued ' + count + ' ingredients.' };

@@ -448,7 +448,7 @@
     settle(entry, entry.burden, true);
     return true;
   }
-  function discard(id) {
+  function discard(id, preserveFollow = false) {
     const entry = entries.get(id);
     if (!entry) return;
     entry.disposing = true;
@@ -456,7 +456,8 @@
     showWalker(entry, true);
     window.Shattercasks?.discardBurden?.(entry.burden); // Shared registry cleans the actor's real physical burden.
     disposeProxy(entry); // Remove one shared mesh and its two materials, leaving the portrait texture alive.
-    entry.child.carryBy = null; entry.child.carryPose = null; entry.child.followPlayer = false;
+    entry.child.carryBy = null; entry.child.carryPose = null;
+    if (!preserveFollow) entry.child.followPlayer = false; // Growth can rebuild a walking follower without forgetting its destination.
     window.FamilyBabyFollow?.clearWalker?.(entry.walker);
     entries.delete(id);
   }

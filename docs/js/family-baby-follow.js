@@ -108,7 +108,7 @@
   }
   function savedCarrySpot() {
     const area = deps?.getCurrentArea?.();
-    return isWilderness(area) ? safeArrival(area) : null;
+    return canFollowIn(area) ? safeArrival(area) : null; // Farm and town saves also restore the dropped follower safely.
   }
   function updateWalker(walker, dt) {
     const entry = bound.get(walker);
