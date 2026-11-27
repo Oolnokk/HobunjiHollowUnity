@@ -320,9 +320,10 @@ for (let i=0;i<500;i++) {
   // Rootledoot pool is exactly the legal union of dagger hafts and Porakaneki club heads.
   const rootPairs=cap.rootledootPairs();assert(rootPairs.length>0);
   for(const [shaft,s] of Object.entries(config.shafts))for(const [head,h] of Object.entries(config.heads)){
-    const expected=!s.editorOnly&&!h.editorOnly&&!h.craftDisabled&&(shaft==='dagger'||head==='porakaneki-greatclub')&&!modular.isDisallowed(shaft,head);
+    const expected=!s.editorOnly&&!/hachutu/i.test(shaft)&&!/hachutu/i.test(s.sourceShape||'')&&!h.editorOnly&&!h.craftDisabled&&(shaft==='dagger'||head==='porakaneki-greatclub')&&!modular.isDisallowed(shaft,head);
     assert.equal(rootPairs.some(p=>p.shaft===shaft&&p.head===head),expected);
   }
+  assert(!cap.isRootledootWeapon(modular.itemKey('hachutuTorchStaff','porakaneki-greatclub','nativeCopper')),'Hachutu haft excluded even with a compatible Porakaneki head');
   // Exercise the actual initial bandit weapon roll as well as the subsequent enchantment wrapper.
   const banditSource=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),start=banditSource.indexOf('  function banditWeaponFor('),end=banditSource.indexOf('  function banditRangedWeaponFor(',start);
   const select=new Function('window','deps','configuredWeaponMetalKey','rollBanditWeaponMetalKey',banditSource.slice(start,end)+';return banditWeaponFor;');
@@ -342,7 +343,7 @@ for (let i=0;i<500;i++) {
     const record=boss._banditCaptainArmament;
     assert(record,'every Big Rootledoot tier gets an enchanted weapon');
     assert.equal(record.origin,'Fey');
-    assert(record.shaft==='dagger'||record.head==='porakaneki-greatclub');assert(!modular.isDisallowed(record.shaft,record.head));
+    assert(record.shaft==='dagger'||record.head==='porakaneki-greatclub');assert(!/hachutu/i.test(record.shaft));assert(!modular.isDisallowed(record.shaft,record.head));
     assert.equal(record.visual.alignment,'Fey');
     const ids=[...record.enchantments.base,...Object.values(record.enchantments.flourishes)];
     assert(ids.length>0&&ids.every(id=>definitions[id].alignment==='Fey'));

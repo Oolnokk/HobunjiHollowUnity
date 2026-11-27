@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261127workshopParallel15';
+import { EnemyPreview } from './preview.js?v=20261127rootAnatomyRevert16';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -1002,7 +1002,7 @@ function renderPools() {
       : d.weapons;
     if(rootledoot){
       const pairs=window.BanditCaptainArmaments.rootledootPairs(),rank=state.kind.split(':')[1];
-      $('poolPanel').append(el('h3',null,'Compatible modular weapons ('+pairs.length+')'),el('p','help','Each weapon must use a dagger haft or Porakaneki greatclub head and pass the Foundry crafting rules. Fey enchantment chance: '+(rank==='captain'?'100%':rank==='lieutenant'?'50%':'25%')+'. No ranged weapons.'));
+      $('poolPanel').append(el('h3',null,'Compatible modular weapons ('+pairs.length+')'),el('p','help','Each weapon must use a dagger haft or Porakaneki greatclub head and pass the Foundry crafting rules. Hachutu hafts excluded. Fey enchantment chance: '+(rank==='captain'?'100%':rank==='lieutenant'?'50%':'25%')+'. No ranged weapons.'));
       for(const pair of pairs)$('poolPanel').append(el('p','muted',pair.shaft+' + '+pair.head));
     }else pool(
       'Melee weapon shape',

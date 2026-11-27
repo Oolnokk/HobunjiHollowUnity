@@ -411,8 +411,6 @@
     window.SpecialHarlyaoLiches?.decoratePortraitProfile?.(profile,roster); // Named eye-glow appearance uses the canonical two-pass mask pixel dye; Imlao explicitly clears all face/headwear slots.
     if (roster.rootledoot) profile.bodyColors = roster.appearance.bodyColors; // Rootledoot hands and feet use the root's authored color.
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
-    const rigSpecies=roster.rootledoot?'rootledoot':roster.appearance.speciesId; // The Rootledoot keeps the humanoid card/pose convention but borrows Nohuknuk's extremity rig.
-    const rigGender=roster.rootledoot?'male':roster.appearance.gender;
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
     const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
@@ -482,8 +480,7 @@
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
-        backCanvas, profile, speciesId:rigSpecies,gender:rigGender,modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
-        ...(roster.rootledoot?{poseOrbitScale:1}:{}), // Match the creature rig's full orbit while retaining the normal NPC facing.
+        backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait', meshBudget: 'npc', // Enemies use the capped mesh budget.
         hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; HatOverflowPlane.attachToPlanes is called on those instead.
         mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
@@ -668,12 +665,12 @@
     // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
     // same clipping fix applied to the mounted-rider case.
     characterBuildStatus.stage = 'leg-rig';
-    const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: rigSpecies, gender: rigGender, spine: roster.rootledoot?null:roster.spine }) || null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
+    const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, spine: roster.spine }) || null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
       window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase, blendHeight: frontNeckSkin.weightedGeometry?.userData?.blendHeight }, spine, modelHeight); // Hostile shoulder and attack orbit calculations sample the same short base-head neck band as the portrait.
     }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
-      speciesId: rigSpecies, gender: rigGender,
+      speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,

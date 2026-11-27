@@ -268,10 +268,6 @@
     sourcePixel: { ...nohuknukPerchPixel },
   }; // Creature-sprite dimensions supply Nohuknuk's authored shoulder frame.
   masterCharacters['nohuknuk::male'] = nohuknukCharacterRig;
-  const rootledootRig = clone(nohuknukCharacterRig); // Same creature-body shoulder and posterior geometry, with independent Rootledoot identity.
-  rootledootRig.species='rootledoot';
-  rootledootRig.shoulderPerchRule.appearanceSpeciesId='rootledoot';
-  masterCharacters['rootledoot::male']=rootledootRig;
 
   const masterCreatures = {};
   for (const [kind, saddle, saddleSource, saddleOffset, saddlePixel, midlineSearchRadiusPx, shoulderGrip, scales, grehlrSizeScaleDefaultVersion] of creatureRecords) {

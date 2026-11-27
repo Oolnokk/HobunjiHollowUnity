@@ -67,15 +67,15 @@ async function main() {
   load('wilderness-encounter-runtime.js',w,canvasDoc,Img);
   load('rootledoot-encounter.js',w,canvasDoc,Img);
   const root=w.Rootledoots;
-  // Nohuknuk-style extremities are registered independently; the ordinary hostile front-card assembler still owns the Rootledoot's body.
+  // Rootledoots again use the standard Mao-ao humanoid rig; no bespoke primate registration.
   const rigWindow={};new Function('window',fs.readFileSync('docs/config/attachment-rig-profiles.js','utf8'))(rigWindow);
   const rigs=rigWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters;
-  assert.deepEqual(rigs['rootledoot::male'].anchors,rigs['nohuknuk::male'].anchors);
-  assert.deepEqual(rigs['rootledoot::male'].posteriorRule,rigs['nohuknuk::male'].posteriorRule);
-  const hands={models:{sloth:{glb:'donor'}},speciesModels:{}};let rigChanges=0;
-  w.HobunjiHandModelProfiles={data:hands,mutate(fn){rigChanges++;fn(hands);}};
-  const feet={species:{}};w.SCRATCHBONES_CONFIG={game:{assets:{pngPlaneAvatar:{proceduralFeet:feet}}}};
-  root.ensureRig();root.ensureRig();assert.equal(rigChanges,1);assert.equal(hands.speciesModels.rootledoot,'primate');assert.equal(hands.models.primate.glb,'assets/models/hands/hand_primate.glb');assert.equal(feet.species.rootledoot.glb,'assets/models/feet/foot_primate.glb');assert.equal(hands.speciesModels.nohuknuk,undefined);assert.equal(feet.species.nohuknuk,undefined);
+  assert.equal(rigs['rootledoot::male'],undefined);assert.ok(rigs['nohuknuk::male']);
+  let rigChanges=0;
+  w.HobunjiHandModelProfiles={mutate(){rigChanges++;}};
+  const probe=await root.makeCombatant({},'grunt',0,0,0);
+  assert.equal(rigChanges,0);assert.equal(probe.rootledoot,true);
+  spawnCount=0; // Probe must not alter the wave-count fixture.
   root.init({player,TILE:64,rnd:rand,hostiles,worldId:()=>'test',cycle:()=>1,day:()=>day,getArea:()=>zone,getGrid:()=>grid,walkable:(c,r)=>!!grid[r]?.[c]&&!grid[r][c].blocked,isBareGround:()=>true,getNpcWalkers:()=>walkers,isInCombat:()=>inCombat,canActivate:()=>canActivate,surfaceY:()=>0,getScene:()=>activeScene,despawn:c=>c.avatarRef.group.parent=null,canReceiveRoot:()=>true,giveRoot:()=>bag.feyHeftroot=(bag.feyHeftroot||0)+1});
   // Every suitable chunk owns one 3x3 footprint, and a wall separates even same-tier spawn tiles.
   for(let r=0;r<3;r++)for(let c=0;c<3;c++){

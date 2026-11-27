@@ -71,21 +71,25 @@
     return pairs;
   }
 
+  function isRootledootPair(shaftKey,headKey,catalog,config){
+    const shaft=config?.shafts?.[shaftKey],head=config?.heads?.[headKey]; // Single eligibility predicate for normal rolls, enchanted rolls and Workshop history.
+    const hachutu=/hachutu/i.test(shaftKey)||/hachutu/i.test(shaft?.sourceShape||'');
+    return !!(shaft&&head&&!shaft.editorOnly&&!hachutu&&!head.editorOnly&&!head.craftDisabled&&(shaftKey==='dagger'||headKey==='porakaneki-greatclub')&&!catalog.isDisallowed(shaftKey,headKey));
+  }
   function rootledootPairs(catalog=window.ModularWeapons){
     const config=catalog?.getConfig?.();if(!config)return [];
     const pairs=[];
     for(const [shaftKey,shaft] of Object.entries(config.shafts||{})){
-      if(shaft.editorOnly)continue;
       for(const [headKey,head] of Object.entries(config.heads||{})){
-        if(head.editorOnly||head.craftDisabled||!(shaftKey==='dagger'||headKey==='porakaneki-greatclub')||catalog.isDisallowed(shaftKey,headKey))continue;
+        if(!isRootledootPair(shaftKey,headKey,catalog,config))continue;
         pairs.push({shaft:shaftKey,head:headKey,donors:[shaft.sourceShape,head.sourceShape]});
       }
     }
     return pairs;
   }
   function isRootledootWeapon(key,catalog=window.ModularWeapons){
-    const p=catalog?.decode?.(key),cfg=catalog?.getConfig?.();
-    return !!(p&&cfg?.shafts?.[p.shaft]&&!cfg.shafts[p.shaft].editorOnly&&cfg?.heads?.[p.head]&&!cfg.heads[p.head].editorOnly&&!cfg.heads[p.head].craftDisabled&&(p.shaft==='dagger'||p.head==='porakaneki-greatclub')&&!catalog.isDisallowed(p.shaft,p.head));
+    const p=catalog?.decode?.(key);
+    return !!(p&&isRootledootPair(p.shaft,p.head,catalog,catalog.getConfig?.()));
   }
   function permittedDonors(entity) {
     const fromCulturalRoll = entity?._weaponTrustCulturalLoadout?.melee?.allowed; // Exact pool chosen when the cultural wrapper ran first.
