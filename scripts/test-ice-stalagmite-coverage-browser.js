@@ -180,11 +180,20 @@ const server = http.createServer((request, response) => {
 
     await page.addScriptTag({url:'/docs/js/combat/combat-minion.js'});
     await page.addScriptTag({url:'/docs/js/faceted-rocks.js'});
-    const skeletonResult=await page.evaluate(()=>{
+    const skeletonResult=await page.evaluate(async()=>{
       const T=THREE,canvas=document.createElement('canvas');canvas.width=canvas.height=100;
       const ctx=canvas.getContext('2d');ctx.fillRect(10,5,80,55);ctx.fillRect(39,60,22,34); // Large head and narrow lower torso.
       const results=[];
+      const garment=document.createElement('canvas');garment.width=48;garment.height=48;
+      const gc=garment.getContext('2d');gc.fillStyle='#ac885f';gc.fillRect(3,3,42,42);gc.fillStyle='#000';gc.fillRect(3,3,42,2);
+      const bytes=Array.from(gc.getImageData(0,0,48,48).data); // Shared garment source must remain byte-identical.
       for(const theme of ['hronal','tothal']){
+        const themed=await window.MinionCombat.paintRuinPants({ruinSkeletonTheme:theme,ruinSkeletonSeed:7},garment);
+        const after=themed.getContext('2d').getImageData(0,0,48,48).data;
+        const sourceAfter=gc.getImageData(0,0,48,48).data;const pants=themed!==garment&&bytes.every((v,i)=>v===sourceAfter[i]);
+        const inkIndex=(4*48+20)*4,bodyIndex=(20*48+20)*4;
+        const pantsInk=Array.from(after.slice(inkIndex,inkIndex+4)).every((v,i)=>v===bytes[inkIndex+i]);
+        const pantsEffect=theme==='hronal'?after[bodyIndex]<bytes[bodyIndex]:after[bodyIndex+2]>bytes[bodyIndex+2];
         const group=new T.Group(),back=new T.Group(),portrait=new T.Group(),hammer=new T.Group();
         group.add(back,hammer);back.add(portrait);hammer.position.set(2,0,0);
         const nodes=Array.from({length:7},(_,i)=>{const b=new T.Bone();b.name='torso'+i;b.position.set(0,i===0?-.43:.055,0);b.userData.hobunjiSplineRest={x:b.position.x,y:b.position.y,z:b.position.z};return b;});
@@ -203,11 +212,11 @@ const server = http.createServer((request, response) => {
         const before=layer.getWorldPosition(new T.Vector3());hammer.position.x+=20;group.updateMatrixWorld(true);
         const unaffected=before.distanceTo(layer.getWorldPosition(new T.Vector3()))<1e-8;
         const attached=nodes.slice(0,5).includes(layer.parent);const surface=theme!=='hronal'||mesh.userData.facetedRock===true;
-        dispose();results.push({theme,baseInside,baseVertices,attached,unaffected,surface,maxZ,disposed:layer.parent===null});
+        dispose();results.push({theme,baseInside,baseVertices,attached,unaffected,surface,maxZ,pants,pantsInk,pantsEffect,disposed:layer.parent===null});
       }
       return results;
     });
-    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>0&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
+    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>.12&&result.pants&&result.pantsInk&&result.pantsEffect&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
     await page.evaluate(() => {
       window.__iceFireTargets = new Map(); // The real composer registers its fire targets through this minimal existing contract.
       window.__iceSolids = new Map(); // Collision callback truthiness is checked both frozen and melting.

@@ -444,7 +444,7 @@
     characterBuildStatus.stage = 'back-portrait';
     if (roster.rootledoot) await window.Rootledoots.paintPortrait(backCanvas,true);
     else await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
-    const themedPantsOverlay=roster.ruinSkeletonTheme?await window.PantsGarmentRenderer?.buildOverlayMask?.(frontCanvas,profile,{forceEyesOpen:true}):null; // Compare ORIGINAL art; frost/char/oil are not clothing occluders.
+    const themedPantsOverlay=roster.ruinSkeletonTheme?await window.PantsGarmentRenderer?.buildOverlayMask?.(frontCanvas,profile,{forceEyesOpen:true})?.catch(error=>{window.__farmLog?.('[ruin skeleton pants mask] '+error.message,'warn','combat');return null;}):null; // Compare ORIGINAL art; frost/char/oil are not clothing occluders.
     if(roster.ruinSkeletonTheme)await window.MinionCombat?.paintRuinPortraits?.(roster,[frontCanvas,neutralFrontCanvas,combatFrownCanvas,backCanvas]);
     // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
     // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).

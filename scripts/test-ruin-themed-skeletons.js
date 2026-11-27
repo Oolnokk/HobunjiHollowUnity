@@ -27,6 +27,8 @@ for(let y=3;y<60;y++)for(let x=12;x<88;x++)body[(y*w+x)*4+3]=255;
 for(let y=60;y<92;y++)for(let x=42;x<63;x++)body[(y*w+x)*4+3]=255;
 const footprint=m.ruinTorsoFootprint({width:w,height:h,getContext:()=>({getImageData:()=>({data:body})})},{x:.48,y:.60},1,1);
 assert.ok(footprint&&footprint.top<-.10&&footprint.bottom>-.42&&footprint.height>.24);assert.ok(footprint.width<.22);assert.ok(footprint.x<0);
+// Projection keeps centers on opaque torso even when the wide satellites overshoot the seed box.
+for(let z=-.5;z<=.5;z+=.1)for(let x=-.5;x<=.5;x+=.1){const root=footprint.project(x,z),px=Math.floor((.5-(root.x+footprint.x))*w),py=Math.floor((.5-(footprint.y-root.z))*h);assert.ok(px>=42&&px<63&&py>=60&&py<92);assert.equal(body[(py*w+px)*4+3],255);}
 // Exercise both actual attachment branches, with stand-in scene nodes so this also runs without WebGL.
 class Node {
   constructor(){this.children=[];this.userData={};this.rotation={x:0};this.position={x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}};this.layers={disable(){}};}
