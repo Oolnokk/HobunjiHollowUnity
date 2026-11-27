@@ -19,7 +19,7 @@ Keep the original Netlify deployment until old account saves have been recovered
 1. In Google Cloud enable Drive API, configure the OAuth consent screen and
    add test users as appropriate. Create a Web application OAuth client.
 2. Add https://oolnokk.github.io as an authorized JavaScript origin
-   (or the exact HTTPS test host). Enter the public client ID in
+   (or a dedicated HTTPS test host that you control; shared GitHack preview origins cannot authorize Drive). Enter the public client ID in
    docs/js/browser-drive-config.js for a deployment default, or paste it
    in the in-game selector. Never put a client secret or access token in
    source. No Google Picker/API key is required; paste the dedicated folder URL.
@@ -27,7 +27,7 @@ Keep the original Netlify deployment until old account saves have been recovered
    applicable; drive.file does not automatically include files written by
    another client (e.g. Windows Drive sync). The adapter restricts all game
    I/O to the selected dedicated folder and its recognized save directories.
-   Access tokens are memory-only; reconnect after reload/expiry.
+   Access tokens are memory-only; reconnect after reload/expiry. In-game reconnect preserves live progress; use Save to Folder only when the previous remote baseline remains verified. If a pending file is missing its canonical name after an interruption, preserve it and its previous copy and repair the name in Drive before reconnecting.
 4. Choose Local Save Folder → Connect Google Drive, paste the URL of the
    existing dedicated game save directory, and authorize. Choose Load from
    Folder to explicitly accept the remote baseline. A new empty folder may

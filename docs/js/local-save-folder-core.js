@@ -145,6 +145,8 @@
       supported: isSupported(),
       state: _state,
       folderName: _handle?.name || null,
+      transport: _handle?.assertDriveUnchanged ? 'google-drive-browser' : 'local-folder',
+      driveCanWrite: _handle?.driveCanWrite === true,
       lastSyncedAt: _lastSyncedAt || null,
       lastWriterProvenance: _lastKnownFolderProvenance ? { ..._lastKnownFolderProvenance } : null,
       lastError: _lastError || null,
@@ -960,7 +962,7 @@
         notify();
         return getStatus();
       }
-      const driveVerified = _handle.assertDriveUnchanged ? await _handle.assertDriveUnchanged(force && recoveryKind === 'restore') : false; // Verify every Drive revision before any canonical write.
+      const driveVerified = _handle.assertDriveUnchanged ? await _handle.assertDriveUnchanged() : false; // Verify every Drive revision before any canonical write.
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
       if (automatic && !force && recoveryKind === 'auto' && !_recoveryNeedsRefresh && delta && !delta.changed && !_lastError
         && (driveVerified || (await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()))) {
@@ -1051,6 +1053,7 @@
         catch (error) { _lastPatternMirror = { error: String(error?.message || error) }; }
       }
 
+      await _handle.assertDriveUnchanged?.(); // Verify untouched files before publishing the manifest.
       const savedAt = Date.now();
       const committedWriter = writerProvenance(); // The manifest records farm-only saves without rewriting unrelated character/world JSON.
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, {
@@ -1065,6 +1068,7 @@
         farmLayoutCount: _farmLayoutCount,
       });
       try { await _handle.removeEntry(LEGACY_SAVE_FILE_NAME); } catch {}
+      await _handle.assertDriveUnchanged?.(); // Never acknowledge a conflicted multi-file publication.
 
       _committedFileState = nextFiles;
       try { _lastManifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile()); }
@@ -1113,7 +1117,10 @@
       _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
-      if (_handle.assertDriveUnchanged) stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
+      if (_handle.assertDriveUnchanged) {
+        stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
+        if (!_handle.driveAuthorized) _state = 'needs-permission';
+      }
     }
     // The checkpoint writer already mirrored the affected slots. Reconcile the full history
     // when a folder is first armed, a restore completes, or a write may have failed.
@@ -1194,6 +1201,7 @@
       await writable.write(raw);
       await writable.close();
       const stamp = diskStamp(await handle.getFile());
+      await _handle.assertDriveUnchanged?.();
       const manifest = await readJsonFile(_handle, MANIFEST_FILE_NAME);
       if (!manifest || Number(manifest.savedAt) !== _lastSyncedAt) {
         throw new Error('Primary save manifest is inconsistent after the lock progress write.');
@@ -1201,6 +1209,7 @@
       const savedAt = Math.max(Date.now(), _lastSyncedAt + 1); // Lock acknowledgements must advance even when two writes finish in the same millisecond.
       const committedWriter = writerProvenance() || manifest.writerProvenance || null; // Targeted lock commits also advance last-writer metadata.
       await writeJsonFile(_handle, MANIFEST_FILE_NAME, { ...manifest, savedAt, writerProvenance: committedWriter });
+      await _handle.assertDriveUnchanged?.();
       const manifestStamp = diskStamp(await (await _handle.getFileHandle(MANIFEST_FILE_NAME)).getFile());
       _committedFileState = new Map(_committedFileState); // Publish the new character fingerprint only after both canonical writes succeed.
       _committedFileState.set(key, { digest: contentFingerprint(raw), stamp });
@@ -1221,7 +1230,10 @@
       _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
-      if (_handle.assertDriveUnchanged) stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
+      if (_handle.assertDriveUnchanged) {
+        stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
+        if (!_handle.driveAuthorized) _state = 'needs-permission';
+      }
     }
     notify({ refreshRecovery: Boolean(_lastError) }); // This targeted write changes no recovery checkpoint.
     return getStatus();
@@ -1246,7 +1258,12 @@
     try {
       _committedFileState = null; // Explicit folder loads invalidate previous browser->disk comparisons.
       _lastManifestStamp = null;
-      await _handle.beginDriveLoad?.(); // Capture a remote version baseline before the explicit import.
+      if (_handle.beginDriveLoad) {
+        stopAutoSync();
+        while (_syncPromise) await _syncPromise;
+        stopAutoSync();
+        await _handle.beginDriveLoad(); // Capture a remote version baseline before the explicit import.
+      }
       const folder = await readFolderSnapshot();
       if (!folder.exists) {
         await _handle.finishDriveLoad?.(); // Empty folder initialization is an explicit user choice.
@@ -1497,6 +1514,7 @@
   async function reconnect() {
     if (!_handle) return chooseFolder();
     try {
+      if (_handle.assertDriveUnchanged) { stopAutoSync(); while (_syncPromise) await _syncPromise; stopAutoSync(); }
       const granted = await ensurePermission(_handle, true);
       _state = granted ? 'ready' : 'needs-permission';
       stopAutoSync();
@@ -1516,6 +1534,15 @@
     }
     notify();
     return getStatus();
+  }
+
+  async function prepareDriveRecovery() {
+    if (!_handle?.beginDriveLoad) return; // Existing native recovery behavior is unchanged.
+    stopAutoSync();
+    while (_syncPromise) await _syncPromise;
+    stopAutoSync();
+    await _handle.beginDriveLoad();
+    await _handle.finishDriveLoad(); // Explicit recovery accepts a fresh baseline, never an automatic retry.
   }
 
   async function forget() {
@@ -1576,6 +1603,7 @@
     loadFromFolder,
     reconcileConnectedFolder,
     readPrimarySnapshot,
+    prepareDriveRecovery,
     readRecoveryCheckpoint,
     readRecoveryCheckpoints,
     writeRecoveryCheckpoint,

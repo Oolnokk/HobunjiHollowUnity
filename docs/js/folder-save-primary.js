@@ -528,7 +528,7 @@
     if (!row.classList.contains('folder-save-settings-primary')) row.classList.add('folder-save-settings-primary');
     const name = row.querySelector('.settings-name'); // Existing heading rewritten so folder storage is not described as a mere backup.
     const desc = row.querySelector('.settings-desc'); // Existing description explains runtime cache versus portable folder truth.
-    const descText = 'Recommended save method. The game uses browser storage as a working cache while running, then syncs characters, worlds, and farm layouts to this portable folder.';
+    const descText = 'Recommended save method. Connect a local folder or Google Drive in supported browsers. The game syncs characters, worlds and farm layouts to the selected portable folder.';
     if (name && name.textContent !== 'Primary Save Folder') name.textContent = 'Primary Save Folder';
     if (desc && desc.textContent !== descText) desc.textContent = descText;
 
@@ -587,6 +587,13 @@
   async function handleSettingsFolderAction(button, mode) {
     setBusy(button, true, mode === 'reconnect' ? 'Reconnecting…' : 'Opening Folder…');
     try {
+      if (mode === 'reconnect' && localSave.getStatus().transport === 'google-drive-browser') {
+        const status = await localSave.reconnect(); // Reauth must not reload over newer live progress.
+        if (status.state !== 'ready') alert(status.lastError || 'Drive reconnect failed.');
+        else alert(status.driveCanWrite ? 'Drive reconnected. Use Save to Folder to preserve your current progress.' : 'Drive reconnected, but its previous baseline is unavailable or changed. Preserve current progress separately before using Load Folder.');
+        refreshSettingsButtons(status);
+        return;
+      }
       const result = await establishPrimaryFolder(mode);
       if (!result.ok) {
         if (result.message) alert(result.message);

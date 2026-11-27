@@ -2,7 +2,7 @@
 // No auth token or file contents are persisted by this adapter.
 (() => {
   'use strict';
-  if (window.HobunjiAndroidFiles || !['https:', 'http:'].includes(location.protocol)
+  if (window.HobunjiAndroidFiles || !globalThis.location || ['raw.githack.com','rawcdn.githack.com','rawgit.com'].includes(location.hostname) || !['https:', 'http:'].includes(location.protocol)
       || (location.protocol === 'http:' && !['localhost','127.0.0.1'].includes(location.hostname))) return;
   const BASE = 'https://www.googleapis.com/drive/v3/files'; // Only this service handles metadata and media.
   const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files'; // Resumable upload sessions must stay on this origin.
@@ -84,6 +84,7 @@
       this.baseline = null; // File IDs + Drive versions from the last explicitly accepted folder state.
       this.loadBaseline = null; // Candidate captured before an explicit load, not accepted until verified.
       this.writable = false; // Connect/reconnect never authorizes replacing an existing save.
+      this.tainted = false; // Partial mutation or conflict requires an explicit verified import/recovery.
       this.tail = Promise.resolve(); // Serializes mutations from the core and motif/checkpoint consumers.
     }
     granted() { return !!this.auth && Date.now() < this.auth.expires; }
@@ -154,6 +155,14 @@
       await this.verifyRoot();
       const result = new Map(); // Canonical files and directory IDs, independent of hidden recovery versions.
       const root = await this.list(this.id);
+      const checkPending = rows => {
+        const names = new Set(rows.map(row => row.name)); // Interrupted publications must not masquerade as deleted canonical files.
+        for (const row of rows) {
+          const pending = /^\.hobunji-pending-(.+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.exec(row.name);
+          if (pending && !names.has(pending[1])) throw Error('An interrupted Drive write left '+pending[1]+' without a canonical file. Inspect the pending/previous copies in Google Drive before reconnecting.');
+        }
+      };
+      checkPending(root);
       const put = (key,row) => {
         if (result.has(key)) throw conflict();
         if (!row.version) throw Error('Drive did not supply a file revision.');
@@ -163,11 +172,13 @@
         if (DIRS.has(row.name)) {
           if (row.mimeType !== FOLDER) throw Error('Expected save directory '+row.name);
           put(row.name+'/',row);
-          for (const child of await this.list(row.id)) {
+          const children = await this.list(row.id);
+          checkPending(children);
+          for (const child of children) {
             if (allowed(row.name,child.name)) { this.fileType(child); put(row.name+'/'+child.name,child); }
           }
         } else if (ROOT_FILES.has(row.name)) { this.fileType(row); put(row.name,row); }
-        else if (!hidden(row.name)) throw Error('This is not a dedicated Hobunji save folder (unexpected entry: '+row.name+'). Choose the game folder, not its parent.');
+        else if (!hidden(row.name) && !['desktop.ini','.DS_Store','Thumbs.db'].includes(row.name)) throw Error('This is not a dedicated Hobunji save folder (unexpected entry: '+row.name+'). Choose the game folder, not its parent.');
       }
       return result;
     }
@@ -192,12 +203,11 @@
     async finishLoad() {
       const now = await this.tree();
       if (!this.equalTrees(this.loadBaseline,now)) throw conflict();
-      this.baseline = now; this.loadBaseline = null; this.writable = true;
+      this.baseline = now; this.loadBaseline = null; this.writable = true; this.tainted = false;
     }
-    async assertUnchanged(restore = false) {
-      if (!this.writable && restore) { await this.beginLoad(); await this.finishLoad(); }
+    async assertUnchanged() {
       if (!this.writable || !this.baseline) throw Error('Load from Folder before writing to Google Drive.');
-      if (!this.equalTrees(this.baseline,await this.tree())) { this.writable = false; throw conflict(); }
+      if (!this.equalTrees(this.baseline,await this.tree())) { this.writable = false; this.tainted = true; throw conflict(); }
       return true;
     }
     async expected(parent,dir,name) {
@@ -205,12 +215,12 @@
       if (dir && this.baseline.get(dir+'/')?.id !== parent) throw conflict();
       const row = await this.child(parent,name);
       const key = dir ? dir+'/'+name : name;
-      if (this.stamp(row) !== this.stamp(this.baseline.get(key))) { this.writable = false; throw conflict(); }
+      if (this.stamp(row) !== this.stamp(this.baseline.get(key))) { this.writable = false; this.tainted = true; throw conflict(); }
       return {row,key};
     }
     enqueue(operation) {
       const task = this.tail.then(operation);
-      this.tail = task.catch(error => { this.writable = false; lastError = String(error.message || error); });
+      this.tail = task.catch(error => { if (error?.name !== 'NotFoundError') { this.writable = false; this.tainted = true; } lastError = String(error.message || error); });
       return task;
     }
     async mkdir(name) {
@@ -232,7 +242,7 @@
       return blob;
     }
     async stage(parent,name,blob) {
-      const metadata = {name:'.hobunji-pending-'+crypto.randomUUID(),parents:[parent],mimeType:blob.type || 'application/octet-stream'};
+      const metadata = {name:'.hobunji-pending-'+name+'-'+crypto.randomUUID(),parents:[parent],mimeType:blob.type || 'application/octet-stream'};
       if (blob.size > LIMIT) throw Error('Save file exceeds the browser Drive size limit.');
       let result;
       if (blob.size <= 5*1024*1024) {
@@ -248,9 +258,9 @@
       if (!validId(result.id) || result.name !== metadata.name || !result.parents?.includes(parent) || Number(result.size) !== blob.size) throw Error('Google did not confirm complete staged save bytes.');
       return result;
     }
-    async rename(parent,id,name) {
+    async rename(parent,id,name,expected) {
       const current = await this.meta(id);
-      if (current.trashed || !current.parents?.includes(parent)) throw conflict();
+      if (current.trashed || !current.parents?.includes(parent) || (expected && (current.name !== expected.name || this.stamp(current) !== this.stamp(expected)))) throw conflict();
       return this.json(url(BASE+'/'+encodeURIComponent(id),{fields:FIELDS}),'PATCH',{name});
     }
     async publish(dir,name,blob) {
@@ -262,11 +272,11 @@
         let moved = false;
         try {
           if (old) {
-            await this.rename(parent,old.id,'.hobunji-previous-'+name+'-'+crypto.randomUUID());
+            await this.rename(parent,old.id,'.hobunji-previous-'+name+'-'+crypto.randomUUID(),old);
             moved = true;
           }
           if (await this.child(parent,name)) throw conflict();
-          await this.rename(parent,draft.id,name);
+          await this.rename(parent,draft.id,name,draft);
           const committed = await this.child(parent,name);
           if (committed?.id !== draft.id) throw conflict();
           this.baseline.set(key,committed);
@@ -278,7 +288,7 @@
             if (old && !current) {
               const previous = await this.meta(old.id);
               if (previous.parents?.includes(parent) && previous.name.startsWith('.hobunji-previous-'+name+'-'))
-                await this.rename(parent,old.id,name);
+                await this.rename(parent,old.id,name,previous);
             }
           } catch { /* Both old and staged versions remain recoverable; fail closed. */ }
           throw error;
@@ -302,7 +312,9 @@
       return this.enqueue(async () => {
         const parent = await this.parent(dir);
         const {row,key} = await this.expected(parent,dir,name);
-        if (!row) throw missing(name);
+        if (!row) return; // The canonical core routinely removes an already-absent legacy file.
+        const fresh = await this.meta(row.id);
+        if (!fresh.parents?.includes(parent) || fresh.name !== name || this.stamp(fresh) !== this.stamp(row)) throw conflict();
         await this.json(url(BASE+'/'+row.id,{fields:'id,trashed'}),'PATCH',{trashed:true});
         if (await this.child(parent,name)) throw conflict();
         this.baseline.delete(key);
@@ -348,7 +360,9 @@
     }
     async beginDriveLoad(){return this.session.beginLoad();}
     async finishDriveLoad(){return this.session.finishLoad();}
-    async assertDriveUnchanged(restore){return this.session.assertUnchanged(restore);}
+    async assertDriveUnchanged(){return this.session.assertUnchanged();}
+    get driveCanWrite(){return this.session.writable && this.session.granted();}
+    get driveAuthorized(){return this.session.granted();}
     async getDirectoryHandle(name,options={}){
       if(!allowed(this.dir,name,true))throw TypeError('Invalid save directory.');
       const s=this.session;
@@ -406,9 +420,12 @@
         connect.disabled=true;local.disabled=true;cancel.disabled=true;status.textContent='Authorizing Google Drive…';
         const session=existing||new Session(id,'Google Drive',clientId);
         try{
-          session.auth=await authorize(clientId);session.writable=false;session.baseline=null;
+          session.auth=await authorize(clientId);session.writable=false;
           await session.verifyRoot();
-          await session.tree(); // Validate dedicated folder and duplicate names before accepting selection.
+          const current=await session.tree(); // Validate dedicated folder and duplicate names before accepting selection.
+          // Reauthorization can resume only an unchanged, fully committed in-memory baseline.
+          if(existing && !session.tainted && session.equalTrees(session.baseline,current)) session.writable=true;
+          else session.baseline=null;
           lastError='';finish(null,new DriveDirectory(session));
         }catch(e){session.auth=null;lastError=String(e.message||e);status.textContent=lastError;connect.disabled=false;local.disabled=false;cancel.disabled=false;}
       };
@@ -416,7 +433,7 @@
     });
   }
   window.HobunjiBrowserDrive=Object.freeze({
-    isSupported:()=>typeof indexedDB!=='undefined'&&typeof fetch==='function'&&!!crypto?.randomUUID,
+    isSupported:()=>typeof indexedDB!=='undefined'&&typeof fetch==='function'&&!!globalThis.crypto?.randomUUID,
     pickFolder:()=>select(),
     serializeHandle(value){return value instanceof DriveDirectory&&!value.dir?{__hobunjiBrowserDrive:{id:value.session.id,name:value.session.name,clientId:value.session.clientId}}:value;},
     restoreHandle(value){const t=value?.__hobunjiBrowserDrive;if(!t)return value;if(!validId(t.id)||!validClient(t.clientId)||typeof t.name!=='string')throw Error('Invalid remembered Drive folder.');return new DriveDirectory(new Session(t.id,t.name,t.clientId));},

@@ -881,6 +881,7 @@
         return { ok: true, browserOnly: true };
       }
 
+      await folderApi()?.prepareDriveRecovery?.(); // Explicit user recovery may authorize a fresh Drive baseline.
       preRestore = await preservePreRestore();
 
       if (folderRecoveryAvailable()) {
