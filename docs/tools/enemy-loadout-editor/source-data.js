@@ -86,9 +86,18 @@
     );
     return { makeShellMaterial, makeLighting, applyLighting };
   }
-  async function load() {
-    const [gang, porakaneki, omgurku, game, attackValues, index, npcDb, renderPipeline, heldToolsSource] =
-      await Promise.all([
+  let inputsPromise = null; // Shared per page; preload and load consume the same requests.
+  function prefetch() {
+    if (inputsPromise) return inputsPromise;
+    const speciesPromise = read('config/species/index.json').then(async index => {
+      const species = {};
+      await Promise.all(index.entries.map(async entry => {
+        const data = await read(new URL(entry.path, new URL('config/species/index.json', document.baseURI)).href);
+        species[data.speciesId] = data;
+      }));
+      return species;
+    }); // Begin the species fan-out as soon as its own index arrives, not after the entire game source.
+    inputsPromise = Promise.all([
         read('config/bandits/bandit-gang-config.json?v=20261122hWeakHP30'),
         read('config/porakaneki-camp.json'),
         read('config/omgurku-camp.json'),
@@ -97,7 +106,7 @@
           return r.text();
         }),
         read('config/combat/attack-values.json'),
-        read('config/species/index.json'),
+        speciesPromise,
         read('config/npcs/hobunji-starter-npc-database.json'),
         fetch('js/world-render-pipeline.js').then((r) => {
           if (!r.ok) throw Error('Render pipeline source HTTP ' + r.status);
@@ -107,24 +116,17 @@
           if (!r.ok) throw Error('Held tool source HTTP ' + r.status);
           return r.text();
         }),
-      ]);
+        read('config/outline-rendering.json'),
+      ]).catch(error => { inputsPromise = null; throw error; });
+    return inputsPromise;
+  }
+  async function load() {
+    const [gang, porakaneki, omgurku, game, attackValues, species, npcDb, renderPipeline, heldToolsSource, outline] = await prefetch();
     const shapes = {
       ...declaration(game, 'TOOL_SHAPE_DEFS'),
       ...declaration(game, 'MELEE_WEAPON_SHAPE_DEFS'),
     };
     const metals = declaration(game, 'METAL_DEFS');
-    const species = {};
-    await Promise.all(
-      index.entries.map(async (entry) => {
-        const data = await read(
-          new URL(
-            entry.path,
-            new URL('config/species/index.json', document.baseURI),
-          ).href,
-        );
-        species[data.speciesId] = data;
-      }),
-    );
     const metalDamage = Function(
       'METAL_DEFS',
       'return (' +
@@ -164,7 +166,7 @@
       applyLighting,
       rangedItems,
       weaponMeshFactory,
-      outline: await read('config/outline-rendering.json'),
+      outline,
       heldObjectRenderOrder: Number(heldTools.HELD_OBJECT_RENDER_ORDER) || 1.5,
       npcs: npcDb.npcs || npcDb,
       metalDamage,
@@ -466,6 +468,7 @@
   }
   window.EnemyLoadoutSourceData = Object.freeze({
     types,
+    prefetch,
     load,
     declaration,
     renderingFromGame,

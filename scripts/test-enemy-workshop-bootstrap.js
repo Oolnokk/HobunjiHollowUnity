@@ -7,7 +7,8 @@ const tick = async () => {
 };
 (async () => {
   let queue = [];
-  const window = {};
+  const hinted = []; // Actual optional nested preload hooks must not remove the readiness barrier.
+  const window = { __enemyWorkshopPreloadScripts: urls => hinted.push([...urls]) };
   const document = {
     readyState: 'complete',
     currentScript: {
@@ -33,6 +34,7 @@ const tick = async () => {
   });
   await tick();
   assert(queue.length === 1);
+  assert(hinted[0].length > 15, 'nested rig downloads are hinted together');
   queue.shift().onload();
   await tick();
   assert.equal(
@@ -74,6 +76,7 @@ const tick = async () => {
     await tick();
   }
   assert(hit, 'the hand bootstrap loads the real nested rig owner');
+  assert(hinted.some(urls => urls.some(url => url.includes('procedural-hand-frame-driver.js'))), 'hand scripts are preloaded without bypassing nested readiness');
   await tick();
   assert.equal(
     queue.length,
@@ -91,6 +94,14 @@ const tick = async () => {
     await tick();
   }
   await window.HobunjiHandRuntimeReady;
+  const previewSource = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js','utf8');
+  const helper = previewSource.slice(previewSource.indexOf('function createScriptPreloader'),previewSource.indexOf('const copy ='));
+  const links=[];const doc={baseURI:'https://game.test/docs/',createElement:()=>({}),head:{append:node=>links.push(node)}};
+  const preload = new Function('URL',helper+';return createScriptPreloader;')(URL)(doc);
+  preload(['js/a.js?v=1','js/b.js']);preload(['https://game.test/docs/js/a.js?v=1']);
+  assert.equal(links.length,2);assert(links.every(node=>node.rel==='preload'&&node.as==='script'));
+  const loaded = new Function('URL',helper+';return loadRuntimeScript;')(URL)('js/a.js?v=1',doc);
+  assert.equal(links.length,3);links[2].onload();await loaded;
   console.log(
     'Enemy workshop: one nested rig bootstrap finishes before the shared hand driver; no double compound-avatar installation',
   );

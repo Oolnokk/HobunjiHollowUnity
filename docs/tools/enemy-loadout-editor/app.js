@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261127rootledootRigFey13';
+import { EnemyPreview } from './preview.js?v=20261127workshopParallel14';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -38,6 +38,7 @@ function log(text) {
   area.scrollTop = area.scrollHeight;
 }
 const preview = new EnemyPreview($('stage'), log);
+preview.onStartupPhase = name => { $('stageMessage').textContent = 'Loading · ' + name + '…'; }; // Mobile users can see the slow phase without devtools.
 preview.onTimeline = (p, phase) => {
   if (document.activeElement !== $('scrub')) $('scrub').value = p;
   if ($('phaseLabel').textContent !== phase)
