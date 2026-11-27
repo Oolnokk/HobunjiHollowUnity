@@ -608,7 +608,15 @@
       try {
         if (clearanceContext) {
           const beforePosition=this.position.clone(),beforeQuaternion=this.quaternion.clone();
-          if(clearance.constrainWeapon(this,mesh,clearanceContext)) {
+          let adjusted=clearance.constrainWeapon(this,mesh,clearanceContext);
+          // Crossed/rotated ranged art or other noncanonical rigid equipment
+          // still gets contact clearance, but never a fabricated shortening band.
+          if(!adjusted&&activeSlot!=='weapon'&&!clearanceContext.fitOnly&&!clearanceContext.flexibleHaft&&clearance.needsCarryFallback?.()){
+            adjusted=clearance.constrainCarry?.(this,mesh,{rig:clearanceContext.rig,itemKey,grip:clearanceContext.primary?.position,
+              preserveOrientation:clearanceContext.preserveOrientation||!!clearanceContext.secondary,
+              otherGrips:clearanceContext.secondary?[clearanceContext.secondary.position]:null});
+          }
+          if(adjusted) {
             savedPosition ||= beforePosition; savedQuaternion ||= beforeQuaternion;
           }
         } else clearance?.clear?.(); // Unequip, unsupported assemblies or A/B disable restore the original geometry.
