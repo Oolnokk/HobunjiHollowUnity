@@ -155,6 +155,7 @@
 
   // Corpse loot: the enchanted weapon comes off the body as a bound Harlyao relic with its exact enchantments and particle choice.
   function lootEnchantedWeapon(entity) {
+    if(entity?.ruinWallCoffin && entity._ruinBoundRelic) return entity._ruinBoundRelic; // A later corpse-loot failure cannot mint a duplicate bound weapon on retry.
     const enchanted = entity?.rosterRecord?.enchantedWeapon;
     const relics = window.HarlyaoRelics;
     if (!enchanted?.enchantments || !relics?.grantBoundRelic || !relics.makeRelic) return null;
@@ -163,7 +164,9 @@
     if(!shape||!relics.SHAPES[shape])return null;
     const relic = { ...relics.makeRelic(shape), enchantments: clone(enchanted.enchantments), ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
     const key = relics.grantBoundRelic(relic);
-    return key ? { key, label: relics.SHAPES[relic.shape].label } : null;
+    const result=key?{key,label:relics.SHAPES[relic.shape].label}:null;
+    if(result&&entity.ruinWallCoffin)entity._ruinBoundRelic=result;
+    return result;
   }
 
   window.GhoulSpecialVariants = Object.freeze({ isUnarmedWitch, castWeaponKey, unarm, GLYPHS, WITCH_MAGIC_DYES, KNIGHT_PATTERN_DYE, PATTERN_SCALE, style, tick, rollEnchantedWeapon, lootEnchantedWeapon, framedPattern, tierMetal });

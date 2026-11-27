@@ -6626,6 +6626,7 @@
         if (motion?.wind) commitComposedMovement(c, motion, Math.hypot(motion.x, motion.y), moved);
         if (moved > 0) {
           window.DevRandomRuin?.syncShaftCreatureFloor?.(c);
+          if (c.ruinSkeletonTheme === 'kanthic') window.MinionCombat?.trailMovement?.(c, prevX, prevY, c.x, c.y, 'move', TILE); // Accepted walking, including wander and return-home; no render-dependent sampling.
           tickCreatureFootsteps(c, moved);
         }
         return moved > 0;

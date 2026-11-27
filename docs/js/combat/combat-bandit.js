@@ -1099,6 +1099,7 @@
       attackCooldownS: (rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER) / shapeStats.speed,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
+      ...(cfg._ruinCoffinWeapon?{weaponShapeKey:weapon.shapeKey}:{}), // Preserve the exact rolled shape for bound relic loot even before generated item definitions settle.
       weaponMetalPowerMultiplier: weapon.dmgMultiplier, // Arena and combat diagnostics show the exact effective metal grade, not only the metal's name.
       weaponShapeStats: shapeStats, // Used below to keep NPC attack windups, lunges and affliction delivery in sync.
       rangedWeaponKey,
@@ -1554,7 +1555,7 @@
     c._banditLungeHopCurrent = (c._banditLungeHopUnits || 0) * Math.sin(eased * Math.PI);
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
-    if(c.ruinSkeletonTheme==='hronal')window.MinionCombat?.trailMovement?.(c,c.x,c.y,swept.x,swept.y,'lunge',deps.TILE);
+    if(c.ruinSkeletonTheme==='hronal'||c.ruinSkeletonTheme==='kanthic')window.MinionCombat?.trailMovement?.(c,c.x,c.y,swept.x,swept.y,'lunge',deps.TILE);
     c.x = swept.x; c.y = swept.y;
     if (motion?.wind) window.ResourceSystem?.commitMovement?.(c, motion, Math.min(1, stepPx / Math.max(.00001, Math.hypot(motion.x, motion.y))), window.Combat?.deps?.movementFootingDepleted);
     if (c.prone) return true;
@@ -2611,12 +2612,6 @@
     return staging.update(c, dt, target, distPx, towardAngle, npcDuelStagingApi);
   }
 
-  function updateThemedBanditCombatAI(c,dt,targetPlayer,distToPlayer){
-    if(c?.ruinSkeletonTheme!=='kanthic')return updateBanditCombatAI(c,dt,targetPlayer,distToPlayer);
-    const x=c.x,y=c.y; // Actual pursuit and lunge movement.
-    try{return updateBanditCombatAI(c,dt,targetPlayer,distToPlayer);}
-    finally{if(!c._enemyDodge)window.MinionCombat?.trailMovement?.(c,x,y,c.x,c.y,'move',deps.TILE);}
-  }
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     if (c?.tzatzulCapturedBy) {
       if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Carried actors cannot hold a reservation while off the battlefield.
@@ -3498,7 +3493,7 @@
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
-    if(opts.extra?.ruinWallCoffin)cfg={...cfg,weaponShapePool:[...window.MinionCombat.coffinWeaponShapes]}; // Match relic catalog.
+    if(opts.extra?.ruinWallCoffin)cfg={...cfg,_ruinCoffinWeapon:true,weaponShapePool:[...window.MinionCombat.coffinWeaponShapes]}; // Match relic catalog.
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
     if (!loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
       cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
@@ -3770,7 +3765,7 @@
     // js/slagothim-traders.js to dress caravan walkers like other Tletingans.
     rollRoster: rollBanditRoster,
     clothingCandidates: _banditClothingCandidates, // Shared effective-pool inspection for the enemy loadout workshop.
-    updateCombatAI: updateThemedBanditCombatAI,
+    updateCombatAI: updateBanditCombatAI,
     restNeckLook, setBanditBodyYaw,
     updateMovementHeadLook,
     updateToolMesh: measuredBanditToolMesh, // Unchanged gameplay/pose calculation, with optional per-bandit swing timing.
