@@ -736,7 +736,7 @@
 
   function applyCarryClearance(record,holder,root,context){
     const solver=global.HeldGroundPose;
-    if(inAttackEditor()||record.rig?.parent!==gameDeps?.playerMesh||!solver?.enabled?.()||!root)return false;
+    if(inAttackEditor()||!gameDeps?.playerMesh||record.rig?.parent!==gameDeps.playerMesh||!solver?.enabled?.()||!root)return false;
     const scratch=heldItemScratch(record);
     const T=record.THREE;
     scratch.clearanceBase||=new T.Vector3(); // Local authored position to restore before a subsequent action or render.
@@ -834,7 +834,7 @@
     const stances=global.WeaponToolStances;
     const state=stances?.getRuntimeState?.();
     const slot=state?.activeSlot;
-    if(!(stances?.groundPoseEligible?.(slot,state.itemKey||toolKey,toolHolder)??(slot==='weapon'&&gripContext==='melee')))return undefined;
+    if(!(stances?.groundPoseEligible?.(slot,state?.itemKey||toolKey,toolHolder)??(slot==='weapon'&&gripContext==='melee')))return undefined;
     const weaponDual=slot==='weapon'&&gripContext==='melee'; // Tool and ranged slots must never spawn weapon-only copies.
     const offhandIdle=!weaponDual||dualWield?null:(toolGrips.offhandIdleStateForTool?.(toolKey,gripContext,scaleIdentity)||null);
     // Dual sync can rebake the holder and move both visible copies. Do it
