@@ -280,6 +280,8 @@
   }
 
   function avatarPlacementRatioFor(options = {}) {
+    const override=options.portraitPlacementRatioOverride; // Explicit one-avatar placement; never modify the species configuration.
+    if(Number.isFinite(override))return override;
     const placement = cfg().portraitVerticalPlacement || {};
     const defaultRatio = Number.isFinite(Number(placement.default)) ? Number(placement.default) : 0.5;
     const { species, gender } = avatarSpeciesAndGender(options);

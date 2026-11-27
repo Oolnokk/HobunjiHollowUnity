@@ -67,6 +67,10 @@ async function main() {
   load('wilderness-encounter-runtime.js',w,canvasDoc,Img);
   load('rootledoot-encounter.js',w,canvasDoc,Img);
   const root=w.Rootledoots;
+  // Short exposed legs and the posterior at the opaque root's exact vertical midpoint.
+  const bandit=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),start=bandit.indexOf('  function rootledootLegLayout('),end=bandit.indexOf('  async function buildBanditAvatar(',start);
+  const layout=new Function(bandit.slice(start,end)+';return rootledootLegLayout;')();
+  for(const fraction of [.3,.7,1]){const p=layout(fraction,{posteriorRule:{heightPercentFromFloor:13.133738}});assert.equal(p.placementRatio,.56);assert.ok(Math.abs(p.posteriorFraction-p.gap-fraction/2)<1e-12);assert.ok(p.gaitReach<.15);}
   // Rootledoots again use the standard Mao-ao humanoid rig; no bespoke primate registration.
   const rigWindow={};new Function('window',fs.readFileSync('docs/config/attachment-rig-profiles.js','utf8'))(rigWindow);
   const rigs=rigWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters;

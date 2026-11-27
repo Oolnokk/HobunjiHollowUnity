@@ -170,7 +170,7 @@
       const position = attachmentRigProfile()?.anchors?.[anchorName]?.position; // Reads live so dragging the author gizmo updates the rendered idle hand immediately.
       if (![position?.x, position?.y, position?.z].every(value => Number.isFinite(Number(value)))) return null;
       shoulderSource[side] = 'attachment-rig-profile';
-      return new THREE.Vector3(Number(position.x), Number(position.y), Number(position.z));
+      return new THREE.Vector3(Number(position.x), Number(position.y)+(Number(avatarRoot.userData?.shoulderYOffset)||0), Number(position.z));
     }
 
     function installManualPoints() {
@@ -248,6 +248,8 @@
     };
 
     function posteriorYInParent() {
+      const explicit=avatarRoot.userData?.posteriorYOverride; // Instance-specific anatomical center, shared with the leg rig.
+      if(Number.isFinite(explicit))return explicit;
       const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
       if (Number.isFinite(resolvedY)) return resolvedY;
       const posteriorRule = attachmentRigProfile()?.posteriorRule;

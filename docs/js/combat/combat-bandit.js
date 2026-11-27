@@ -398,6 +398,14 @@
     return garmentId;
   }
 
+  function rootledootLegLayout(opaqueHeightFraction, kenkariProfile) {
+    const height = Math.max(0, Math.min(1, Number(opaqueHeightFraction) || 1)); // Cropped Heftroot art is bottom-aligned in the portrait canvas.
+    const gap = .06; // Only 6% of the portrait height is exposed below the body; keep the entire sprite above the floor.
+    const donor = Number(kenkariProfile?.posteriorRule?.heightPercentFromFloor);
+    const gaitReach = Number.isFinite(donor) && donor > 0 ? Math.min(.15, donor / 100) : .13; // Male Kenkari's authored short-leg reach; not its feet, shoulders or torso.
+    return { placementRatio: .5 + gap, posteriorFraction: gap + height / 2, gaitReach, gap };
+  }
+
   async function buildBanditAvatar(roster) {
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) throw new Error('Humanoid portrait modules are unavailable.');
     characterBuildStatus.stage = 'cosmetics';
@@ -477,10 +485,13 @@
       await redraw(backCanvas, { portraitView: 'behind' });
     }
     characterBuildStatus.stage = 'portrait-model';
+    const rootLegLayout=roster.rootledoot?rootledootLegLayout(frontCanvas.rootledootOpaqueHeightFraction,window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['kenkari::male']):null; // Shared live/Workshop anatomy, computed only at build time.
+    const originalPlacement=rootLegLayout?window.PNGPlaneAvatar.avatarPlacementRatioFor({profile}):null;
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
         backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
+        ...(rootLegLayout?{portraitPlacementRatioOverride:rootLegLayout.placementRatio}:{}),
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait', meshBudget: 'npc', // Enemies use the capped mesh budget.
         hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; HatOverflowPlane.attachToPlanes is called on those instead.
         mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
@@ -602,6 +613,12 @@
     // itself assumes its parent's local Y=0 is the floor (see its own comment).
     const modelWidth = portrait.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = portrait.userData?.portraitModelHeight || MODEL_W;
+    const rootPosteriorY=rootLegLayout?modelHeight*rootLegLayout.posteriorFraction:null; // Floor-relative center of the actual opaque root, independent of transparent canvas padding.
+    if(rootLegLayout){
+      portrait.userData.posteriorYOverride=rootPosteriorY;
+      portrait.userData.shoulderYOffset=(rootLegLayout.placementRatio-originalPlacement)*modelHeight; // Keep authored shoulders in the same place relative to the lowered root.
+      group.userData.rootledootLegLayout={...rootLegLayout,posteriorY:rootPosteriorY};
+    }
     // Preserve the portrait box recipe on the converted animal-style root:
     // authored width/height plus vertical placement, with runtime world scale
     // applied later by ranged-weapons' shared player/NPC 3D hitbox resolver.
@@ -674,6 +691,7 @@
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
+      ...(rootLegLayout?{posteriorYOverride:rootPosteriorY,gaitReachLimit:modelHeight*rootLegLayout.gaitReach,legLengthRatioOverride:1}:{}), // Keep the real hip at center and limit stride to short exposed legs.
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
       spine: spine || undefined, // Wider stance and stride for a hunched enemy.
       portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, splineNodes: frontNeckSkin.splineNodes, neckLocal: frontNeckSkin.neckLocal } : undefined, // "Show bones" also draws the portrait's spine and neck.
