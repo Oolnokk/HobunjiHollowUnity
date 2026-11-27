@@ -1234,7 +1234,12 @@
     const renderDirection=q.target.copy(state.direction); // Reuse post-physics scratch; do not mutate the shared direction.
     const trail=state.groundTrail;
     if(!state.attacking&&!state.fishingFlailHeadSpin&&Number.isFinite(available)){
-      resolveGroundSlack(trail,state.direction,maxReach,available,pivot);
+      // The hidden shared pendulum can swing up without floor contact. If the
+      // visible main hand is already dragging, an unpinned offhand that can
+      // reach the floor starts hanging down, rather than inheriting that kick.
+      const peers=sharedPhysics?.dualWieldReplicas; // Existing pair registry; no second physics simulation.
+      const seedOffhand=!trail.grounded&&peers?.[1]===root&&states.get(peers[0])?.groundTrail.grounded&&Math.abs(available)<=maxReach;
+      resolveGroundSlack(trail,seedOffhand?renderDirection.set(0,-1,0):state.direction,maxReach,available,pivot);
       const actual=Math.hypot(trail.x,trail.y,trail.z);
       if(actual>1e-10)renderDirection.set(trail.x/actual,trail.y/actual,trail.z/actual);
       if(trail.grounded&&!sharedPhysics){ // Match the old ground-contact damping; lift-off starts from the last visible direction.
