@@ -450,7 +450,7 @@ assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(
 assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
 assert.doesNotMatch(shoulderAimSource, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must not read or write the model-calibration child at all');
 assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'shoulder-follow must transform the target into the authored generic hand-socket basis before solving local hinges');
-assert.match(shoulderAimSource, /calibrationOwnership: 'ignored-child-layer'/, 'shoulder diagnostics must make the ownership boundary visible');
+assert.match(shoulderAimSource, /calibrationOwnership: 'read-only-anatomical-basis'/, 'shoulder diagnostics must make the ownership boundary visible');
 assert.match(handSource, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper-hand diagnostics must identify the raw target before both downstream hand layers');
 assert.match(editorUiSource, /id="handModelCalibrationTab"/, '3D hand editor must expose a dedicated Calibrate GLB tab');
 assert.match(editorUiSource, /No attack animation, tool transform, Grip Mode, shoulder targeting, character-facing rotation, or animation-derived hand transform/, 'calibration tab must explicitly exclude the normal animation transform stack');
@@ -462,8 +462,10 @@ assert.match(handSource, /sockets\.left\.socket\.visible = false/, 'calibration 
 assert.match(handSource, /calibrationMode \? -1 : \(sourceIsLeft \? -1 : 1\)/, 'calibration paper handedness must stay fixed while GLB mirror settings change only the model');
 assert.match(handSource, /calibrationMode \? \(Number\(values\.speciesScale\) \|\| 1\) : \(Number\(values\.effectiveScale\) \|\| 1\)/, 'calibration paper size must exclude model scale so GLB scale can be judged against it');
 assert.match(scaleFreeHandSource, /scaleFreePlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*applyToolCalibration\?\.\(side, modelCalibration\)/, 'scale-free wrapper must forward and apply the fourth model-calibration argument');
-assert.match(shoulderAimSource, /shoulderAimPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null\)[\s\S]*originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration\)/, 'shoulder wrapper must forward the fourth model-calibration argument unchanged');
+assert.match(shoulderAimSource, /shoulderAimPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration = null, gripInfluence = 1\)[\s\S]*originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration\)/, 'shoulder wrapper must forward the fourth model-calibration argument unchanged');
 assert.match(gripConfigSource, /secondarySpanBlendWorld\(side, worldPosition, worldQuaternion, modelCalibration = null[^)]*\)[\s\S]*originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration\)/, 'off-hand span wrapper must forward the fourth model-calibration argument unchanged');
+assert.match(gripConfigSource, /if \(rig\.blendsGripBeforeShoulderAim\)[\s\S]*?return originalPlaceHandWorld\(side, worldPosition, worldQuaternion, modelCalibration, influence\)/, 'offhand grip influence must reach the shared wrist solver rather than overwrite its result');
+assert.match(shoulderAimSource, /socket\.position\.lerp\(leftIdlePosition, 1 - influence\);[\s\S]*?socket\.quaternion\.slerp\(leftIdleQuaternion, 1 - influence\);[\s\S]*?captureAuthoredBase\(side\);[\s\S]*?aimSide\(side\);/, 'the final blended hand pose must be constrained, not the unblended endpoint');
 assert.match(attackEditorSource, /setHandCalibrationPresentation\(active\)[\s\S]*toolBase\.visible = !handCalibrationPresentationActive/, 'calibration tab must hide the animation-derived held-item presentation');
 assert.match(attackEditorSource, /if \(handCalibrationPresentationActive\) return;[\s\S]*const action = currentAction\(\)/, 'calibration tab must suppress hitbox/combat overlays');
 
@@ -807,6 +809,9 @@ assert.match(shoulderAimSource, /palmNormal:\s*Math\.atan2\(x, y\)/, 'the -Z pal
 assert.match(shoulderAimSource, /targetDirection\.copy\(elbow\)\.sub\(socket\.position\)/, 'hand targeting must solve from the wrist socket\/origin back toward the resolved elbow');
 assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'target direction must be solved in the authored hand-local basis');
 assert.match(shoulderAimSource, /outputQuaternion\.copy\(authoredQuaternion\)\.multiply\(localCorrectionQuaternion\)/, 'local hinge correction must right-multiply the authored hand frame');
+assert.match(shoulderAimSource, /!freeSide\[side\].*copyGripWristBasis\?\.\(side, wristBasis\)/, 'both gripped hands must measure the rendered anatomical basis');
+assert.match(shoulderAimSource, /localCorrectionQuaternion\.premultiply\(wristBasis\)\.multiply\(inverseWristBasis\)/, 'anatomical wrist correction must return to the grip socket without editing the visual child');
+assert.match(shoulderAimSource, /const gripWeight = !freeSide\[side\] \|\| elbowSolve\?\.source === 'pose-authored' \? weights\.grip : 0/, 'shoulder-only gripped hands must honor the same enabled hinges as elbow-targeted grips');
 assert.match(shoulderAimSource, /targetFeature: 'elbow'/, 'hand diagnostics must expose the elbow as the proximal aim target');
 assert.match(shoulderAimSource, /componentSpace: 'hand-local'/, 'shoulder diagnostics must expose the hand-local hinge space');
 assert.doesNotMatch(shoulderAimSource, /weights\.yaw|localYawAxis|rotationVector/, 'the retired third shoulder hinge and parent-space rotation-vector gating must stay removed');
@@ -825,7 +830,7 @@ assert.match(shoulderPoseRuntimeSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]
 assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.isPlayerThrownFireThroughStrike\?\.\(\) === true/, 'ranged hand targeting must consume the real thrown-action phase API rather than debug state');
 assert.doesNotMatch(shoulderPoseRuntimeSource, /__rangedDebug|WeaponToolStances\?\.debugSnapshot/, 'gameplay hand targeting must never depend on diagnostic snapshots');
 assert.match(shoulderPoseRuntimeSource, /if \(!rangedWindupStrikeActive\(\)\) return weights;[\s\S]*return \{ \.\.\.weights, grip: 0 \}/, 'thrown Windup\/Strike must disable only the local grip-axis correction while preserving palm-normal targeting');
-assert.match(shoulderAimSource, /const appliedPalmNormalAngle = palmNormalAngle \* weights\.palmNormal/, 'palm-normal targeting must remain active through the ordinary shoulder\/elbow solver');
+assert.match(shoulderAimSource, /const appliedPalmNormalAngle = \(palmNormalAngle - wristLeeway\.palmNormal\) \* weights\.palmNormal/, 'palm-normal targeting must correct only excess wrist deviation');
 assert.match(shoulderAimSource, /shoulder\.x \+ Number\(authoredOffset\.x/, 'authored elbow coordinates must be direct shoulder-relative pose offsets');
 assert.match(shoulderAimSource, /legacy-shoulder-target/, 'older animations without elbows must retain the old shoulder target instead of calculating a runtime midpoint');
 assert.doesNotMatch(shoulderAimSource, /copy\(shoulder\)\.add\(socket\.position\)\.multiplyScalar\(0\.5\)/, 'runtime must never synthesize the authoring midpoint');
@@ -879,6 +884,20 @@ assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|g
   vm.runInContext(shoulderAimSource, sandbox, { filename: 'procedural-hand-shoulder-aim.js' });
   const solve = sandbox.window.ProceduralHandShoulderAim?.solveLocalHingeAngles;
   assert.equal(typeof solve, 'function', 'shoulder solver must expose its pure local hinge decomposition for regression');
+  const leeway = sandbox.window.ProceduralHandShoulderAim.wristHingeLeeway;
+  const rad = degrees => degrees * Math.PI / 180;
+  for (const side of ['left', 'right']) {
+    const sign = side === 'left' ? -1 : 1;
+    for (const [grip, palm, expectedGrip, expectedPalm] of [
+      [0, 0, 0, 0], [45, 15, 45, 15], [-45, -15, -45, -15],
+      [90, 60, 70, 35], [-90, -60, -80, -20],
+      [70, 35, 70, 35], [-80, -20, -80, -20],
+    ]) {
+      const result = leeway(rad(grip), sign * rad(palm), side, {});
+      assert(Math.abs(result.grip - rad(expectedGrip)) < 1e-12, 'flexion/extension limit');
+      assert(Math.abs(result.palmNormal - sign * rad(expectedPalm)) < 1e-12, 'mirrored lateral wrist limit');
+    }
+  }
   const targets = [
     { x: 0.5, y: 0.8, z: 0.2 },
     { x: -0.45, y: 0.72, z: -0.31 },

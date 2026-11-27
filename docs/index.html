@@ -199,7 +199,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261127h2af1c8c"></script>
+  <script src="js/held-action-animations.js?v=20261127h31eb7126e"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -360,7 +360,7 @@
   <script src="js/combat/shared-attack-pose.js?v=20261126flailHeadLean1"></script>
   <script src="config/weapon-sprite-assemblies.js?v=20261127mirrorFlail2"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261115torchWick2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261127flailSlack3"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261127h7b0ee2059"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
@@ -668,9 +668,9 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
+  <script src="config/modular-weapons.js?v=20261127spikedSweep1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
-  <script src="js/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
+  <script src="js/modular-weapons.js?v=20261127spikeDraftSweep2"></script>
   <script src="js/bandit-captain-armaments.js?v=20261127rootAnatomyRevert16"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
@@ -2894,7 +2894,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261127ruinViewer1"></script>
+  <script src="js/fishing-minigame.js?v=20261127h36aec89"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->

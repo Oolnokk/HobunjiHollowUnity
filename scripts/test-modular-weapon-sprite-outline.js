@@ -81,8 +81,12 @@ mark(fringe, 8, 8, [150, 70, 40, 32]);
 assert.deepEqual(pixel(window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 32).pixels, 8, 8), [150, 70, 40, 32], 'Alpha at the threshold is kept.');
 assert.throws(() => window.ModularWeaponOutline.cullLowAlphaPixels(fringe, 256), /0 to 255/);
 
-const uploaded = { heads: ['bshuakauitl'], shafts: ['bgungku', 'hatchet', 'hoe', 'plains-sword'] }; // Remaining uncalibrated authoring-only exports.
+const uploaded = { heads: ['bshuakauitl'], shafts: ['bgungku', 'hatchet', 'hoe'] }; // Remaining uncalibrated authoring-only exports.
 assert.equal(api.getConfig().shafts['pick-shovel'].editorOnly, false, 'Pick-Shovel shaft is now an approved forgeable modular pick.');
+const plains = api.getConfig().shafts['plains-sword'];
+assert.equal(plains.editorOnly, false, 'The imported, calibrated Plains Sword haft is now approved.');
+assert(fs.existsSync('docs/' + plains.sprite), 'The approved Plains Sword still ships its source sprite.');
+assert(api.isDisallowed('plains-sword', 'plains-blade'), 'Approval does not remove the authored pair exclusion.');
 for (const [kind, keys] of Object.entries(uploaded)) for (const key of keys) {
   const part = api.getConfig()[kind][key]; // Newly registered parts must be visible in the authoring dropdowns.
   assert(part && part.editorOnly, kind + '/' + key + ' should require calibration.');

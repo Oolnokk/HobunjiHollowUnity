@@ -26,6 +26,13 @@
   if (insertionPoint?.parentElement === handCard) insertionPoint.insertAdjacentElement('afterend', status);
   else handCard?.appendChild(status);
 
+  const refreshWrist = document.createElement('button'); // Explicit mobile-friendly snapshot of the current rendered hand state.
+  refreshWrist.type = 'button';
+  refreshWrist.className = 'secondary';
+  refreshWrist.textContent = 'Refresh wrist diagnostics';
+  refreshWrist.addEventListener('click', updateStatus);
+  status.insertAdjacentElement('afterend', refreshWrist);
+
   function mappedModelKey() {
     return String(profiles.modelKeyForSpecies?.(speciesSelect.value) || '');
   }
@@ -47,11 +54,15 @@
     const tool = String(toolSelect.value || '-');
     const mode = gripModes?.currentModeKey?.() || '-';
     const debug = currentRigDebug();
-    const shoulder = debug?.hand?.shoulderCompass?.sides?.right || null;
-    const shoulderText = shoulder?.applied
-      ? 'shoulder-follow active'
-      : `shoulder-follow ${shoulder?.reason || 'off/pending'}`;
-    status.textContent = `Context #${syncSerial} (${lastReason}) · ${species} → model ${model} · tool ${tool} · grip ${mode} · ${shoulderText}`;
+    const sides = debug?.hand?.shoulderCompass?.sides;
+    const fmt = value => Number.isFinite(value) ? value.toFixed(1) + '°' : 'n/a';
+    const wristText = side => {
+      const wrist = sides?.[side];
+      const owner = debug?.fallback?.owners?.[side] || (wrist?.gripAttached ? 'grip' : 'idle');
+      if (!wrist || !Number.isFinite(wrist.authoredResidualDeg)) return side + ' ' + owner + ': ' + (wrist?.reason || 'solver unavailable');
+      return side + ' ' + owner + ' (' + wrist.elbowSource + '): raw ' + fmt(wrist.authoredResidualDeg) + ' → solved ' + fmt(wrist.residualDeg) + ' → current ' + fmt(wrist.currentResidualDeg) + '; correction X ' + fmt(wrist.appliedLocalAnglesDeg?.grip) + ', Z ' + fmt(wrist.appliedLocalAnglesDeg?.palmNormal);
+    };
+    status.textContent = `Context #${syncSerial} (${lastReason}) · ${species} → model ${model} · tool ${tool} · grip ${mode} · ${wristText('left')} · ${wristText('right')}`;
     status.style.color = profileSelect.value && profileSelect.value !== model ? '#fb7185' : '';
   }
 
