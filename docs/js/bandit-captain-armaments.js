@@ -289,9 +289,12 @@
     const record = decodeBoundKey(key);
     if (!record || !deps?.ITEM_DEFS) return null;
     const label = boundLabel(record);
+    const defs = window.EnchantmentSystem.DEFINITIONS; // Pack detail shows the actual recovered magic before registration.
+    const enchantmentLabels = [...record.enchantments.base.map(id => defs[id].displayName + ' (Base)'),
+      ...Object.entries(record.enchantments.flourishes).map(([slot, id]) => defs[id].displayName + ' (' + slot.toUpperCase() + ' Flourish)')];
     const def = { label, icon: '🗡️', cat: 'material', sellPrice: 90 + 30 * (record.enchantments.base.length + Object.keys(record.enchantments.flourishes).length),
       tags: [record.origin, 'Bound'], magicalStatus: 'bound', uniqueInventoryKey: true,
-      desc: 'Still bound to its former owner. It cannot be equipped until Garanki Gabu re-registers it. Registration teaches him its enchantments.' };
+      desc: 'Still bound to its former owner. It cannot be equipped until Garanki Gabu re-registers it. Registration teaches him its enchantments: ' + enchantmentLabels.join('; ') + '.' };
     deps.ITEM_DEFS[key] = def;
     if (Array.isArray(deps.inventoryItems) && !deps.inventoryItems.some(entry => entry.key === key))
       deps.inventoryItems.push({ key, icon: def.icon, label: label.toUpperCase(), max: 1 });
@@ -311,7 +314,12 @@
     const before = deps.inventory[boundKey];
     deps.inventory[boundKey] = 1; // No equippable weapon or learned magic exists yet.
     if (options.deferSave === true) return label; // Rootledoot caller snapshots this key in the atomic reward transaction.
-    if (before !== 1 && deps.saveMemberWorldData?.() === false) {
+    let saved = true; // A thrown storage failure must leave the loot retryable just like an explicit rejection.
+    if (before !== 1) {
+      try { saved = typeof deps.saveMemberWorldData === 'function' && deps.saveMemberWorldData() !== false; }
+      catch (error) { saved = false; window.__farmLog?.('[captain-armaments] Bound weapon save failed: ' + String(error), 'warn'); }
+    }
+    if (!saved) {
       if (before === undefined) delete deps.inventory[boundKey]; else deps.inventory[boundKey] = before;
       deps.showToast?.('Could not save the bound weapon. Search the body again.', false);
       return null;
@@ -350,7 +358,10 @@
       const learned = es.unlockFromState(record.enchantments, { deferSave: true }); // Base by ID; Flourishes by their exact slot.
       return { ok: true, toolKey: record.key, learned, price };
     } }) || { ok: false, reason: 'unavailable' };
-    if (!result.ok) return result;
+    if (!result.ok) {
+      if (result.reason === 'gold') deps.showToast?.('Garanki requires ' + price + 'g to re-register this weapon.', false);
+      return result;
+    }
     registerDefinition(record.key, record);
     deps.buildInventoryGrid?.(); deps.buildEquipmentSlots?.();
     es.logEvent?.(result.learned.length ? 'Garanki learned: ' + result.learned.join(', ') : 'Garanki re-registered a captain weapon');

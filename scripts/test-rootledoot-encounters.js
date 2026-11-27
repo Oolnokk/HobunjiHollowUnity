@@ -55,7 +55,8 @@ async function main() {
   const canvasDoc={createElement:()=>({width:2,height:2,getContext:()=>({drawImage(){},getImageData:()=>({data:new Uint8Array(16).fill(255)})})})};
   w.THREE={CanvasTexture:class{},SpriteMaterial:class{dispose(){}},Sprite:class{constructor(m){this.material=m;this.position=pos();this.scale=pos();this.userData={}}}};
   w.PlayerDowned={isDowned:()=>false};w.HobunjiAlcohol={triggerFeyBlackout:n=>{deficit=n;}};
-  w.BanditCaptainArmaments={discard(){},grantCorpseWeapon:(_c,opts)=>{assert.equal(opts.deferSave,true);gear.tools.fey=true;return 'Fey weapon';}};
+  const boundWeaponKey='captainBound_testFey'; // A bound item must roll back with the ordinary root reward, not merely with gear.
+  w.BanditCaptainArmaments={discard(){},boundKeyFor:()=>boundWeaponKey,grantCorpseWeapon:(_c,opts)=>{assert.equal(opts.deferSave,true);bag[boundWeaponKey]=1;return 'Bound Fey weapon';}};
   w.BanditCombat={loadGangConfig:async()=>({}),makeEntity:async(cfg,rank,tier,x,y,o)=>{
     spawnCount++;if(block&&spawnCount===block.index)await block.promise;
     return {...o.extra,x,y,health:100,areaId:zone,avatarRef:{group:{parent:scene},modelHeight:1.35},_banditCaptainArmament:rank==='captain'?{key:'captain-test-fey',origin:'Fey',enchantments:{base:['test'],flourishes:{}}}:null};
@@ -137,10 +138,10 @@ async function main() {
   root.restore(rewardSave);zone='map_northern_cliffs';root.tick(.5);await flush();s=aim();
   assert.equal(root.debugSnapshot().active.phase,'reward','unclaimed boss harvest reappears after reload');
   assert.equal(hostiles.size,0,'restoring the reward does not recreate enemies');
-  allowSave=false;assert.equal(root.pick(s.c,s.r),false);assert.equal(bag.feyHeftroot,undefined);assert.equal(gear.tools.fey,undefined);assert.equal(cooking.getFoodEffectStacks('feySight'),5);
+  allowSave=false;assert.equal(root.pick(s.c,s.r),false);assert.equal(bag.feyHeftroot,undefined);assert.equal(gear.tools.fey,undefined);assert.equal(bag[boundWeaponKey],undefined);assert.equal(cooking.getFoodEffectStacks('feySight'),5);
   assert.equal(root.debugSnapshot().active.phase,'reward','failed save leaves reward retriable');
   assert.equal(root.serialize().pendingRewards.length,1,'failed transaction restores pending reward');
-  allowSave=true;assert.equal(root.pick(s.c,s.r),true);assert.equal(bag.feyHeftroot,1);assert.equal(gear.tools.fey,true);assert.equal(cooking.getFoodEffectStacks('feySight'),0);
+  allowSave=true;assert.equal(root.pick(s.c,s.r),true);assert.equal(bag.feyHeftroot,1);assert.equal(gear.tools.fey,undefined);assert.equal(bag[boundWeaponKey],1);assert.equal(cooking.getFoodEffectStacks('feySight'),0);
   assert.equal(root.pick(s.c,s.r),false,'reward claimed once');
   assert.equal(root.serialize().pendingRewards.length,0,'successful claim removes pending reward from the save');
   const ledger=JSON.parse(JSON.stringify(root.serialize()));root.restore(ledger);day++;root.tick(.5);assert.equal(root.debugSnapshot().active,null,'cleared locale survives reload');
