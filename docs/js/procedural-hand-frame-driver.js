@@ -638,6 +638,15 @@
   // Reuse the actual shoulder targets and rigger reach from the attached rig.
   function restoreHeldItemReach(record) {
     const scratch = record.heldItemScratch;
+    const corrected=scratch?.clearanceHolder; // Undo the render-only floor correction before releasing the earlier reach lift.
+    if(corrected){
+      if(corrected.parent&&corrected.position.distanceToSquared(scratch.clearancePlaced)<1e-10&&Math.abs(corrected.quaternion.dot(scratch.clearancePlacedQ))>1-1e-10){
+        corrected.position.copy(scratch.clearanceBase);
+        corrected.quaternion.copy(scratch.clearanceBaseQ);
+        corrected.updateWorldMatrix(true,true);
+      }
+      scratch.clearanceHolder=null; // Gameplay may already have replaced the pose (e.g. drink, throw, or note).
+    }
     const holder = scratch?.reachHolder;
     if (!holder) return;
     // Gameplay may have authored a new holder pose since our last render.
@@ -725,10 +734,48 @@
     holder.updateWorldMatrix(true, false);
   }
 
+  function applyCarryClearance(record,holder,root,context){
+    const solver=global.HeldGroundPose;
+    if(inAttackEditor()||record.rig?.parent!==gameDeps?.playerMesh||!solver?.enabled?.()||!root)return false;
+    const scratch=heldItemScratch(record);
+    const T=record.THREE;
+    scratch.clearanceBase||=new T.Vector3(); // Local authored position to restore before a subsequent action or render.
+    scratch.clearanceBaseQ||=new T.Quaternion();
+    scratch.clearancePlaced||=new T.Vector3();
+    scratch.clearancePlacedQ||=new T.Quaternion();
+    scratch.clearanceBase.copy(holder.position);scratch.clearanceBaseQ.copy(holder.quaternion);
+    if(!solver.constrainCarry?.(holder,root,{...context,rig:record.rig}))return false;
+    scratch.clearancePlaced.copy(holder.position);scratch.clearancePlacedQ.copy(holder.quaternion);
+    scratch.clearanceHolder=holder;
+    return true;
+  }
+
+  function constrainIdleHeldItem(record,target){
+    if(target.groundPoseIdle!==true)return; // A drink, aimed throw or living carry must keep its explicit pose owner.
+    const scratch=heldItemScratch(record);
+    scratch.clearanceGrip||=new record.THREE.Vector3(); // Same exact socket coordinates as the placement below.
+    scratch.clearanceOther||=new record.THREE.Vector3();
+    scratch.clearanceGrips||=[scratch.clearanceGrip,scratch.clearanceOther];
+    const grip=scratch.clearanceGrip,other=scratch.clearanceOther;
+    let otherGrips=null;
+    if(target.mode==='authored-world'){
+      const right=target.handTargets?.right||{},left=target.handTargets?.left||{};
+      grip.set(Number(right.x)||0,Number(right.y)||0,Number(right.z)||0);
+      other.set(Number(left.x)||0,Number(left.y)||0,Number(left.z)||0);
+      otherGrips=scratch.clearanceGrips;
+    }else if(target.mode==='large'){
+      const edge=target.width/2+HELD_LARGE_EDGE_MARGIN;
+      grip.set(edge,0,0);other.set(-edge,0,0);
+      otherGrips=scratch.clearanceGrips;
+    }else grip.set(0,0,target.height*(Number(target.neckFraction)||0.2));
+    applyCarryClearance(record,target.holder,target.plane||target.holder,{itemKey:target.itemKey,grip,otherGrips,preserveOrientation:target.mode!=='bottle'});
+  }
+
   function syncRigToHeldItem(record, target) {
     const holder = target.holder;
     const scratch = heldItemScratch(record);
     liftHeldItemIntoReach(record, target, scratch);
+    constrainIdleHeldItem(record,target); // Resolve the visible prop before either hand reads its socket.
     holder.updateWorldMatrix(true, false);
     const holderQuat = hierarchyWorldQuaternion(record, holder, scratch.holderQuat);
     const modelCalibration = modelCalibrationForRecord(record);
@@ -834,6 +881,11 @@
       const dualWield = toolGrips.dualWieldStateForTool?.(toolKey, gripContext, scaleIdentity) || null;
       const preparedOffhandIdle=prepareGroundPoseForSockets(record,toolHolder,toolKey,gripContext,scaleIdentity,dualWield,dualSolve);
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
+      const instrument=toolKey==='kurraya'?playerKurrayaTarget(record):null; // Only the silent, visible player instrument may use the carry correction.
+      if(instrument?.groundPoseIdle&&instrument.holder===toolHolder){
+        const secondary=toolGrips.secondaryGripForTool(toolKey,gripContext,scaleIdentity);
+        applyCarryClearance(record,toolHolder,instrument.root,{itemKey:toolKey,grip:secondary?.position||primaryGrip?.position,preserveOrientation:true});
+      }
       const visualBasis = visualGripBasisDelta(record, toolHolder); // The holder and its visual basis are stable throughout this synchronous multi-hand solve.
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip, visualBasis); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
