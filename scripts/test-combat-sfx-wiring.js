@@ -90,7 +90,7 @@ const context = {
   Audio: FakeAudio,
   performance: { now: () => 1000 },
   setTimeout: () => 0,
-  window: { SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx } } } },
+  window: { SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx, objectSfx: { igniteLarge: { url: 'ignite-large.m4a', volume: 1 } } } } } },
 };
 vm.runInNewContext(audio, context);
 context.window.AudioSystem.init({
@@ -158,6 +158,11 @@ assert.equal(FakeAudio.plays, 6, 'named bandage loop plus swing, melee impact, b
   api.playCollisionImpactSfx('sharp',0,0,'other-area');
   api.playCollisionImpactSfx('sharp',10000,0,'farm');
   assert.equal(FakeAudio.plays,before+4,'off-area and distant collisions remain silent');
+  api.playCollisionImpactSfx('fire',0,0,'farm');
+  assert.equal(FakeAudio.lastPlayed.src,'ignite-large.m4a');
+  assert.equal(FakeAudio.lastPlayed.playbackRate,0.65);
+  assert.equal(FakeAudio.lastPlayed.preservesPitch,false);
+  assert.equal(FakeAudio.plays,before+5,'fire uses the torch recording once');
 }
 
 // In headless/mobile native fallback, the first lowered-pitch slash must finish before the second begins.
