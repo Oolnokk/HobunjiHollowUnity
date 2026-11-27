@@ -254,7 +254,6 @@
       targetHolderQuaternion: q(), targetHolderWorld: m(), inverseHolderWorld: m(), planeRelative: m(), inversePlaneWorld: m(),
       idleResult: { position: v(), quaternion: q() },
       offTargetPosition: v(), offTargetQuaternion: q(),
-      mirrorWristLocal: q(), mirrorWristInverse: q(), mirrorWristRightBasis: q(), mirrorWristLeftBasis: q(), // Reused calibrated frame reflection scratch.
       reflection: m(), mirrorLocal: m(), mirrorX: m().makeScale(-1,1,1), // Reused by the reflected weapon and socket.
       currentPose: { position: v(), quaternion: q() },
     };
@@ -634,25 +633,6 @@
     return current;
   }
 
-  // Reflect the finished *authored* main-hand anatomical frame, not the
-  // reflected weapon's decomposed quaternion. The latter includes an arbitrary
-  // negative-scale axis and a legacy half-turn that can reverse proximal +Y.
-  // The model's left/right geometry is already mirrored across local X.
-  function mirrorPairedWristOrientation(record, solve, mainQuaternion, out) {
-    const current = solve?.dualWieldState;
-    if (!current?.mirrorOffhand || current.invisible || solve.dualWieldRecord !== record) return false;
-    const s = current.frameScratch; // Body basis was captured by mirrorSolvedWeapon for these exact weapon matrices.
-    const rig = record.rig;
-    if (!s || !rig?.copyGripWristBasis) return false;
-    if (!rig.copyGripWristBasis('right', s.mirrorWristRightBasis)
-      || !rig.copyGripWristBasis('left', s.mirrorWristLeftBasis, 'right')) return false;
-    s.mirrorWristLocal.copy(s.bodyQuaternion).invert().multiply(mainQuaternion).multiply(s.mirrorWristRightBasis);
-    mirrorQuaternionAcrossLocalX(s.mirrorWristLocal, s.mirrorWristLocal);
-    out.copy(s.bodyQuaternion).multiply(s.mirrorWristLocal)
-      .multiply(s.mirrorWristInverse.copy(s.mirrorWristLeftBasis).invert()).normalize();
-    return true;
-  }
-
   function transformSocketForHand(record, side, socketFrame, solve = null) {
     // solve: optional object shared by both hands of one synchronous rig solve (procedural-hand-frame-driver.js);
     // with lean sync the second hand reuses the first hand's sync instead of repeating it.
@@ -802,7 +782,6 @@
     teardown,
     resetPoseHistory,
     transformSocketForHand,
-    mirrorPairedWristOrientation,
     setCarriedPose,
     setCarriedSample,
     invisibleOffhandSocket,
