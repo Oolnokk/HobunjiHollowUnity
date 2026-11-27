@@ -90,6 +90,8 @@
     const guideMidpoint = new THREE.Vector3(); // Reused midpoint between shoulder and wrist for the paper-arm preview.
     const guideElbow = new THREE.Vector3(); // Reused computed elbow position for the paper-arm preview.
     const guideDirection = new THREE.Vector3(); // Reused segment direction when orienting paper strips.
+    const guideWristAxis = new THREE.Vector3(); // Endpoint of the actual solved proximal axis, editor guide only.
+    const guideWristBasis = new THREE.Quaternion(); // Current calibrated hand basis for the guide.
     const guideLocalY = new THREE.Vector3(0, 1, 0); // Plane-strip length axis used by the paper-arm preview.
     const debugEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     const debugBySide = { left: null, right: null };
@@ -404,8 +406,8 @@
       const material = solid('paper_arm_bone', 0xf1f5f9, 0.78);
       const radius = Math.max(0.014, modelHeight * 0.03); // Joint sphere size; the elbow is a little larger so it reads first.
       const boneRadius = Math.max(0.006, radius * 0.38);
-      const makeBone = name => {
-        const bone = new THREE.Mesh(new THREE.CylinderGeometry(boneRadius, boneRadius, 1, 10), material); // Unit-length cylinder along local Y; placePaperStrip stretches it between joints.
+      const makeBone = (name, boneMaterial = material, thickness = boneRadius) => {
+        const bone = new THREE.Mesh(new THREE.CylinderGeometry(thickness, thickness, 1, 10), boneMaterial); // Unit-length cylinder along local Y; placePaperStrip stretches it between joints.
         bone.name = name;
         bone.renderOrder = 9999;
         bone.frustumCulled = false;
@@ -422,12 +424,15 @@
       };
       const upper = makeBone(`${side}_paper_upper_arm`);
       const lower = makeBone(`${side}_paper_forearm`);
+      const axisMaterial = solid(`${side}_paper_wrist_axis_material`, 0xe879f9, 1); // Magenta distinguishes the actual hand axis from the white forearm target.
+      const axis = makeBone(`${side}_paper_wrist_axis`, axisMaterial, boneRadius * 0.65);
+      axis.renderOrder = 10001;
       const shoulder = makeBall(`${side}_paper_shoulder`, 0x22c55e);
       const elbow = makeBall(`${side}_paper_elbow`, 0xf97316, 1.3);
       const wrist = makeBall(`${side}_paper_hand_socket`, 0x22d3ee);
       root.visible = false;
       parent.add(root);
-      paperArmBySide[side] = { root, upper, lower, shoulder, elbow, wrist, material };
+      paperArmBySide[side] = { root, upper, lower, shoulder, elbow, wrist, axis, axisMaterial, material };
       return paperArmBySide[side];
     }
 
@@ -462,6 +467,10 @@
       const elbow = elbowSolve.elbow;
       placePaperStrip(guide.upper, shoulder, elbow);
       placePaperStrip(guide.lower, elbow, socket.position);
+      guideWristBasis.identity();
+      if (!freeSide[side]) rig.copyGripWristBasis?.(side, guideWristBasis);
+      guideWristAxis.copy(localWristProximalAxis).applyQuaternion(guideWristBasis).applyQuaternion(socket.quaternion).normalize().multiplyScalar(modelHeight * 0.20).add(socket.position);
+      placePaperStrip(guide.axis, socket.position, guideWristAxis); // White is the target ray; magenta is the hand's measured proximal direction.
       guide.elbow.position.copy(elbow);
       guide.shoulder.position.copy(shoulder);
       guide.wrist.position.copy(socket.position);
@@ -707,6 +716,8 @@
           guide.upper.geometry?.dispose?.();
           guide.lower.geometry?.dispose?.();
           guide.elbow.geometry?.dispose?.();
+          guide.axis.geometry?.dispose?.();
+          guide.axisMaterial?.dispose?.();
           guide.material?.dispose?.();
         }
       },
