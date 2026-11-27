@@ -11,8 +11,8 @@
   const urls = [
     new URL('../config/character-rig-scale-defaults.js?v=20261126h1dd486d', base).href,
     ...(needsAgeAuthoring ? [
-      new URL('../config/romance-config.js?v=20261126familyWork2', base).href, // Authoring stage defaults precede lineup registration.
-      new URL('character-age-rig-config.js?v=20261126h08f6eb8', base).href, // Shared runtime/author age proportions.
+      new URL('../config/romance-config.js?v=20261127infantHead65', base).href, // Authoring stage defaults precede lineup registration.
+      new URL('character-age-rig-config.js?v=20261127infantHead65', base).href, // Shared runtime/author age proportions.
     ] : []),
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261114hrigcore1760', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
@@ -36,7 +36,7 @@
     new URL('shoulder-camera-reset-button.js?v=20261007h767d135', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20261126hb346760', base).href,
-    new URL('character-scale-comparison.js?v=20261126h9ea7d3b', base).href,
+    new URL('character-scale-comparison.js?v=20261127infantHead65', base).href,
     new URL('character-scale-comparison-body-input-guard.js?v=20261126neckAudit2', base).href,
     new URL('character-scale-comparison-presentation.js?v=20261126neckAudit2', base).href,
     new URL('animation-author-rig-gameplay-appearance.js?v=20261017a', base).href,

@@ -117,17 +117,16 @@ childFixture.window.HobunjiCharacterRigScale = world.HobunjiCharacterRigScale;
 const measuredChild = childFixture.childScaleFor({npcRecord:{isChild:true}});
 assert.equal(measuredChild.width,wideMeasured.width); assert.equal(measuredChild.height,wideMeasured.height);
 const preset = api.repositoryProfiles().baby;
-assert.equal(preset['mashtzarr::male'].head,.5); assert.equal(preset['mashtzarr::female'].head,.5489999999999999);
-assert.equal(preset['mammakhbuur::male'].head,.5); assert.equal(preset['mammakhbuur::female'].head,.574);
-assert.equal(preset['kenkari::male'].head,.626);
 assert.equal(preset['kenkari::male'].width,.561);
 assert.equal(preset['longoran::male'].height,.14800000000000002);
 assert.equal(Object.keys(preset).length,26);
 const toddlerPreset=api.repositoryProfiles().toddler;
 assert.equal(Object.keys(toddlerPreset).length,26);
 for(const [key,row] of Object.entries(preset)) {
+  assert.equal(row.head,.65,key+' baby head is 65% of the adult head');
+  assert.equal(toddlerPreset[key].head,.65,key+' toddler head is 65% of the adult head');
   assert.equal(toddlerPreset[key].height,row.height+.2,key+' height adds exactly 20 percentage points');
-  for(const axis of ['width','head','hand','foot']) assert.equal(toddlerPreset[key][axis],row[axis],key+' '+axis+' unchanged');
+  for(const axis of ['width','hand','foot']) assert.equal(toddlerPreset[key][axis],row[axis],key+' '+axis+' unchanged');
 }
 assert.equal(Object.keys(api.repositoryProfiles().child).length,0,'Gantami child defaults remain shared, no new individual child presets');
 const migrated=api.upgradePresetProfiles({baby:{'kenkari::male':{height:.9}},toddler:{},child:{'kenkari::male':{width:.8,height:.7,head:.6,hand:1,foot:1}}},1);
@@ -144,7 +143,7 @@ assert.equal(baked.width,.25); assert.equal(baked.height,1); assert.equal(baked.
 const scaled=api.scaledProfile(baked,1.5);
 assert.equal(scaled.width,.375); assert.equal(scaled.height,1.5); assert.equal(scaled.hand,1.1); assert.equal(scaled.foot,.9);
 api.applyOnThisDevice({child:full},basis,separate);
-assert.equal(api.profileFor('baby','mashtzarr','female').head,.5489999999999999);
+assert.equal(api.profileFor('baby','mashtzarr','female').head,.65);
 assert.equal(api.profileFor('child','wide','female'),null);
 const currentAdult={x:1,y:1,head:1};
 childFixture.window.HobunjiCharacterRigScale={scaleFor:()=>currentAdult};
