@@ -596,7 +596,7 @@
     // Authoring the offhand stance: the gizmo/Neutral sliders move the offhand weapon directly (it stays
     // on the holder), and the main-hand copy is placed from its saved stance instead.
     const authoringOffhand = editorOffhandAuthoring && inAttackEditor() && current.idleBlend > ACTIVE_EPSILON;
-    current.mirrorOffhand=key===PLAYER_KEY&&active&&!authoringOffhand&&!!current.bodyRoot;
+    current.mirrorOffhand=active&&!authoringOffhand&&!!current.bodyRoot; // All visible pairs share the same rigid reflection.
     current.offRoot.matrixAutoUpdate=true;
     const idleTransform = !current.mirrorOffhand && current.idleBlend > ACTIVE_EPSILON && !authoringOffhand ? idleOffhandLocalTransform(current) : null;
     const idleAmount = clamp01(current.idleBlend);
@@ -629,7 +629,7 @@
       if(active||invisible)clearance?.constrainDualCopies?.(current);
     }
     if(current.mirrorOffhand)mirrorSolvedWeapon(current);
-    current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active, current.mirrorOffhand); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
+    current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
     return current;
   }
 

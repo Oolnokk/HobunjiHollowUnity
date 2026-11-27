@@ -536,7 +536,7 @@
   // supplies ONE shared world-space pendulum direction. Per-hand contact points
   // and head placements remain independent under each weapon's baked transform.
   // The original stays visible until BOTH async replicas have their connector and head.
-  function syncDualWield(sourceRoot, mainMesh, offMesh, active, mirrorOffhand=false) {
+  function syncDualWield(sourceRoot, mainMesh, offMesh, active) {
     const source = states.get(sourceRoot);
     const replicas = [mainMesh, offMesh].filter(Boolean); // Live duplicate weapon meshes, one per anatomical hand.
     const readySource = !!(source?.config.flail && source.chain && source.headRoot);
@@ -551,7 +551,6 @@
         }
         const replica = states.get(copy); // Visible side-specific art; only the source owns time-stepped pendulum physics.
         if (replica) {
-          replica.mirroredFlail = mirrorOffhand&&copy===offMesh?states.get(mainMesh):null; // Reuse the main copy's solved joint transforms.
           replica.dualPhysicsSource = source; // Every swing copies this one authoritative WORLD-space direction, never a local-space angle.
           replica.attacking = source.attacking; replica.progress = source.progress;
           replica.fishingFlailHeadSpin=source.fishingFlailHeadSpin;replica.fishingFlailSpinRevolutions=source.fishingFlailSpinRevolutions; // Shared attack phase, including special fishing throws.
@@ -1012,21 +1011,6 @@
     // Use the final holder+plane world pose, including the game's transient
     // authored Neutral. The rigid haft never relinquishes animation authority.
     refreshWorldMatrix(plane); // Same baked holder frame the renderer will draw, not the raw local pose.
-    const mirror=state.mirroredFlail;
-    if(mirror?.chain&&mirror.headRoot){
-      // The offhand root already reflects the main root. Identical local joints reflect the entire assembly.
-      for(let i=0;i<2;i++){
-        const from=i?mirror.headRoot:mirror.chain;
-        const part=i?state.headRoot:state.chain;
-        part.matrixAutoUpdate=false;
-        part.matrix.copy(from.matrix);
-        part.matrixWorldNeedsUpdate=true;
-        part.updateMatrixWorld(true);
-      }
-      state.groundClearance=mirror.groundClearance;
-      if(root.visible!==false)effects?.stepFire(state,effectsDt);
-      return;
-    }
     const baseImage = plane.material?.map?.image;
     if (!baseImage) return;
     const unit = (plane.geometry?.parameters?.width || 0.5) / (baseImage.naturalWidth || baseImage.width || 1);
