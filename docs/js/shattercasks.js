@@ -761,7 +761,7 @@
   }
   function heldHandTarget(){
     return held?.group?.parent&&held.group.parent===carryDeps()?.playerMesh
-      ?{holder:held.group,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{}}:null;
+      ?{holder:held.group,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{},itemKey:held.kind,groundPoseIdle:!aimingThrow&&held.kind!=='familyBaby'}:null; // Static burdens can lift with both grips; the living infant and committed throw own their own pose.
   }
   function updateEmitters(dt,mapId,targetScene){
     const rec=records.get(mapId);

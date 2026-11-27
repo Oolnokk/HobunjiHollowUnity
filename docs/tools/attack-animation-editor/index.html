@@ -331,10 +331,10 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-ground-pose.js?v=20261127groundOnce2"></script>
+<script src="../../js/held-ground-pose.js?v=20261127idleMainMerge1"></script>
 <script src="../../js/weapon-geometry-author.js?v=20261127h5626b5b"></script>
-<script src="../../js/held-action-animations.js?v=20261127followupPerf2"></script>
-<script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
+<script src="../../js/held-action-animations.js?v=20261127idleMainMerge1"></script>
+<script src="../../js/kurraya-instrument.js?v=20261127idleMainMerge1"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
@@ -1945,7 +1945,19 @@ function applyWeaponGroundPreview(){
   if(!solver)return;
   if(!solver.enabled())return solver.skip('raw-preview');
   if(gizmoMode!=='off')return solver.skip('raw-gizmo-authoring');
-  if(handCalibrationPresentationActive||anim.headRelative||!TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis||grips?.currentGripContext?.()==='ranged')return solver.skip('not-melee-preview');
+  if(handCalibrationPresentationActive||anim.headRelative)return solver.skip('attached-or-calibration-preview');
+  const gripContext=grips?.currentGripContext?.()||'melee'; // Nonweapon Neutral uses the same visible grip as gameplay.
+  const carryAction=['torch_idle','torch_swing','held_item_small','held_item_large','flask_throw','kurraya_play_note'].includes(currentActionId);
+  if(carryAction||!TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis||gripContext==='ranged'){
+    if(!toolPlaneMesh||!grips||!avatarModel||(previewT>0.00001&&previewT<0.99999))return solver.skip('authored-action-preview');
+    const identity={speciesId:currentSpeciesId,gender:currentGender};
+    const primary=grips.primaryGripForTool?.(currentToolKey,gripContext,identity);
+    const secondary=grips.secondaryGripForTool?.(currentToolKey,gripContext,identity);
+    solver.skip('carry-preview');
+    solver.constrainCarry(toolHolder,toolPlaneMesh,{itemKey:currentToolKey,preview:true,rig:{parent:characterBodyScaleRoot},posteriorLocalY:editorLegs?.standingPosteriorY,grip:primary?.position,otherGrips:secondary?[secondary.position]:null,preserveOrientation:!!anim.worldUpright||currentActionId==='torch_idle'||(gripContext==='ranged'&&!currentActionId.endsWith('_load'))||!!secondary||currentActionId==='held_item_large'||currentActionId==='kurraya_play_note'});
+    toolHolder.updateMatrix();
+    return;
+  }
   if(!plane||!grips||!avatarModel)return solver.skip('waiting-for-preview');
   const identity={speciesId:currentSpeciesId,gender:currentGender};
   const height=grips.actualCharacterHeight?.(identity.speciesId,identity.gender);
@@ -1995,6 +2007,7 @@ function updateGroundPreviewStatus(now){
   groundPreviewStatusAt=now+200;
   const node=$('weaponGeometryFitStatus'),s=window.HeldGroundPose?.snapshot?.();
   if(!node||!s)return;
+  if(s.reason==='carry-preview'&&s.carry){const d=s.carry;node.textContent=`Ground preview: ${d.reason} · rotation ${d.angleDeg.toFixed(2)}° · lift ${d.lift.toFixed(3)} · lowest Y ${d.originalMinY??'—'} → ${d.finalMinY??'—'}`;return;}
   const number=n=>Number.isFinite(n)?n.toFixed(3):'—';
   const suspended=window.HobunjiWeaponSpriteAssemblies?.groundStatus?.(toolPlaneMesh);
   const text='Ground preview: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+' · fit '+(s.fitted?(100*s.shortening).toFixed(1)+'% band shortening':'not fitted')+
