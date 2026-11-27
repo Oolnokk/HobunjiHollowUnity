@@ -358,3 +358,53 @@ assert.equal(covered.visible,true,'query error restores every NPC visual immedia
 api.setEnabled(false);
 assert.equal(api.snapshot().tracked,0,'disabled mode releases all historical actor states');
 console.log('Actor occlusion: NPC+hostile frustum, delayed GPU occlusion, camera wakeup, state restoration and WebGL fail-open passed.');
+
+ // GPU results can outlive their borrowed mesh, and draw order need not match slot order.
+{
+  const isolated={THREE};new Function('window',code)(isolated);
+  const owner=isolated.ActorRenderOcclusion;
+  let tick=0,submitted=0;
+  function delayedContext(allVisible=false){
+    const pending=new Set(); // Verify every query stays owned by its creating context.
+    return {pending,active:null,ANY_SAMPLES_PASSED_CONSERVATIVE:50,QUERY_RESULT_AVAILABLE:100,QUERY_RESULT:101,
+      createQuery(){const q={readyAt:Infinity,passed:false};pending.add(q);return q;},
+      beginQuery(_,q){assert(pending.has(q)&&!this.active);this.active=q;},
+      endQuery(){assert(this.active);this.active.readyAt=tick+5;this.active=null;},
+      getQueryParameter(q,key){assert(pending.has(q));if(key===100)return tick>=q.readyAt;assert(tick>=q.readyAt,'never synchronously read an unavailable query');return q.passed;},
+      deleteQuery(q){assert(pending.delete(q),'only the creating context retires each query once');},
+      allVisible};
+  }
+  let gpu=delayedContext();
+  const originalGpu=gpu;
+  const delayedRenderer={capabilities:{isWebGL2:true},autoClear:true,shadowMap:{autoUpdate:true},getContext:()=>gpu,
+    render(scene){
+      assert(scene.children.length<=8);
+      for(const mesh of [...scene.children].reverse())if(mesh.visible){
+        mesh.onBeforeRender();
+        assert(gpu.active,'slot must bind the selected actor query before its draw');
+        gpu.active.passed=gpu.allVisible||mesh.position.x>=11;
+        submitted++;mesh.onAfterRender();assert.equal(gpu.active,null);
+      }
+    }};
+  const mixed=Array.from({length:64},(_,i)=>({root:makeRoot(i%2?12:10,'delayed_'+i),area:'town'}));
+  const args={...context(),renderer:delayedRenderer,scene:rootScene,walkers:mixed,hostiles:[]};
+  cameraWorld.set(0,0,0);camera.quaternion=new Quaternion();
+  for(tick=0;tick<140;tick++){
+    owner.beginFrame(args);
+    if(tick>80)for(const [i,w] of mixed.entries())assert.equal(w.root.visible,i%2===1,'delayed mixed answers must follow actor identity, not slot');
+    owner.probeAfterBase();owner.endFrame();
+  }
+  assert(submitted>64);
+  assert(originalGpu.pending.size>0,'context switch occurs with unresolved queries');
+  gpu=delayedContext(true);
+  owner.beginFrame(args);
+  assert.equal(originalGpu.pending.size,0,'context switch retires old pending queries');
+  assert(mixed.every(w=>w.root.visible),'context switch wakes actors immediately');
+  owner.probeAfterBase();owner.endFrame();
+  for(let i=0;i<12;i++){tick++;owner.beginFrame(args);assert(mixed.every(w=>w.root.visible));owner.probeAfterBase();owner.endFrame();}
+  owner.reset();
+  assert.equal(gpu.pending.size,0,'reset retires all new-context queries');
+  assert.equal(owner.snapshot().queriesPending,0);
+  assert.equal(owner.snapshot().proxySlots,8);
+}
+console.log('Delayed actor query ownership, mixed answers, reordered draws and context replacement passed.');
