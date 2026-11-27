@@ -64,11 +64,24 @@ assert.match(game,
   /function meleeAttackCurrentlyActive\(\)[\s\S]{0,500}activeTool === 'weapon'/,
   'one shared melee-activity helper owns the weapon windup/lunge definition used by body authority and committed-facing lifetime');
 assert.match(game,
-  /function shoulderBodyPerspectiveAuthority[\s\S]{0,500}meleeAttackCurrentlyActive\(\)[\s\S]{0,500}isPlayerAttacking[\s\S]{0,900}return 'idle-neck-catchup'[\s\S]{0,300}return 'idle-free'/,
-  'one body/root authority boundary distinguishes attacks, movement, idle neck catch-up, and idle free-look');
+  /function shoulderBodyPerspectiveAuthority[\s\S]{0,500}meleeAttackCurrentlyActive\(\)[\s\S]{0,500}isPlayerAttacking[\s\S]{0,900}return 'camera-weapon'[\s\S]{0,500}return 'idle-neck-catchup'[\s\S]{0,300}return 'idle-free'/,
+  'body authority distinguishes attacks, camera-owned armed stance, and unarmed free-look');
 assert.match(game,
-  /const perspectiveAuthority = shoulderBodyPerspectiveAuthority\(inputStrength, perspectiveFacing\);[\s\S]{0,900}const meleeFacingOverride = meleeAttackBodyFacingOverride\(\);[\s\S]{0,900}facingAngle = meleeFacingOverride;[\s\S]{0,500}else if \(perspectiveAuthority === 'movement' \|\| perspectiveAuthority === 'attack'\)[\s\S]{0,300}facingAngle = perspectiveFacing;/,
-  'committed melee body yaw outranks the shoulder perspective point while ordinary movement and ranged attacks still use the shared point');
+  /const perspectiveAuthority = shoulderBodyPerspectiveAuthority\(cameraFacing\);[\s\S]{0,900}facingAngle = meleeFacingOverride;[\s\S]{0,500}else if \(perspectiveAuthority === 'attack'\)[\s\S]{0,300}facingAngle = shoulderPerspectiveFacingAngle\(\);[\s\S]{0,500}else if \(perspectiveAuthority === 'camera-weapon'\)[\s\S]{0,300}facingAngle = cameraFacing;/,
+  'committed melee wins; neutral armed yaw follows stable camera bearing, not movement');
+assert.match(game, /setMovementHint\(player\.perpState, activeCameraMode === SHOULDER_SURF_MODE && !dialogueOpen \? rawTargetRotY :/,
+  'shoulder strafe velocity cannot select the opposite portrait deadzone edge');
+assert.match(game, /if \(activeCameraMode !== SHOULDER_SURF_MODE && !Number\.isFinite\(mobileArchDragAngle\).*targetAimAngle = Math\.atan2\(iy, ix\)/,
+  'shoulder locomotion cannot overwrite aim');
+const authoritySource = game.slice(game.indexOf('function shoulderBodyPerspectiveAuthority('), game.indexOf('// Mouse-look: on desktop'));
+const authority = vm.runInNewContext('(function(){' + authoritySource + ';return shoulderBodyPerspectiveAuthority;})()', {
+  activeCameraMode:'shoulderSurf', SHOULDER_SURF_MODE:'shoulderSurf', heldMode:'tool', activeTool:'weapon',
+  cameraFacingAngleRad:()=>0, meleeAttackCurrentlyActive:()=>false, window:{}, facingAngle:0,
+  angleDiff:(a,b)=>a-b, SHOULDER_SURF_BODY_FREE_LOOK_RAD:Math.PI/3,
+});
+assert.equal(authority(0),'camera-weapon');
+assert.equal(authority(Math.PI/2),'camera-weapon','turning camera never changes armed authority');
+assert.doesNotMatch(authoritySource,/inputStrength|movementStrength|player\.v[xy]/,'strafing cannot switch neutral body authority');
 assert.match(game,
   /SHOULDER_SURF_BODY_FREE_LOOK_RAD = Math\.PI \/ 3/,
   'idle body preserves the former 60-degree independent neck allowance');
@@ -88,7 +101,7 @@ for (const label of ['camera', 'head → point', 'body/movement → point', 'mel
 assert.match(pixelProbe, /Perspective point:.*cameraRay=.*beyondPlayer=.*bodyRoot=/,
   'mobile Pixel Probe reports the one 3D target, horizon distance, and current body/root authority');
 assert.match(debugHitboxes, /body\/movement → point.*bodyPerspectiveAuthority/,
-  'raycast overlay labels whether body/root convergence is idle-free, movement-, or attack-driven');
+  'raycast overlay labels whether body/root convergence is idle-free, camera-, or attack-driven');
 assert.match(pixelProbe, /Point convergence errors: head=.*bodyYaw=.*melee=.*lastLunge=.*lastRanged=/,
   'mobile Pixel Probe reports consumer-to-point errors directly');
 assert.doesNotMatch(debugHitboxes, /requestAnimationFrame\s*\(|setInterval\s*\(/,
