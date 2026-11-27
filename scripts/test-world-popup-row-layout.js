@@ -84,17 +84,17 @@ console.log('World popup row layout and family visibility parity: PASS');
  // Execute the actual source filter and popup formatting with isolated presentation stubs.
 {
   const local = {}, remote = {}, pet = { master: local }, remotePet = { master: remote }, wild = {};
-  const scene = { isScene: true }, target = { root: { parent: scene } }, calls = [];
+  const scene = { isScene: true }, target = { root: { parent: scene } }, calls = [], callouts = [];
   const registry = {
     isLocalPlayer: actor => actor === local,
     ownerPlayerOf: actor => actor?.master || null,
     isPlayer: actor => actor === local || actor === remote,
   };
   const gate = vm.runInNewContext(
-    block('  function isLocalCombatSource(', '  function finishLevelUpAnnouncement(') + '\n({isLocalCombatSource,showCombatEffect});',
+    block('  function isLocalCombatSource(', '  function finishLevelUpAnnouncement(') + '\n({isLocalCombatSource,showCombatEffect,showImpactCallout});',
     {window:{ActorRegistry:registry,HOBUNJI_CONFIG:{resourceRings:{colors:{footing:'#67b7ff'},afflictionColors:{bleedingHealth:'#d11832'}}},ResourceSystem:{AFFLICTIONS:{bleedingHealth:{name:'Bleeding Health'},woundedStamina:{name:'Wounded Stamina'},shatteredStamina:{name:'Shattered Stamina'},shamblingFooting:{name:'Shambling Footing'},scentMarkedHealth:{name:'Scent Marked Health'}}}},
       state:{deps:{getActiveScene:()=>scene}},iconAnchorScene:root=>root.visible===false?null:root.parent,
-      showChange:(kind,amount,options)=>{calls.push({kind,amount,text:options.text,color:options.color});return calls.length;}}
+      showChange:(kind,amount,options)=>{calls.push({kind,amount,...options});return calls.length;}, spawn:entry=>{callouts.push(entry);return callouts.length;}}
   );
   for(const source of [local,pet]) assert.equal(gate.isLocalCombatSource(source),true);
   for(const source of [null,remote,remotePet,wild]) assert.equal(gate.isLocalCombatSource(source),false);
@@ -105,10 +105,15 @@ console.log('World popup row layout and family visibility parity: PASS');
   assert.equal(calls[0].color,undefined,'ordinary Health uses the authored damage color');
   assert.equal(calls[1].color,'#d11832');
   assert.equal(gate.showCombatEffect(target,'footing',5,true,'impact'),3);
-  assert.equal(calls[2].text,'-5 Footing (Impact)');
+  assert.equal(calls[2].text,'-5 Footing');
   assert.equal(calls[2].color,'#67b7ff');
   assert.equal(gate.showCombatEffect(target,'health',3,true,'impact'),4);
-  assert.equal(calls[3].text,'-3 (Impact)');
+  assert.equal(calls[3].text,undefined);
+  assert(calls.every(call => call.scatter && call.mode === 'floatPlus'));
+  assert.equal(gate.showImpactCallout(target),1);
+  assert.equal(callouts[0].text,'IMPACT!!!');
+  assert.equal(callouts[0].emphasis,true);
+  assert.equal(callouts[0].scatter,true);
   assert.equal(gate.showCombatEffect(target,'health',3,false),null);
   assert.equal(gate.showCombatEffect(target,'health',0,true),null);
   assert.equal(gate.showCombatEffect(local,'health',3,true),null);
@@ -118,6 +123,20 @@ console.log('World popup row layout and family visibility parity: PASS');
   target.root.parent=scene;
   for (const [id, amount, label] of [['woundedStamina',4,'Wounded'],['shatteredStamina',5,'Shattered'],['shamblingFooting',3,'Shambling'],['scentMarkedHealth',2,'Scent Marked']]) {
     gate.showCombatEffect(target,id,amount,true,'impact');
-    assert.equal(calls.at(-1).text,`-${amount} ${label} (Impact)`);
+    assert.equal(calls.at(-1).text,`-${amount} ${label}`);
   }
+}
+
+// Exercise real scatter placement with the authored small Float+ text size.
+{
+  const root={}, active=[], state={active,settings:{floatPlus:{worldHeight:.13}}};
+  const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state});
+  for(let i=0;i<6;i++) {
+    const bounds={width:.38,height:.13};
+    const point=claim(root,bounds,true);
+    active.push({root,mode:'floatPlus',offsetX:point.x,offsetY:point.y,...bounds});
+  }
+  assert(active.some(e=>e.offsetX<0)&&active.some(e=>e.offsetX>0),'burst spreads to both sides');
+  assert(active.some(e=>e.offsetY<0)&&active.some(e=>e.offsetY>0),'burst spreads vertically as well');
+  assert(new Set(active.map(e=>e.offsetX)).size===active.length,'no vertical list alignment');
 }
