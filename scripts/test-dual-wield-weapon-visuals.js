@@ -151,7 +151,7 @@ gripState.invisible = false;
 // Execute the real anatomical reflection helper with the default calibrated
 // right/left bases, arbitrary grip rotation, and a yawed portrait.
 {
-  const mirrorPaired = vm.runInNewContext(`${dual.slice(mirrorStart, dual.indexOf('  function bakedWorldQuaternion(', mirrorStart))}\n(${dual.slice(dual.indexOf('  function mirrorPairedWristOrientation('), dual.indexOf('  function resetPoseHistory(')).trim()})`, {});
+  const mirrorPaired = vm.runInNewContext(`${dual.slice(mirrorStart, dual.indexOf('  function bakedWorldQuaternion(', mirrorStart))}\n(${dual.slice(dual.indexOf('  function mirrorPairedWristOrientation('), dual.indexOf('  function transformSocketForHand(')).trim()})`, {});
   const q = (x=0,y=0,z=0,w=1) => new GripQuaternion(x,y,z,w);
   const yaw = q(0, Math.sin(.37), 0, Math.cos(.37));
   const halfTurn = q(0,1,0,0);
