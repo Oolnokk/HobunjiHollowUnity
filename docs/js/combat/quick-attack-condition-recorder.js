@@ -142,19 +142,20 @@
   }
 
   // Smallest Health/Stamina fraction (or post-whiff grace in seconds) whose active share reaches `targetPct`.
-  function thresholdFor(hist, binSize, targetPct, totalS, extraS = 0) {
+  // `upper` is how far above bin i's index the bin extends: Health/Stamina bins are centred on i*BIN (half a bin), grace bins start at i*SINCE_BIN_S (a whole bin).
+  function thresholdFor(hist, binSize, upper, targetPct, totalS, extraS = 0, cap = Infinity) {
     let acc = extraS;
-    for (let i = 0; i < hist.length; i++) { acc += hist[i]; if (totalS > 0 && 100 * acc / totalS >= targetPct) return (i + 1) * binSize; }
-    return null;
+    for (let i = 0; i < hist.length; i++) { acc += hist[i]; if (totalS > 0 && 100 * acc / totalS >= targetPct) return Math.round(Math.min(cap, i * binSize + upper * binSize) * 100) / 100; }
+    return null; // Not reachable with the recorded data (e.g. needs a window longer than the recorded range).
   }
   function suggestions(stats, whiffAlive) {
     const target = pct(stats.conds.behind.activeS, stats.aliveS);
     const out = { benchmarkBehindPct: target, lowHealthHpAtMost: null, exhaustedStaminaAtMost: null, strikingGraceS: null };
     if (!(stats.aliveS > 0) || !(target > 0)) return out;
-    out.lowHealthHpAtMost = thresholdFor(stats.hp, BIN, target, stats.aliveS);
-    out.exhaustedStaminaAtMost = thresholdFor(stats.stam, BIN, target, stats.aliveS);
+    out.lowHealthHpAtMost = thresholdFor(stats.hp, BIN, 0.5, target, stats.aliveS, 0, 1);
+    out.exhaustedStaminaAtMost = thresholdFor(stats.stam, BIN, 0.5, target, stats.aliveS, 0, 1);
     const strikingNowS = stats.conds.enemyStriking.activeS - sum(stats.sinceWhiff.slice(0, Math.floor(Number(window.Combat?.quickAttackData?.OPPORTUNITY_GRACE_S ?? 3) / SINCE_BIN_S))); // Remove the current grace's contribution, then add it back per candidate length.
-    out.strikingGraceS = thresholdFor(stats.sinceWhiff, SINCE_BIN_S, target, stats.aliveS, Math.max(0, strikingNowS));
+    out.strikingGraceS = thresholdFor(stats.sinceWhiff, SINCE_BIN_S, 1, target, stats.aliveS, Math.max(0, strikingNowS));
     return out;
   }
 
@@ -178,11 +179,11 @@
   function formatReport(r) {
     const lines = [`QUICK ATTACK CONDITION RECORDING — ${r.durationS}s, ${r.frames} frames, grace ${r.graceS}s, errors ${r.errors}`];
     const fmt = (row) => KEYS.map(k => { const c = row.conditions[k]; return `${k} ${c.activePct}% (${c.perMin}/min, avg ${c.avgS}s)`; }).join(' | ');
-    const sug = (s) => `benchmark behind ${s.benchmarkBehindPct}% -> lowHealth HP<=${s.lowHealthHpAtMost ?? '?'} | exhausted Stamina<=${s.exhaustedStaminaAtMost ?? '?'} | striking grace ${s.strikingGraceS ?? '?'}s`;
+    const sug = (s) => `benchmark behind ${s.benchmarkBehindPct}% -> lowHealth HP<=${s.lowHealthHpAtMost ?? 'n/a'} | exhausted Stamina<=${s.exhaustedStaminaAtMost ?? 'n/a'} | striking grace ${s.strikingGraceS == null ? `not reachable within ${SINCE_MAX_S}s` : s.strikingGraceS + 's'}`;
     lines.push(`ALL ${r.overall.aliveS}s in range, attacks ${r.overall.attacks} (hit ${r.overall.hits}, whiffed ${r.overall.whiffs}): ${fmt(r.overall)}`, `  suggested: ${sug(r.overall.suggested)}`);
     for (const [name, g] of Object.entries(r.groups)) {
       lines.push(`${name} x${g.individuals} ${g.aliveS}s, attacks ${g.attacks} (hit ${g.hits}, whiffed ${g.whiffs}): ${fmt(g)}`, `  suggested: ${sug(g.suggested)}`);
-      for (const i of g.sample) lines.push(`  - ${i.name || i.id} ${i.aliveS}s: ${fmt(i)}`);
+      for (const i of g.sample) lines.push(`  - ${i.name || 'enemy'} #${String(i.id).slice(-6)} ${i.aliveS}s: ${fmt(i)}`);
     }
     return lines.join('\n');
   }
