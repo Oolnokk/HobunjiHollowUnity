@@ -202,8 +202,9 @@ if(THREE){
   }
   weapon.position.set(0,0,0);weapon.scale.set(1,1,1);plane.rotation.z=0;
   solver.setPreviewEnabled(false);
-  // A short character's second hand may have no reachable solution, but a
-  // primary-grip rotation still clears the weapon. Never leave it buried.
+  // A short character's second hand may have no reachable solution. The weapon is still never left buried: the
+  // ordinary pose is kept and the whole weapon is raised by a bounded amount (grip moves straight up) rather than
+  // swung into a different orientation.
   solver.setPreviewEnabled(true);
   holder.position.set(0,.25,0);holder.rotation.set(Math.PI/2,0,0);
   parent.updateMatrixWorld(true);
@@ -212,17 +213,28 @@ if(THREE){
   assert.equal(solver.constrainWeapon(holder,weapon,reachBlocked),true);
   parent.updateMatrixWorld(true);
   const reachResult=solver.snapshot();
-  assert.ok(reachResult.clearanceStrategy.includes('reach-relaxed'),'unavailable secondary reach cannot suppress clearance');
-  assert.ok(reachResult.finalMinY>=.035-1e-7);close(reachResult.gripLift,0);
-  close(new THREE.Vector3().applyMatrix4(holder.matrixWorld).distanceTo(gripBefore),0);
-  // A grip already below ground cannot always clear through a pivot alone.
-  // Only the impossible residual gets lifted; shortening is unchanged.
+  assert.ok(reachResult.finalMinY>=.035-1e-7,'unavailable secondary reach cannot suppress clearance');
+  assert.ok(reachResult.gripLift>0&&reachResult.gripLift<=.15+1e-6,'a bounded lift, not a different pose');
+  assert.ok(/lift|relaxed/.test(reachResult.clearanceStrategy),reachResult.clearanceStrategy);
+  const gripAfter=new THREE.Vector3().applyMatrix4(holder.matrixWorld);
+  close(gripAfter.clone().sub(gripBefore).distanceTo(new THREE.Vector3(0,reachResult.gripLift,0)),0);
+  // A grip already below ground cannot clear through a pivot alone. Within the lift limit the ordinary rotation is
+  // kept and only the residual is lifted; shortening is unchanged.
   holder.position.set(0,-.08,0);holder.rotation.set(Math.PI/2,0,0);parent.updateMatrixWorld(true);
   assert.equal(solver.constrainWeapon(holder,weapon,{...reachBlocked,secondary:null,itemKey:'below-ground'}),true);
   parent.updateMatrixWorld(true);
-  const liftResult=solver.snapshot();assert.equal(liftResult.clearanceStrategy,'flat-plus-minimum-lift');
-  close(liftResult.gripLift,.115);close(liftResult.shortening,0);
+  const liftResult=solver.snapshot();
+  assert.ok(liftResult.gripLift>=.115-1e-6&&liftResult.gripLift<=.15+1e-6,'lift stays within the limit: '+liftResult.gripLift);
+  close(liftResult.shortening,0);
   assert.ok(liftResult.finalMinY>=.035-1e-7);close(liftResult.gripPivotDrift,0);
+  // Beyond the limit the last-resort flat pose takes over, still front face up, and lifts only the residual.
+  holder.position.set(0,-.3,0);holder.rotation.set(Math.PI/2,0,0);parent.updateMatrixWorld(true);
+  assert.equal(solver.constrainWeapon(holder,weapon,{...reachBlocked,secondary:null,itemKey:'far-below-ground'}),true);
+  parent.updateMatrixWorld(true);
+  const deepResult=solver.snapshot(),deepFront=new THREE.Vector3(plane.matrixWorld.elements[8],plane.matrixWorld.elements[9],plane.matrixWorld.elements[10]).normalize();
+  assert.equal(deepResult.clearanceStrategy,'flat-plus-minimum-lift');
+  close(deepResult.gripLift,.335);assert.ok(deepFront.y>.999,'last resort keeps the front face up');
+  assert.ok(deepResult.finalMinY>=.035-1e-7);
   solver.setPreviewEnabled(false);
   // Real Three replay: weapon stance bakes a corrected world matrix, then
   // restores authored locals as the runtime does. The occluder must not undo
@@ -388,9 +400,58 @@ assert.ok(assemblies.includes('const profile=sharedSource?sharedSource.groundPro
   console.log('held ground pose: enchantment mote children are non-solid');
 }
 
-// A flat fallback must not leave the sprite face-down (back of the art, mirrored) and must keep the weapon's
-// heading. Deterministic sweep of orientations with a real Three sprite; the case count guards against a
-// sweep that never reaches the fallback.
+// Runtime (non-preview) behavior: a grounded pose is solved once and reused with the cheap relative correction; it
+// is solved again every frame while midair, and whenever the height above the floor or the stance really changes.
+if(THREE){
+  const rgba=new Uint8ClampedArray(4*16*4).fill(255);
+  const w={document:{createElement:()=>({getContext:()=>({drawImage(){},getImageData(){return {data:rgba};}})})}};
+  vm.runInNewContext(fs.readFileSync('docs/js/held-ground-pose.js','utf8'),{window:w});
+  const solver=w.HeldGroundPose;
+  let grounded=true,frame=1,floorY=0;
+  w.THREE=THREE;w.XrayHierarchy={get:()=> 'rotation'};w.RuntimeFrameScheduler={frameId:()=>frame};
+  w.PlayerJump={heldPoseGroundY:()=>floorY,heldPoseGrounded:()=>grounded};
+  const parent=new THREE.Group(),holder=new THREE.Group(),weapon=new THREE.Group();
+  parent.add(holder);holder.add(weapon);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(.5,2),new THREE.MeshBasicMaterial());
+  plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
+  const ctx={preview:false,rig:{parent},itemKey:'reuse',fitIdentity:'reuse',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile:null,allowFit:false};
+  const stance=(y,rx)=>{holder.position.set(0,y,0);holder.rotation.set(rx,0,0);holder.updateMatrix();parent.updateMatrixWorld(true);}; // What the stance owner restores each frame.
+  const step=()=>{frame++;const changed=solver.constrainWeapon(holder,weapon,ctx);parent.updateMatrixWorld(true);return {changed,g:solver.snapshot(),m:plane.matrixWorld.clone()};};
+  stance(.25,Math.PI/2);
+  const first=step();
+  assert.equal(first.changed,true);assert.equal(first.g.reused,false,'first grounded frame solves');
+  assert.ok(first.g.finalMinY>=.035-1e-7);
+  stance(.25,Math.PI/2);
+  const second=step();
+  assert.equal(second.g.reused,true,'next grounded frame reuses the solved pose');
+  for(let i=0;i<16;i++)assert.ok(Math.abs(second.m.elements[i]-first.m.elements[i])<1e-6,'reused pose equals the solved pose');
+  assert.equal(solver.snapshot().reuseHits,1);
+  stance(.25,Math.PI/2+.01); // A small stance wobble is still reused, applied relative to the new stance.
+  const wobble=step();assert.equal(wobble.g.reused,true);assert.ok(wobble.g.finalMinY>=.035-.02,'wobble stays about clear');
+  // Turning the player rotates the whole stance about the vertical; the correction is kept in the weapon's own
+  // frame, so it is reused exactly and matches a fresh solve of the turned stance.
+  const yawStance=(y,rx,yaw)=>{holder.position.set(0,y,0);holder.quaternion.setFromEuler(new THREE.Euler(rx,0,0)).premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),yaw));holder.updateMatrix();parent.updateMatrixWorld(true);};
+  stance(.25,Math.PI/2);step(); // Back to the solved stance.
+  yawStance(.25,Math.PI/2,.8);
+  const turned=step();assert.equal(turned.g.reused,true,'turning the player reuses the pose');
+  grounded=false;yawStance(.25,Math.PI/2,.8);const freshTurned=step();grounded=true;
+  for(let i=0;i<16;i++)assert.ok(Math.abs(turned.m.elements[i]-freshTurned.m.elements[i])<1e-5,'a reused pose after a turn equals a fresh solve');
+  grounded=false; // Midair: recalculated every frame.
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,false);
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,false,'still recalculated while midair');
+  grounded=true; // Landing re-solves once, then reuses again.
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,false,'landing solves again');
+  stance(.25,Math.PI/2);assert.equal(step().g.reused,true);
+  stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,false,'a large stance change solves again');
+  stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,true);
+  floorY=.2;stance(.25,Math.PI/2+.5);assert.equal(step().g.reused,false,'a real change in height above the floor solves again');
+  solver.clear();
+  console.log('held ground pose: grounded poses are solved once and reused; midair recalculates');
+}
+
+// Fallback chain over a deterministic sweep of low poses with a real Three sprite: every pose clears the floor,
+// the ordinary rotation is kept with a bounded lift before any flat pose, and a flat last resort keeps the front
+// face up and the weapon's heading. Case counts guard against a sweep that never reaches a branch.
 if(THREE){
   const rgba=new Uint8ClampedArray(4*16*4).fill(255);
   const w={document:{createElement:()=>({getContext:()=>({drawImage(){},getImageData(){return {data:rgba};}})})}};
@@ -402,23 +463,26 @@ if(THREE){
   plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
   const ctx={preview:true,rig:{parent},itemKey:'sweep',fitIdentity:'sweep',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile:null,allowFit:false};
   let seed=12345;const rnd=()=>{seed=(seed*1664525+1013904223)%4294967296;return seed/4294967296;};
-  let flatCases=0;
+  const seen={};
   for(let i=0;i<400;i++){
-    holder.position.set(0,.12+rnd()*.5,0);
+    solver.clear();
+    holder.position.set(0,-.05+rnd()*.5,0);
     holder.quaternion.setFromEuler(new THREE.Euler(rnd()*Math.PI*2,rnd()*Math.PI*2,rnd()*Math.PI*2));
     parent.updateMatrixWorld(true);
     const before=plane.matrixWorld.elements,heading0=new THREE.Vector2(before[4],before[6]).normalize();
     solver.constrainWeapon(holder,weapon,{...ctx,itemKey:'sweep'+i});parent.updateMatrixWorld(true);
-    const result=solver.snapshot();
-    if(result.clearanceStrategy!=='flat-face-up')continue;
-    flatCases++;
-    const e=plane.matrixWorld.elements,front=new THREE.Vector3(e[8],e[9],e[10]).normalize();
-    assert.ok(front.y>.999,'flat fallback keeps the front face up');
-    assert.ok(Math.abs(new THREE.Vector2(e[4],e[6]).normalize().dot(heading0)-1)<1e-6,'flat fallback keeps the weapon heading');
-    assert.ok(Math.abs(e[5])<1e-6,'sprite long axis is horizontal');
-    assert.ok(result.finalMinY>=.035-1e-6,'flat fallback clears the floor');
-    close(result.gripPivotDrift,0);
+    const result=solver.snapshot(),strategy=result.clearanceStrategy||result.reason;
+    seen[strategy]=(seen[strategy]||0)+1;
+    assert.ok(result.finalMinY>=.035-1e-6,'every pose clears the floor ('+strategy+')');
+    if(strategy==='radial-lift')assert.ok(result.gripLift<=.15+1e-6,'bounded lift: '+result.gripLift);
+    if(strategy==='flat-face-up'){
+      const e=plane.matrixWorld.elements,front=new THREE.Vector3(e[8],e[9],e[10]).normalize();
+      assert.ok(front.y>.999,'flat last resort keeps the front face up');
+      assert.ok(Math.abs(new THREE.Vector2(e[4],e[6]).normalize().dot(heading0)-1)<1e-6,'flat last resort keeps the weapon heading');
+      assert.ok(Math.abs(e[5])<1e-6,'sprite long axis is horizontal');
+    }
   }
-  assert.ok(flatCases>=20,`sweep reached the flat fallback (${flatCases} cases)`);
-  console.log('held ground pose: flat fallback keeps front face up and heading ('+flatCases+' cases)');
+  assert.ok((seen['radial-lift']||0)>=50,'sweep reaches the bounded-lift branch: '+JSON.stringify(seen));
+  assert.ok((seen['flat-face-up']||0)>=10,'sweep reaches the flat last resort: '+JSON.stringify(seen));
+  console.log('held ground pose: fallback chain keeps the ordinary rotation with a bounded lift first '+JSON.stringify(seen));
 }

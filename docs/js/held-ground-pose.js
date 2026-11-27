@@ -4,12 +4,58 @@
   'use strict';
   const PAD = 0.035; // Clearance above the physical standing surface, in world units.
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, deepShortening: false, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
+  const REUSE_HEIGHT_TOLERANCE = 0.1; // A grounded pose is reused until the grip's height above the floor changes by this much (idle sway is about 0.05)
+  const REUSE_ANGLE_TOLERANCE = 0.05; // ...or the stance rotates by this many radians.
+  const LIFT_LIMIT = 0.15; // Most the whole weapon may be raised (world units) to keep the ordinary rotation instead of a fallback pose.
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, reuseHits: 0, reused: false, reuseMiss: null, reuseMissValue: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
   let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
   let lastPoseHolder=null,lastPoseFrame=null; // Prevent an extra pre-render bake when the dual owner already solved this frame.
   // Opt-in render trace (js/held-ground-pose-trace.js, ?groundPoseTrace=1). Off by default: hot paths only
   // pay one boolean test. Records what the last solve decided so a later render can be compared against it.
+  // Corrected poses are solved while the player is midair (the height above the floor is changing) and otherwise
+  // once, then reused: only the cheap relative correction is re-applied to each frame's stance pose.
+  const reuseMap=new WeakMap();
+  function reuseFor(node){
+    let entry=reuseMap.get(node);
+    if(!entry){
+      const T=three();
+      entry={valid:false,q0:new T.Quaternion(),p0:new T.Vector3(),dq:new T.Quaternion(),grip:new T.Vector3(),liftY:0,qa:new T.Quaternion(),qb:new T.Quaternion(),pivotHeight:0,
+        mesh:null,itemKey:null,amount:0,gripZ:0,fitIdentity:null,reason:null,strategy:null,angleDeg:0,gripLift:0};
+      reuseMap.set(node,entry);
+    }
+    return entry;
+  }
+  const IDENTITY_Q=s=>(s.identityQ||=new (three().Quaternion)());
+  // Angle the stance has tilted since it was solved, ignoring a turn about the vertical: the correction is kept in
+  // the weapon's own frame, so turning the player reuses it exactly, while a real change of tilt does not.
+  function swingAngle(entry,quaternion){
+    const r=entry.qa.copy(quaternion).multiply(entry.qb.copy(entry.q0).invert()); // World change of stance rotation.
+    const len=Math.hypot(r.y,r.w);
+    if(len<1e-9)return Math.PI;
+    entry.qb.set(0,r.y/len,0,r.w/len).invert(); // Inverse of the twist about the vertical.
+    r.multiply(entry.qb); // Swing = r * twist^-1.
+    return 2*Math.acos(Math.min(1,Math.abs(r.w)));
+  }
+  function reuseStillValid(entry,node,pivotHeight){
+    const dh=Math.abs(pivotHeight-entry.pivotHeight),da=swingAngle(entry,node.quaternion);
+    if(dh<=REUSE_HEIGHT_TOLERANCE&&da<=REUSE_ANGLE_TOLERANCE)return true;
+    debug.reuseMiss=dh>REUSE_HEIGHT_TOLERANCE?'height':'angle';debug.reuseMissValue=dh>REUSE_HEIGHT_TOLERANCE?dh:da; // Why the last reuse was refused.
+    return false;
+  }
+  // Re-apply the cached correction in the weapon's own frame: rotate about the cached grip point, then raise by the
+  // cached amount (straight up in the world).
+  function reuseApply(entry,node,parentMatrix,s){
+    s.base.copy(entry.grip);s.second.copy(entry.grip).applyQuaternion(entry.dq);
+    s.base.sub(s.second).applyQuaternion(node.quaternion).add(node.position); // p0 + q0*(grip - dq*grip)
+    if(entry.liftY>1e-9){
+      s.parentInverse.copy(parentMatrix).invert();
+      s.second.set(0,entry.liftY,0).applyMatrix4(s.parentInverse);
+      s.rel.set(0,0,0).applyMatrix4(s.parentInverse);
+      s.base.add(s.second).sub(s.rel);
+    }
+    node.position.copy(s.base);node.quaternion.multiply(entry.dq);node.updateMatrix?.();
+  }
   let traceOn=false;
   const trace={solveCalls:0,failCalls:0,lastSolveFrame:null,lastReason:null,lastFailReason:null,lastFailFrame:null,lastTarget:null,lastFloor:null,lastSolvedY:null,lastPlane:null,lastContact:null,solved:null};
   const traceOut={inScene:false,drawnHullY:null,drawnPointsY:null,matrixDelta:0,target:null,floor:null,solvedY:null,solveCalls:0,failCalls:0,lastSolveFrame:null,reason:null,lastFailReason:null,lastFailFrame:null,itemKey:null,speciesId:null,hullBuilds:0,hullVertices:0};
@@ -133,7 +179,7 @@
       grip: new T.Vector3(), second: new T.Vector3(), shoulder: new T.Vector3(),
       axis: new T.Vector3(), direction: new T.Vector3(), cross: new T.Vector3(),
       radialAxis: new T.Vector3(), flatAxis: new T.Vector3(), // Fallback rotation axes used only when the authored pose penetrates.
-      faceX: new T.Vector3(), faceY: new T.Vector3(), faceZ: new T.Vector3(), faceFrom: new T.Matrix4(), faceTo: new T.Matrix4(), // Face-up flat fallback.
+      faceX: new T.Vector3(), faceY: new T.Vector3(), faceZ: new T.Vector3(), faceFrom: new T.Matrix4(), faceTo: new T.Matrix4(), // Last-resort face-up flat pose.
       point: new T.Vector3(), rel: new T.Vector3(), base: new T.Vector3(), candidate: new T.Vector3(),
       pos: new T.Vector3(), scale: new T.Vector3(), parentQ: new T.Quaternion(), q: new T.Quaternion(),
       localQ: new T.Quaternion(), oldQ: new T.Quaternion(), gripBasis: new T.Quaternion(),
@@ -352,15 +398,14 @@
     for(const p of hull)min=Math.min(min,e[1]*p.x+e[5]*-p.z+e[13]);
     return min;
   }
-  function fittedContact(s,segments,gripZ,amount,deep=false) {
-    const k=deep?'deep':'baked'; // Two slots: the fitted length, and the full shortening used before a fallback orientation.
-    if(!s[k+'Contact']||s[k+'Amount']!==amount||(amount!==0&&s[k+'GripZ']!==gripZ)){
-      s[k+'Contact']=amount?bakeContact(s.contact,segments,gripZ,amount):{points:s.contact,hull:s.rawHull};
-      s[k+'Amount']=amount;
-      s[k+'GripZ']=gripZ;
+  function fittedContact(s,segments,gripZ,amount) {
+    if(!s.bakedContact||s.bakedAmount!==amount||(amount!==0&&s.bakedGripZ!==gripZ)){
+      s.bakedContact=amount?bakeContact(s.contact,segments,gripZ,amount):{points:s.contact,hull:s.rawHull};
+      s.bakedAmount=amount;
+      s.bakedGripZ=gripZ;
       debug.contactHullBuilds++;
     }
-    return s[k+'Contact'];
+    return s.bakedContact;
   }
   function suspendedReferenceY(matrix,spec,segments,gripZ,amount,lightScale){
     const e=matrix.elements,scale=Math.hypot(e[4],e[5],e[6]); // Actual Light stance long-axis scale, never the live attack scale.
@@ -384,7 +429,7 @@
   }
   function constrainWeapon(holder,mesh,context) {
     dualPrepared=null;gripHolder=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.clearanceStrategy=null;
-    debug.itemKey=context?.itemKey??null;debug.speciesId=context?.scaleIdentity?.speciesId??null;debug.gripY=null;debug.deepShortening=false;
+    debug.itemKey=context?.itemKey??null;debug.speciesId=context?.scaleIdentity?.speciesId??null;debug.gripY=null;debug.reused=false;
     if(!enabled()){clear();return false;}
     lastPoseHolder=holder;lastPoseFrame=frameId();
     previewRoot=null;debug.dual=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
@@ -458,7 +503,7 @@
       if(auto)s.contact.push(...auto);
       else contactVertices(box,outline,segments,s.contact);
       s.rawHull=convexHull(s.contact.slice()); // Full unshortened outline for the diagnostic minimum.
-      s.bakedContact=null;s.deepContact=null; // Asset, segment layout, or bounds changed.
+      s.bakedContact=null; // Asset, segment layout, or bounds changed.
       s.autoContact=!!auto;s.contactKey=outline;s.contactSource=source;s.contactImage=image;s.contactSegments=segmentKey;
       s.contactMinX=box.min.x;s.contactMaxX=box.max.x;s.contactMinY=box.min.y;s.contactMaxY=box.max.y;
     }
@@ -500,11 +545,10 @@
         let lo=0,hi=max;
         for(let i=0;i<24;i++){const a=(2*lo+hi)/3,b=(lo+2*hi)/3;if(evaluate(a)<evaluate(b))lo=a;else hi=b;}
         const peak=(lo+hi)/2;
-        let best=evaluate(max)>=evaluate(peak)?max:peak;
-        if(evaluate(best)>referenceMin+1e-6){
-          if(evaluate(best)>=target){lo=0;hi=best;for(let i=0;i<16;i++){const mid=(lo+hi)/2;if(evaluate(mid)>=target)hi=mid;else lo=mid;}best=hi;}
-          amount=best;
-        }
+        // A weapon that needs shortening at all is shortened to the full extent of its bands, decided once here:
+        // the fit is retained, so the length never changes between frames or between ordinary and lifted poses.
+        // (The live pose correction below handles whatever clearance the full length still lacks.)
+        amount=max;
       }
       fit.amount=fixedValue(fit.amount,true,amount);fit.anchorZ=gripZ;
       fit.referenceMatrix=s.reference.clone();fit.referenceFloor=target;fit.referenceFlailScale=context.lightReferenceFlailScale??1;
@@ -530,39 +574,50 @@
     if(context.dual){
       // The hidden source owns length, not either hand's live orientation.
       // Copies are posed later by the dual-wield owner, then individually corrected.
-      dualPrepared={holder,mesh,plane,context,basis,segments,gripZ,amount,contact,target,floor:y,flexible,source,box};
+      dualPrepared={holder,mesh,plane,context,basis,segments,gripZ,amount,contact,target,floor:y,flexible};
       debug.reason='dual-ready';debug.finalMinY=null;return false;
     }
     let min=amount?projectedContactY(contact.hull,s.matrix):original;
     let angle=0; // Clear poses skip the pivot and rotation work.
-    let used=contact,usedAmount=amount; // Become the deepest shortening when only a fallback orientation clears.
+    // Grounded poses are solved once and reused; only midair (or a real change of height or stance) solves again.
+    const reusable=!previewThree&&Math.abs(holder.scale.x-1)<1e-6&&Math.abs(holder.scale.y-1)<1e-6&&Math.abs(holder.scale.z-1)<1e-6;
+    const grounded=reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const entry=reusable?reuseFor(holder):null;
+    if(entry){
+      if(!grounded)entry.valid=false; // Midair the height above the floor is changing: recalculate every frame.
+      else if(entry.valid){
+        if(entry.mesh===mesh&&entry.itemKey===context.itemKey&&entry.amount===amount&&entry.gripZ===gripZ&&entry.fitIdentity===context.fitIdentity){
+          worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
+          if(reuseStillValid(entry,holder,s.pivot.y-y)){
+            reuseApply(entry,holder,parent.matrixWorld,s);
+            s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
+            s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
+            min=projectedContactY(contact.hull,s.matrix);
+            debug.reuseHits++;debug.reused=true;debug.gripY=s.pivot.y;debug.clearanceStrategy=entry.strategy;
+            debug.angleDeg=entry.angleDeg;debug.gripLift=entry.gripLift;debug.gripPivotDrift=0;
+            debug.shortening=amount;debug.finalMinY=min;debug.reason=entry.reason;
+            if(traceOn)traceSolved(plane,contact,min,target,y);
+            return true;
+          }
+        }
+        entry.valid=false; // Anything else changed (weapon, fit, large stance or height change): solve again.
+      }
+    }
     if(min<target) {
       worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
       debug.gripY=s.pivot.y;
       angle=solveContactRotation(s,contact,s.matrix,target,secondary?a=>reachable(a,amount):null);
-      // The fit keeps only the shortening the Light reference needed. When the ordinary grip-radial rotation cannot
-      // clear the floor, shorten as far as the weapon's bands allow BEFORE accepting a fallback orientation, and
-      // keep that full shortening if a fallback is still needed. Flexible hafts keep their own suspension solver.
-      const deepest=!flexible&&profile&&segments.length?1-profile.minSegmentScale:0;
-      if(s.clearanceStrategy!=='radial'&&deepest>amount+1e-6){
-        used=fittedContact(s,segments,gripZ,deepest,true);usedAmount=deepest;
-        setCompression(plane,source,box,rows,segments,gripZ,deepest,holder,mesh.scale.z);
-        active.rootOffset=mesh.position.z;debug.compressions++;
-        s.gripAmount=deepest; // Hand sockets follow the visible, fully shortened haft.
-        worldGrip(s,primary,basis,mesh,gripZ,segments,deepest,s.pivot);
-        debug.gripY=s.pivot.y;
-        angle=solveContactRotation(s,used,s.matrix,target,secondary?a=>reachable(a,deepest):null);
-        debug.deepShortening=true;
-      }
       debug.clearanceStrategy=s.clearanceStrategy;
+      if(entry&&grounded){entry.q0.copy(holder.quaternion);entry.p0.copy(holder.position);entry.pivotHeight=s.pivot.y-y;} // Pre-correction stance.
       if(angle&&!rotateAroundGrip(holder,parent.matrixWorld,s.holder,s.pivot,s.axis,angle,s)){
         debug.finalMinY=min;return fail('unsupported-pivot-parent',true);
       }
+      if(entry&&grounded){entry.dq.copy(entry.q0).invert().multiply(angle?s.localQ:IDENTITY_Q(s)).multiply(entry.q0);} // Correction in the weapon's own frame.
       s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
-      debug.gripPivotDrift=worldGrip(s,primary,basis,mesh,gripZ,segments,usedAmount,s.point).distanceTo(s.pivot);
+      debug.gripPivotDrift=worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.point).distanceTo(s.pivot);
       // Validate against the resulting matrix, not the search's predicted Y.
       s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
-      min=projectedContactY(used.hull,s.matrix);
+      min=projectedContactY(contact.hull,s.matrix);
       if(angle)debug.rotations++;
       if(min<target-1e-7){
         // A grip below the floor (or a sprite offset below it) cannot always
@@ -572,12 +627,22 @@
         liftNode(holder,parent.matrixWorld,s.holder,debug.gripLift,s);
         s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
         s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
-        min=projectedContactY(used.hull,s.matrix);
+        min=projectedContactY(contact.hull,s.matrix);
+      }
+      if(entry&&grounded&&(angle||debug.gripLift>0)){
+        // Remember the correction relative to the stance so grounded frames can re-apply it without solving.
+        entry.liftY=debug.gripLift;
+        s.parentInverse.copy(parent.matrixWorld).invert();
+        entry.grip.copy(s.point.copy(s.pivot).applyMatrix4(s.parentInverse)).sub(entry.p0).applyQuaternion(s.q.copy(entry.q0).invert());
+        entry.mesh=mesh;entry.itemKey=context.itemKey;entry.amount=amount;entry.gripZ=gripZ;entry.fitIdentity=context.fitIdentity;
+        entry.angleDeg=angle*180/Math.PI;entry.gripLift=debug.gripLift;
+        entry.valid=true;
       }
     }
-    debug.angleDeg=angle*180/Math.PI;debug.shortening=usedAmount;debug.finalMinY=min;
+    debug.angleDeg=angle*180/Math.PI;debug.shortening=amount;debug.finalMinY=min;
     debug.reason=debug.gripLift?'rotation-and-lift':angle?'rotation':amount?'shortening':'already-clear';
-    if(traceOn)traceSolved(plane,used,min,target,y);
+    if(entry){entry.reason=debug.reason;entry.strategy=debug.clearanceStrategy;}
+    if(traceOn)traceSolved(plane,contact,min,target,y);
     return !!angle||debug.gripLift>0;
   }
   // Project around one horizontal axis. Reuse the sampled points and coefficient
@@ -591,13 +656,25 @@
     }
     s.points.length=i;
   }
+  // The ordinary (grip-radial) rotation that needs the least vertical lift, within LIFT_LIMIT. Searches the lift,
+  // not the pose, so the result approaches the plain rotation continuously as the lift tends to zero.
+  function liftedRotation(s,target,reachable){
+    const check=reachable||undefined;
+    let best=chooseAngle(s.points,s.pivot.y,target-LIFT_LIMIT,check);
+    if(best===null)return null;
+    let lo=0,hi=LIFT_LIMIT;
+    for(let i=0;i<10;i++){
+      const mid=(lo+hi)/2,a=chooseAngle(s.points,s.pivot.y,target-mid,check);
+      if(a!==null){best=a;hi=mid;}else lo=mid;
+    }
+    return best;
+  }
   // Rotation about the grip that lays the sprite flat with its long axis along its current horizontal heading and
   // its front face (local +Z) up. Sets s.axis / s.clearanceStrategy and returns the angle, or null if unusable.
-  function faceUpFlatAngle(s,matrix,target,reachable){
+  function faceUpFlatAngle(s,matrix,target,reachable,strategy='flat-face-up'){
     const e=matrix.elements;
     s.faceY.set(e[4],e[5],e[6]).normalize();
-    const heading=Math.hypot(s.faceY.x,s.faceY.z);
-    if(heading<1e-3)return null; // A vertical haft has no heading to preserve.
+    if(Math.hypot(s.faceY.x,s.faceY.z)<1e-3)return null; // A vertical haft has no heading to preserve.
     s.faceX.set(e[0],e[1],e[2]).normalize();
     s.faceZ.set(e[8],e[9],e[10]).normalize();
     const reflected=s.faceX.clone().cross(s.faceY).dot(s.faceZ)<0; // Mirrored copies keep their handedness.
@@ -621,7 +698,7 @@
     }
     if(min<target-1e-9)return null; // The grip itself is too low for any flat pose; the lift fallback handles that.
     if(reachable&&!reachable(angle))return null;
-    s.clearanceStrategy='flat-face-up';
+    s.clearanceStrategy=strategy;
     return angle;
   }
   function solveContactRotation(s,contact,matrix,target,reachable){
@@ -638,15 +715,32 @@
     let angle=chooseAngle(s.points,s.pivot.y,target,reachable||undefined);
     s.clearanceStrategy='radial';
     if(angle!==null)return angle;
-    // A sprite plane is authored lying front-face-up. Tipping it over about a horizontal axis can settle it
-    // face-down, drawing the back of the art mirrored ("flipped"). Prefer a flat pose that keeps the weapon's
-    // own heading and keeps its front face up, reached by rolling about the weapon's length through the grip.
+    // Keep the ordinary rotation and raise the whole weapon by the smallest amount (up to LIFT_LIMIT) that makes
+    // it work. The caller lifts the residual, so the pose changes continuously instead of jumping to a different
+    // orientation the moment the plain rotation stops fitting.
+    angle=liftedRotation(s,target,reachable);
+    s.clearanceStrategy='radial-lift';
+    if(angle!==null)return angle;
+    if(reachable){ // A second hand's reach must not make the primary-held blade cut the floor.
+      angle=chooseAngle(s.points,s.pivot.y,target);
+      s.clearanceStrategy='radial-reach-relaxed';
+      if(angle!==null)return angle;
+      angle=liftedRotation(s,target,null);
+      s.clearanceStrategy='radial-lift-reach-relaxed';
+      if(angle!==null)return angle;
+    }
+    // Last resorts: lay the sprite flat. Prefer the pose that keeps its heading and its front face up over
+    // tipping it about a horizontal axis, which can leave it face-down (back of the art, mirrored).
     angle=faceUpFlatAngle(s,matrix,target,reachable);
     if(angle!==null)return angle;
+    if(reachable){
+      angle=faceUpFlatAngle(s,matrix,target,null,'flat-face-up-reach-relaxed');
+      if(angle!==null)return angle;
+    }
     // Rotating the weapon plane to horizontal supplies an exact alternate
     // solution even when the lowest-vertex axis misses the safe orientations.
     const e=matrix.elements;
-    s.direction.set(e[0],e[1],e[2]).cross(s.cross.set(e[4],e[5],e[6])).normalize();
+    s.direction.set(e[8],e[9],e[10]).normalize(); // The sprite's front-face normal (local +Z), correct for mirrored copies too.
     const horizontal=Math.hypot(s.direction.x,s.direction.z);
     s.flatAxis.set(-s.direction.z,0,s.direction.x);
     if(horizontal<1e-10)s.flatAxis.set(1,0,0);else s.flatAxis.multiplyScalar(1/horizontal);
@@ -665,23 +759,17 @@
     s.clearanceStrategy='alternate-axis';
     angle=flatCandidate(reachable);
     if(angle!==null)return angle;
-    // A second hand's reach must not make the primary-held blade cut the floor.
-    // Preserve the primary pivot and fitted length before relaxing arm reach.
     if(reachable){
-      rotationCoefficients(s,s.radialAxis);
-      angle=chooseAngle(s.points,s.pivot.y,target);
-      s.clearanceStrategy='radial-reach-relaxed';
-      if(angle!==null)return angle;
       s.clearanceStrategy='alternate-axis-reach-relaxed';
       angle=flatCandidate(null);
       if(angle!==null)return angle;
     }
-    // Neither axis yielded a clear fixed-pivot pose. Compare the exact flat
-    // orientations and keep the higher one (smaller angle breaks ties).
+    // Neither axis yielded a clear fixed-pivot pose. Compare the exact flat orientations and keep the higher one;
+    // a tie (the usual case: a flat sprite sits at grip height either way) keeps the front face up.
     rotationCoefficients(s,s.flatAxis);
     const minUp=minimumY(s.points,s.pivot.y,up),minDown=minimumY(s.points,s.pivot.y,down);
     s.clearanceStrategy='flat-plus-minimum-lift';
-    return Math.abs(minUp-minDown)<1e-9?(Math.abs(up)<=Math.abs(down)?up:down):minUp>minDown?up:down;
+    return minDown>minUp+1e-9?down:up;
   }
   function setTrace(on){traceOn=!!on;if(!traceOn){trace.solved=null;trace.lastPlane=null;trace.lastContact=null;}return traceOn;}
   function traceSolved(plane,contact,min,target,floorY){
@@ -756,57 +844,65 @@
     const live=global.ProceduralHandFrameDriver?.groundPoseContext?.(d.holder,context.itemKey)||context;
     s.holder.copy(d.holder.matrixWorld);
     s.inverse.copy(d.plane.matrixWorld).invert();
-    let contact=d.contact,amount=d.amount; // Become the fully shortened haft when either copy needs a fallback orientation.
-    const localGrip=(point,out)=>worldGrip(s,point,d.basis,d.mesh,d.gripZ,d.segments,amount,out).applyMatrix4(s.inverse);
+    const localGrip=(point,out)=>worldGrip(s,point,d.basis,d.mesh,d.gripZ,d.segments,d.amount,out).applyMatrix4(s.inverse);
     const results=debug.dual={};
-    const sides=[
+    for(const [side,root,copy,grip] of [
       ['right',current.mainRoot,main,live.primary],
       ['left',current.offRoot,off,live.offhand||grips?.offhandPrimaryGripForTool?.(context.itemKey,'melee',live.scaleIdentity||context.scaleIdentity)]
-    ];
-    // Both copies borrow one shortened buffer, so shorten it as far as its bands allow BEFORE accepting a fallback
-    // orientation for either, and keep that full shortening while a fallback is in use.
-    const deepest=!d.flexible&&d.source&&d.box&&d.context.profile&&d.segments.length?1-d.context.profile.minSegmentScale:0;
-    if(deepest>d.amount+1e-6){
-      let needsFallback=false;
-      for(const [,,copy,grip] of sides){
-        if(!grip?.position||projectedContactY(d.contact.hull,copy.matrixWorld)>=d.target)continue;
-        localGrip(grip.position,s.grip);s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld);
-        solveContactRotation(s,d.contact,copy.matrixWorld,d.target,null);
-        if(s.clearanceStrategy!=='radial')needsFallback=true;
-      }
-      if(needsFallback){
-        contact=fittedContact(s,d.segments,d.gripZ,deepest,true);amount=deepest;
-        setCompression(d.plane,d.source,d.box,stripRows(d.box,d.segments,s.rows),d.segments,d.gripZ,deepest,d.holder,d.mesh.scale.z);
-        active.rootOffset=d.mesh.position.z;debug.compressions++;
-        s.gripAmount=deepest; // Hand sockets follow the visible, fully shortened haft.
-        debug.deepShortening=true;
-      }
-    }
-    for(const [side,root,copy,grip] of sides){
+    ]){
       if(!grip?.position){results[side]={reason:'no-grip'};continue;}
-      let min=projectedContactY(contact.hull,copy.matrixWorld),angle=0;
+      // Same rule as a single weapon: solved once while grounded and reused, solved every frame while midair.
+      const reusable=!previewThree&&Math.abs(root.scale.x-1)<1e-6&&Math.abs(root.scale.y-1)<1e-6&&Math.abs(root.scale.z-1)<1e-6;
+      const grounded=reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
+      const entry=reusable?reuseFor(root):null;
+      if(entry){
+        if(!grounded)entry.valid=false;
+        else if(entry.valid){
+          if(entry.mesh===d.plane&&entry.itemKey===context.itemKey&&entry.amount===d.amount&&entry.gripZ===d.gripZ){
+            localGrip(grip.position,s.grip);
+            s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld);
+            if(reuseStillValid(entry,root,s.pivot.y-d.floor)){
+              reuseApply(entry,root,d.plane.matrixWorld,s);root.updateMatrixWorld(true);
+              results[side]={reason:entry.reason,angleDeg:entry.angleDeg,originalMinY:null,finalMinY:projectedContactY(d.contact.hull,copy.matrixWorld),gripPivotDrift:0,gripLift:entry.gripLift,clearanceStrategy:entry.strategy,reused:true};
+              debug.reuseHits++;continue;
+            }
+          }
+          entry.valid=false;
+        }
+      }
+      let min=projectedContactY(d.contact.hull,copy.matrixWorld),angle=0;
       const original=min;let gripPivotDrift=null,gripLift=0,strategy=null;
       if(min<d.target){
         localGrip(grip.position,s.grip);
         s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld);
-        angle=solveContactRotation(s,contact,copy.matrixWorld,d.target,null);
+        angle=solveContactRotation(s,d.contact,copy.matrixWorld,d.target,null);
         strategy=s.clearanceStrategy;
+        if(entry&&grounded){entry.q0.copy(root.quaternion);entry.p0.copy(root.position);entry.pivotHeight=s.pivot.y-d.floor;} // Pre-correction stance.
         if(angle&&!rotateAroundGrip(root,d.plane.matrixWorld,root.matrixWorld,s.pivot,s.axis,angle,s)){
           results[side]={reason:'unsupported-pivot-parent',originalMinY:original,finalMinY:min};continue;
         }
+        if(entry&&grounded)entry.dq.copy(entry.q0).invert().multiply(angle?s.localQ:IDENTITY_Q(s)).multiply(entry.q0); // Correction in the weapon's own frame.
         root.updateMatrixWorld(true);
-        min=projectedContactY(contact.hull,copy.matrixWorld);
+        min=projectedContactY(d.contact.hull,copy.matrixWorld);
         gripPivotDrift=s.point.copy(s.grip).applyMatrix4(copy.matrixWorld).distanceTo(s.pivot);
         if(min<d.target-1e-7){
           gripLift=d.target-min;
           liftNode(root,d.plane.matrixWorld,root.matrixWorld,gripLift,s);
           root.updateMatrixWorld(true);
-          min=projectedContactY(contact.hull,copy.matrixWorld);
+          min=projectedContactY(d.contact.hull,copy.matrixWorld);
+        }
+        if(entry&&grounded&&(angle||gripLift>0)){
+          entry.liftY=gripLift;
+          s.parentInverse.copy(d.plane.matrixWorld).invert();
+          entry.grip.copy(s.point.copy(s.pivot).applyMatrix4(s.parentInverse)).sub(entry.p0).applyQuaternion(s.q.copy(entry.q0).invert());
+          entry.mesh=d.plane;entry.itemKey=context.itemKey;entry.amount=d.amount;entry.gripZ=d.gripZ;
+          entry.angleDeg=angle*180/Math.PI;entry.gripLift=gripLift;entry.reason=gripLift?'rotation-and-lift':'rotation';entry.strategy=strategy;
+          entry.valid=true;
         }
       }
       results[side]={reason:gripLift?'rotation-and-lift':angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min,gripPivotDrift,gripLift,clearanceStrategy:strategy};
     }
-    debug.shortening=amount;debug.reason='dual-clearance';debug.gripLift=Math.max(results.right?.gripLift??0,results.left?.gripLift??0);debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
+    debug.reason='dual-clearance';debug.gripLift=Math.max(results.right?.gripLift??0,results.left?.gripLift??0);debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
   }
   function constrainFreeHand(parent,socket,shoulder,reach,height) {
     if(!enabled()||parent!==global.PlayerBodyTransformComposer?.getPlayerMesh?.()||!(reach>0)||!socket?.parent)return false;
