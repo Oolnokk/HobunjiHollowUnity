@@ -53,7 +53,7 @@
     const scene = deps.getActiveScene?.(), area = deps.getCurrentArea?.(); // Stamp events so a transition cannot replay an old burst.
     if (!scene) return;
     if (pending.length >= MAX_QUEUED) { stats.dropped++; return; }
-    pending.push({ actor, type, scene, area, now });
+    pending.push({ actor, type, scene, area });
     hooks.setEnabled(ID, true);
   }
 
@@ -315,7 +315,8 @@
     });
     let kept = 0; // Compact the queue in place, retaining effects waiting for another frame.
     for (const event of pending) {
-      if (event.scene !== scene || event.area !== area || now - event.now > 850) continue;
+      if (event.scene !== scene || event.area !== area || window.Combat.shouldPresentCombatVfx?.(event.actor) === false) continue;
+      // An accepted event can wait across a slow frame. Scene changes and the global queue cap bound pending work.
       let lanes = played.get(event.actor); // Keep one lane for drips and one for sprays.
       if (!lanes) { lanes = {}; played.set(event.actor, lanes); }
       const key = TYPES[event.type].lane; // All portrait and pants cones from one wound-spurt stay in a single event.
