@@ -176,7 +176,7 @@
   }
 
   function applyCulturalLoadout(entity, gangCfg, rank, opts) {
-    if (!entity?.isBandit || !entity?.def || entity?.isMinion || entity?.enemyClass === 'minion') return entity; // Minions own their melee/no-ranged loadout and skip bandit cultural substitutions.
+    if (!entity?.isBandit || !entity?.def || entity?.rootledoot || opts?.extra?.rootledoot || entity?.isMinion || entity?.enemyClass === 'minion') return entity; // Minions own their melee/no-ranged loadout and skip bandit cultural substitutions.
     const speciesId = entity.rosterRecord?.appearance?.speciesId || null;
     const metalKey = entity._banditCaptainArmament?.metal || metalKeyFromWeaponKey(entity.def.weaponKey); // Unique modular captain keys retain their original metal for the cultural ranged roll.
     const melee = applyMeleeRoll(entity, speciesId, metalKey, opts);

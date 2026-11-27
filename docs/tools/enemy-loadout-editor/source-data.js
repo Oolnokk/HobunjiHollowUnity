@@ -334,6 +334,7 @@
       ...options,
     };
     const saved=options.previewCaptainArmament; // Register before the normal actor factory constructs its weapon holder.
+    if(saved&&kind.startsWith('rootledoot:')&&!window.BanditCaptainArmaments.isRootledootWeapon(saved.key))throw Error('Saved Rootledoot uses an obsolete weapon; roll a new preview.');
     if(saved&&!window.BanditCaptainArmaments.registerDefinition(saved.key,saved))throw Error('Saved modular weapon could not be restored');
     if(kind.startsWith('harlyao-skeleton:')){
       const [,theme,variant]=kind.split(':');

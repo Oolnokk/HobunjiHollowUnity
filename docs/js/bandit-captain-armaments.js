@@ -48,7 +48,10 @@
     const count = Math.max(1, enchantmentCount(stars));
     while(base.length<Math.min(count,2)&&bases.length)base.push(take(bases));
     const slots=FLOURISH_SLOTS.slice();
-    for(let i=base.length;i<count&&flourishes.length&&slots.length;i++)result[take(slots)]=take(flourishes);
+    for(let i=base.length;i<count&&flourishes.length&&slots.length;i++){
+      const slot=take(slots),eligible=flourishes.filter(id=>window.EnchantmentSystem?.allowsFlourishSlot?.(id,slot)!==false);
+      if(!eligible.length)continue;const id=take(eligible);flourishes.splice(flourishes.indexOf(id),1);result[slot]=id;
+    }
     return base.length||Object.keys(result).length?{base,flourishes:result}:null;
   }
 
@@ -68,6 +71,22 @@
     return pairs;
   }
 
+  function rootledootPairs(catalog=window.ModularWeapons){
+    const config=catalog?.getConfig?.();if(!config)return [];
+    const pairs=[];
+    for(const [shaftKey,shaft] of Object.entries(config.shafts||{})){
+      if(shaft.editorOnly)continue;
+      for(const [headKey,head] of Object.entries(config.heads||{})){
+        if(head.editorOnly||head.craftDisabled||!(shaftKey==='dagger'||headKey==='porakaneki-greatclub')||catalog.isDisallowed(shaftKey,headKey))continue;
+        pairs.push({shaft:shaftKey,head:headKey,donors:[shaft.sourceShape,head.sourceShape]});
+      }
+    }
+    return pairs;
+  }
+  function isRootledootWeapon(key,catalog=window.ModularWeapons){
+    const p=catalog?.decode?.(key),cfg=catalog?.getConfig?.();
+    return !!(p&&cfg?.shafts?.[p.shaft]&&!cfg.shafts[p.shaft].editorOnly&&cfg?.heads?.[p.head]&&!cfg.heads[p.head].editorOnly&&!cfg.heads[p.head].craftDisabled&&(p.shaft==='dagger'||p.head==='porakaneki-greatclub')&&!catalog.isDisallowed(p.shaft,p.head));
+  }
   function permittedDonors(entity) {
     const fromCulturalRoll = entity?._weaponTrustCulturalLoadout?.melee?.allowed; // Exact pool chosen when the cultural wrapper ran first.
     if (Array.isArray(fromCulturalRoll) && fromCulturalRoll.length) return fromCulturalRoll;
@@ -192,18 +211,24 @@
   function equip(entity, cfg, rank, tier, opts = {}, d = deps) {
     if(entity&&opts.zoneId==='map_dev_arena'&&opts.previewCaptainArmament){
       entity._banditCaptainArmament=opts.previewCaptainArmament; // Workshop history retains the saved weapon and its fixed enchantment VFX instead of rerolling.
+      if(entity.rootledoot)unlooted.set(opts.previewCaptainArmament.key,opts.previewCaptainArmament.enchantments);
       return entity;
     }
-    const fey = entity?.rootledootBig === true; // A Big Rootledoot gets a Fey armament at every bandit difficulty tier.
-    if (!entity || entity._banditCaptainArmament || rank !== 'captain' || (!fey && (capStars(tier) < MIN_STARS
+    const fey = entity?.rootledoot===true||entity?.rootledootBig===true; // Small/medium may be Fey-enchanted; boss always is.
+    if (!entity || entity._banditCaptainArmament || (!fey&&rank !== 'captain') || (!fey && (capStars(tier) < MIN_STARS
       || entity.enemyClass !== 'bandit' || entity.isMinion || cfg?._preserveMineEnemyTiers || opts?.extra?.isMineGhoul
       || opts?.defOverride?.weaponKey || window.EnemyLoadoutRules?.ruleFor?.(entity.enemyLoadoutKind)?.weapons))) return entity;
     const metal = metalOf(entity, d);
     if (!metal || !window.ModularWeapons || !d?.TOOL_ITEM_DEFS) return entity;
-    const donors = permittedDonors(entity).filter(shape => !Array.isArray(cfg?.weaponShapePool) || !cfg.weaponShapePool.length || cfg.weaponShapePool.includes(shape)); // A caller's narrower complete-weapon pool also narrows both donor pieces.
-    const all = eligiblePairs(donors).filter(pair => !!d.TOOL_ITEM_DEFS[window.ModularWeapons.itemKey(pair.shaft, pair.head, metal)]);
+    if(fey&&!entity.rootledootBig){
+      if(opts.zoneId==='map_dev_arena'&&opts.defOverride?.weaponKey)return entity; // A saved ordinary modular roll remains unenchanted.
+      if((d.rnd||random)()>=(rank==='lieutenant'?.5:.25))return entity; // Tuning default: 25% small, 50% medium; guaranteed boss.
+    }
+    const donors = fey?[]:permittedDonors(entity).filter(shape => !Array.isArray(cfg?.weaponShapePool) || !cfg.weaponShapePool.length || cfg.weaponShapePool.includes(shape)); // A caller's narrower complete-weapon pool also narrows both donor pieces.
+    const all = (fey?rootledootPairs():eligiblePairs(donors)).filter(pair => !!d.TOOL_ITEM_DEFS[window.ModularWeapons.itemKey(pair.shaft, pair.head, metal)]);
     const mixed = all.filter(pair => pair.donors[0] !== pair.donors[1]); // A true mixed found weapon when two legal donors are available.
-    const choice = choose(mixed.length ? mixed : all, d.rnd || random);
+    const existing=fey?window.ModularWeapons.decode(entity.def.weaponKey):null;
+    const choice = (existing&&all.find(pair=>pair.shaft===existing.shaft&&pair.head===existing.head))||choose(fey?all:(mixed.length?mixed:all),d.rnd||random);
     if (!choice) return entity;
     const state = fey ? rollFeyEnchantments(capStars(tier), d.rnd || random) : rollEnchantments(capStars(tier), d.rnd || random);
     if (!state) return entity;
@@ -417,7 +442,7 @@
   patchBanditCombat();
 
   window.BanditCaptainArmaments = Object.freeze({
-    PREFIX, MIN_STARS, capStars, enchantmentCount, rollEnchantments, eligiblePairs, permittedDonors,
+    PREFIX, MIN_STARS, capStars, enchantmentCount, rollEnchantments, eligiblePairs, rootledootPairs,isRootledootWeapon,permittedDonors,
     init, restore, registerDefinition, equip, grantCorpseWeapon, unlootedEnchantmentState, emitHit, tick, discard, rollFeyEnchantments,
     boundKeyFor, decodeBoundKey, ensureBoundItemDef, boundWeaponsInInventory, boundLabel, registrationPrice, registerBoundWeapon,
     debugSnapshot: entity => ({ key: entity?._banditCaptainArmament?.key || null, stars: entity?._banditCaptainArmament?.stars || 0,

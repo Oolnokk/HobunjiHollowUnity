@@ -411,6 +411,8 @@
     window.SpecialHarlyaoLiches?.decoratePortraitProfile?.(profile,roster); // Named eye-glow appearance uses the canonical two-pass mask pixel dye; Imlao explicitly clears all face/headwear slots.
     if (roster.rootledoot) profile.bodyColors = roster.appearance.bodyColors; // Rootledoot hands and feet use the root's authored color.
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
+    const rigSpecies=roster.rootledoot?'rootledoot':roster.appearance.speciesId; // The Rootledoot keeps the humanoid card/pose convention but borrows Nohuknuk's extremity rig.
+    const rigGender=roster.rootledoot?'male':roster.appearance.gender;
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
     const PORTRAIT_SIZE = avatarCfg.previewPortraitCanvasSize ?? 200;
@@ -480,7 +482,8 @@
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
       {
-        backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
+        backCanvas, profile, speciesId:rigSpecies,gender:rigGender,modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
+        ...(roster.rootledoot?{poseOrbitScale:1}:{}), // Match the creature rig's full orbit while retaining the normal NPC facing.
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait', meshBudget: 'npc', // Enemies use the capped mesh budget.
         hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; HatOverflowPlane.attachToPlanes is called on those instead.
         mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
@@ -665,12 +668,12 @@
     // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
     // same clipping fix applied to the mounted-rider case.
     characterBuildStatus.stage = 'leg-rig';
-    const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, spine: roster.spine }) || null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
+    const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: rigSpecies, gender: rigGender, spine: roster.rootledoot?null:roster.spine }) || null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
       window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase, blendHeight: frontNeckSkin.weightedGeometry?.userData?.blendHeight }, spine, modelHeight); // Hostile shoulder and attack orbit calculations sample the same short base-head neck band as the portrait.
     }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
-      speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
+      speciesId: rigSpecies, gender: rigGender,
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
@@ -906,6 +909,17 @@
   const configuredWeaponMetalKey = cfg => typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers.
 
   function banditWeaponFor(cfg, rank, tier) {
+    if(cfg?._rootledootWeaponPool){
+      const metalKey=configuredWeaponMetalKey(cfg)||rollBanditWeaponMetalKey(cfg,rank,tier);
+      const api=window.BanditCaptainArmaments,modular=window.ModularWeapons;
+      const pairs=api?.rootledootPairs?.(modular)||[]; // Foundry compatibility, never a whole-weapon fallback.
+      const keys=pairs.map(p=>modular.itemKey(p.shaft,p.head,metalKey)).filter(k=>deps.TOOL_ITEM_DEFS[k]?.modular);
+      const saved=cfg._rootledootPreviewKey;
+      const weaponKey=saved&&api.isRootledootWeapon(saved)&&deps.TOOL_ITEM_DEFS[saved]?.modular?saved:keys[Math.floor(deps.rnd()*keys.length)];
+      const item=deps.TOOL_ITEM_DEFS[weaponKey];if(!item)throw Error('No compatible Rootledoot modular weapons for '+metalKey);
+      const dmgMultiplier=window.EnemyTierProgression?.weaponMultiplier(item.metalKey,tier,deps.METAL_DEFS,deps.VERDIGRIS_METAL_KEYS)??deps.metalDmgMultiplier(item.metalKey);
+      return {weaponKey,shapeKey:item.shapeKey,metalKey:item.metalKey,dmgType:item.dmgType||'sharp',dmgMultiplier,animStyle:item.animStyle};
+    }
     const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
     const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
     const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
@@ -1075,10 +1089,10 @@
     const healthStatMul = (Number.isFinite(healthRankMultiplier) && healthRankMultiplier > 0 ? healthRankMultiplier : weaken) * tierMul; // Used only for maxHealth so extra survivability never increases outgoing damage or Stamina.
     const weapon = banditWeaponFor(cfg, rank, tier);
     const isFlasker = rank === 'flasker'; // Used to reserve this rank's ranged role for its infinite two-flask loadout.
-    const rangedWeaponKey = isFlasker ? null : banditRangedWeaponFor(cfg, rank);
+    const rangedWeaponKey = isFlasker||cfg._rootledootWeaponPool ? null : banditRangedWeaponFor(cfg, rank);
     const banditFlaskLoadout = isFlasker ? rollBanditFlaskLoadout(cfg) : []; // Per-entity definition; uses never decrement it.
     const flaskerTuning = isFlasker ? banditFlaskerTuning(cfg) : null; // Shared AI/loot tuning stored with this spawned hostile.
-    const shapeStats = window.WeaponShapeStats?.forShape?.(weapon.shapeKey) || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs use the same physical shape stats as player weapons.
+    const shapeStats = (cfg._rootledootWeaponPool?window.WeaponShapeStats?.forKey?.(weapon.weaponKey,deps.TOOL_ITEM_DEFS[weapon.weaponKey]):window.WeaponShapeStats?.forShape?.(weapon.shapeKey)) || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs use the same physical shape stats as player weapons.
     const weaponEfficiency = Number(shapeStats.efficiency); // Validate the shape's stamina efficiency before using it for both attack cost and capacity.
     const attackStaminaCost = BANDIT_ATTACK_STAMINA_COST / (Number.isFinite(weaponEfficiency) && weaponEfficiency > 0 ? weaponEfficiency : 1); // The opening-attack gate and capacity floor must use the same final cost.
     const minimumAttacks = cfg?._preserveMineEnemyTiers ? 1 : 2; // Keep the original mine stamina curve wherever viable; new danger-tier bandits need two affordable openings.
@@ -1107,14 +1121,14 @@
       attackCooldownS: (rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER) / shapeStats.speed,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
-      ...(cfg._ruinCoffinWeapon?{weaponShapeKey:weapon.shapeKey}:{}), // Preserve the exact rolled shape for bound relic loot even before generated item definitions settle.
+      ...(cfg._ruinCoffinWeapon||cfg._rootledootWeaponPool?{weaponShapeKey:weapon.shapeKey,weaponMetalKey:weapon.metalKey}:{}), // Preserve the exact rolled shape for bound relic loot even before generated item definitions settle.
       weaponMetalPowerMultiplier: weapon.dmgMultiplier, // Arena and combat diagnostics show the exact effective metal grade, not only the metal's name.
       weaponShapeStats: shapeStats, // Used below to keep NPC attack windups, lunges and affliction delivery in sync.
       rangedWeaponKey,
       banditFlaskLoadout,
       banditFlaskerTuning: flaskerTuning,
       banditFlaskPotencyTier: isFlasker ? (cfg?._preserveMineEnemyTiers ? Math.min(4, tier) : Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7))) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
-      banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
+      banditAbilityLoadout: { ...banditAbilityLoadout(weapon.shapeKey, held), ...(weapon.animStyle?{tap1:weapon.animStyle==='thrust'?'pokeCombo':'swingCombo'}:{}) },
       quickAttackChance: quickTuning && Number.isFinite(quickBase) && Number.isFinite(quickStep)
         ? Math.max(0, Math.min(1, quickBase + tier * quickStep)) : BANDIT_QUICK_ATTACK_CHANCE, // Fixed at spawn; no tier/config lookups per attack.
       backstabFlankMaxSeconds: Math.max(0, Number(quickTuning?.backstabFlankMaxSeconds) || 2),
@@ -3506,6 +3520,11 @@
       const authored=loadoutRules?.ruleFor(loadoutKind)?.weapons?cfg.weaponShapePool?.filter(shape=>permitted.includes(shape)):null;
       cfg={...cfg,_ruinCoffinWeapon:true,weaponShapePool:authored?.length?authored:[...permitted]};
     } // Match relic catalog.
+    if(opts.extra?.rootledoot){
+      const saved=opts.zoneId==='map_dev_arena'?opts.defOverride?.weaponKey:null;
+      if(saved&&!window.BanditCaptainArmaments?.isRootledootWeapon(saved))throw Error('Saved Rootledoot weapon is outside the current compatible pool; roll a new preview.');
+      cfg={...cfg,_rootledootWeaponPool:true,_rootledootPreviewKey:saved};
+    }
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
     if (!opts.extra?.rootledoot && !loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
       cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
@@ -3574,7 +3593,8 @@
       if (shape) cfg = { ...cfg, weaponShapePool: [shape] };
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
-    const rolledDefinition = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+    let rolledDefinition;
+    try{rolledDefinition=makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);}catch(error){avatarRef.dispose();throw error;}
     const unarmedWitch = !!window.GhoulSpecialVariants?.isUnarmedWitch?.(opts.extra); // Shadow-wind Wyrm-witches cast bare-handed like liches: the lich casting pose weapon, no visible mesh.
     let def = Object.assign({ ...rolledDefinition }, unarmedWitch ? { weaponKey: window.GhoulSpecialVariants.castWeaponKey(), rangedWeaponKey: null } : {}, opts.defOverride || {});
     // Special enemies supply fixed weapons through defOverride. Explicit authored
@@ -3587,6 +3607,7 @@
     }
     if(authoredRule?.ranged || authoredRule?.rangedChance != null)def.rangedWeaponKey=rolledDefinition.rangedWeaponKey;
     def = loadoutRules?.applyDefinition(loadoutKind, def, deps.rnd) || def;
+    if(opts.extra?.rootledoot){def.weaponKey=rolledDefinition.weaponKey;def.rangedWeaponKey=null;} // Workshop rules cannot substitute a forbidden weapon or ranged item.
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.

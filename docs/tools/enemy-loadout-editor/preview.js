@@ -4,7 +4,7 @@ const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
   'config/scratchbones-config.js?v=20261122h5cf4b6d',
-  'config/attachment-rig-profiles.js?v=20261126voorg31merge1',
+  'config/attachment-rig-profiles.js?v=20261127rootledootRigFey12',
   'config/character-rig-scale-defaults.js?v=20261126h1dd486d',
   'js/character-rig-scale.js?v=20261126he6d0d7e',
   'js/color-fill.js?v=20261117h93b0e83',
@@ -72,7 +72,7 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261126spiritHealAudit1',
   'js/alchemy-system.js?v=20261125idleGate2',
   'js/combat/enemy-loadout-rules.js?v=20261127ruinViewer1',
-  'js/combat/combat-bandit.js?v=20261127ruinTorsoOnly10',
+  'js/combat/combat-bandit.js?v=20261127rootledootRigFey12',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
   'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
   'js/combat/combat-minion.js?v=20261127rootCorsCrystalParity11',
@@ -91,12 +91,12 @@ const files = [
   'js/drunk-locomotion.js?v=20261117hRigDrunk1',
   'js/drunk-prone-composition-bridge.js?v=20261119h8e395a6',
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
-  'js/weapon-trust-bandit-loadouts.js?v=20261125enemyClassAudit1',
-  'js/bandit-captain-armaments.js?v=20261127ruinViewer1',
+  'js/weapon-trust-bandit-loadouts.js?v=20261127rootledootRigFey12',
+  'js/bandit-captain-armaments.js?v=20261127rootledootRigFey12',
   'js/wilderness-encounter-runtime.js?v=20261127rootCorsCrystalParity11',
-  'js/rootledoot-encounter.js?v=20261127ruinViewer1',
+  'js/rootledoot-encounter.js?v=20261127rootledootRigFey12',
   'js/combat/ranged-weapon-archetypes.js?v=20261125deepAudit1',
-  'tools/enemy-loadout-editor/source-data.js?v=20261127ruinViewer2',
+  'tools/enemy-loadout-editor/source-data.js?v=20261127rootledootRigFey12',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {

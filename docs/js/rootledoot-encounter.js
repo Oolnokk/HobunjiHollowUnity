@@ -169,12 +169,25 @@
     return runtime.connectedSpawnTiles({origin,reference:p,contains:(c,r)=>sameChunk(c,r,rec.chunk),
       eligible:(c,r)=>tileEligible(c,r)&&(Number(tileAt(c,r)?.elevTier)||0)===elevation});
   }
+  function ensureRig(){
+    const profiles=window.HobunjiHandModelProfiles,feet=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet;
+    // Same primate extremities as Nohuknuk, but never his grey material override or sideways creature card.
+    if(profiles?.mutate&&profiles.data?.speciesModels?.rootledoot!=='primate'){
+      profiles.mutate(data=>{
+        const donor=data.models?.sloth||data.models?.feline;
+        if(!data.models.primate&&donor)data.models.primate={...JSON.parse(JSON.stringify(donor)),glb:'assets/models/hands/hand_primate.glb',materialRoles:{MAT_EyeSurface_0c0c0c:'body',MAT_None_7a4e2e:'bone'}};
+        if(data.models.primate)data.speciesModels.rootledoot='primate';
+      });
+    }
+    if(feet?.species&&!feet.species.rootledoot)feet.species.rootledoot={...(feet.species.nohuknuk||{glb:'assets/models/feet/foot_primate.glb',materialRoles:{MAT_EyeSurface_0c0c0c:'body',MAT_None_7a4e2e:'bone'},uvMode:'stretch-fit'})};
+  }
   function makeCombatant(cfg,rank,tier,x,y,opts={}) {
     const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot'; // Shared by live waves and the Workshop.
     const roster=opts.rosterOverride||{name,appearance:{speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true};
     const scale=big?1.35:rank==='lieutenant'?.82:.65;
-    return window.BanditCombat.makeEntity(cfg,rank,tier,x,y,{...opts,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
-      avatarRigScale:opts.avatarRigScale||{x:scale,y:scale,head:1,offsetY:0},defOverride:{label:name,...opts.defOverride},
+    ensureRig(); // Spawn-only setup, shared by live waves and Workshop.
+    return window.BanditCombat.makeEntity({...cfg,_rootledootWeaponPool:true},rank,tier,x,y,{...opts,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
+      avatarRigScale:opts.avatarRigScale||{x:scale,y:scale,head:1,offsetY:0},defOverride:{label:name,...opts.defOverride,rangedWeaponKey:null},
       extra:{...opts.extra,rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
   }
   async function spawnWave(rec) {
@@ -319,7 +332,7 @@
   }
   function serialize(){return journal.serialize();}
   function restore(raw){reset('restore');journal.restore(raw);clock.reset();}
-  window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,makeCombatant,serialize,restore,reset,
+  window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,makeCombatant,ensureRig,serialize,restore,reset,
     debugSnapshot:()=>({lastEvent,worldStamp:journal.stamp,checkedChunks:ledger.size,pendingRewards:pendingRewards.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot:defeat.snapshot().attributed,overkill:defeat.snapshot().deficit}),
     __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,connectedSpawnTiles,BASE_CHANCE,WAVES})});
   window.DevCompanion?.registerStateProvider?.('rootledoots',window.Rootledoots.debugSnapshot);
