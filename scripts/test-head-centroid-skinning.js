@@ -215,7 +215,7 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
   const idx = makeAttr([0,0,0,0, 0,0,0,0, 2,0,0,0, 0,0,0,0, 2,0,0,0, 2,0,0,0],4);
   const wt = makeAttr(Array.from({length:6},()=>[1,0,0,0]).flat(),4);
   const attrs = { position:pos, uv, skinIndex:idx, skinWeight:wt };
-  plane.geometry = { userData:{segmentsX:1,segmentsY:1,portraitGridRows:[0,1],blendHeight:.30},getAttribute:k=>attrs[k] };
+  plane.geometry = { userData:{segmentsX:1,segmentsY:1,portraitGridRows:[0,1],blendHeight:.30},attributes:attrs,getAttribute:k=>attrs[k] };
   const resolve = context.resolveSkinnedPixelWorldPosition;
   // Pixel (25,50) lies within the first triangle. Top corner y .5 -> .8,
   // bottom corner stays -.5. At the middle of the row, y must be .15.
