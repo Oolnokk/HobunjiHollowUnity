@@ -573,6 +573,22 @@ if(THREE){
   const builds=d.hullBuilds;reset();assert.equal(solver.constrainCarry(holder,plane,context),true);d=solver.snapshot().carry;assert.equal(d.hullBuilds,builds);assert.ok(d.reuseHits>0);
   reset();const q=holder.quaternion.clone();assert.equal(solver.constrainCarry(holder,plane,{...context,preserveOrientation:true,otherGrips:[new THREE.Vector3(.2,0,0)]}),true);assert.ok(Math.abs(holder.quaternion.dot(q))>1-1e-9);assert.ok(solver.snapshot().carry.finalMinY>=.035-1e-7);
   plane.geometry=new THREE.PlaneGeometry(.5,3);reset();solver.constrainCarry(holder,plane,{...context,preserveOrientation:true});assert.ok(solver.snapshot().carry.hullBuilds>builds,'geometry replacement invalidates cached hull');
+  // A clear frame needs only one contact scan, and must retire stale correction state.
+  reset();holder.position.y=3;parent.updateMatrixWorld(true);
+  const scans=solver.snapshot().carry.minimumScans,fastPaths=solver.snapshot().carry.clearFastPaths;
+  assert.equal(solver.constrainCarry(holder,plane,context),false);
+  d=solver.snapshot().carry;
+  assert.equal(d.minimumScans-scans,1,'clear prop projects contact once');
+  assert.equal(d.clearFastPaths-fastPaths,1);
+  close(d.originalMinY,d.finalMinY);
+  assert.equal(holder.position.y,3);
+  // The posterior-only path still enforces the minimum grip position when geometry is clear.
+  reset();holder.position.y=3;parent.updateMatrixWorld(true);
+  const posteriorContext={...context,preview:true,posteriorLocalY:4};
+  assert.equal(solver.constrainCarry(holder,plane,posteriorContext),true);
+  d=solver.snapshot().carry;assert.ok(d.lift>0);
+  assert.ok(d.finalMinY>=.035-1e-7);
+  assert.equal(d.reason,'carry-lift');
   reset();w.XrayHierarchy.get=()=> 'xray';assert.equal(solver.constrainCarry(holder,plane,context),false);assert.equal(holder.position.y,.4);
   console.log('held carry: actual Three geometry, grip, cache and orientation checks passed');
 }

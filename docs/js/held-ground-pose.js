@@ -813,7 +813,7 @@
   // identity; walking, turning and renderer passes only project those points.
   const carryPartsCache=new WeakMap();
   const carryReuseMap=new WeakMap();
-  const carryDebug={reason:'not-run',itemKey:null,frame:null,partCount:0,originalMinY:null,finalMinY:null,angleDeg:0,lift:0,hullBuilds:0,reuseHits:0};
+  const carryDebug={reason:'not-run',itemKey:null,frame:null,partCount:0,originalMinY:null,finalMinY:null,angleDeg:0,lift:0,hullBuilds:0,reuseHits:0,minimumScans:0,clearFastPaths:0};
   function carryPartsFor(root){
     let cached=carryPartsCache.get(root);
     if(cached&&cached.children.length===root.children.length&&cached.children.every((node,i)=>node===root.children[i])&&cached.revision===root.userData?.groundContactRevision)return cached.parts;
@@ -857,6 +857,7 @@
     }
   }
   function carryMinimum(parts,root){
+    carryDebug.minimumScans++; // Count actual contact projections for the existing mobile debug snapshot.
     let min=Infinity;
     for(const part of parts){
       if(!carryPartVisible(part,root))continue;
@@ -889,6 +890,13 @@
     if(!Number.isFinite(min))return false;
     carryDebug.originalMinY=min;
     const target=Number.isFinite(floor)?floor+PAD:-Infinity;
+    // A clear prop with no posterior restriction needs neither socket transforms nor a second hull projection.
+    if(posterior===null&&min>=target){
+      const previous=carryReuseMap.get(holder); // A clear frame must still invalidate a previously cached correction.
+      if(previous)previous.valid=false;
+      carryDebug.finalMinY=min;carryDebug.reason='already-clear';carryDebug.clearFastPaths++;
+      return false;
+    }
     const grip=context.grip;
     const readPivot=()=>s.pivot.set(Number(grip.x)||0,Number(grip.y)||0,Number(grip.z)||0).applyMatrix4(holder.matrixWorld);
     readPivot();
@@ -907,6 +915,12 @@
     };
     liftBy(posteriorLift);
     if(posteriorLift)min=carryMinimum(parts,root);
+    if(min>=target){
+      const previous=carryReuseMap.get(holder); // Clear after evaluating/lifting the grip; never reuse an old rotation.
+      if(previous)previous.valid=false;
+      carryDebug.finalMinY=min;carryDebug.reason=changed?'carry-lift':'already-clear';carryDebug.clearFastPaths++;
+      return changed;
+    }
     // Two-handed carries, compound 3D art and aim/upright poses keep their
     // orientation: translate the whole prop and both sockets instead.
     const part=parts.length===1?parts[0]:null;
