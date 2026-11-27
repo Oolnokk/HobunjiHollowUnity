@@ -24455,7 +24455,7 @@
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
           if (!actionHeldDown) { cancelChargeAction('input released'); return; }
-          if (activeTool !== chargeAction.tool || activeAction !== chargeAction.action) { cancelChargeAction('tool/action changed'); return; } // Stops a former held tool from finishing after equipment changes.
+          if (activeTool !== chargeAction.tool || activeAction !== chargeAction.action || heldMode !== 'tool') { cancelChargeAction('tool/action changed'); return; } // Stops a former held tool from finishing after equipment changes.
           const reticle = getReticleTile();
           if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
@@ -28354,7 +28354,7 @@
         const climbBtn = btns.find(b => b.action === 'climb_branch');
         const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         // The active charge owns its explicit action; a passive HUD refresh must not cancel it.
-        if (first && !chargeAction) activeAction = first.action;
+        if (first && (!chargeAction || heldMode !== 'tool' || activeTool !== chargeAction.tool)) activeAction = first.action;
         // The dodge button is climbing's only real trigger, so it's the
         // one that should visually say so — swaps to the climb/climb-down
         // icon+label while a target's in reach, back to the plain dodge
