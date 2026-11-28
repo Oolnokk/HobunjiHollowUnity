@@ -254,6 +254,12 @@ function world() {
   assert.equal(rope.yaw,0,'restarting preserves the authored shaft swing plane');
   assert.equal(rope.length,4.14,'restarting preserves the authored shaft rope length');
   assert.deepEqual(riderPoint,rope.bob);
+  rope.shaftRopeId=null;rope.braking=true;rope.angle=0;rope.omega=0;
+  core.stepAttached(rope,{forward:0,side:1,cameraYaw:Math.PI/2},.05,()=>false);
+  assert.equal(rope.yaw,Math.PI/2,'camera bearing overrides old side-stick yaw');
+  core.stepAttached(rope,{forward:1,side:0,cameraYaw:Math.PI},.05,()=>true);
+  assert.equal(rope.yaw,Math.PI/2,'blocked adjustment rolls back camera yaw');
+  assert.equal(rope.length,4.14,'blocked adjustment rolls back length');
 }
 // Every generated ruin rope is also the SAME object consumed by the burden
 // attachment system; registering one does not create a second pendulum.
