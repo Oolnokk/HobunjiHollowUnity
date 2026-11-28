@@ -22,6 +22,7 @@ function makeThree() {
     setHSL(h, s, l) { this.h = h; this.s = s; this.l = l; return this; }
   }
   class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
+  class Matrix4 { multiplyMatrices(a,b) { this.a=a; this.b=b; this.updates=(this.updates||0)+1; return this; } }
   class ShaderMaterial { constructor(params = {}) { Object.assign(this, params); this.type = 'ShaderMaterial'; this.uniforms = params.uniforms || {}; } }
   class MeshBasicMaterial { constructor(params) { Object.assign(this, params); } }
   class DepthTexture { constructor(w, h) { this.width = w; this.height = h; } }
@@ -50,7 +51,7 @@ function makeThree() {
   class PlaneGeometry {}
   function WebGLRenderer() {}
   return {
-    Color, Vector2, ShaderMaterial, MeshBasicMaterial, DepthTexture, WebGLRenderTarget, Object3D, Layers, Scene, Mesh, Group,
+    Color, Vector2, Matrix4, ShaderMaterial, MeshBasicMaterial, DepthTexture, WebGLRenderTarget, Object3D, Layers, Scene, Mesh, Group,
     OrthographicCamera, PlaneGeometry, WebGLRenderer,
     FrontSide: 0, BackSide: 1, LessDepth: 2, NearestFilter: 1003, RGBAFormat: 1023, DepthStencilFormat: 1027, UnsignedInt248Type: 1020,
     UniformsLib: { fog: { fogDensity: { value: 0 }, fogNear: { value: 1 }, fogFar: { value: 2 }, fogColor: { value: new Color() } } },
@@ -91,7 +92,7 @@ function createWorldRenderPipelineHarness(overrides = {}) {
     PerceptionMode: { renderOverlay: () => record({ kind: 'call', id: 'perception' }) },
     OutlineCompositeMaterial: { create: T => { record({ kind: 'call', id: 'compositeCreate' }); return new T.ShaderMaterial({ uniforms: {
       tColor: { value: null }, tEdgeId: { value: null }, tEdgeIdDepth: { value: null }, tSceneDepth: { value: null }, uTexel: { value: new T.Vector2(1, 1) },
-      uCameraNear: { value: 0 }, uCameraFar: { value: 0 }, uSeamOutlinesOn: { value: 0 }, tShellMaskDepth: {value:null}, uDepthOutlinesOn:{value:0}, uOrthographic:{value:0}, uDepthFogMode:{value:0}, uDepthFogColor:{value:new T.Color()}, uDepthFogNear:{value:0}, uDepthFogFar:{value:1}, uDepthFogDensity:{value:0}, uSeamColorDistThresh: { value: 0 }, uSeamOcclusionTolerance: { value: 0 } } }); } },
+      uCameraNear: { value: 0 }, uCameraFar: { value: 0 }, uSeamOutlinesOn: { value: 0 }, tShellMaskDepth: {value:null}, uDepthOutlinesOn:{value:0}, uOrthographic:{value:0}, uDepthOutlineDistanceTaper:{value:0}, uDepthOutlineWobble:{value:0}, uOutlineClipToWorld:{value:null}, uDepthFogMode:{value:0}, uDepthFogColor:{value:new T.Color()}, uDepthFogNear:{value:0}, uDepthFogFar:{value:1}, uDepthFogDensity:{value:0}, uSeamColorDistThresh: { value: 0 }, uSeamOcclusionTolerance: { value: 0 } } }); } },
     MobileRenderBudget: { sample: (now, active) => record({ kind: 'call', id: 'budgetSample', active }) },
   };
   Object.assign(window, stubs, overrides.window || {});
@@ -120,6 +121,7 @@ function createWorldRenderPipelineHarness(overrides = {}) {
   };
   const camera = new THREE.Object3D();
   camera.isCamera = true; camera.near = 0.1; camera.far = 200;
+  camera.matrixWorld = new THREE.Matrix4(); camera.projectionMatrixInverse = new THREE.Matrix4();
   camera.layers.enableAll();
 
   const harness = {

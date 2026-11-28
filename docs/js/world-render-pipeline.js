@@ -87,6 +87,9 @@
   let shellOutlineMat = null;
   const DEFAULT_GENERATED_OUTLINE_MODE = 'screen'; // User-selected shipped default and settings reset authority.
   let generatedOutlineMode = DEFAULT_GENERATED_OUTLINE_MODE; // Experimental generated-outline selector; master Outlines still controls the composite.
+  let depthOutlineDistanceTaper = false; // Persisted experimental screen-ink width.
+  let depthOutlineWobble = false; // Persisted experimental world-anchored ink variation.
+  let outlineClipToWorld = null; // Lazily allocated matrix; reused on enabled frames.
   let shellMaskMaterial = null; // Unexpanded, front-facing geometry for the selective screen-space mode.
   let shellMaskRT = null; // Allocated only in screen-space mode, reused between frames.
   let targetOutlineGreenMat = null;
@@ -655,6 +658,14 @@
     return generatedOutlineMode;
   }
 
+  function setDepthOutlineDistanceTaper(on) {
+    return depthOutlineDistanceTaper = on === true;
+  }
+
+  function setDepthOutlineWobble(on) {
+    return depthOutlineWobble = on === true;
+  }
+
   function renderScreenOutlineMask(renderer, camera, scene) {
     // Same resolution/precision as world depth. Only shell-tagged curved surfaces
     // are submitted, without expansion or the shell X-ray depth replay.
@@ -695,6 +706,17 @@
     _postMat.uniforms.uDepthOutlinesOn.value = generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0;
     _postMat.uniforms.tShellMaskDepth.value = shellMaskRT?.depthTexture || _mainRT.depthTexture;
     _postMat.uniforms.uOrthographic.value = camera.isOrthographicCamera ? 1 : 0;
+    const screenInk = _postMat.uniforms.uDepthOutlinesOn.value === 1; // Same for early and final ink resolves.
+    _postMat.uniforms.uDepthOutlineDistanceTaper.value = screenInk && depthOutlineDistanceTaper ? 1 : 0;
+    const useWobble = screenInk && depthOutlineWobble && !!camera.matrixWorld && !!camera.projectionMatrixInverse;
+    _postMat.uniforms.uDepthOutlineWobble.value = useWobble ? 1 : 0;
+    if (useWobble) {
+      // Actual gameplay camera, never the fullscreen post camera. The base
+      // render has already updated camera matrices; no per-pixel CPU work.
+      if (!outlineClipToWorld) outlineClipToWorld = new THREE.Matrix4();
+      outlineClipToWorld.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
+      _postMat.uniforms.uOutlineClipToWorld.value = outlineClipToWorld;
+    }
     if (generatedOutlineMode === 'screen') {
       const fog = activeScene.fog; // Fade ink towards the same scene fog as the shell shader.
       _postMat.uniforms.uDepthFogMode.value = fog?.isFogExp2 ? 2 : fog?.isFog ? 1 : 0;
@@ -998,6 +1020,10 @@
     defaultGeneratedOutlineMode: DEFAULT_GENERATED_OUTLINE_MODE,
     getGeneratedOutlineMode: () => generatedOutlineMode,
     setGeneratedOutlineMode,
+    getDepthOutlineDistanceTaper: () => depthOutlineDistanceTaper,
+    setDepthOutlineDistanceTaper,
+    getDepthOutlineWobble: () => depthOutlineWobble,
+    setDepthOutlineWobble,
     getOutlineRenderingConfig: () => JSON.parse(JSON.stringify(outlineRenderingConfig)),
     applyOutlineRenderingConfig,
     currentPass: () => currentPass,
@@ -1006,6 +1032,8 @@
     snapshot: () => ({
       initialized: !!deps,
       generatedOutlineMode, // Mobile diagnostics and A/B mode verification.
+      depthOutlineDistanceTaper, // Requested experiment state, independent of mode.
+      depthOutlineWobble,
       frames: stats.frames,
       lastFrame: stats.lastFrame ? { ...stats.lastFrame } : null,
       scopes: scopes.map(scope => ({ id: scope.id, owner: scope.owner, order: scope.order, enabled: scope.enabled, errors: scope.errors, lastError: scope.lastError })),
