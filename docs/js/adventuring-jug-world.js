@@ -11,7 +11,7 @@
   const getArea=()=>deps?.getArea?.();
   const getScene=()=>deps?.getScene?.();
   const finite=p=>p&&[p.x,p.y,p.z].every(Number.isFinite);
-  const isUndead=a=>!!(a?.isHarlyaoLich||a?.ruinSkeletonTheme||a?.isUndead||a?.def?.undead||a?.def?.isUndead||/skeleton|ghoul|lich|undead|revenant/i.test(String(a?.creatureKey||a?.enemyClass||a?.def?.id||'')));
+  const isUndead=a=>!!(a?.isHarlyaoLich||a?.isMinion||a?.isHarlyaoDemolitionist||a?.ruinSkeletonTheme||a?.isUndead||a?.def?.undead||a?.def?.isUndead||/skeleton|ghoul|lich|undead|revenant/i.test(String(a?.creatureKey||a?.enemyClass||a?.def?.id||'')));
   function held(){return !!deps?.isHolding?.();}
   function showSurface(t){
     const THREE=window.THREE, active=getScene();
@@ -43,10 +43,10 @@
       fillReceptacle:(receiver,liquid,units,owner)=>receiver.accept(liquid,units,owner),
       onConsecrated:showSurface,onConsecrationExpired:removeSurface,
       actorsInArea:deps.actorsInArea,actorTile:deps.actorTile,
-      isAlive:a=>Number(a?.health)>0&&!a._downed&&!a._deathTransitionStarted,
+      isAlive:a=>Number(a?.health)>0&&!a._downed&&!a._deathTransitionStarted&&!a._denHidden&&!a._timeKnockedOut,
       isUndead,
       healLiving:a=>window.ResourceSystem?.applyHealthRecovery?.(a,Math.max(1,(window.ResourceSystem?.getEffectiveMax?.(a,'health')||100)*.01)),
-      damageUndead:a=>window.DamageAuthority?.hit?.(a,Math.max(1,(window.ResourceSystem?.getEffectiveMax?.(a,'health')||100)*.01),a.x,a.y,0,{tag:'life-water',environmentalImpact:true,ignoreDodge:true,friendlyFire:true,afflictionBonuses:{}}),
+      damageUndead:a=>window.DamageAuthority?.hit?.(a,Math.max(1,(window.ResourceSystem?.getEffectiveMax?.(a,'health')||100)*.01),a.x,a.y,0,{tag:'life-water',environmentalImpact:true,ignoreDodge:true,noStagger:true,friendlyFire:true,afflictionBonuses:{}}),
     });
   }
   function ensureArea(){
@@ -134,17 +134,22 @@
     const result=rules.resolveImpact(f.ticket,impact);lastTrace={action:f.ticket.action,kind:primary.kind,point:primary.points.at(-1),...result};
   }
   function use(action){
-    if(!rules||!held()||!ACTIONS.includes(action)||flights.length>=MAX_FLIGHTS)return false;
+    if(!rules||!held()||!ACTIONS.includes(action))return false;
     ensureArea();
+    if(flights.length>=MAX_FLIGHTS)return false;
     const actor=local(),origin=deps.getMouth?.(),direction=deps.getAim?.(origin);
     if(!actor||!scene||!finite(origin)||!finite(direction)||!window.RangedWeapons?.traceLiquidSegment)return false;
-    const state=rules.getState(actor), candidates=targetCandidates(action==='jug_pour');
+    const state=rules.getState(actor), candidates=action==='jug_splash'?[]:targetCandidates(action==='jug_pour');
     const primary=action==='jug_splash'?null:trace(origin,direction,3,candidates);
     // Action 1 doubles as fill when the first hit is a liquid source in reach; no charge is spent.
     if(action==='jug_pour'&&primary?.liquid){
       const p=primary.points.at(-1);
-      if(Math.hypot(p.x-origin.x,p.y-origin.y,p.z-origin.z)<=2.7&&rules.fill(actor,primary.liquid)){
-        deps.toast?.(primary.liquid==='lifeWater'?'Filled with Life Water (6/6).':'Filled with Water (12/12).',true);return true;
+      if(Math.hypot(p.x-origin.x,p.y-origin.y,p.z-origin.z)<=2.7){
+        if(rules.fill(actor,primary.liquid)){
+          deps.toast?.(primary.liquid==='lifeWater'?'Filled with Life Water (6/6).':'Filled with Water (12/12).',true);return true;
+        }
+        deps.toast?.(state.liquid===primary.liquid?'The jug is already full.':'Empty the jug before changing liquids.',false);
+        return false; // A failed refill never releases liquid accidentally.
       }
     }
     if(!state.units){deps.toast?.('Aim at water or a Life Totem basin to fill the jug.',false);return false;}
@@ -173,7 +178,10 @@
     ];
   }
   function beginDodge(actor){
-    ensureArea();rules?.endDodge(actor);return rules?.beginDodge(actor,area,!held())||false;
+    ensureArea();
+    if(!rules?.beginDodge(actor,area,!held()))return false;
+    window.KnockbackCollisionImpact?.extinguishInWater?.(actor); // Belt water also clears existing Burning and Kindling at roll start.
+    return true; // Duplicate start notifications cannot spend another unit.
   }
   function dodgeStep(actor,x0,z0,x1,z1){
     if(!rules?.dodgeProtected(actor,area))return;
@@ -189,7 +197,7 @@
     if(!rules)return;
     ensureArea();
     const actor=local();
-    if(!actor?.dodging||actor.health<=0)rules.endDodge(actor);
+    if(!actor?.dodging||actor.health<=0||actor._downed||actor.prone)rules.endDodge(actor);
     for(let i=flights.length-1;i>=0;i--){
       const f=flights[i];f.age+=Math.max(0,dt);
       if(f.age>=f.duration+.12){finish(f);disposeFlight(f);flights.splice(i,1);}
@@ -214,7 +222,7 @@
   window.AdventuringJug=Object.freeze({
     init,held,buttons,use,registerReceptacle,beginDodge,dodgeStep,update,escapeTarget,isUndead,
     onBelt:()=>!held()&&!!rules?.hasLiquid(local()),
-    restore:(actor,state)=>rules?.restore(actor,state),
+    restore:(actor,state)=>{clear();return rules?.restore(actor,state);},
     isConsecrated:t=>rules?.isConsecrated(t)||false,
     dodgeProtected:(actor,a)=>rules?.dodgeProtected(actor,a)||false,
     debug:()=>({...rules?.debug(local()),held:held(),flights:flights.length,lastTrace}),

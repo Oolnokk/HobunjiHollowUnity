@@ -44,8 +44,9 @@ function createJugRuntime(deps) {
     if(!list&&create)columns.set(key(t),list=[]);
     return list;
   }
-  function isConsecrated(raw,time=now()){
-    const t=tileOf(raw);return !!t&&!!records(t)?.some(r=>sameFloor(r,t)&&time<r.until);
+  function isConsecrated(raw,time){
+    if(!areas.has(raw?.area))return false; // No allocations or clock reads in ordinary dry-area hazard queries.
+    const t=tileOf(raw),at=time??now();return !!t&&!!records(t)?.some(r=>sameFloor(r,t)&&at<r.until);
   }
   function consecrate(t,time){
     const list=records(t,true);let r=list.find(r=>sameFloor(r,t));

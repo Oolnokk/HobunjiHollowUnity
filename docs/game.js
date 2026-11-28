@@ -21422,7 +21422,7 @@
           return;
         }
         if (activeAction === 'rootledoot_pick') { const aimed = getReticleTile(); window.Rootledoots?.pick?.(aimed.col, aimed.row); refreshActionBar(); return; }
-        if(activeAction?.startsWith('jug_')){if(window.AdventuringJug?.held?.()&&!menuOpen&&!paused&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'tools'))window.AdventuringJug.use(activeAction);return;}
+        if(activeAction?.startsWith('jug_')){if(window.AdventuringJug?.held?.()&&!menuOpen&&!dialogueOpen&&!paused&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'tools'))window.AdventuringJug.use(activeAction);return;}
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           // Compatibility fallback only — ordinary press/hold/release input
@@ -27067,7 +27067,7 @@
           window.WildernessMap.updateFogAroundPlayer();
           if (!localPaused) window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
-          window.AdventuringJug?.update?.(dt); // Simulation-owned transient liquid flights and 1 Hz consecration effects.
+          window.AdventuringJug?.update?.(localPaused?0:dt); // Simulation-owned transient liquid flights and 1 Hz consecration effects.
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
@@ -31700,6 +31700,11 @@
         getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
         getGroundY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getGroundYAtWorld: activeSurfaceYAtWorld,
+        canIgniteGroundTile:(area,x,z,y)=>{
+          if(area!==currentArea)return false;
+          const t=window.GridTileAccessors.getActiveGrid()?.[z]?.[x];
+          return !!t&&!WATERWAY_TYPES.has(t.type)&&!isSolid(t.type)&&!t.mapBoundary&&!t.incline;
+        },
         getPlayerInteractionRay: currentPlayerInteractionRay,
         isShoulderView: () => activeCameraMode === SHOULDER_SURF_MODE || !isDesktop || lastInputDevice === 'controller' || !!mobileArchCombatAim,
         makeFlaskProjectile: itemKey => makeHeldItemPlaneMesh({ key: itemKey }),
@@ -32706,7 +32711,7 @@
           return plane.localToWorld(new THREE.Vector3(0,(Number(plane.geometry?.parameters?.height)||.4)*.38,0)); // Upper mouth of the temporary jar PNG.
         },
         getAim:origin=>origin&&currentPlayerPerspectiveDirection(origin),
-        isWaterTile:t=>WATERWAY_TYPES.has(window.GridTileAccessors.getActiveGrid()?.[t.z]?.[t.x]?.type),
+        isWaterTile:t=>WATERWAY_TYPES.has(window.GridTileAccessors.getActiveGrid()?.[t.z]?.[t.x]?.type)&&Math.abs(activeSurfaceYAtWorld(t.x+.5,t.z+.5)-t.y)<=.35, // A bridge over a river is not a water source.
         saveState:state=>window.CharacterMetaSave?.update?.(ch=>{ch.adventuringJug=state;}),
         refresh:refreshActionBar,toast:showToast,
         actorsInArea:area=>[...(window.ActorRegistry?.getPlayers?.()||[player]),...hostileObjects,...companionObjects,...npcWalkers].filter(a=>(window.ActorRegistry?.areaOf?.(a)||a.area||(a===player?currentArea:null))===area),

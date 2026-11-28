@@ -98,6 +98,7 @@
     if(Number.isFinite(support?.y)&&Math.abs(support.y-y)<=FLOOR_TOLERANCE)return support.y;
     // The injected terrain owner is authoritative for ground and does not invent platforms above it.
     if(typeof deps?.getGroundYAtWorld!=='function')return y;
+    if(deps.canIgniteGroundTile?.(area,x,z,y)===false)return null; // Reject void, water and solid terrain before creating a cell.
     const ground=deps.getGroundYAtWorld(x+.5,z+.5);
     if(!Number.isFinite(ground)||Math.abs(ground-y)>FLOOR_TOLERANCE)return null;
     if(area==='map_i_dev_random_ruin'){
@@ -237,7 +238,7 @@
         if(cell.source==='ruin-skeleton-lunge'&&actor.ruinSkeletonTheme==='hronal')continue;
         if(window.AdventuringJug?.dodgeProtected?.(actor,area))continue;
         const feetY=actor.physicalFeetY??(actor===player?ruin?.getPlayerSupportY?.():actor.shaftSupportY??actor.surfaceYOverride?.()??actor.surfaceY??(actor.avatarRef?.group?.position?.y-(actor.halfHeight||0)));
-        if(Number.isFinite(feetY)&&Math.abs(feetY-cell.y)>.9)continue;
+        if(Number.isFinite(feetY)&&Math.abs(feetY-cell.y)>FLOOR_TOLERANCE)continue;
         burned.add(actor);window.ResourceSystem?.addAffliction?.(actor,'burningHealth',5);
       }
     }
