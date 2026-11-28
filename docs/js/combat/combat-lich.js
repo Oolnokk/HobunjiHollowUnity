@@ -1735,7 +1735,7 @@
       const minion = await window.MinionCombat.makeEntity({
         speciesId: 'harlyao-skeleton', name: 'Harlyao Skeleton', tier: lich.banditTier || 0,
         x, y, zoneId: lich.areaId || currentLichArea() || ARENA_ID, weaponMetalKey: 'nativeCopper',
-        extra: { homeX: x, homeY: y, state: 'chase', summonedByLichId: lich.id },
+        extra: { homeX: x, homeY: y, state: 'chase', summonedByLichId: lich.id, lichMinionTheme:lich.lichType },
       });
       if (!minion) return;
       if (!isArena() || !isLiveActor(lich)) {
@@ -1858,7 +1858,10 @@
     const aimAngle = Math.atan2(dy, dx); // Body facing returned to the shared hostile loop.
     // Kanthic fights now deny space with plasm, never commanding the player's direction.
     const specialDecision = window.SpecialHarlyaoLiches?.handleAI?.(lich, dt, target, deps, aimAngle, dist); // Boss-exclusive phases are layered on top of the existing lich AI.
-    if (specialDecision) return specialDecision;
+    if (specialDecision) {
+      if(lich.lichType==='kanthic')lich._lichSummonCooldownS=Math.max(0,(lich._lichSummonCooldownS||0)-dt); // Charge phases count toward the resurrection cooldown, but never interrupt a charge.
+      return specialDecision;
+    }
 
     lich._lichPrimaryCooldownS = Math.max(0, (lich._lichPrimaryCooldownS || 0) - dt);
     lich._lichSummonCooldownS = Math.max(0, (lich._lichSummonCooldownS || 0) - dt);
