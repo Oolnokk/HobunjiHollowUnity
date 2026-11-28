@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // Pins RopeCore to the original rope arithmetic from js/dev-random-ruin-simple-puzzles.js,
-// except for the intentional held-adjust change: it now cancels angular velocity and eases to vertical.
+// except for intentional held-adjust straightening and movement-driven restart from rest.
 // The reference paths still check the same collision handling and ordinary swing math bit-for-bit.
 const assert = require('assert');
 const RC = require('../docs/js/rope-core.js');
@@ -41,7 +41,8 @@ const ref = {
       rope.yaw += intent.side * 1.6 * dt;
       rope.length = Math.max(ROPE_MIN_LENGTH, Math.min(rope.maxLength, rope.length - intent.forward * .9 * dt));
     } else {
-      if (intent.forward * rope.omega > 0) rope.omega += intent.forward * ROPE_PUMP * dt;
+      const atRest = Math.abs(rope.angle) < .001 && Math.abs(rope.omega) < .001; // Reference startup rule.
+      if (intent.forward * rope.omega > 0 || (atRest && Math.abs(intent.forward) > .001)) rope.omega += intent.forward * ROPE_PUMP * dt;
       rope.omega += (-ROPE_GRAVITY / Math.max(.4, rope.length)) * Math.sin(rope.angle) * dt;
       rope.omega *= Math.exp(-.16 * dt);
       rope.angle += rope.omega * dt;
@@ -175,6 +176,31 @@ assert.equal(smooth.angle,0,'a sustained hold finishes exactly straight');
 smooth.braking=false;RC.stepAttached(smooth,{forward:0,side:0},1/60,gentle);
 assert.equal(smooth.angle,0,'releasing after straightening cannot revive the old swing');
 assert.equal(smooth.omega,0,'releasing after straightening has no latent velocity');
+// Regression: fully braking must not leave the rider permanently at the equilibrium.
+for (const dt of [1/30,1/60,1/120]) {
+  for (const direction of [-1,1]) {
+    const restart = RC.create({anchor:{x:0,y:4,z:0},length:3}); // Exercise the actual held-adjust and release sequence.
+    restart.angle=.8; restart.omega=2; restart.braking=true;
+    for(let i=0;i<Math.ceil(2/dt);i++) RC.stepAttached(restart,{forward:direction,side:0},dt,gentle);
+    assert.equal(restart.angle,0,'held adjustment stays vertical even with movement');
+    assert.equal(restart.omega,0,'held adjustment stays stopped');
+    restart.braking=false;
+    RC.stepAttached(restart,{forward:0,side:1},dt,gentle);
+    assert.equal(restart.angle,0,'side-only movement cannot seed a swing');
+    assert.equal(restart.omega,0,'neutral along the swing plane leaves it stopped');
+    RC.stepAttached(restart,{forward:direction,side:0},dt,gentle);
+    assert.equal(Math.sign(restart.omega),direction,'forward or backward input starts a swing');
+    assert.equal(Math.sign(restart.angle),direction,'the rider moves on the first unbraked step');
+    for(let i=0;i<Math.ceil(1/dt);i++) RC.stepAttached(restart,{forward:direction,side:0},dt,gentle);
+    assert(Math.abs(restart.angle)>.05,'the restarted swing builds meaningful displacement');
+  }
+}
+const apex=RC.create({anchor:{x:0,y:4,z:0},length:3,angle:.6}); // A normal apex is not a stationary vertical rope.
+RC.stepAttached(apex,{forward:1,side:0},1/60,gentle);
+assert(apex.omega<0,'gravity still reverses the swing at its apex');
+const blockedRestart=RC.create({anchor:{x:0,y:4,z:0},length:3}); // Startup must not bypass the same sweep.
+assert(RC.stepAttached(blockedRestart,{forward:1,side:0},1/60,()=>true).blocked,'startup obeys collision');
+assert.equal(blockedRestart.angle,0,'blocked startup cannot move through an obstacle');
 const frameThirty=RC.create({anchor:{x:0,y:4,z:0},length:3});
 const frameOneTwenty=RC.create({anchor:{x:0,y:4,z:0},length:3});
 for(const testRope of [frameThirty,frameOneTwenty]){testRope.angle=-1.1;testRope.omega=4;testRope.braking=true;}
