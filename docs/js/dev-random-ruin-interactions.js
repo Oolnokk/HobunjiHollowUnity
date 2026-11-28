@@ -685,7 +685,7 @@
     lastRows=rows;
     lastRowsAt=performance.now();
     lastRowsSignature=signature;
-    lastAnchor=rows[0]?.owner||nearestOwnerForKind(rows[0]?.kind)||ruinRoot()||null;
+    lastAnchor=rows[0]?.owner||(rows.length ? promptAnchor : null); // No whole-ruin traversal when the camera is not aimed at an interaction.
     syncInputClaims(rows);
     // Keep the floating list live while the ruin has rows, and clear it once
     // when they go away. Syncing an empty list every frame wiped prompts the
