@@ -189,7 +189,8 @@ function world() {
   const player={x:0,y:0,inputStrength:1,inputX:-1,inputY:0,vx:0,vy:0};
   let riderPoint=null,holsters=0,resets=0; // The mock records control transfer, never another rope simulator.
   const window={PlayerJump:{reset:()=>{resets++;}}};
-  const deps={player,TILE:1,showToast:()=>{}};
+  let cameraYaw=0,bodyYaw=null;
+  const deps={player,TILE:1,showToast:()=>{},getActiveCamera:()=>({getWorldDirection:v=>Object.assign(v,{x:Math.cos(cameraYaw),z:Math.sin(cameraYaw)})}),setFacingAngle:y=>{bodyYaw=y;}};
   const grabStart=ruinSource.indexOf('  function catchRopeInFlight(rope,f) {');
   const grabEnd=ruinSource.indexOf('  // Ordinary jumps and unscripted falls',grabStart);
   assert(grabStart>=0&&grabEnd>grabStart,'the original airborne catch must transfer to pendulum state');
@@ -214,19 +215,19 @@ function world() {
 
   const updateStart=ruinSource.indexOf('  function ropeIntent(');
   const updateEnd=ruinSource.indexOf('  function updateIdleRope(',updateStart);
-  const updateAttachedRope=new Function('RopeCore','deps','updateRopeVisual','clonePoint','setPlayerWorld','sweptRopePoint',
+  const updateAttachedRope=new Function('RopeCore','deps','updateRopeVisual','clonePoint','setPlayerWorld','sweptRopePoint','ropeDirection','window',
     ruinSource.slice(updateStart,updateEnd)+'\nreturn updateAttachedRope;')(
     core,deps,r=>(r.bob=core.bobAt(r)),p=>({...p}),
-    p=>{riderPoint=p;},()=>({blocked:false}));
+    p=>{riderPoint=p;},()=>({blocked:false}),{},window);
   for(let i=0;i<20;i++)updateAttachedRope(rope,.016);
   assert(rope.angle<-.1,'the normal rope pendulum continues to pump after automatic catch');
   const swingBeforeBrake=Math.abs(rope.angle); // The authored shaft rider and ordinary ropes use the same held straightener.
   const controlsStart=ruinSource.indexOf('  function getInteractionControls() {');
   const controlsEnd=ruinSource.indexOf('\n\n  function snapshot() {',controlsStart);
   assert(controlsStart>=0&&controlsEnd>controlsStart,'rope adjust uses the native held-interaction callbacks');
-  const getControls=new Function('state','inRuin','window','composers',
+  const getControls=new Function('state','inRuin','window','composers','updateAttachedRope',
     ruinSource.slice(controlsStart,controlsEnd)+'\nreturn getInteractionControls;')(
-      state,()=>true,window,[]);
+      state,()=>true,window,[],updateAttachedRope);
   const holdAdjust=getControls().find(control=>control.kind==='ropeBrake');
   assert(holdAdjust?.onHoldStart&&holdAdjust?.onHoldEnd,'holding the existing rope-adjust action is wired');
   holdAdjust.onHoldStart();
@@ -254,6 +255,21 @@ function world() {
   assert.equal(rope.yaw,0,'restarting preserves the authored shaft swing plane');
   assert.equal(rope.length,4.14,'restarting preserves the authored shaft rope length');
   assert.deepEqual(riderPoint,rope.bob);
+  rope.shaftRopeId=null;rope.angle=0;rope.omega=0;
+  holdAdjust.onHoldStart();cameraYaw=Math.PI/2;player.inputX=0;player.inputY=1;
+  updateAttachedRope(rope,.05);
+  assert.equal(bodyYaw,Math.PI/2,'body facing owner follows camera');
+  assert.equal(rope.yaw,Math.PI/2,'real adjust tick aims rope');
+  assert(rope.length<4.14,'camera-forward movement shortens rope');
+  cameraYaw=Math.PI;holdAdjust.onHoldEnd();
+  assert.equal(rope.yaw,Math.PI,'release captures latest camera bearing without another tick');
+  assert.equal(rope.braking,false);
+  rope.length=4.14;rope.braking=true;
+  core.stepAttached(rope,{forward:0,side:1,cameraYaw:Math.PI/2},.05,()=>false);
+  assert.equal(rope.yaw,Math.PI/2,'camera bearing overrides old side-stick yaw');
+  core.stepAttached(rope,{forward:1,side:0,cameraYaw:Math.PI},.05,()=>true);
+  assert.equal(rope.yaw,Math.PI/2,'blocked adjustment rolls back camera yaw');
+  assert.equal(rope.length,4.14,'blocked adjustment rolls back length');
 }
 // Every generated ruin rope is also the SAME object consumed by the burden
 // attachment system; registering one does not create a second pendulum.
@@ -321,3 +337,69 @@ function world() {
   assert.equal(calls,1);
 }
 console.log('shared airborne rope ok');
+
+// Fatal plane uses story-specific heights and a swept bank-edge crossing.
+{
+  const from=ruinSource.indexOf('  function insideRopeChain(');
+  const to=ruinSource.indexOf('  function instantRopeChainDeath(',from);
+  const bounds={minX:0,maxX:4,minZ:0,maxZ:4};
+  const state={ropeChains:[{floorY:0,bounds},{floorY:6,bounds,external:true}]};
+  const {ropeChainPitAt,crossedRopeChainDeathPlane:cross}=new Function('state','inRuin',
+    ruinSource.slice(from,to)+'\nreturn {ropeChainPitAt,crossedRopeChainDeathPlane};')(state,()=>true);
+  assert.equal(ropeChainPitAt(2,2,6).floorY,6,'upper story is not claimed by native lower hall');
+  assert.equal(ropeChainPitAt(2,2,3),null,'space between stories is not ground');
+  assert.equal(cross(2,2,6,5.4),true,'upper abyss kills before lower landing');
+  assert.equal(cross(2,2,5,4.8),false,'fall below unrelated upper pit is not fatal');
+  assert.equal(cross(4.2,2,6,5,3.6,2),true,'crossing below pit before exiting bank is fatal');
+  assert.equal(cross(4.2,2,6,5,4.1,2),false,'safe bank fall is not a pit death');
+}
+// Room departure resets physical and visible rope geometry, but never steals a burden.
+{
+  const from=ruinSource.indexOf('  function restoreRopeGeometry(');
+  const to=ruinSource.indexOf('  function updateRopes(',from);
+  const core=require('../docs/js/rope-core.js');
+  const rope={...core.create({anchor:{x:2,y:4,z:2},length:2}),restLength:3,restYaw:0,launchAngle:.1,roomId:'r'};
+  const state={ropes:[rope],ropeChains:[],context:{meta:{rooms:[{id:'r'}]}}};
+  const p={x:2,y:0,z:2};
+  const {restoreRopeGeometry,resetDepartedRopes}=new Function('state','deps','window','playerWorld','roomBounds','clonePoint','updateRopeVisual',
+    ruinSource.slice(from,to)+'\nreturn {restoreRopeGeometry,resetDepartedRopes};')(
+      state,{player:{}},{},()=>p,()=>({minX:0,maxX:4,minZ:0,maxZ:4}),core.clonePoint,r=>(r.bob=core.bobAt(r)));
+  resetDepartedRopes();assert.equal(rope.length,2,'stay in room preserves adjustment');
+  p.x=5;resetDepartedRopes();assert.equal(rope.length,3,'leave room restores length');
+  assert.equal(rope.angle,.1,'authored rest angle restored');assert.deepEqual(rope.bob,rope.lastSafeBob);
+  rope.length=2;rope.burden={};restoreRopeGeometry(rope);assert.equal(rope.length,2,'burden rope is preserved');
+  rope.burden=null;restoreRopeGeometry(rope);assert.equal(rope.length,3,'death reset restores reach');
+}
+
+ // Production PlayerJump must stop before accepting the lower story and preserve the respawn's new position.
+{
+  const t=world(),player=t.player;
+  const from=ruinSource.indexOf('  function insideRopeChain(');
+  const to=ruinSource.indexOf('  function instantRopeChainDeath(',from);
+  const state={ropeChains:[{floorY:4,bounds:{minX:2,maxX:3,minZ:3,maxZ:4},external:true}]};
+  const cross=new Function('state','inRuin',ruinSource.slice(from,to)+'\nreturn crossedRopeChainDeathPlane;')(state,()=>true);
+  let deaths=0,landings=0;
+  t.window.FallSystem.land=()=>{landings++;};
+  t.window.DevRandomRuinSimplePuzzles={crossedRopeChainDeathPlane:cross,instantRopeChainDeath(){
+    deaths++;t.window.PlayerJump.reset();player.x=TILE;player.y=TILE;player.physicalFeetY=4;return true;
+  }};
+  t.window.PlayerJump.beginFlight({x:2.5,y:4.2,z:3.5,vx:0,vy:-5,vz:0},{source:'rope-chain test'});
+  for(let i=0;i<20&&!deaths;i++)t.step();
+  assert.equal(deaths,1,'ordinary jump runs fatal crossing before landing');
+  assert.equal(landings,0,'no lower-story landing impact runs');
+  assert.equal(player.x,TILE,'death returns the player to checkpoint');
+  assert.equal(player.physicalFeetY,4,'jump tick must not overwrite the new spawn height');
+  assert.equal(player._freeJump,null,'old flight ownership is cleared');
+}
+ // Checkpoint support must stay on the intended story and reject abyss coordinates.
+{
+  const from=ruinSource.indexOf('  function safeCheckpointPoint(');
+  const to=ruinSource.indexOf('  function activateCheckpoint(',from);
+  const samples=[];
+  const DS={sampleSupport(x,z,opts){samples.push(opts);return x>2.2?{y:6.12}:null;}};
+  const safe=new Function('DS','ropeChainPitAt','ropeBlockedAt','ROPE_COLLISION_RADIUS',
+    ruinSource.slice(from,to)+'\nreturn safeCheckpointPoint;')(DS,(x,z)=>x<2.3,()=>false,.24);
+  assert.deepEqual(safe({x:2,y:6,z:3}),{x:2.35,y:6.12,z:3},'unsupported checkpoint moves to nearby safe support');
+  assert(samples.every(o=>o.minY===5.55&&o.maxY===6.45),'never query another story during recovery');
+  assert.equal(safe({x:0,y:6,z:3}),null,'no floor means canonical fallback, not false success');
+}

@@ -134,6 +134,7 @@
       ruin.lastAcceptedPx = { x:deps.player.x, y:deps.player.y };
       ruin.lastSafePx = { ...ruin.lastAcceptedPx };
       ruin.falling = null;
+      ruin.obeliskFall=null;ruin.obeliskAttachedY=null;ruin.obeliskAttachedId=null;ruin.airPeakY=null; // Teleports cancel old fall state.
     }
     syncRuinPresentationHeight(y);
     if (options.snapCamera !== false) deps._snapCameraTarget?.();
@@ -2054,7 +2055,7 @@
     // DynamicSurfaces support, so test its height-aware fatal pit FIRST.
     // Rope flight/attached motion returns above and is handled exclusively by
     // the native V50 rope engine until a landing or failed catch occurs.
-    if(grid&&window.DevRandomRuinSimplePuzzles?.isInstantDeathPit?.(x,z)){
+    if(window.DevRandomRuinSimplePuzzles?.isInstantDeathPit?.(x,z)){
       if(window.DevRandomRuinSimplePuzzles.instantRopeChainDeath?.()===true)return;
       return; // Never allow ordinary footing damage/downed state inside a floorless rope abyss.
     }

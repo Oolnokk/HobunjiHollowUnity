@@ -593,6 +593,7 @@
       const step = Math.min(remaining, CONFIG.stepSeconds);
       remaining -= step;
       const previous = state.feetY;
+      const previousX=player.x/deps.TILE,previousZ=player.y/deps.TILE; // Sweep fatal-plane intersection across bank edges.
       state.vy -= CONFIG.gravity * (Motion?.gravityMultiplier?.() ?? 1) * step; // Future slow-fall never modifies baseline puzzle generation.
       state.feetY += state.vy * step;
       state.elapsed += step;
@@ -603,6 +604,9 @@
         state.safeX = player.x / deps.TILE; state.safeZ = player.y / deps.TILE; // Track the nearest walkable tile passed above during this jump.
       }
       const px = player.x / deps.TILE, pz = player.y / deps.TILE;
+      const ropePuzzles=window.DevRandomRuinSimplePuzzles; // Fatal abyss wins over lower-story supports.
+      if(state.vy<=0&&ropePuzzles?.crossedRopeChainDeathPlane?.(px,pz,previous,state.feetY,previousX,previousZ)&&
+          ropePuzzles.instantRopeChainDeath?.()===true)return true;
       const support = state.vy <= 0
         ? highestSupport(px, pz, previous + CONFIG.landingTolerance)
         : null;

@@ -122,6 +122,34 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   return {api,kit,context,composer,player,tick,damageEvents,get impactCount(){return impactCount;},get afflictionCount(){return afflictionCount;},get footprint(){return footprint;}, audioEvents,mappedPatches,presentationHeights};
 }
 
+// Both isolated death fixtures execute the real checkpoint and rope helpers.
+// Mock only the physical floor and visual boundary, not checkpoint validation.
+function checkpointRecovery(env) {
+  const slice=(first,next)=>{
+    const start=puzzlesSource.indexOf('  function '+first+'(');
+    const end=puzzlesSource.indexOf('  function '+next+'(',start+1);
+    assert(start>=0&&end>start,'checkpoint runtime helper '+first+' is present');
+    return puzzlesSource.slice(start,end);
+  };
+  const state=env.state;
+  state.ropes??=[]; // The lich fixture has no ropes unless explicitly supplied.
+  state.ropeChains??=[];
+  const point=state.checkpoints.active.point;
+  const core=require('../docs/js/rope-core.js');
+  const source=slice('insideRopeChain','crossedRopeChainDeathPlane')+
+    slice('safeCheckpointPoint','activateCheckpoint')+
+    slice('restoreRopeGeometry','resetDepartedRopes')+
+    slice('respawnAtCheckpoint','buildCheckpoints');
+  return vm.runInNewContext(source+'\nrespawnAtCheckpoint;',{
+    DS:{sampleSupport(x,z,{minY,maxY}){
+      return Math.abs(x-point.x)<.01&&Math.abs(z-point.z)<.01&&point.y>=minY&&point.y<=maxY?{y:point.y}:null;
+    }},
+    ROPE_COLLISION_RADIUS:core.COLLISION_RADIUS,ropeBlockedAt:()=>false,
+    updateRopeVisual:rope=>(rope.bob=core.bobAt(rope)), // Actual pendulum geometry without WebGL.
+    ...env,
+  });
+}
+
 // Execute the actual shard owner with renderer stand-ins: retire, reuse, and cap a burst style.
 {
   const start=themeSource.indexOf('  const MAX_RETIRED_SHARDS_PER_STYLE=');
@@ -183,9 +211,9 @@ function assertPlasmSeams(t) {
   assert.equal(t.api.snapshot().plasmTiles,initial,'Even death leaves stationary patches untouched');
   for(let z=2;z<12;z++)for(let x=2;x<12;x++)assert.equal(t.api.isPlasmAt(x+.5,z+.5),seed.has(x+','+z));
   assertPlasmSeams(t);
-  const start=puzzlesSource.indexOf('  function respawnAtCheckpoint('),end=puzzlesSource.indexOf('\n  function buildCheckpoints(',start);
-  const recovery={checkpoints:{active:{point:{x:3,y:0,z:3}},respawnCount:0},context:t.context,kit:t.kit};
-  const respawn=vm.runInNewContext('('+puzzlesSource.slice(start,end)+')',{
+  const rope={anchor:{x:4,y:4,z:4},length:1.65,restLength:3,yaw:1,restYaw:0,angle:.2,launchAngle:.1,omega:.5,attached:true,braking:true};
+  const recovery={checkpoints:{active:{point:{x:3,y:0,z:3}},respawnCount:0},context:t.context,kit:t.kit,ropes:[rope],activeRope:rope};
+  const respawn=checkpointRecovery({
     inRuin:()=>true,state:recovery,deps:t.kit.deps,composers:[t.composer],MAP_ID:'map_i_dev_random_ruin',
     restorePlayerScene(){},clearPlayerAfflictions(){},setPlayerWorld(){},restoreRopeEquipment(){},
     clonePoint:p=>({...p}),CHECKPOINT_INVULN_MS:1000,performance:{now:()=>100},console,window:{},
@@ -193,6 +221,13 @@ function assertPlasmSeams(t) {
   t.player.maxHealth=100;t.player.health=0;
   assert.equal(respawn('combat'),true);
   assert.equal(t.player.health,50,'Checkpoint still restores health synchronously');
+  assert.equal(recovery.activeRope,null,'Combat death releases active rope ownership');
+  assert.equal(rope.length,3,'Combat death restores original rope length');
+  assert.equal(rope.yaw,0,'Combat death restores original rope yaw');
+  assert.equal(rope.angle,.1,'Combat death restores original rope angle');
+  assert.equal(rope.omega,0,'Combat death clears rope momentum');
+  assert.equal(rope.attached,false,'Combat death detaches rider');
+  assert.deepEqual(rope.bob,rope.lastSafeBob,'Death updates the rope collision origin');
   assert.equal(mesh(),original,'Respawn never reconstructs stationary plasm');
   const [x,z]=[...seed][0].split(',').map(Number);
   t.player.x=(x+.5)*64;t.player.y=(z+.5)*64;
@@ -570,8 +605,7 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
   jumpWindow.PlayerJump.init({player:t.player});
   const point={x:3.5,z:3.5,y:0}; // Simulated dry checkpoint below the elevated slab.
   const checkpoints={active:{point},respawnCount:0};
-  respawn=vm.runInNewContext(puzzlesSource.slice(puzzlesSource.indexOf('  function respawnAtCheckpoint('),
-    puzzlesSource.indexOf('  function buildCheckpoints('))+'\nrespawnAtCheckpoint;',{
+  respawn=checkpointRecovery({
     window:jumpWindow,inRuin:()=>true,deps:{player:t.player},state:{checkpoints,kit:t.kit},
     composers:[t.composer],MAP_ID:'ruin',CHECKPOINT_INVULN_MS:1200,performance,
     restorePlayerScene(){},clearPlayerAfflictions(){},restoreRopeEquipment(){},clonePoint:p=>({...p}),

@@ -82,7 +82,7 @@
       rope.omega = 0; // Holding Adjust cancels existing swing momentum instead of merely slowing it.
       rope.angle *= Math.exp(-C.BRAKE_DAMPING * dt); // Frame-rate-independent lerp back to a vertical rope.
       if (Math.abs(rope.angle) < 0.001) rope.angle = 0; // Finish precisely straight; no residual gravity when released.
-      rope.yaw += move.side * C.BRAKE_YAW_RATE * dt;
+      rope.yaw = Number.isFinite(move.cameraYaw) ? move.cameraYaw : rope.yaw + move.side * C.BRAKE_YAW_RATE * dt; // Collision-checked camera bearing.
       rope.length = Math.max(C.MIN_LENGTH, Math.min(rope.maxLength, rope.length - move.forward * C.BRAKE_LENGTH_RATE * dt));
     } else {
       // A straightened rope has no gravity torque or momentum to pump; movement must be able to start it.
