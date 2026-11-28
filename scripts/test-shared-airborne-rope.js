@@ -244,8 +244,15 @@ function world() {
   assert.equal(rope.omega,0,'the shaft finishes with no leftover swing velocity');
   holdAdjust.onHoldEnd();
   assert.equal(rope.braking,false,'releasing the adjust hold returns control to ordinary rope pumping');
+  player.inputX=0;player.inputY=0;
   updateAttachedRope(rope,.05);
   assert.equal(rope.angle,0,'the former momentum must not restart the swing when the hold ends');
+  assert.equal(rope.omega,0,'neutral input leaves the rider stationary');
+  player.inputX=1;
+  updateAttachedRope(rope,.05);
+  assert(rope.angle>0&&rope.omega>0,'movement after a complete held adjustment starts a new swing');
+  assert.equal(rope.yaw,0,'restarting preserves the authored shaft swing plane');
+  assert.equal(rope.length,4.14,'restarting preserves the authored shaft rope length');
   assert.deepEqual(riderPoint,rope.bob);
 }
 // Every generated ruin rope is also the SAME object consumed by the burden
