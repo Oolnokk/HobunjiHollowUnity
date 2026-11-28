@@ -91,21 +91,64 @@
     }
     scene.add(group);zone.mesh=group;zone.scene=scene;
   }
+  function ordinaryGroundFire(source){return !/skeleton|magic|lich|enchant/i.test(String(source));}
   function ignite({area,x,z,y=0,radius=1.5,seconds=DEFAULT_DURATION,source='unknown'}={}) {
     const px=Number(x),pz=Number(z),floorY=Number(y);
     if(!String(area||'')||!Number.isFinite(px)||!Number.isFinite(pz)||!Number.isFinite(floorY)||
        String(area)!==String(deps?.getCurrentArea?.()||''))return false;
     const patch={area:String(area),x:px,z:pz,y:floorY,radius:Math.max(.3,Math.min(4,Number(radius)||1.5)),
       seconds:Math.max(.5,Math.min(25,Number(seconds)||DEFAULT_DURATION)),age:0,damageTimer:0,
-      source:String(source)};
+      source:String(source),ordinaryUntil:0};
+    if(ordinaryGroundFire(source))patch.ordinaryUntil=patch.seconds; // Separate cleansing duration from the existing shared damage patch lifetime.
     // Neighboring splashes extend the fire but never grow unbounded or multiply damage on one tile.
     const old=zones.find(z=>z.area===patch.area&&Math.abs(z.y-floorY)<=FLOOR_TOLERANCE&&Math.hypot(z.x-px,z.z-pz)<.5);
-    if(old){old.seconds=Math.max(old.seconds,old.age+patch.seconds);return true;}
+    if(old){old.seconds=Math.max(old.seconds,old.age+patch.seconds);
+      if(patch.ordinaryUntil>0)old.ordinaryUntil=Math.max(old.ordinaryUntil||0,old.age+patch.ordinaryUntil);
+      return true; // Magical and ordinary splashes never double damage, but neither steals the other's cleansing lifetime.
+    }
     if(zones.length>=MAX_ZONES)dispose(zones.shift());
     zones.push(patch);buildVisual(patch);
     lastIgnition={area:patch.area,x:px,z:pz,radius:patch.radius,source:patch.source};
     return true;
   }
+  const PLASM_FIRE_RADIUS=1.5; // Every ordinary flame clears a modest local area, not an entire dungeon.
+  let fireScene=null,fireScanAt=-Infinity,fireFurniture=[]; // Scan only while plasm exists, amortized across calls.
+  let firePosition=null; // Reuse the scratch world point for all physical fire sources.
+  function plasmFireSources(area,scene,player,tile,feetY){
+    const sources=[];
+    if(window.AdventuringTools?.isLit?.()&&player&&Number(player.health)>0&&Number.isFinite(feetY))
+      sources.push({x:player.x/tile,z:player.y/tile,y:feetY,radius:PLASM_FIRE_RADIUS}); // Same authoritative flame for held and belt-stowed torch.
+    for(const fire of zones)if(fire.area===area&&fire.age<fire.seconds&&fire.age<fire.ordinaryUntil)
+      sources.push({x:fire.x,z:fire.z,y:fire.y,radius:Math.min(2,Math.max(1,fire.radius))});
+    if(area==='map_i_dev_random_ruin')for(const light of window.DevRandomRuinSanctum?.ordinaryFireSources?.()||[])
+      if(light.active!==false)sources.push({x:light.x,z:light.z,y:light.floorY,radius:PLASM_FIRE_RADIUS});
+    const now=typeof performance!=='undefined'?performance.now():Date.now();
+    if(scene!==fireScene||now-fireScanAt>=750){
+      fireScene=scene;fireScanAt=now;fireFurniture=[];
+      scene?.traverse?.(object=>{
+        // Recognize conventional physical fire furniture, not magical seals, checkpoint flames or eye glow.
+        const key=String(object.userData?.authoredFurnitureKey||object.userData?.ruinFurnitureKey||object.name||'');
+        if(object.userData?.ordinaryFire===true)return; // Explicit sanctum sources already entered above; never double-count.
+        if(Object.prototype.hasOwnProperty.call(object.userData||{},'fireHazard')&&!/ruin-(small|shaft)|lich|magic|blue|checkpoint|rune/i.test(key)&&/campfire|bonfire|fireplace|torch|fire.source|sconce|brazier|candle/i.test(key))fireFurniture.push(object);
+      });
+    }
+    for(const object of fireFurniture){
+      if(object.userData?.fireHazard!==true)continue;
+      let node=object,extinguished=false;
+      while(node&&node!==scene&&node.visible!==false){
+        if(node.userData?.festivalWeatherFire&&window.WeatherFX?.isRaining?.()){extinguished=true;break;}
+        node=node.parent;
+      }
+      if(node!==scene||extinguished)continue;
+      if(!object.getWorldPosition||!window.THREE?.Vector3)continue;
+      firePosition ||= new window.THREE.Vector3();object.getWorldPosition(firePosition);
+      if(!Number.isFinite(firePosition.x+firePosition.y+firePosition.z))continue;
+      // Furniture anchors can be above their supporting floor; the 3D tolerance below prevents cross-story cleansing.
+      sources.push({x:firePosition.x,z:firePosition.z,y:firePosition.y,radius:PLASM_FIRE_RADIUS});
+    }
+    return sources;
+  }
+
   function intersects(area,x,z,distance=0,floorY=null) {
     const px=Number(x),pz=Number(z);
     if(!Number.isFinite(px)||!Number.isFinite(pz))return false;
@@ -148,12 +191,13 @@
     }
   }
   function clear(area=null){
+    fireScene=null;fireScanAt=-Infinity;fireFurniture.length=0; // A retired world must not be retained by the fire-source cache.
     for(let i=zones.length-1;i>=0;i--)if(area==null||zones[i].area===String(area)){
       dispose(zones[i]);zones.splice(i,1);
     }
   }
   window.PersistentGroundFire=Object.freeze({
-    init(injected){deps=injected||null;},ignite,intersects,update,clear,attachCampfireFlame,
+    init(injected){deps=injected||null;},ignite,intersects,update,clear,attachCampfireFlame,plasmFireSources,
     debugSnapshot:()=>({count:zones.length,campfireTemplateReady:!!campfireTemplate,lastIgnition,zones:zones.map(z=>({
       area:z.area,x:z.x,y:z.y,z:z.z,remaining:+(z.seconds-z.age).toFixed(1),source:z.source
     }))}),

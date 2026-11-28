@@ -294,6 +294,7 @@ async function main() {
     mechanismCode.includes('brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;') &&
     !mechanismCode.includes('brazer=>'),
     'Kanthic cleansing callback consistently uses its brazier record');
+  assert(mechanismCode.includes('brazier.activated=true')&&!mechanismCode.includes('if(!brazier.cleansed)'),'a valid cleansing brazier ignition still succeeds if an ordinary torch has already cleared the oil');
   assert(mechanismCode.includes('mesh.userData.projectileCoverHeightTiles=height') &&
     mechanismCode.includes('mesh.userData.projectileCoverHalfXTiles=halfX') &&
     mechanismCode.includes('delete mesh.userData.projectileCoverHeightTiles') &&
@@ -312,7 +313,7 @@ async function main() {
     'ceiling payloads drop vertically through the shared Burden impact resolver');
   assert(themeCode.includes('function clearPlasmRadius(') &&
     themeCode.includes('clearPlasmRadius,') &&
-    themeCode.includes('room.plasm.delete(key)'),
+    themeCode.includes('patch.plasm.delete(key)'),
     'Kanthic cleansing removes live plasm tiles and rebuilds affected surfaces');
   assert(burdenCode.includes('BURDEN_FACTORIES') &&
     burdenCode.includes('BURDEN_IMPACT_HANDLERS') &&

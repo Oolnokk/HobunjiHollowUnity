@@ -6,7 +6,7 @@ const Travel=require('../docs/js/ruin-checkpoint-travel.js');
 const Jump=require('../docs/js/ruin-jump-shaft.js'); // Real fixture reservation API used by the Tothal checkpoint integration.
 class Node {
   constructor(){this.children=[];this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
-    this.scale={setScalar(n){this.x=this.y=this.z=n;}};this.visible=true;this.userData={};}
+    this.scale={setScalar(n){this.x=this.y=this.z=n;},set(x,y,z){this.x=x;this.y=y;this.z=z;}};this.rotation={x:0,y:0,z:0};this.visible=true;this.userData={};}
   add(child){this.children.push(child);child.parent=this;}
   remove(child){this.children=this.children.filter(node=>node!==child);child.parent=null;}
 }
@@ -18,7 +18,7 @@ let clock=1000; // Synthetic monotonic time tests Action 1 holds without waiting
 const previousPerformance=globalThis.performance;
 globalThis.performance={now:()=>clock};
 const old={};
-for(const key of ['RuinMultifloorV50Style','RuinV50NativeFloors','PersistentGroundFire','ProceduralFurniture','DevRandomRuin','CloudForestFog','RuinInteractionAudio','RuinJumpShaft','RangedWeapons','DungeonFire','_desktopSelectionArc']){
+for(const key of ['RuinMultifloorV50Style','RuinV50NativeFloors','PersistentGroundFire','ProceduralFurniture','DevRandomRuin','CloudForestFog','RuinInteractionAudio','RuinJumpShaft','DevRandomRuinSanctum','RangedWeapons','DungeonFire','_desktopSelectionArc']){
   old[key]=globalThis[key];
 }
 let lightRefreshes=0,ignitions=0,fireArms=0; // Confirms activation is a state transition, not repeated every frame.
@@ -199,6 +199,28 @@ try{
     globalThis.setTimeout=actualTimer;globalThis.clearTimeout=actualClear;
     delete globalThis._desktopSelectionArc;
   }
+  // The dynamic sanctum fixture appears after the checkpoint runtime has mounted/restored.
+  let doorUnlocked=false;
+  globalThis.DevRandomRuinSanctum={isGreatDoorUnlocked:()=>doorUnlocked};
+  const site={shaft:true,x:14,z:20,floorY:0,normal:{x:0,z:1},tangent:{x:1,z:0}};
+  const doorRun=spawn();
+  assert(doorRun.owner.registerDoorCheckpoint(site,3.2));
+  const doorCp=doorRun.owner.getState().checkpoints.find(c=>c.id==='sanctum-door');
+  location={x:doorCp.x,y:doorCp.y,z:doorCp.z};doorRun.owner.tick();
+  assert.equal(doorRun.owner.getState().checkpoints.find(c=>c.id==='sanctum-door').lit,false);
+  assert.notEqual(doorRun.owner.getState().activeCheckpoint,'sanctum-door');
+  doorUnlocked=true;doorRun.owner.tick();
+  assert.equal(doorRun.owner.getState().activeCheckpoint,'sanctum-door');
+  assert.deepEqual(doorRun.owner.activeRespawnPoint(),location);
+  const doorSaved=doorRun.owner.serializeProgress();doorRun.owner.dispose();
+  const doorReload=spawn();doorUnlocked=false;location={x:2,y:0,z:3};
+  assert(doorReload.owner.restore({version:1,seed:77,...doorSaved}));
+  assert(doorReload.owner.registerDoorCheckpoint(site,3.2));
+  assert.equal(doorReload.owner.getState().checkpoints.find(c=>c.id==='sanctum-door').lit,false);
+  doorUnlocked=true;doorReload.owner.tick();
+  assert.equal(doorReload.owner.getState().activeCheckpoint,'sanctum-door','saved door checkpoint restores after actual door unlock without revisiting it');
+  assert.equal(doorReload.writes.length,0,'restoring door checkpoint never triggers another save');
+  doorReload.owner.dispose();
   const raised=spawn(true);
   const plateau=raised.owner.getState().checkpoints.find(c=>c.id==='native:0');
   assert(plateau&&plateau.y===7.5,'native V50 checkpoints stand on the actual plateau, not floor.y');

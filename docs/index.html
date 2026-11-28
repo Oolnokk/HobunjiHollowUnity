@@ -116,7 +116,7 @@
   <script src="js/action-arc-ui.js?v=20261118backCarryArch1"></script>
   <script src="js/belt-stow-torch-display.js?v=20261122stowSplit1"></script> <!-- Torch-only PNG, source pivot and optional preview flame. -->
   <script src="js/belt-stow-rig.js?v=20261122stowSplit1"></script> <!-- Shared rendered belt art and authoring rig coordinates. -->
-  <script src="js/adventuring-tools.js?v=20261127combatPopups2"></script> <!-- Adventure tools; torch and later unlocks. -->
+  <script src="js/adventuring-tools.js?v=20261128kanthicAudit5"></script> <!-- Adventure tools; torch and later unlocks. -->
   <script src="js/tool-world-upright.js?v=20261114torchTipMinusY1"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. The feature manifest owns its ordered scripts and cache versions.
@@ -415,7 +415,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
-  <script src="js/persistent-ground-fire.js?v=20261127brazierAudit1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261128kanthicAudit6"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
   <script src="js/alchemy-flasks.js?v=20261119cheapGeometry1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
@@ -750,7 +750,7 @@
        own setup. -->
   <script src="js/weather-fx.js?v=20261118slopeSnow1"></script>
   <script src="js/weather-wind.js?v=20261119katabaticWind2Tothal1127"></script> <!-- Authoritative per-zone wind strength shared by fog, foliage and BGS. -->
-  <script src="js/emissive-light-orbs.js?v=20261104hc955306"></script> <!-- Blizzard-style glow circles above darkness/fog for emissive fake lights (mask eyes). -->
+  <script src="js/emissive-light-orbs.js?v=20261128kanthicAudit5"></script> <!-- Blizzard-style glow circles above darkness/fog for emissive fake lights (mask eyes). -->
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
@@ -760,7 +760,7 @@
   <!-- Shared Cloud Forest mist cylinders: always in the forest, and wind-driven
        blowing snow on Western Slope. The zone's native sky/depth fog is unchanged. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261127brazierAudit1"></script>
+  <script src="js/cloud-forest-fog.js?v=20261128kanthicAudit6"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads

@@ -211,14 +211,28 @@ jobs:
                 // Two synchronous renders keep camera, lighting, and animation
                 // state identical. Any changed pixels therefore come from the
                 // only state changed between them: the authoritative V50 walls.
-                renderer.render(scene, camera);
-                const withWalls = readFrame();
+                const mist = scene.getObjectByName('cloud_forest_mist_cylinders');
+                const mistVisible = mist?.visible;
+                const priorFog = scene.fog;
                 const priorVisibility = walls.map(wall => wall.visible);
-                walls.forEach(wall => { wall.visible = false; });
-                renderer.render(scene, camera);
-                const withoutWalls = readFrame();
-                walls.forEach((wall, index) => { wall.visible = priorVisibility[index]; });
-                renderer.render(scene, camera);
+                let withWalls, withoutWalls;
+                try {
+                  // This raw structural render is not the production atmospheric
+                  // composite. Isolate wall geometry from the deliberately opaque
+                  // Kanthic shell; the dedicated Kanthic WebGL test covers darkness.
+                  if (mist) mist.visible = false;
+                  scene.fog = null;
+                  renderer.render(scene, camera);
+                  withWalls = readFrame();
+                  walls.forEach(wall => { wall.visible = false; });
+                  renderer.render(scene, camera);
+                  withoutWalls = readFrame();
+                } finally {
+                  walls.forEach((wall, index) => { wall.visible = priorVisibility[index]; });
+                  if (mist) mist.visible = mistVisible;
+                  scene.fog = priorFog;
+                  renderer.render(scene, camera);
+                }
 
                 let changedPixels = 0;
                 let totalDelta = 0;

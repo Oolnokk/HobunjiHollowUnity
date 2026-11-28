@@ -370,7 +370,7 @@
     entity._lichHoverOffsetWorld = 0; // Current presentation-only lift exposed through Pixel Probe/debug snapshots.
     entity.avatarRef?.legs?.setHoverMode?.(true); // Procedural legs immediately enter the dangling airborne solver instead of taking a first walking step.
     entity._lichPrimaryCooldownS = 0.7 + random() * 0.8; // Staggers first casts when several liches are spawned together.
-    entity._lichSummonCooldownS = 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
+    entity._lichSummonCooldownS = entity.lichType==='kanthic' ? 10 + random() * 5 : 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
     entity._lichCommand = 'approach'; // Referential command read live by every target currently Entranced by this lich.
     entity._lichCommandChangedAt = performance.now(); // Used by diagnostics and to avoid visually noisy rapid command flapping.
     entity._lichSummons = new Set(); // Tracks this lich's summoned Minion objects for the live-cap check.
@@ -1032,8 +1032,9 @@
     const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
     const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
     for(const existing of puddles){
+      if(existing.ruinPlasm && existing.ruinPlasm.isActive?.()===false){disposePetroleumPuddle(existing);continue;}
       if(existing.areaId!==areaId||Math.abs(existing.groundY-groundY)>.01)continue;
-      if(!existing.ruinPlasm?.contains?.(worldX,worldZ,groundY)&&Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
+      if(existing.ruinPlasm ? !existing.ruinPlasm.contains?.(worldX,worldZ,groundY) : Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
       existing.ageS=0; // Nearby follow-up impacts refresh a patch instead of stacking draw calls on the same space.
       lastEvent='plasm:refresh';
       return existing;
@@ -1585,9 +1586,15 @@
   }
 
   function updatePuddles(dt) {
+    const areaId=currentLichArea(),tileSize=deps?.TILE||64;
+    const fireSources=puddles.size&&areaId!=='map_i_dev_random_ruin'
+      ? window.PersistentGroundFire?.plasmFireSources?.(areaId,deps?.getActiveScene?.()||puddles.values().next().value?.owner?.scene,deps?.player,tileSize,Number(deps?.player?.physicalFeetY??groundYAt(deps?.player,deps?.player?.x,deps?.player?.y)))||[] : [];
     for(const puddle of [...puddles]){
       puddle.ageS+=dt;
-      if(!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
+      if(!puddle.ruinPlasm&&fireSources.some(f=>Math.abs(f.y-puddle.groundY)<=1.2&&Math.hypot(f.x-puddle.x/tileSize,f.z-puddle.y/tileSize)<=f.radius)){
+        disposePetroleumPuddle(puddle);continue; // Ordinary fire extinguishes free-standing spell puddles outside the tile-based ruin composer.
+      }
+      if(puddle.ruinPlasm?.isActive?.()===false||!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
     }
     if(!puddles.size){
       for(const actor of puddleTouchedActors)clearPuddleSink(actor);
@@ -1729,7 +1736,7 @@
       const minion = await window.MinionCombat.makeEntity({
         speciesId: 'harlyao-skeleton', name: 'Harlyao Skeleton', tier: lich.banditTier || 0,
         x, y, zoneId: lich.areaId || currentLichArea() || ARENA_ID, weaponMetalKey: 'nativeCopper',
-        extra: { homeX: x, homeY: y, state: 'chase', summonedByLichId: lich.id },
+        extra: { homeX: x, homeY: y, state: 'chase', summonedByLichId: lich.id, lichMinionTheme:lich.lichType },
       });
       if (!minion) return;
       if (!isArena() || !isLiveActor(lich)) {
@@ -1852,7 +1859,10 @@
     const aimAngle = Math.atan2(dy, dx); // Body facing returned to the shared hostile loop.
     // Kanthic fights now deny space with plasm, never commanding the player's direction.
     const specialDecision = window.SpecialHarlyaoLiches?.handleAI?.(lich, dt, target, deps, aimAngle, dist); // Boss-exclusive phases are layered on top of the existing lich AI.
-    if (specialDecision) return specialDecision;
+    if (specialDecision) {
+      if(lich.lichType==='kanthic')lich._lichSummonCooldownS=Math.max(0,(lich._lichSummonCooldownS||0)-dt); // Charge phases count toward the resurrection cooldown, but never interrupt a charge.
+      return specialDecision;
+    }
 
     lich._lichPrimaryCooldownS = Math.max(0, (lich._lichPrimaryCooldownS || 0) - dt);
     lich._lichSummonCooldownS = Math.max(0, (lich._lichSummonCooldownS || 0) - dt);
@@ -1863,7 +1873,7 @@
 
     if (lich._lichSummonCooldownS <= 0 && (!lich.lichRaiseDead || lich.lichRaiseDead.canRaise?.(lich))) { // Raise-dead liches only cast when someone lies dead.
       if (beginLichCast(lich, target, 'summon')) {
-        lich._lichSummonCooldownS = 12 + random() * 5;
+        lich._lichSummonCooldownS = lich.lichType==='kanthic' ? 10 + random() * 5 : 12 + random() * 5; // Fragile Kanthic minions return at a 10–15 second recast cadence.
         return { aimAngle, moving: false, handled: true };
       }
     }

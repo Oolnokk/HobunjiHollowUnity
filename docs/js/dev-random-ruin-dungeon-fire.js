@@ -395,9 +395,9 @@
     const targetMesh=group.userData.dungeonFireParts.collider;
     const record=addMechanismRecord({id:'dungeon-fire-cleansing-brazier-'+index,kind:'cleansingBrazier',group,hitObject:targetMesh,point,radius:CLEANSING_RADIUS,cleansed:0});
     registerFireTarget(record,brazier=>{
-      if(brazier.cleansed>0)return false;
+      if(brazier.activated)return false;
       brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;
-      if(!brazier.cleansed){lastEvent='cleansing brazier burned but no plasm in radius';return false;}
+      brazier.activated=true; // Ordinary carried fire may already have cleared the tiles; a valid ignition must still complete the fixture.
       const parts=group.userData.dungeonFireParts;
       parts.ember.material.color.setHex(0x72ffbd);
       parts.pilot.visible=true;
@@ -509,7 +509,7 @@
       }
     }
     for(const record of world.records){
-      if(record.kind==='cleansingBrazier'&&record.cleansed>0){
+      if(record.kind==='cleansingBrazier'&&record.activated){
         const pilot=record.group.userData?.dungeonFireParts?.pilot;
         if(pilot)pilot.visible=true;
       }
