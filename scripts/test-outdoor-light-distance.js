@@ -140,7 +140,17 @@ const behind = project(2, 0, -10.5, 4, ctx);
 assert(front && plane && behind, 'the overlapping pool survives the camera-plane crossing');
 assert(front.coverage > plane.coverage && plane.coverage > behind.coverage && behind.coverage > 0, 'near-camera coverage decreases continuously');
 assert(front.radius > plane.radius && plane.radius > behind.radius, 'near-camera radius shrinks rather than jumping');
+const tail = project(2, 0, -13.5, 4, ctx); // Only 0.4 tiles of the sphere remain in front of the near plane.
+assert(tail && tail.coverage > 0 && tail.coverage < behind.coverage, 'light fades until the actual near-plane overlap is exhausted, not the projection plane');
 assert.equal(project(2, 0, -14, 4, ctx), null, 'fully behind-camera sphere contributes nothing');
+fixtures = [{ x: 102, y: 0, z: 0, distance: 4, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+// Interior radius is expanded to 10; the actual compositor must submit the
+// darkness and color masks even though the emitter center lies offscreen.
+draw();
+assert(mask('destination-out', 10) && mask('source-over', 10), 'offscreen emitter still paints both real mask passes');
+fixtures[0].x = 112;
+draw();
+assert(!mask('destination-out', 10) && !mask('source-over', 10), 'fully offscreen fixture submits neither mask pass');
 assert(project(2, 0, 491, 4, ctx).coverage < 1, 'far-plane overlap fades');
 assert.equal(project(2, 0, 494, 4, ctx), null, 'sphere beyond the far plane contributes nothing');
 
