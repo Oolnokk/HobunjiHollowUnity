@@ -201,7 +201,7 @@ fog.update(0.016);
 assert.equal(worldMist.parent, null, 'leaving the Western Slope detaches the shared group');
 assert.equal(fog.getDebugState().westernSlopeSnow.opacityScale, 0, 'area changes discard stale storm density');
 
-// Kanthic uses the same geometry, with a dedicated visible texture tint and closer, stronger layers.
+// Kanthic uses the same geometry, with progressively darker close layers and a solid outer void.
 const ruin = new THREE.Scene();
 const ruinFog = new THREE.FogExp2(0x123456, 0.01);
 ruin.fog = ruinFog;
@@ -216,10 +216,19 @@ fog.update(0.016);
 assert.equal(worldMist.parent, ruin);
 assert(worldMist.visible);
 assert.equal(worldMist.children.length, 3);
-assert.deepEqual(worldMist.children.map(m => m.material.opacity), [0.28, 0.52, 0.92]);
-assert.deepEqual(worldMist.children.map(m => m.scale.x), [2, 1.85, 7.5]);
-assert(worldMist.children.every(m => m.material.color.getHex() === 0xa69abf));
-assert.notEqual(ruin.fog.color.getHex(), 0xa69abf, 'depth fog keeps the ordinary underground palette');
+const expectedOpacity = [0.42, 0.78, 1];
+const expectedRadius = [1.25, 2.25, 4.5];
+for (const [i, mesh] of worldMist.children.entries()) {
+  assert(Math.abs(mesh.material.opacity - expectedOpacity[i]) < 1e-9);
+  assert(Math.abs(mesh.scale.x - expectedRadius[i]) < 1e-9);
+  assert.equal(mesh.material.color.getHex(), 0);
+  assert.equal(!!mesh.material.map, i < 2, 'only the outer shell removes transparent texture holes');
+  assert.equal(mesh.material.depthTest, true, 'nearer walls and actors retain depth occlusion');
+  assert.equal(mesh.material.depthWrite, false, 'emissive rune pass must see real world depth, not the mist');
+}
+assert.equal(worldMist.children[2].scale.y, 128);
+assert.equal(worldMist.children[2].position.y, 4, 'outer void spans both above and below the player');
+assert.equal(ruin.fog.color.getHex(), 0, 'distance fog must converge toward black, not violet');
 assert.equal(ruin.fog.density, 0.055);
 assert.equal(fog.getDebugState().effectiveMistLayers.length, 3);
 ruin.updateMatrixWorld();
@@ -227,7 +236,7 @@ fog.renderOutlineMist(renderer, camera, ruin);
 assert.equal(fog.getDebugState().outlineMistRedrawLayers, 3);
 fog.setLayerRadius(0, 6);
 fog.update(0.016);
-assert.equal(worldMist.children[0].scale.x, 3, 'radius sliders retain their relative effect');
+assert.equal(worldMist.children[0].scale.x, 1.875, 'radius sliders retain their relative effect');
 fog.setLayerRadius(0, 4);
 fog.setLayerOpacity(0, 0);
 fog.setLayerOpacity(1, 0.8);
@@ -250,11 +259,12 @@ activeScene = otherZone;
 fog.update(0.016);
 assert.deepEqual(worldMist.children.map(m => m.material.opacity), [0.14, 0.26, 0.46]);
 assert.deepEqual(worldMist.children.map(m => m.scale.x), [4, 3.7, 15]);
-assert(worldMist.children.every(m => m.material.color.getHex() !== 0xa69abf), 'ordinary dens keep their original tint');
+assert(worldMist.children.every(m => m.material.color.getHex() !== 0 && m.material.map), 'ordinary dens restore their original textured material and tint');
 area = 'map_southern_cloud_forest';
 activeScene = forest;
 fog.update(0.016);
 assert.deepEqual(worldMist.children.map(m => m.scale.x), [4, 3.7, 15]);
 assert.deepEqual(worldMist.children.map(m => m.material.opacity), [0.14, 0.26, 0.46]);
+assert(worldMist.children.every(m => m.material.map), 'outdoor mist restores all three textured layers');
 
 console.log('Cloud Forest / Western Slope / Kanthic mist redraw passed.');
