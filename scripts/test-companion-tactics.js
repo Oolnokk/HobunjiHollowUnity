@@ -122,6 +122,20 @@ for (const [id, kind, effect] of [['guardCharge', 'dabinggi-hound', 'affliction'
   const normalized = tactics.tacticsForEntry(entry, { def: { attacks: [id] } }); // Uses the same species-move normalization as the live AI.
   assert.equal(normalized.abilities[id].effect, 'balanced', id + ' rejects ineffective ' + effect + ' focus');
 }
+// Size, not species ID, controls flying combat; old saved bomber preferences become dive preferences.
+for(const kind of ['pingdort','skeeri','tzatzul']){
+  definitions[kind]={isFlyingSpecies:true,attacks:['pingdortBoulderBomb']};
+  const entry={kind,role:'companion',genotype:{sizeClass:'medium'},companionTactics:{abilities:{pingdortBoulderBomb:{frequency:3,effect:'drive'}}}};
+  const mid=tactics.tacticsForEntry(entry);
+  assert(!('pingdortBoulderBomb' in mid.abilities));
+  assert.equal(mid.abilities.flyingCompanionDive.frequency,3);
+  assert.equal(mid.abilities.flyingCompanionDive.effect,'drive');
+  const large=tactics.tacticsForEntry({...entry,genotype:{sizeClass:'large'}});
+  assert(!('flyingCompanionDive' in large.abilities));
+  assert.equal(large.abilities.pingdortBoulderBomb.frequency,3);
+  const fresh=tactics.tacticsForEntry({...entry,companionTactics:null});
+  assert(fresh.abilities.flyingCompanionDive.frequency>fresh.abilities.guardCharge.frequency);
+}
 const swarmEntry = { id: 'swarm', role: 'companion', kind: 'honeyfuzzle', lifeStage: 'adult', animalPerks: {} }; // Drives every advertised Swarm effect through actual controller/touch button listeners.
 stable.push(swarmEntry);
 definitions.honeyfuzzle = { attacks: ['swarm'], realAttackEvery: 1 };

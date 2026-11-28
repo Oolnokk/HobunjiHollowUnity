@@ -232,4 +232,31 @@ deps.getActiveScene = () => null;
 game.HronalWitchBombs.tick(0);
 assert.equal(Boolean(bridge.userData.puzzleActive),true);
 assert.equal(bomb.exploded,true);
-console.log('burden-ballistic: ok');
+// The actual flyer factory and shared falling-burden integrator must agree on first contact.
+async function checkFlyingBoulder(){
+  game.GridTileAccessors.getActiveScene=()=>scene;deps.getActiveScene=()=>scene;
+  const cues=[],hits=[];
+  game.AudioSystem.playObjectSfxKeyAt=(...args)=>cues.push(args);
+  deps.damageCreature=(...args)=>hits.push(args);
+  const enemy={x:15*64,y:15*64,health:100,areaId:area},bomber={id:'large-flyer'};
+  deps.hostileObjects.add(enemy);
+  vm.runInContext(read('js/pingdort-flocks.js'),game);
+  game.PingdortFlocks.init({TILE:64,player,zoneScenes:new Map([[area,{scene}]]),getCurrentArea:()=>area});
+  const rock=await Sh.createHangingBurden({kind:game.PingdortFlocks.BOULDER_KIND,id:'flight-rock',mapId:area,scene,x:15,y:4,z:15,fallGroundY:()=>1.36});
+  assert(rock);
+  rock.pingdortBomber=bomber;
+  assert.equal(rock.impactHandler(rock,'premature'),false,'attached rock cannot break before being dropped');
+  assert(Sh.releaseBurdenDownward(rock,'pingdort-bomber'));
+  tick(.1);
+  assert(!rock.exploded&&cues.length===0,'no timed or premature detonation');
+  for(let i=0;i<100&&!rock.exploded;i++)tick(.05);
+  assert(rock.exploded,'the real fall integration immediately removes the rock on first ground contact');
+  assert.equal(rock.group.parent,null);
+  assert.equal(rock.group.position.y,1.36);
+  assert.equal(cues.length,1);assert.equal(cues[0][0],'breakRock');
+  assert.equal(hits.length,1);assert.equal(hits[0][5].attacker,bomber);
+  tick(1);
+  assert.equal(cues.length,1);assert.equal(hits.length,1);
+  console.log('burden-ballistic: ok');
+}
+checkFlyingBoulder().catch(error=>{console.error(error);process.exitCode=1;});

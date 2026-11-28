@@ -781,6 +781,7 @@
     owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && (!(bird.knockbackT > 0) || (bird._tzFlight.captive && bird.health > n(bird.maxHealth, 1) * .3)), // Indoor mothers share the canonical flight/body owner; no competing ground movement.
     resistsCarryKnockback: bird => !!bird?._tzFlight?.captive && bird.health > n(bird.maxHealth, 1) * .3 && !bird.prone, // Small hits do not drop a carried victim until the bird flees.
     sweptBodyHit, // Nest obstacles use the exact same continuous body sweep as prey contact.
+    flightTargetBox: targetBox, // Trained flyers and boulder impacts share the arena's live target volume.
     flightBodyHalf: hitboxSize, // Nest collision preflight shares the real flying torso box instead of a guessed one.
     returnToRoost: returnHome, // Recovery uses the normal flight path after a genuine perch knock-off.
     beginNestDive: (bird,target) => bird?._tzNestMother === true && swoop(bird,target),

@@ -959,7 +959,7 @@
       }
       const script = document.createElement('script'); // Loads only the breeding definition module; the Character Studio does not call its runtime init().
       script.dataset.characterStudioCreatureGenetics = '1';
-      script.src = docsUrl('js/creature-genetics.js?v=20261124sharedBodyColors2'); // Prevents stale allele definitions when Character Studio loads the breeding module independently.
+      script.src = docsUrl('js/creature-genetics.js?v=20261127flyerImpactAudit2'); // Prevents stale allele definitions when Character Studio loads the breeding module independently.
       script.onload = () => { debugState.lastAction = 'breeding pattern definitions loaded'; syncUi(true); resolve(true); };
       script.onerror = () => { debugState.lastError = 'creature-genetics.js failed to load; using fallback pattern ids'; resolve(false); };
       document.head.appendChild(script);

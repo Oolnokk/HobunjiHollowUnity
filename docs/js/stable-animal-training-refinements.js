@@ -201,6 +201,7 @@
   const ATTACK_LABELS = Object.freeze({ // Names shared with the Stable loadout and mobile diagnostics.
     guardCharge: 'Guard Charge', pounce: 'Pounce', swarm: 'Swarm', rearKick: 'Rear Kick',
     grehlrBurrow: 'Burrow Ambush', grehlrStink: 'Stink Spray', causticPellet: 'Caustic Pellet',
+    pingdortBoulderBomb: 'Boulder Drop', flyingCompanionDive: 'Dive Attack',
   });
   const FREQUENCIES = ['Off', 'Rare', 'Regular', 'Often', 'Priority']; // Relative weights 0–4, shown as an exact share beside each move.
 
@@ -208,13 +209,17 @@
     const species = canonicalSpecies(entry?.kind); // Resolves species-specific aliases before exposing existing moves.
     const def = actor?._stableTrainingBaseDef || actor?.def || currentDeps()?.CREATURE_DB?.[entry?.kind] || window.CREATURE_DB?.[entry?.kind] || {};
     const ids = new Set(['guardCharge']); // Every fighting companion already has the guard-charge fallback.
-    for (let id of def.attacks || []) {
+    const flying=def.isFlyingSpecies===true;
+    const canBomb=window.PingdortFlocks?.canBomb?.(entry.kind,entry.genotype,def)
+      ?? (flying&&(window.CreatureGenetics?.creatureSizeClass?.(entry.kind,entry.genotype)||entry.genotype?.sizeClass||def.defaultSizeClass)==='large'); // Stable UI and live dispatch use the same Size rule.
+    const attacks=flying?[canBomb?'pingdortBoulderBomb':'flyingCompanionDive']:(def.attacks||[]);
+    for (let id of attacks) {
       if (id === 'pounce' && species === 'grehlr') id = 'grehlrBurrow';
       if (id === 'pounce' && species === 'drenkirra') id = 'causticPellet';
       ids.add(id);
     }
     if (species === 'grehlr' && (!window.CreatureGenetics?.creatureSizeClass || window.CreatureGenetics.creatureSizeClass(entry.kind, entry.genotype) === 'medium')) ids.add('grehlrStink');
-    return [...ids].map(id => ({ id, label: ATTACK_LABELS[id] || id, defaultFrequency: id === 'guardCharge' ? (def.realAttackEvery === 1 ? 1 : 3) : id === 'rearKick' ? 4 : 1 }));
+    return [...ids].map(id => ({ id, label: ATTACK_LABELS[id] || id, defaultFrequency: id === 'guardCharge' ? (flying || def.realAttackEvery === 1 ? 1 : 3) : (flying || id === 'rearKick') ? 4 : 1 }));
   }
 
   function effectIds(attackId) {
@@ -241,7 +246,7 @@
     const raw = entry.companionTactics || {}; // Saved settings are read defensively and normalized without per-frame save writes.
     const abilities = {}; // Species allow-list prevents stale/edited saves from granting another creature's move.
     for (const def of abilityDefs(entry, actor)) {
-      const saved = raw.abilities?.[def.id]; // Reads only this animal's supported moves.
+      const saved = raw.abilities?.[def.id] ?? (def.id === 'flyingCompanionDive' ? raw.abilities?.pingdortBoulderBomb : undefined); // Migrate old Pingdort tactics to the replacement dive without a save write.
       const frequency = Number(saved?.frequency); // Nonfinite settings fall back to the species default.
       abilities[def.id] = {
         frequency: Math.max(def.id === 'guardCharge' ? 1 : 0, Number.isFinite(frequency) ? capInt(frequency, 0, 4) : def.defaultFrequency), // Guard Charge is the always-available fallback (e.g. while Rear Kick cools down), so it can be rare but never Off.
