@@ -253,6 +253,12 @@ async function run(){
   assert.equal(fogSource.split('DevRandomRuinSanctum?.lightSources?.()').length-1,2,'fog and enclosed lighting both use the sanctum mask');
   const roomSource=fs.readFileSync('docs/js/ruin-room-system.js','utf8'); // Occupied-room illumination uses the same authoritative source.
   assert.ok(roomSource.includes('DevRandomRuinSanctum?.lightSources?.()'),'room ambient uses the sanctum light source');
+  // Sanctum emission has its own cached render bounds, without registering combat rooms.
+  const sanctum=win.DevRandomRuinSanctum;
+  assert.equal(sanctum.glyphRegionAt(12,1,12),'sanctum:arena');
+  assert.equal(sanctum.glyphRegionAt(29,1,12),'sanctum:vault');
+  assert.equal(sanctum.glyphRegionAt(12,50,12),null);
+  assert.strictEqual(sanctum.glyphRegionBounds('sanctum:arena'),sanctum.glyphRegionBounds('sanctum:arena'));
   const rotateCode=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
   const rotation=vm.runInNewContext(rotateCode.slice(rotateCode.indexOf('  function igniteFire('),rotateCode.indexOf('  function updateFire('))+'\nrotateKanthicFires;', {window:{}});
   const fires=Array.from({length:4},()=>({lit:false,ordinaryFire:true,contact:{userData:{}},anchor:{visible:false},lightSource:{active:false}}));
