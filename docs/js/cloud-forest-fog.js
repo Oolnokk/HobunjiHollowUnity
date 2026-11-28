@@ -1076,7 +1076,7 @@
     for (const {light,center,radius,transmission,shadows} of visible) {
       const [r,g,b]=light.color;
       const grad=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
-      const glowStrength = .18 * transmission;
+      const glowStrength = (light.doorRune?.07:.18) * transmission; // Great Door illumination is intentionally subtle.
       grad.addColorStop(0,'rgba('+r+','+g+','+b+','+glowStrength+')');
       if (enclosedLightingArea(lightingDeps.getCurrentArea())) {
         grad.addColorStop(.36,'rgba('+r+','+g+','+b+','+(glowStrength*.82)+')');
@@ -1212,7 +1212,7 @@
     const kanthic=isKanthicGlyphArea();
     ruinGlowScene=scene;ruinGlowNextScan=now+(kanthic?5000:1600);ruinGlowMeshes=[]; // Slow safety net for live rule edits; atlas completion and room registration invalidate sooner.
     scene.traverse(node=>{
-      if(node.isMesh&&(node.name==='engraving-glyph-glow'||node.userData?.ruinLadderRuneGlow)){ruinGlowMeshes.push(node);return;}
+      if(node.isMesh&&(node.name==='engraving-glyph-glow'||node.userData?.ruinLadderRuneGlow||node.userData?.ruinDoorRuneGlow)){ruinGlowMeshes.push(node);return;}
       const pending=node.userData?.patternReady;
       if(kanthic&&node.userData?.furniturePattern?.mode==='engraving'&&!node.userData?.engravingGlowMesh
         &&pending?.then&&!kanthicPendingAtlases.has(pending)){
