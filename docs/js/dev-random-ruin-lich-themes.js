@@ -1082,7 +1082,7 @@
     world.group.add(patch.mesh);
     const owner=world;
     owner.spellPlasm.add(patch);
-    return {mesh:patch.mesh,contains(x,z,y){
+    return {get mesh(){return patch.mesh;},isActive:()=>owner.spellPlasm.has(patch)&&patch.plasm.size>0,contains(x,z,y){
       const key=tileKey(x,z);
       return owner.spellPlasm.has(patch)&&patch.plasm.has(key)&&
         (!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
@@ -1129,7 +1129,7 @@
       patch.mesh?.parent?.remove(patch.mesh);patch.mesh?.geometry?.dispose?.();patch.material?.dispose?.();patch.glowMaterial?.dispose?.();
     };
     patch.dispose=dispose;
-    return {mesh:patch.mesh,tiles:patch.plasm.size,contains(x,z,y){
+    return {get mesh(){return patch.mesh;},get tiles(){return patch.plasm.size;},isActive:()=>owner.spellPlasm.has(patch)&&patch.plasm.size>0,contains(x,z,y){
       const key=tileKey(x,z);
       return owner.spellPlasm.has(patch)&&patch.plasm.has(key)&&(!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
     },dispose};
@@ -1211,7 +1211,7 @@
         for(let tz=Math.floor(z-range);tz<=Math.floor(z+range);tz++)for(let tx=Math.floor(x-range);tx<=Math.floor(x+range);tx++){
           const key=tileKey(tx,tz);
           if(!patch.plasm.has(key)||(tx+.5-x)**2+(tz+.5-z)**2>rangeSq)continue;
-          if(Number.isFinite(y)&&Math.abs(patch.plasmFloorY.get(key)-y)>1.2)continue;
+          if(Number.isFinite(y)&&(!Number.isFinite(patch.plasmFloorY.get(key))||Math.abs(patch.plasmFloorY.get(key)-y)>1.2))continue;
           patch.plasm.delete(key);patch.plasmFloorY.delete(key);removed++;changed=true;
         }
       }
