@@ -1911,6 +1911,14 @@
           y: THREE.MathUtils.lerp(p.prevWorldY, p.worldY, fraction),
           z: THREE.MathUtils.lerp(p.prevY, p.y, fraction) / deps.TILE,
         };
+        // Only a burning adventuring torch's real ground/support collision starts the 3x3 tile fire.
+        if(p.itemKey==='torch'&&p.dungeonFire&&p.team==='player'&&(terrainImpact.kind==='ground'||terrainImpact.kind==='floor')){
+          const point=lastTerrainImpact;
+          const radius=projectileCollisionRadiusWorld(p);
+          const support=window.DynamicSurfaces?.sampleSupport?.(point.x,point.z,{area:p.areaId,minY:point.y-radius-.2,maxY:point.y+.1,pad:.02});
+          const floorY=terrainImpact.kind==='floor'?support?.y:deps.worldSurfaceY(point.x*deps.TILE,point.z*deps.TILE);
+          if(Number.isFinite(floorY))window.PersistentGroundFire?.ignite?.({area:p.areaId,x:point.x,z:point.z,y:floorY,square3x3:true,source:'adventuringTorch'});
+        }
         if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t, true);
         if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
         continue;

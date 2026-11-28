@@ -3,6 +3,7 @@
 (() => {
   'use strict';
   if (window.PersistentGroundFire) return;
+  const MAX_TILES=160; // Hard cap on live tile emitters, including overlapping bursts.
   const MAX_ZONES=14; // Strict scene cap keeps simultaneous fire cheap on mobile.
   const DEFAULT_DURATION=11; // Seconds a thrown flask leaves a live patch after shattering.
   const FLOOR_TOLERANCE=.45; // Ground patches at different heights must stay separate in stacked rooms.
@@ -66,50 +67,97 @@
       dispose(){state.disposed=true;state.visual?.dispose?.();state.visual=null;},
     };
   }
+  const tileKey=(x,z)=>Math.floor(x)+','+Math.floor(z); // One independent surface cell per tile and floor.
+  function disposeCell(cell) {
+    cell.visual?.dispose?.();
+    cell.anchor?.parent?.remove?.(cell.anchor);
+    cell.anchor=null;cell.visual=null;
+  }
   function dispose(zone) {
-    for(const visual of zone.flameVisuals||[])visual?.dispose?.(); // Authored emitter disposes its own GPU buffers; never double-dispose shared assets.
-    zone.flameVisuals=[];
-    zone.mesh?.parent?.remove?.(zone.mesh);
-    zone.mesh=null;
-    zone.scene=null;
+    for(const cell of zone.cells.values())disposeCell(cell);
+    zone.cells.clear();
+    zone.mesh?.parent?.remove?.(zone.mesh);zone.mesh=null;zone.scene=null;
+  }
+  function buildCell(zone,cell) {
+    if(!zone.mesh||cell.anchor)return;
+    const anchor=new window.THREE.Group();
+    anchor.position.set(cell.x+.5,cell.y+.03,cell.z+.5);
+    zone.mesh.add(anchor);cell.anchor=anchor;
+    cell.visual=attachCampfireFlame(anchor,{scale:.85,rateScale:.23});
   }
   function buildVisual(zone) {
     const THREE=window.THREE,scene=deps?.getActiveScene?.();
     if(!THREE?.Group||!scene||zone.mesh)return;
-    const group=new THREE.Group();
-    group.name='persistent_ground_fire';
-    group.position.set(zone.x,zone.y+.03,zone.z);
-    const ring=Math.max(.12,zone.radius*.62); // Fire coverage matches the same radius used for damage and sconce ignition.
-    const points=[[0,0],[.85,.08],[-.62,.5],[-.32,-.78],[.45,-.65],[-.95,-.1],[.15,1]];
-    zone.flameVisuals=[]; // Per-patch emitters reuse the same authored particle shader instead of opaque cones and a flat disc.
-    for(let i=0;i<points.length;i++){
-      const anchor=new THREE.Group();
-      anchor.position.set(points[i][0]*ring,0,points[i][1]*ring);
-      group.add(anchor);
-      const visual=attachCampfireFlame(anchor,{scale:i===0?1.1:.85,rateScale:i===0?.38:.23});
-      if(visual)zone.flameVisuals.push(visual);
-    }
+    const group=new THREE.Group();group.name='persistent_ground_fire';
     scene.add(group);zone.mesh=group;zone.scene=scene;
+    for(const cell of zone.cells.values())buildCell(zone,cell);
   }
   function ordinaryGroundFire(source){return !/skeleton|magic|lich|enchant/i.test(String(source));}
-  function ignite({area,x,z,y=0,radius=1.5,seconds=DEFAULT_DURATION,source='unknown'}={}) {
-    const px=Number(x),pz=Number(z),floorY=Number(y);
-    if(!String(area||'')||!Number.isFinite(px)||!Number.isFinite(pz)||!Number.isFinite(floorY)||
-       String(area)!==String(deps?.getCurrentArea?.()||''))return false;
-    const patch={area:String(area),x:px,z:pz,y:floorY,radius:Math.max(.3,Math.min(4,Number(radius)||1.5)),
-      seconds:Math.max(.5,Math.min(25,Number(seconds)||DEFAULT_DURATION)),age:0,damageTimer:0,
-      source:String(source),ordinaryUntil:0};
-    if(ordinaryGroundFire(source))patch.ordinaryUntil=patch.seconds; // Separate cleansing duration from the existing shared damage patch lifetime.
-    // Neighboring splashes extend the fire but never grow unbounded or multiply damage on one tile.
-    const old=zones.find(z=>z.area===patch.area&&Math.abs(z.y-floorY)<=FLOOR_TOLERANCE&&Math.hypot(z.x-px,z.z-pz)<.5);
-    if(old){old.seconds=Math.max(old.seconds,old.age+patch.seconds);
-      if(patch.ordinaryUntil>0)old.ordinaryUntil=Math.max(old.ordinaryUntil||0,old.age+patch.ordinaryUntil);
-      return true; // Magical and ordinary splashes never double damage, but neither steals the other's cleansing lifetime.
+  function supportY(area,x,z,y){
+    const support=window.DynamicSurfaces?.sampleSupport?.(x+.5,z+.5,{area,minY:y-FLOOR_TOLERANCE,maxY:y+FLOOR_TOLERANCE,pad:.02});
+    if(Number.isFinite(support?.y))return support.y;
+    // The injected terrain owner is authoritative for ground and does not invent platforms above it.
+    if(typeof deps?.getGroundYAtWorld!=='function')return y;
+    const ground=deps.getGroundYAtWorld(x+.5,z+.5);
+    if(!Number.isFinite(ground)||Math.abs(ground-y)>FLOOR_TOLERANCE)return null;
+    if(area==='map_i_dev_random_ruin'){
+      const floorSet=window.DevRandomRuin?.getRuntimeContext?.()?.floorSet;
+      if(floorSet&&!floorSet.has(tileKey(x,z)))return null;
     }
-    if(zones.length>=MAX_ZONES)dispose(zones.shift());
-    zones.push(patch);buildVisual(patch);
-    lastIgnition={area:patch.area,x:px,z:pz,radius:patch.radius,source:patch.source};
-    return true;
+    return ground;
+  }
+  function lookupCell(area,x,z,y){
+    const key=tileKey(x,z);
+    for(const zone of zones){
+      if(zone.area!==area)continue;
+      const cell=zone.cells.get(key);
+      if(cell&&Math.abs(cell.y-y)<=FLOOR_TOLERANCE)return cell;
+    }
+    return null;
+  }
+  function tileCount(){let count=0;for(const zone of zones)count+=zone.cells.size;return count;}
+  function ignite({area,x,z,y=0,radius=1.5,seconds=DEFAULT_DURATION,source='unknown',square3x3=false}={}) {
+    const px=Number(x),pz=Number(z),floorY=Number(y);
+    if(!String(area||'')||![px,pz,floorY].every(Number.isFinite)||String(area)!==String(deps?.getCurrentArea?.()||''))return false;
+    area=String(area);source=String(source);
+    const range=Math.max(.3,Math.min(4,Number(radius)||1.5)),ttl=Math.max(.5,Math.min(25,Number(seconds)||DEFAULT_DURATION));
+    const centerX=Math.floor(px),centerZ=Math.floor(pz);
+    const extent=square3x3?1:Math.ceil(range);
+    const patch={area,x:px,z:pz,y:floorY,radius:square3x3?2.2:range,source,cells:new Map(),damageTimer:0};
+    let touched=0;
+    for(let tz=centerZ-extent;tz<=centerZ+extent;tz++)for(let tx=centerX-extent;tx<=centerX+extent;tx++){
+      if(!square3x3&&(tx!==centerX||tz!==centerZ)&&Math.hypot(tx+.5-px,tz+.5-pz)>range)continue;
+      const sy=supportY(area,tx,tz,floorY);
+      if(!Number.isFinite(sy)||window.DevRandomRuinTileOccupancy?.solidAt?.(tx+.5,tz+.5,.05,sy+.35)&&area==='map_i_dev_random_ruin')continue;
+      const old=lookupCell(area,tx,tz,sy);
+      if(old){
+        old.remaining=Math.max(old.remaining,ttl);
+        if(ordinaryGroundFire(source))old.ordinaryRemaining=Math.max(old.ordinaryRemaining,ttl);
+        if(source!=='ruin-skeleton-lunge')old.source=source;
+      }else patch.cells.set(tileKey(tx,tz),{x:tx,z:tz,y:sy,remaining:ttl,ordinaryRemaining:ordinaryGroundFire(source)?ttl:0,source,anchor:null,visual:null});
+      touched++;
+    }
+    if(patch.cells.size){
+      while(zones.length&&(zones.length>=MAX_ZONES||tileCount()+patch.cells.size>MAX_TILES))dispose(zones.shift());
+      zones.push(patch);buildVisual(patch);
+    }
+    if(touched)lastIgnition={area,x:px,z:pz,radius:patch.radius,source,tiles:touched,square3x3};
+    return touched>0;
+  }
+  function extinguishTile({area,x,z,y}={}){
+    if(![x,z,y].every(Number.isFinite))return false;
+    const key=tileKey(x,z);let removed=false;
+    for(let i=zones.length-1;i>=0;i--){
+      const zone=zones[i],cell=zone.cells.get(key);
+      if(zone.area!==area||!cell||Math.abs(cell.y-y)>FLOOR_TOLERANCE)continue;
+      disposeCell(cell);zone.cells.delete(key);removed=true;
+      if(!zone.cells.size){dispose(zone);zones.splice(i,1);}
+    }
+    return removed;
+  }
+  function isBurningTile({area,x,z,y}={}){
+    if(![x,z,y].every(Number.isFinite))return false;
+    return !!lookupCell(area,x,z,y);
   }
   const PLASM_FIRE_RADIUS=1.5; // Every ordinary flame clears a modest local area, not an entire dungeon.
   let fireScene=null,fireScanAt=-Infinity,fireFurniture=[]; // Scan only while plasm exists, amortized across calls.
@@ -118,8 +166,8 @@
     const sources=[];
     if(window.AdventuringTools?.isLit?.()&&player&&Number(player.health)>0&&Number.isFinite(feetY))
       sources.push({x:player.x/tile,z:player.y/tile,y:feetY,radius:PLASM_FIRE_RADIUS}); // Same authoritative flame for held and belt-stowed torch.
-    for(const fire of zones)if(fire.area===area&&fire.age<fire.seconds&&fire.age<fire.ordinaryUntil)
-      sources.push({x:fire.x,z:fire.z,y:fire.y,radius:Math.min(2,Math.max(1,fire.radius))});
+    for(const fire of zones)if(fire.area===area)for(const cell of fire.cells.values())
+      if(cell.ordinaryRemaining>0)sources.push({x:cell.x+.5,z:cell.z+.5,y:cell.y,radius:PLASM_FIRE_RADIUS});
     if(area==='map_i_dev_random_ruin')for(const light of window.DevRandomRuinSanctum?.ordinaryFireSources?.()||[])
       if(light.active!==false)sources.push({x:light.x,z:light.z,y:light.floorY,radius:PLASM_FIRE_RADIUS});
     const now=typeof performance!=='undefined'?performance.now():Date.now();
@@ -150,43 +198,47 @@
   }
 
   function intersects(area,x,z,distance=0,floorY=null) {
-    const px=Number(x),pz=Number(z);
+    const px=Number(x),pz=Number(z),range=Math.max(0,Number(distance)||0);
     if(!Number.isFinite(px)||!Number.isFinite(pz))return false;
-    return zones.some(patch=>patch.area===String(area)&&patch.age<patch.seconds
-      &&(!Number.isFinite(floorY)||Math.abs(patch.y-floorY)<=FLOOR_TOLERANCE)
-      &&Math.hypot(px-patch.x,pz-patch.z)<=patch.radius+Math.max(0,Number(distance)||0));
+    for(const zone of zones)if(zone.area===String(area))for(const cell of zone.cells.values()){
+      if(Number.isFinite(floorY)&&Math.abs(cell.y-floorY)>FLOOR_TOLERANCE)continue;
+      if(!range){if(Math.floor(px)===cell.x&&Math.floor(pz)===cell.z)return true;continue;}
+      const dx=Math.max(0,cell.x-px,px-cell.x-1),dz=Math.max(0,cell.z-pz,pz-cell.z-1);
+      if(dx*dx+dz*dz<=range*range)return true;
+    }
+    return false;
   }
   function update(dt) {
-    const elapsed=Number.isFinite(Number(dt)) ? Math.max(0,Number(dt)) : 0; // A slow/mobile frame still advances the real fire lifetime, not a 250ms-capped clock.
-    if(!zones.length||!elapsed)return; // Idle worlds skip even the area/scene getters and entity scans.
-    const area=String(deps?.getCurrentArea?.()||''),scene=deps?.getActiveScene?.();
-    const tile=Number(deps?.TILE)||64;
-    const ruin=area==='map_i_dev_random_ruin'?window.DevRandomRuin:null; // Only ruins stack multiple floors at the same coordinates.
-    const player=ruin?deps?.getPlayer?.():null; // Used for the player's separate ruin support height.
-    for(let index=zones.length-1;index>=0;index--){
-      const patch=zones[index];
-      if(patch.area!==area||(patch.scene&&patch.scene!==scene)||patch.age>=patch.seconds){
-        dispose(patch);zones.splice(index,1);continue;
+    const elapsed=Number.isFinite(Number(dt))?Math.max(0,Number(dt)):0;
+    if(!zones.length||!elapsed)return;
+    const area=String(deps?.getCurrentArea?.()||''),scene=deps?.getActiveScene?.(),tile=Number(deps?.TILE)||64;
+    const ruin=area==='map_i_dev_random_ruin'?window.DevRandomRuin:null;
+    const player=ruin?deps?.getPlayer?.():null;
+    const burned=new Set(); // No duplicate applications when multiple patch queries see one actor.
+    for(let i=zones.length-1;i>=0;i--){
+      const patch=zones[i];
+      if(patch.area!==area||(patch.scene&&patch.scene!==scene)){dispose(patch);zones.splice(i,1);continue;}
+      if(!patch.mesh)buildVisual(patch);
+      for(const [key,cell] of patch.cells){
+        cell.remaining-=elapsed;cell.ordinaryRemaining-=elapsed;
+        if(cell.remaining<=0){disposeCell(cell);patch.cells.delete(key);continue;}
+        cell.visual?.update?.(Math.min(.05,elapsed));
       }
-      patch.age+=elapsed;
-      if(patch.age>=patch.seconds){dispose(patch);zones.splice(index,1);continue;} // Expire before applying fresh damage on a frame after the fire is gone.
+      if(!patch.cells.size){dispose(patch);zones.splice(i,1);continue;}
       patch.damageTimer+=elapsed;
-      if(!patch.mesh)buildVisual(patch); // A patch created before the cave scene is ready still gains visible flames once mounted.
-      for(const visual of patch.flameVisuals||[])visual?.update?.(Math.min(.05,elapsed));
-      if(patch.damageTimer>=DAMAGE_INTERVAL) {
-        patch.damageTimer=0;
-        const nearby=deps?.getSplashEntities?.(area,patch.x*tile,patch.z*tile,patch.radius*tile)||[];
-        for(const actor of nearby){
-          if(!actor||Number(actor.health)<=0)continue;
-          if(patch.source==='ruin-skeleton-lunge'&&actor.ruinSkeletonTheme==='hronal')continue; // Charred skeletons ignore their trails.
-          if(Math.hypot(Number(actor.x)/tile-patch.x,Number(actor.y)/tile-patch.z)>patch.radius)continue;
-          if(ruin){
-            const feetY=actor.physicalFeetY??(actor===player?ruin.getPlayerSupportY?.()
-              :actor.shaftSupportY??actor.surfaceYOverride?.()??actor.surfaceY??(actor.avatarRef?.group?.position?.y-(actor.halfHeight||0))); // Known feet height keeps fire damage on its own floor.
-            if(Number.isFinite(feetY)&&Math.abs(feetY-patch.y)>.9)continue;
-          }
-          window.ResourceSystem?.addAffliction?.(actor,'burningHealth',5); // Uses ordinary water/roll extinguish behavior.
-        }
+      if(patch.damageTimer<DAMAGE_INTERVAL)continue;
+      patch.damageTimer=0;
+      // Query once per patch, not once per burning tile. The extra tile covers snapped footprint edges.
+      const nearby=deps?.getSplashEntities?.(area,patch.x*tile,patch.z*tile,(patch.radius+1.5)*tile)||[];
+      for(const actor of nearby){
+        if(!actor||Number(actor.health)<=0||burned.has(actor))continue;
+        const cell=patch.cells.get(tileKey(actor.x/tile,actor.y/tile));
+        if(!cell)continue;
+        if(cell.source==='ruin-skeleton-lunge'&&actor.ruinSkeletonTheme==='hronal')continue;
+        if(window.AdventuringJug?.dodgeProtected?.(actor,area))continue;
+        const feetY=actor.physicalFeetY??(actor===player?ruin?.getPlayerSupportY?.():actor.shaftSupportY??actor.surfaceYOverride?.()??actor.surfaceY??(actor.avatarRef?.group?.position?.y-(actor.halfHeight||0)));
+        if(Number.isFinite(feetY)&&Math.abs(feetY-cell.y)>.9)continue;
+        burned.add(actor);window.ResourceSystem?.addAffliction?.(actor,'burningHealth',5);
       }
     }
   }
@@ -197,9 +249,10 @@
     }
   }
   window.PersistentGroundFire=Object.freeze({
-    init(injected){deps=injected||null;},ignite,intersects,update,clear,attachCampfireFlame,plasmFireSources,
-    debugSnapshot:()=>({count:zones.length,campfireTemplateReady:!!campfireTemplate,lastIgnition,zones:zones.map(z=>({
-      area:z.area,x:z.x,y:z.y,z:z.z,remaining:+(z.seconds-z.age).toFixed(1),source:z.source
+    init(injected){deps=injected||null;},ignite,intersects,extinguishTile,isBurningTile,update,clear,attachCampfireFlame,plasmFireSources,
+    debugSnapshot:()=>({count:zones.length,tileCount:tileCount(),campfireTemplateReady:!!campfireTemplate,lastIgnition,zones:zones.map(z=>({
+      area:z.area,x:z.x,y:z.y,z:z.z,remaining:+Math.max(...[...z.cells.values()].map(c=>c.remaining)).toFixed(1),source:z.source,
+      tiles:[...z.cells.values()].map(c=>({x:c.x,y:c.y,z:c.z,remaining:+c.remaining.toFixed(1)}))
     }))}),
   });
 })();
