@@ -1528,6 +1528,7 @@
     resetEncounter:reason => resetSanctumEncounter(reason || 'debug'), // Mobile diagnostics and regression tests can force an encounter reset without desktop DevTools.
     buildLichBrazier,
     lightSources:() => s?.sanctumLights || [], // Zero-allocation read path for both darkness compositors and mobile diagnostics.
+    litOrdinaryFireObjects:()=> (s?.arenaFires||[]).filter(f=>f.ordinaryFire&&f.lit).map(f=>f.holder),
     ordinaryFireSources:()=> (s?.arenaFires||[]).filter(f=>f.ordinaryFire&&f.lit).map(f=>f.lightSource), // Active nonmagical corner flames only.
     debugUpdateIntro:now => updateBossIntro(now), // Run one real intro-pose tick without rebuilding the dungeon (mobile diagnostics and isolated regression tests).
     getState:() => s,
