@@ -88,6 +88,10 @@
       #mpInventory .inv-item-box:not(.empty):active { transform:translateY(1px) scale(.965); }
       #mpInventory .inv-item-box.selected { transform:translateY(-1px); border-color:var(--inv-ui-accent); background:linear-gradient(#f9e28a33,#f9e28a17); box-shadow:0 0 0 1px #f9e28a33,0 0 12px #f9e28a1f,inset 0 1px #ffffff14; }
       #mpInventory .inv-item-box.empty { opacity:.62; }
+      /* Drop shadow uses the composed icon's alpha, not the rectangular slot or its stack counter. */
+      #mpInventory .inv-item-box.unlearned-lesson .iib-icon {
+        filter:drop-shadow(0 0 1px #8aff91) drop-shadow(0 0 3px #35ef59);
+      }
       #mpInventory .inventory-clothing-reserved-empty { display:none !important; }
       #mpInventory .pack-clothing-tile { padding:0; }
       #mpInventory .pack-clothing-tile .ipc-sprite { width:68%; height:68%; object-fit:contain; image-rendering:pixelated; }
@@ -590,8 +594,12 @@
   }
 
   function decoratePackSlots() {
+    const lessonByKey = new Map(); // One knowledge lookup per distinct visible stack key during a Pack refresh.
     document.querySelectorAll('#mpInventory .inv-item-box').forEach((slot) => {
       const empty = slot.classList.contains('empty'); // Empty Pack slots remain decorative rather than fake controls.
+      const key = !empty && !slot.classList.contains('pack-clothing-tile') ? slot.dataset.key : null; // Only canonical item stacks can represent readable lessons.
+      if (key && !lessonByKey.has(key)) lessonByKey.set(key, window.InventoryHeldOverride?.hasUnlearnedLesson?.(key) === true);
+      slot.classList.toggle('unlearned-lesson', !!key && lessonByKey.get(key) === true);
       slot.setAttribute('aria-selected', String(slot.classList.contains('selected')));
       if (empty) {
         slot.removeAttribute('role'); slot.removeAttribute('tabindex'); slot.setAttribute('aria-hidden', 'true');
@@ -1094,6 +1102,7 @@
       deferredDecorates, decoratePending, // Observer passes skipped while the inventory was not on screen.
       stackIcons: window.InventoryStacks?.getDebug?.() || null,
       packItems: document.querySelectorAll('#invGrid .inv-item-box:not(.empty)').length,
+      unlearnedLessonKeys: [...new Set([...document.querySelectorAll('#invGrid .unlearned-lesson')].map(slot => slot.dataset.key))], // Mobile diagnostic: currently glowing Pack lessons.
       clothingNests: window.EquipmentPanel?.getClothingNestDebug?.(),
       integratedPackClothing: document.querySelectorAll('#invGrid .pack-clothing-tile').length,
       gearLoadoutColumns: document.querySelectorAll('#invEquipSection .gear-loadout-grid > .gear-loadout-column').length,
