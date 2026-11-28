@@ -94,6 +94,13 @@
       && center.y + screenRadius >= 0 && center.y - screenRadius <= height;
   }
 
+  function projectPool(x, y, z, tiles, ctx) {
+    if (window.CloudForestFog?.projectLightMask) return window.CloudForestFog.projectLightMask(x, y, z, tiles, ctx); // Use the exact projection from the primary darkness overlay.
+    const center = lightingDeps.worldToOverlay(x, y, z);
+    const radius = lightScreenRadius(x, z, y, tiles);
+    return lightMaskIntersectsViewport(center, radius, x, y, z, tiles) ? { center, radius, coverage: 1 } : null; // Standalone compatibility.
+  }
+
   function outdoorVisibility(x, y, z, radiusTiles) {
     return window.CloudForestFog?.outdoorLightVisibilityAt?.(x, y, z, radiusTiles) ?? 1; // The extra Harlyao darkness pass must honor the same world-space light fade as the base compositor.
   }
@@ -115,14 +122,14 @@
     for (const carrier of carriers) {
       const visibility = outdoorVisibility(carrier.x, carrier.y, carrier.z, tuning.radiusTiles); // A remote watch lantern cannot reappear over the newly darkened wilderness.
       if (visibility <= 0) continue;
-      const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, tuning.radiusTiles);
-      if (!lightMaskIntersectsViewport(center, shineR, carrier.x, carrier.y, carrier.z, tuning.radiusTiles)) continue;
+      const projected = projectPool(carrier.x, carrier.y, carrier.z, tuning.radiusTiles, ctx);
+      if (!projected) continue;
+      const { center, radius: shineR, coverage } = projected; // Coverage keeps the additional darkness pass synchronized.
       const clarityFrac = clamp01(tuning.clarityRadiusTiles / Math.max(0.000001, tuning.radiusTiles));
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      gradient.addColorStop(0, `rgba(0,0,0,${tuning.centerMaskAlpha * visibility})`);
-      gradient.addColorStop(clarityFrac, `rgba(0,0,0,${tuning.clarityMaskAlpha * visibility})`);
-      gradient.addColorStop(Math.min(1, clarityFrac + tuning.softTransitionFraction), `rgba(0,0,0,${tuning.softMaskAlpha * visibility})`);
+      gradient.addColorStop(0, `rgba(0,0,0,${tuning.centerMaskAlpha * visibility * coverage})`);
+      gradient.addColorStop(clarityFrac, `rgba(0,0,0,${tuning.clarityMaskAlpha * visibility * coverage})`);
+      gradient.addColorStop(Math.min(1, clarityFrac + tuning.softTransitionFraction), `rgba(0,0,0,${tuning.softMaskAlpha * visibility * coverage})`);
       gradient.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = gradient;
       ctx.beginPath();
@@ -138,10 +145,9 @@
     for (const light of (lightingDeps.getFurnitureLightSources?.() || [])) {
       const visibility = outdoorVisibility(light.x, light.y, light.z, light.distance); // Shared fade applies again after the Harlyao-specific darkness multiplication.
       if (visibility <= 0) continue;
-      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance);
-      if (!lightMaskIntersectsViewport(center, shineR, light.x, light.y, light.z, light.distance)) continue;
-      visible.push({ light, center, shineR, visibility }); // The same factor drives both masking and visible glow.
+      const projected = projectPool(light.x, light.y, light.z, light.distance, ctx);
+      if (!projected) continue;
+      visible.push({ light, center: projected.center, shineR: projected.radius, visibility: visibility * projected.coverage }); // The same factor drives both masking and visible glow.
     }
 
     ctx.globalCompositeOperation = 'destination-out';
