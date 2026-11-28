@@ -18,3 +18,7 @@ Refill failure no longer expends a unit. Paid belt-water dodges clear current bu
 Arena spell plasm now uses separately removable cells sharing one geometry/material. Both ruin and arena deposits consult consecration before creating or refreshing covered surfaces. Tests exercise floor isolation, removal, contact and prevention.
 
 Furniture Avatar Author exposes the required liquid, unit count, and intake part ID. The runtime bridge uses gameplay elapsed time rather than wall-clock time for consecration; paused updates no longer advance effects.
+
+## Aiming and fallback support audit
+
+The pour resolves a nearby sight-line target with a gravity-compensated trajectory and sweeps the actual trajectory again for obstruction. Retired receptacles cannot receive delayed liquid. The standalone plasm fallback respects ruin support height, floor coverage and solid/protected tiles, and consecration clears it through the same tile API.

@@ -40,8 +40,11 @@
       nowMs:()=>simulationMs,
       onStateChanged:(actor,state)=>{if(actor===local()){deps.saveState?.(state);deps.refresh?.();}},
       extinguishTile:(t,owner)=>window.PersistentGroundFire?.extinguishTile?.(t),
-      clearPlasmTile:t=>t.area==='map_i_dev_random_ruin'?window.DevRandomRuinLichThemes?.clearPlasmTile?.(t):window.HarlyaoLichCombat?.clearPlasmTile?.(t),
-      fillReceptacle:(receiver,liquid,units,owner)=>receiver.accept(liquid,units,owner),
+      clearPlasmTile:t=>{
+        if(t.area==='map_i_dev_random_ruin')window.DevRandomRuinLichThemes?.clearPlasmTile?.(t);
+        window.HarlyaoLichCombat?.clearPlasmTile?.(t); // Also clears the independent fallback if the ruin composer was unavailable.
+      },
+      fillReceptacle:(receiver,liquid,units,owner)=>visibleInScene(receiver.root)&&receiver.available?.()!==false?receiver.accept(liquid,units,owner):0,
       onConsecrated:showSurface,onConsecrationExpired:removeSurface,
       actorsInArea:deps.actorsInArea,actorTile:deps.actorTile,
       isAlive:a=>Number(a?.health)>0&&!a._downed&&!a._deathTransitionStarted&&!a._denHidden&&!a._timeKnockedOut,
@@ -68,7 +71,7 @@
     const registered=window.FurniturePuzzleRuntime?.liquidReceivers?.(area)||[];
     for(const receiver of [...receivers,...registered]){
       if(receiver.area!==area||!visibleInScene(receiver.root)||receiver.available?.()===false)continue;
-      result.push({root:receiver.root,receiver});
+      result.push({root:receiver.root,receiver:registered.includes(receiver)?receiver:{...receiver,available:()=>receivers.has(receiver)&&receiver.available?.()!==false}});
     }
     // Only on a release, never in HUD refresh or idle frames. Use the authored liquid surface, not the whole tree/basin.
     if(includeSources)scene?.traverse?.(root=>{
@@ -76,7 +79,7 @@
     });
     return result;
   }
-  function trace(origin,direction,speed,candidates){
+  function trace(origin,direction,speed,candidates,gravity=GRAVITY){
     const THREE=window.THREE;
     const points=[{x:origin.x,y:origin.y,z:origin.z}]; // Physical trajectory used for both droplets and first-hit resolution.
     const from=new THREE.Vector3(origin.x,origin.y,origin.z),to=new THREE.Vector3(),delta=new THREE.Vector3();
@@ -84,8 +87,8 @@
     let vy=direction.y*speed;
     const vx=direction.x*speed,vz=direction.z*speed;
     for(let i=0;i<MAX_STEPS;i++){
-      to.set(from.x+vx*STEP,from.y+vy*STEP-.5*GRAVITY*STEP*STEP,from.z+vz*STEP);
-      vy-=GRAVITY*STEP;
+      to.set(from.x+vx*STEP,from.y+vy*STEP-.5*gravity*STEP*STEP,from.z+vz*STEP);
+      vy-=gravity*STEP;
       const ground=window.RangedWeapons?.traceLiquidSegment?.(from,to);
       let fraction=ground?.t??Infinity,hit=ground?{kind:ground.kind,y:ground.y}:null;
       delta.copy(to).sub(from);const distance=delta.length();
@@ -107,6 +110,24 @@
       from.copy(to);points.push({x:from.x,y:from.y,z:from.z});
     }
     return {points,duration:MAX_STEPS*STEP,tile:null,kind:'miss'};
+  }
+  // A nearby reticle-aligned surface is a target, not just a launch direction.
+  // Solve the initial velocity for a short gravity arc that reaches that surface,
+  // then re-run the physical sweep: an intervening obstacle still wins.
+  function aimedPour(origin,direction,candidates){
+    const sight=trace(origin,direction,6,candidates,0);
+    if(sight.tile||sight.receiver||sight.liquid){
+      const target=sight.points.at(-1),dx=target.x-origin.x,dy=target.y-origin.y,dz=target.z-origin.z;
+      const horizontal=Math.hypot(dx,dz);
+      if(horizontal<=4&&dy<=1.5&&dy>=-12){
+        // Extend slightly through the selected surface; collision, not an artificial endpoint, resolves the impact.
+        const distance=Math.hypot(dx,dy,dz),extra=distance>.01?.06/distance:0;
+        const t=Math.max(.22,Math.min(1.8,Math.max(horizontal/4.5,Math.sqrt(Math.max(0,-dy)/GRAVITY))));
+        const v={x:dx*(1+extra)/t,y:dy*(1+extra)/t+.5*GRAVITY*t,z:dz*(1+extra)/t};
+        return trace(origin,v,1,candidates);
+      }
+    }
+    return trace(origin,direction,3,candidates);
   }
   function makeFlight(ticket,paths){
     const THREE=window.THREE;
@@ -141,7 +162,7 @@
     const actor=local(),origin=deps.getMouth?.(),direction=deps.getAim?.(origin);
     if(!actor||!scene||!finite(origin)||!finite(direction)||!window.RangedWeapons?.traceLiquidSegment)return false;
     const state=rules.getState(actor), candidates=action==='jug_splash'?[]:targetCandidates(action==='jug_pour');
-    const primary=action==='jug_splash'?null:trace(origin,direction,3,candidates);
+    const primary=action==='jug_splash'?null:aimedPour(origin,direction,candidates);
     // Action 1 doubles as fill when the first hit is a liquid source in reach; no charge is spent.
     if(action==='jug_pour'&&primary?.liquid){
       const p=primary.points.at(-1);

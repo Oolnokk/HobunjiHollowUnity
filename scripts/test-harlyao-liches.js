@@ -454,6 +454,8 @@ ruinSolid=false;
 const ruinPatch=api.makeGasolinePuddle(ruinCaster,7.5*64,7.5*64);
 assert(ruinPatch,'Clear, walkable sunken-floor tile accepts boss plasm');
 assert.equal(ruinPatch.groundY,-2,'Spell puddles use actual ruin surface elevation, not the generic zero-height area grid');
+assert(ruinPatch.cells.has('7,7'),'Fallback includes the actual sunken support');
+assert(!ruinPatch.cells.has('7,6'),'Fallback excludes tiles outside the ruin floor set');
 ruinSolid=true;
 for(let i=0;i<3;i++)windowObject.RangedWeapons.update(.7);
 assert.equal(player.x,7.8*64,'Plasm pull cannot move the player through a solid door or wall');

@@ -1038,8 +1038,13 @@
     const cx=Math.floor(worldX),cz=Math.floor(worldZ);
     for(let z=cz-1;z<=cz+1;z++)for(let x=cx-1;x<=cx+1;x++){
       if((x!==cx||z!==cz)&&Math.hypot(x+.5-worldX,z+.5-worldZ)>PUDDLE_RADIUS_TILES)continue;
-      if(owner.areaGrid?.length&&!owner.areaGrid[z]?.[x])continue;
-      if(Math.abs(groundYAt(owner,(x+.5)*tile,(z+.5)*tile)-groundY)>.2)continue;
+      const inRuin=areaId==='map_i_dev_random_ruin';
+      if(inRuin){
+        if(!window.DevRandomRuin?.getRuntimeContext?.()?.floorSet?.has(plasmCellKey(x,z)))continue;
+        if(window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(x+.5,z+.5)||window.DevRandomRuinTileOccupancy?.solidAt?.(x+.5,z+.5,.27,groundY+.35))continue;
+      }else if(owner.areaGrid?.length&&!owner.areaGrid[z]?.[x])continue;
+      const supportY=inRuin?window.DevRandomRuin?.getGroundSupportYAt?.(x+.5,z+.5):groundYAt(owner,(x+.5)*tile,(z+.5)*tile);
+      if(!Number.isFinite(supportY)||Math.abs(supportY-groundY)>.2)continue; // Fallback ruin patches must use the actual sunken floor, not the arena grid.
       if(window.AdventuringJug?.isConsecrated?.({area:areaId,x,z,y:groundY}))continue;
       const mesh=new THREE.Mesh(geometry,material);mesh.name='kanthic_plasm_spell_patch';mesh.renderOrder=3;
       mesh.position.set(x+.5,groundY,z+.5);group.add(mesh);cells.set(plasmCellKey(x,z),mesh);

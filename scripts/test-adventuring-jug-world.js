@@ -62,6 +62,10 @@ const receiver=new Obj();receiver.testY=.8;scene.add(receiver);
 const unregister=jug.registerReceptacle({root:receiver,area,accept:(l,n)=>{accepted+=n;return n;}});
 assert(jug.use('jug_empty'));jug.update(.6);assert.equal(accepted,3);assert.equal(jug.debug().units,0);
 unregister();scene.remove(receiver);
+// A receiver removed after release cannot receive an old flight's contents.
+jug.restore(p,{liquid:'water',units:2});scene.add(receiver);
+const retire=jug.registerReceptacle({root:receiver,area,accept:(l,n)=>{accepted+=n;return n;}});
+assert(jug.use('jug_empty'));retire();jug.update(.6);assert.equal(accepted,3);scene.remove(receiver);
 jug.restore(p,{liquid:'water',units:1});held=false;p.dodging=true;
 assert(jug.beginDodge(p));assert.equal(jug.beginDodge(p),false);assert.equal(doused,1);assert.equal(jug.debug().units,0);
 assert(jug.dodgeProtected(p,area),'last unit protects complete roll');
