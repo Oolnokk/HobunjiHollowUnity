@@ -94,6 +94,7 @@
       if (visibility <= 0.01) continue;
       const centre = projection.worldToOverlay(px, py, pz);
       if (!centre?.visible) continue;
+      if(opts.occludedAt?.(scratch.camera,px,py,pz))continue; // Darkness-piercing is not wall-piercing.
       const orbWorld = (Number(light.userData.emissiveOrb?.radius) || ORB_WORLD_RADIUS);
       const edge = projection.worldToOverlay(px + scratch.right.x * orbWorld, py + scratch.right.y * orbWorld, pz + scratch.right.z * orbWorld);
       const radius = Math.max(4, Math.hypot(edge.x - centre.x, edge.y - centre.y));
@@ -125,6 +126,12 @@
     return canvas;
   }
 
+  const eyeEndpoint={x:0,y:0,z:0}; // Shared sight-query scratch, only used for front-facing on-screen emissive lights in Kanthic ruins.
+  function kanthicEyeOccluded(start,x,y,z){
+    eyeEndpoint.x=x;eyeEndpoint.y=y;eyeEndpoint.z=z;
+    const hit=global.NearbyVolumeCollision?.segmentHit?.(start,eyeEndpoint,0,true);
+    return !!hit&&hit.t>.001&&hit.t<.98; // Ignore camera and eye endpoint overlap; opaque intermediate cover still blocks.
+  }
   function frame() {
     if (!overlay) return;
     const projection = overlay.getProjection?.();
@@ -145,7 +152,9 @@
     if (!lights.length) return;
     const fade = 1 - Math.max(0, Math.min(1, Number(projection.getSceneTransAlpha?.()) || 0)); // Scene fades-to-black take the glow with them.
     const visibilityAt = global.CloudForestFog?.outdoorLightVisibilityAt; // The topmost emissive canvas must obey the same distance limit as local light masks.
-    drawOrbs(overlay.ctx, projection, lights, performance.now(), { alpha: fade, visibilityAt });
+    const inKanthic=global.DevRandomRuin?.getRuntimeContext?.()?.scene===scene&&global.DevRandomRuinLichThemes?.activeTheme?.()==='kanthic';
+    drawOrbs(overlay.ctx, projection, lights, performance.now(), { alpha: fade, visibilityAt,
+      occludedAt:inKanthic?kanthicEyeOccluded:null });
   }
 
   function installGameOverlay(options = {}) {
