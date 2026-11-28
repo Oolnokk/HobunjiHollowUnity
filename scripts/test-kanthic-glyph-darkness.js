@@ -52,7 +52,9 @@ function frame(now,direct=false){
   assert.equal(api.prepareKanthicGlyphFrame(scene,now),true);
   assert([a,b,shaft,high,ladder,broad].every(m=>!m.visible),'off-room glow and duplicate base-pass glow sleep');
   const beforeRenderPaints=paintCount;
+  const ready=api.hasKanthicLightingPass();
   const result=api.renderKanthicGlyphFrame(renderer,camera,scene,direct);
+  if(!api.getDebugState().ruinEngravingGlowMasks.lastError)assert.equal(ready,result,'shared readiness gate predicts GPU darkness draw');
   assert.equal(paintCount,beforeRenderPaints,'lighting and potential surface repair must finish before the world depth is bound');
   api.endKanthicGlyphFrame();
   assert([a,b,shaft,high,ladder,broad].every(m=>m.visible),'render-only visibility restores');

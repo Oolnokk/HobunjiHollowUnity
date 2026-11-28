@@ -1181,10 +1181,15 @@
     if(kanthicUploadCanvas.height!==h)kanthicUploadCanvas.height=h;
     return kanthicUploadCanvas;
   }
-  function renderKanthicGlyphFrame(renderer,camera,scene,direct=false){
-    if(!kanthicFrame||!kanthicLightingPrepared||!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0){restoreKanthicCanvas();return false;}
+  // Shared readiness gate: ink must precede the GPU darkness even with mist off.
+  function hasKanthicLightingPass(){
+    if(!kanthicFrame||!kanthicLightingPrepared||!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0)return false;
     const canvas=lightingDeps.lctx?.canvas;
-    if(!canvas?.style||!canvas.width||!canvas.height){restoreKanthicCanvas();return false;}
+    return !!(canvas?.style&&canvas.width&&canvas.height);
+  }
+  function renderKanthicGlyphFrame(renderer,camera,scene,direct=false){
+    if(!hasKanthicLightingPass()){restoreKanthicCanvas();return false;}
+    const canvas=lightingDeps.lctx.canvas;
     const THREE=window.THREE;
     const oldAutoClear=renderer.autoClear,oldClearColor=renderer.autoClearColor,oldClearDepth=renderer.autoClearDepth,oldClearStencil=renderer.autoClearStencil,oldMask=camera.layers.mask,oldClipping=renderer.localClippingEnabled; // Existing target and depth buffer stay bound for both draws.
     let painted=false;
@@ -1565,7 +1570,7 @@
     init,
     update,
     renderOutlineMist,
-    prepareKanthicGlyphFrame,renderKanthicGlyphFrame,endKanthicGlyphFrame,
+    prepareKanthicGlyphFrame,hasKanthicLightingPass,renderKanthicGlyphFrame,endKanthicGlyphFrame,
     invalidateKanthicGlyphs:()=>{ruinGlowNextScan=0;},
     setLayerRadius,
     setLayerOpacity,
