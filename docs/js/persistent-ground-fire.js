@@ -98,10 +98,14 @@
        String(area)!==String(deps?.getCurrentArea?.()||''))return false;
     const patch={area:String(area),x:px,z:pz,y:floorY,radius:Math.max(.3,Math.min(4,Number(radius)||1.5)),
       seconds:Math.max(.5,Math.min(25,Number(seconds)||DEFAULT_DURATION)),age:0,damageTimer:0,
-      source:String(source),ordinary:ordinaryGroundFire(source)};
+      source:String(source),ordinaryUntil:0};
+    if(ordinaryGroundFire(source))patch.ordinaryUntil=patch.seconds; // Separate cleansing duration from the existing shared damage patch lifetime.
     // Neighboring splashes extend the fire but never grow unbounded or multiply damage on one tile.
-    const old=zones.find(z=>z.area===patch.area&&z.ordinary===patch.ordinary&&Math.abs(z.y-floorY)<=FLOOR_TOLERANCE&&Math.hypot(z.x-px,z.z-pz)<.5);
-    if(old){old.seconds=Math.max(old.seconds,old.age+patch.seconds);return true;}
+    const old=zones.find(z=>z.area===patch.area&&Math.abs(z.y-floorY)<=FLOOR_TOLERANCE&&Math.hypot(z.x-px,z.z-pz)<.5);
+    if(old){old.seconds=Math.max(old.seconds,old.age+patch.seconds);
+      if(patch.ordinaryUntil>0)old.ordinaryUntil=Math.max(old.ordinaryUntil||0,old.age+patch.ordinaryUntil);
+      return true; // Magical and ordinary splashes never double damage, but neither steals the other's cleansing lifetime.
+    }
     if(zones.length>=MAX_ZONES)dispose(zones.shift());
     zones.push(patch);buildVisual(patch);
     lastIgnition={area:patch.area,x:px,z:pz,radius:patch.radius,source:patch.source};
@@ -114,7 +118,7 @@
     const sources=[];
     if(window.AdventuringTools?.isLit?.()&&player&&Number(player.health)>0&&Number.isFinite(feetY))
       sources.push({x:player.x/tile,z:player.y/tile,y:feetY,radius:PLASM_FIRE_RADIUS}); // Same authoritative flame for held and belt-stowed torch.
-    for(const fire of zones)if(fire.area===area&&fire.age<fire.seconds&&fire.ordinary)
+    for(const fire of zones)if(fire.area===area&&fire.age<fire.seconds&&fire.age<fire.ordinaryUntil)
       sources.push({x:fire.x,z:fire.z,y:fire.y,radius:Math.min(2,Math.max(1,fire.radius))});
     if(area==='map_i_dev_random_ruin')for(const light of window.DevRandomRuinSanctum?.ordinaryFireSources?.()||[])
       if(light.active!==false)sources.push({x:light.x,z:light.z,y:light.floorY,radius:PLASM_FIRE_RADIUS});
