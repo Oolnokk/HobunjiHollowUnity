@@ -648,7 +648,7 @@
       projectedY = playerY + lightCamRight.y * lateralX + lightCamUp.y * lateralY;
       projectedZ = playerZ + lightCamRight.z * lateralX + lightCamUp.z * lateralY;
     }
-    const mask = projectLightMask(projectedX, projectedY, projectedZ, tiles, context);
+    const mask = projectLightMask(projectedX, projectedY, projectedZ, tiles, context, activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true);
     if (!mask) return null;
     mask.coverage *= rangeStrength;
     return mask;
@@ -659,7 +659,7 @@
   // of a near-camera light sphere onto a stable forward plane instead of suddenly
   // dropping it when its center passes behind the camera. Normal-depth pools keep
   // their exact authored size and intensity. Only overlapping masks create gradients.
-  function projectLightMask(x, y, z, worldRadius, context) {
+  function projectLightMask(x, y, z, worldRadius, context, playerPlane = false) {
     if (!(worldRadius > 0) || !Number.isFinite(worldRadius) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
     const camera = lightingDeps.camera;
     camera.getWorldPosition(lightCameraPosition);
@@ -671,7 +671,7 @@
     if (depth + worldRadius <= near || depth - worldRadius >= far) return null;
     let coverage = 1; // Shared strength for the reveal, colored glow and weather tint.
     let radiusTiles = worldRadius;
-    const safeDepth = Math.min(far, Math.max(near + worldRadius * 0.5, 0.001)); // Stable projection depth for sources crossing the camera plane.
+    const safeDepth = Math.min(far, Math.max(near + (playerPlane ? 0 : worldRadius * 0.5), 0.001)); // Stable projection depth for sources crossing the camera plane.
     if (depth < safeDepth) {
       const shift = safeDepth - depth; // Move along the view axis, preserving the light's lateral position.
       coverage = Math.max(0, 1 - (shift / worldRadius) ** 2);
