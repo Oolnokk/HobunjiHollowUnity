@@ -623,7 +623,8 @@
   const kanthicCameraMistCenter = new window.THREE.Vector3(); // Shared center of the existing three mist cylinders.
   const kanthicCameraLantern = { x: 0, y: 0, z: 0, cameraLantern: true }; // Reused camera-relative carried-light source.
   let kanthicCameraValid = false, kanthicCameraScene = null, kanthicRenderCamera = null; // Invalidate stale lighting on camera or scene changes.
-  const kanthicPlayerLantern = { x: 0, y: 0, z: 0 }; // Reused player-centered source and movement tracking for ordinary gameplay.
+  const kanthicPlayerLantern = { x: 0, y: 0, z: 0, anchor: 'ground-fallback' }; // Reused player portrait source and mobile anchor diagnostics.
+  const kanthicPortraitCenter = new window.THREE.Vector3(); // Scratch for the live portrait plane's world-space center.
   let kanthicLanternUsesCamera = false, kanthicPlayerLanternValid = false; // Detect shot handoffs and player movement even when the camera is stationary.
   let kanthicCameraFov, kanthicCameraAspect, kanthicCameraZoom, kanthicCameraNear, kanthicCameraFar; // Track projection changes without allocating a per-frame signature.
   const lightToSource = new window.THREE.Vector3(); // Reused camera-to-source vector; no per-light allocations.
@@ -729,6 +730,24 @@
     return { center, radius, coverage };
   }
 
+  // The portrait assembly has its own species/pose/height offset from the gameplay feet.
+  function sampleKanthicPortraitCenter(scene) {
+    const root = window.PlayerBodyTransformComposer?.getPlayerMesh?.()
+      || window.ProceduralHandAttachments?.gameDeps?.playerMesh; // The local player's actual visual rig, not a carried baby or NPC.
+    if (!root || !scene) return false;
+    const portrait = root.userData?.neckRig?.skinnedPlane
+      || window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(root)?.userData?.neckRig?.skinnedPlane
+      || window.CharacterVisuals?.portraitMeshOf?.(root); // Existing cached portrait resolution, including unskinned avatars.
+    if (!portrait?.getWorldPosition) return false;
+    let node = portrait; // Reject an old/detached rig during a scene or appearance transition.
+    while (node && node !== root) node = node.parent;
+    if (node !== root) return false;
+    while (node && node !== scene) node = node.parent;
+    if (node !== scene) return false;
+    portrait.getWorldPosition(kanthicPortraitCenter); // Authored plane origin is its center; includes all ancestor transforms.
+    return Number.isFinite(kanthicPortraitCenter.x) && Number.isFinite(kanthicPortraitCenter.y) && Number.isFinite(kanthicPortraitCenter.z);
+  }
+
   // Sample the actual rendered camera, not a cinematic's eventual authored target.
   function syncKanthicCameraAtmosphere(scene, camera = lightingDeps?.camera) {
     if (!camera?.getWorldPosition || !camera?.getWorldDirection) return false;
@@ -742,9 +761,13 @@
     const z = p.z + d.z * KANTHIC_CAMERA_LANTERN_DEPTH;
     const useCamera = !!window.CinematicCameraRuntime?.isActive?.(); // Scripted shots own the view; ordinary orbit, movement and shake do not.
     const player = lightingDeps?.player, tile = lightingDeps?.TILE;
-    const px = player?.x / tile, py = Number(lightingDeps?.getPlayerWorldY?.()) + 0.5, pz = player?.y / tile;
+    const hasPortrait = !useCamera && sampleKanthicPortraitCenter(scene); // Skip visual-rig work during cinematics.
+    const anchor = hasPortrait ? 'portrait-plane' : 'ground-fallback'; // Fallback only for unloaded or detached player rigs.
+    const px = hasPortrait ? kanthicPortraitCenter.x : player?.x / tile;
+    const py = hasPortrait ? kanthicPortraitCenter.y : Number(lightingDeps?.getPlayerWorldY?.()) + 0.5;
+    const pz = hasPortrait ? kanthicPortraitCenter.z : player?.y / tile;
     const playerValid = Number.isFinite(px) && Number.isFinite(py) && Number.isFinite(pz);
-    const playerMoved = !useCamera && (playerValid !== kanthicPlayerLanternValid || (playerValid && (px !== kanthicPlayerLantern.x || py !== kanthicPlayerLantern.y || pz !== kanthicPlayerLantern.z)));
+    const playerMoved = !useCamera && (playerValid !== kanthicPlayerLanternValid || (playerValid && (anchor !== kanthicPlayerLantern.anchor || px !== kanthicPlayerLantern.x || py !== kanthicPlayerLantern.y || pz !== kanthicPlayerLantern.z)));
     const changed = !kanthicCameraValid || kanthicCameraScene !== scene || kanthicRenderCamera !== camera
       || useCamera !== kanthicLanternUsesCamera || playerMoved
       || kanthicCameraLantern.x !== x || kanthicCameraLantern.y !== y || kanthicCameraLantern.z !== z
@@ -755,7 +778,7 @@
     kanthicCameraNear = camera.near; kanthicCameraFar = camera.far;
     kanthicCameraLantern.x = x; kanthicCameraLantern.y = y; kanthicCameraLantern.z = z;
     kanthicLanternUsesCamera = useCamera; kanthicPlayerLanternValid = playerValid;
-    if (playerValid) { kanthicPlayerLantern.x = px; kanthicPlayerLantern.y = py; kanthicPlayerLantern.z = pz; }
+    if (playerValid) { kanthicPlayerLantern.x = px; kanthicPlayerLantern.y = py; kanthicPlayerLantern.z = pz; kanthicPlayerLantern.anchor = anchor; }
     kanthicCameraMistCenter.set(p.x+d.x*KANTHIC_CAMERA_MIST_LEAD,p.y+d.y*KANTHIC_CAMERA_MIST_LEAD,p.z+d.z*KANTHIC_CAMERA_MIST_LEAD);
     if (group?.visible && attachedScene === scene) {
       for (const { mesh } of layers) mesh.position.copy(kanthicCameraMistCenter); // Reapply after gameplay's ordinary fog update, before either world draw.
@@ -825,7 +848,7 @@
       if(!carrier.cameraLantern&&!ruinRoomLightAllowed(carrier))continue;
       const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Ignore far-away watch lanterns; carried player light stays nearby.
       if (visibility <= 0) continue;
-      const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
+      const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx, carrier.anchor === 'portrait-plane');
       if (!projected) continue;
       const { center, radius: shineR, coverage } = projected; // One shared pool projection, independent of emitter visibility.
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
@@ -882,7 +905,7 @@
         if(!ruinRoomLightAllowed(carrier))continue;
         const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Weather tint follows the same faded visibility as the matching darkness cutout.
         if (visibility <= 0) continue;
-        const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
+        const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx, carrier.anchor === 'portrait-plane');
         if (!projected) continue;
         const { center, radius: shineR, coverage } = projected; // Match the darkness reveal's radius and near-camera fade.
         const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
@@ -1793,7 +1816,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic lantern follows the player in gameplay and the rendered camera in scripted shots; 2-tile default radius and unchanged camera-following mist.',
+        latestChange: 'Kanthic lantern follows the live player portrait plane in gameplay and the rendered camera in scripted shots; 2-tile radius.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
