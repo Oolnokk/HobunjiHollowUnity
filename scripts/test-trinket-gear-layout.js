@@ -83,6 +83,8 @@ trinkets._setFallbackGear({
   trinkets: [
     { uid: 'one', id: 'iconNaoung' },
     { uid: 'two', id: 'harlyaoReachShard' },
+    { uid: 'three', id: 'glassFang' },
+    { uid: 'four', id: 'unstableBalance' },
   ],
   equippedTrinkets: ['one'],
 });
@@ -96,8 +98,13 @@ assert(originalGroup.classList.contains('gear-owned-trinkets'), 'trinkets expose
 assert(originalGroup.querySelector('.trinket-attunement-label'), 'attunement header stays inside its group');
 const cards = originalGroup.querySelector('.trinket-inventory-list');
 assert(cards, 'trinket card list stays within its group');
-assert.equal(cards.children.length, 2, 'both equipped and unequipped items remain visible');
-assert(cards.children.every(card => card.classList.contains('trinket-inventory-row')), 'all cards have stable trinket styling hooks');
+const rows = cards.children.filter(card => card.classList.contains('trinket-inventory-row')); // Keep the card assertion independent of new section labels.
+assert.equal(rows.length, 4, 'all equipped and unequipped items remain visible');
+assert.deepEqual(cards.children.filter(card => card.classList.contains('trinket-inventory-heading')).map(card => card.textContent), ['Equipped', 'Available — Combat']);
+assert(rows[0].classList.contains('active-slot'), 'equipped trinkets are first');
+assert.match(rows[1].innerHTML, /Harlyao Reach Shard/);
+assert.match(rows[2].innerHTML, /Unstable Balance/, 'same-cost entries sort alphabetically');
+assert.match(rows[3].innerHTML, /Glass Fang/, 'higher-cost entries follow lower-cost entries');
 assert(originalGroup.querySelector('.trinket-debug'), 'trinket diagnostics remain inside the group');
 
 const ownedSection = new Element('div'); // Simulates InventoryUI's completed owned-gear column.
