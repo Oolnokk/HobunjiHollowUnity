@@ -38,7 +38,7 @@
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20261122ha683d19"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20261107nativeglyphsource1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20261107hf7aabd8"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261116dungeonJump1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261127ruinLook2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261127formulaAudit4"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261108h810cd97"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
   if (!window.RopeCore) document.write('<script src="js/rope-core.js?v=20261127ropeRetry1"></scr' + 'ipt>'); // The ruin rope runtime delegates its swing math to RopeCore (also loaded by index.html for other rope users).
@@ -58,7 +58,7 @@
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
   document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261127ruinDecoyMerge9"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261116shortfire1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
-  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261127ruinLook1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261127ruinLook2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261123hdca48af"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20261114adventRuin2"></scr' + 'ipt>');
 })();
