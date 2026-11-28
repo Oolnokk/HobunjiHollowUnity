@@ -1074,6 +1074,20 @@
     return null;
   }
 
+  // A descending finite projectile touches the top of a voxel at its radius
+  // before its center crosses a registered support plane. Reconcile those two
+  // reports only when the collision really lies on that support's top.
+  function liquidImpactSurfaceY(kind,point,radius,startY,endY,area) {
+    if(kind==='ground')return deps.worldSurfaceY(point.x*deps.TILE,point.z*deps.TILE);
+    if(kind!=='floor'&&kind!=='solid-tile')return null;
+    const support=window.DynamicSurfaces?.sampleSupport?.(point.x,point.z,{area,minY:point.y-radius-.04,maxY:point.y+.04,pad:0});
+    const y=support?.y;
+    if(!Number.isFinite(y))return null;
+    if(kind==='floor')return endY<startY?y:null; // Upward contact is the underside, not a wettable top.
+    if(endY>=startY||startY<y+radius-.025||endY>y+radius+.025)return null;
+    return Math.abs(point.y-(y+radius))<=.04?y:null; // A lateral wall hit remains a wall hit.
+  }
+
   // The jug uses the same finite terrain and support sweep as ranged projectiles.
   function traceLiquidSegment(start,end) {
     if(!deps)return null;
@@ -1084,8 +1098,9 @@
     if(floorT!==null&&(!first||floorT<first.t))first={kind:'floor',t:floorT};
     if(!first)return null;
     const x=THREE.MathUtils.lerp(start.x,end.x,first.t),z=THREE.MathUtils.lerp(start.z,end.z,first.t),y=THREE.MathUtils.lerp(start.y,end.y,first.t);
-    if(first.kind==='ground')first.y=deps.worldSurfaceY(x*deps.TILE,z*deps.TILE);
-    else if(first.kind==='floor')first.y=window.DynamicSurfaces?.sampleSupport?.(x,z,{area:deps.getCurrentArea(),minY:y-.12,maxY:y+.12,pad:.02})?.y;
+    const surfaceY=liquidImpactSurfaceY(first.kind,{x,y,z},radius,start.y,end.y,deps.getCurrentArea());
+    if(Number.isFinite(surfaceY)){first.y=surfaceY;if(first.kind==='solid-tile')first.kind='floor';}
+    else if(first.kind==='floor')first.kind='solid-tile'; // Never wet the top of a ceiling hit from below.
     return first;
   }
 
@@ -1927,11 +1942,9 @@
           z: THREE.MathUtils.lerp(p.prevY, p.y, fraction) / deps.TILE,
         };
         // Only a burning adventuring torch's real ground/support collision starts the 3x3 tile fire.
-        if(p.itemKey==='torch'&&p.dungeonFire&&p.team==='player'&&(terrainImpact.kind==='ground'||terrainImpact.kind==='floor')){
+        if(p.itemKey==='torch'&&p.dungeonFire&&p.team==='player'&&hit?.kind!=='cover'){
           const point=lastTerrainImpact;
-          const radius=projectileCollisionRadiusWorld(p);
-          const support=window.DynamicSurfaces?.sampleSupport?.(point.x,point.z,{area:p.areaId,minY:point.y-radius-.2,maxY:point.y+.1,pad:.02});
-          const floorY=terrainImpact.kind==='floor'?support?.y:deps.worldSurfaceY(point.x*deps.TILE,point.z*deps.TILE);
+          const floorY=liquidImpactSurfaceY(terrainImpact.kind,point,projectileCollisionRadiusWorld(p),p.prevWorldY,p.worldY,p.areaId);
           if(Number.isFinite(floorY))window.PersistentGroundFire?.ignite?.({area:p.areaId,x:point.x,z:point.z,y:floorY,square3x3:true,source:'adventuringTorch'});
         }
         if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t, true);

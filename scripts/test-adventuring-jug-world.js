@@ -26,6 +26,7 @@ class Raycaster{
 }
 const p={health:50,dodging:false},enemy={health:50},undead={health:50,isMinion:true},upper={health:50},outside={health:50};
 let area='ruin',scene=new Obj(),held=true,water=true,wall=false,mouth=new V(.5,1,.5),floor=0,save=[],wet=[],plasm=[],heal=[],hurt=[],doused=0,accepted=0;
+let aim=new V(0,-1,0); // Mutable direction exercises both vertical and angled reticle targeting.
 const actors=[p,enemy,undead,upper,outside];
 const position=a=>({area:a===outside?'farm':area,x:.5,z:.5,y:a===upper?3:floor});
 const window={
@@ -40,7 +41,7 @@ const window={
 const context=vm.createContext({window,console});
 for(const file of ['adventuring-jug.js','adventuring-jug-world.js'])vm.runInContext(fs.readFileSync('docs/js/'+file,'utf8'),context);
 const jug=window.AdventuringJug;
-jug.init({tileSize:64,getPlayer:()=>p,getArea:()=>area,getScene:()=>scene,isHolding:()=>held,getMouth:()=>mouth,getAim:()=>new V(0,-1,0),isWaterTile:()=>water,
+jug.init({tileSize:64,getPlayer:()=>p,getArea:()=>area,getScene:()=>scene,isHolding:()=>held,getMouth:()=>mouth,getAim:()=>aim,isWaterTile:()=>water,
   saveState:s=>save.push(s),actorsInArea:()=>actors,actorTile:position,actorArea:a=>position(a).area,dodgeSupportY:()=>floor,canEscape:()=>true});
 assert(jug.use('jug_pour'),'ordinary source fills jug');
 assert.equal(jug.debug().units,12);
@@ -57,6 +58,10 @@ jug.update(.6);assert.equal(wet.length,1,'impact resolves exactly once');
 wall=true;
 assert(jug.use('jug_pour'));jug.update(.6);assert.equal(wet.length,1,'solid obstruction blocks liquid from the floor behind it');
 wall=false;
+aim=new V(.95,-Math.sqrt(1-.95*.95),0);
+assert(jug.use('jug_pour'));jug.update(1.2);
+assert.equal(wet.at(-1).x,3,'Gravity-compensated pour reaches the distant tile selected by the reticle');
+aim=new V(0,-1,0);
 jug.restore(p,{liquid:'water',units:3});
 const receiver=new Obj();receiver.testY=.8;scene.add(receiver);
 const unregister=jug.registerReceptacle({root:receiver,area,accept:(l,n)=>{accepted+=n;return n;}});

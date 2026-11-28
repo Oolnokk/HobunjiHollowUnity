@@ -22,3 +22,5 @@ Furniture Avatar Author exposes the required liquid, unit count, and intake part
 ## Aiming and fallback support audit
 
 The pour resolves a nearby sight-line target with a gravity-compensated trajectory and sweeps the actual trajectory again for obstruction. Retired receptacles cannot receive delayed liquid. The standalone plasm fallback respects ruin support height, floor coverage and solid/protected tiles, and consecration clears it through the same tile API.
+
+Finite projectile radius may contact shaft floor voxels before the center crosses a dynamic support. Jug and burning-torch ground effects now recognize actual descending top contacts without treating wall and ceiling hits as floor impacts. The new test executes the shared production classifier.
