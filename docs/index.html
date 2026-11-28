@@ -461,7 +461,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261125deepHotpaths1"></script>
+  <script src="js/creature-death.js?v=20261127pitlootAudit2"></script>
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
   <!-- Corpse-only, single-pass baking of final skinned pants; live pants are unchanged. -->
@@ -3010,7 +3010,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261127rootAnatomyRevert16"></script>
-  <script src="game.js?v=20261127idleMainMerge1"></script>
+  <script src="game.js?v=20261127pitlootAudit2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

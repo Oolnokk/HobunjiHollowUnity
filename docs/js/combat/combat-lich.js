@@ -1597,7 +1597,7 @@
     const inRuin=area==='map_i_dev_random_ruin'; // Authored ruin uses its actual floor and collision footprint for pull checks.
     const floorSet=inRuin?window.DevRandomRuin?.getRuntimeContext?.()?.floorSet:null;
     for(const actor of [deps?.player,...(deps?.hostileObjects||[])]){
-      if(!isLiveActor(actor)||actor.isHarlyaoLich||actor.enemyClass===CLASS_ID){
+      if(!isLiveActor(actor)||actor.isHarlyaoLich||actor.enemyClass===CLASS_ID||actor.ruinSkeletonTheme==='kanthic'){ // Native Kanthic skeletons ignore plasm immersion.
         clearPuddleSink(actor);
         continue;
       }

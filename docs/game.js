@@ -1234,14 +1234,31 @@
         c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
       }
 
+      function checkCreaturePitDeath(c, prevX, prevY) {
+        if(c.isCompanion||c.combatTutorialTarget||c.health<=0||!hostileObjects.has(c))return false;
+        if(!window.CreatureDeath.preparePitLoot(c,prevX,prevY)){
+          if(window.CreatureDeath.isUnsupportedPit(c)){ // No safe recovery destination: avoid stranding the enemy in the void.
+            c.x=prevX;c.y=prevY;c.knockbackT=0;c.proneThrowT=0;clearKnockbackLedgeMotion(c);
+            window.KnockbackCollisionImpact?.cancel?.(c);
+          }
+          return false;
+        }
+        c.health=0;c._lethalDamageCause='fall-pit'; // Normal death transition handles kill rewards and ownership.
+        c.knockbackT=0;c.proneThrowT=0;clearKnockbackLedgeMotion(c);
+        window.KnockbackCollisionImpact?.cancel?.(c);
+        return transitionCreatureToDeath(c,c.x,c.y);
+      }
+
       function advanceCreatureProneThrow(c, dt) {
         if (!(c.proneThrowT > 0)) return false;
         c.proneThrowT = Math.max(0, c.proneThrowT - dt);
         const nextX = c.x + (Number(c.proneThrowVX) || 0) * dt;
         const nextY = c.y + (Number(c.proneThrowVY) || 0) * dt;
         const throwVX = Number(c.proneThrowVX) || 0, throwVY = Number(c.proneThrowVY) || 0; // Preserved until the shared collision resolver has measured the lost travel.
+        const pitStartX=c.x,pitStartY=c.y; // Last supported throw origin for loot recovery.
         const swept = sweepKnockbackMotion(c, nextX, nextY, TILE * 0.32, throwVX, throwVY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
         c.x = swept.x; c.y = swept.y;
+        if(checkCreaturePitDeath(c,pitStartX,pitStartY))return true;
         if (swept.blockedX || swept.blockedY) {
           const impact = resolveKnockbackCollision(c, swept, TILE * 0.32, throwVX, throwVY);
           c.proneThrowT = 0;
@@ -5677,7 +5694,7 @@
       function getCorpseObjectAt(col, row) {
         for (const c of corpseObjects) {
           if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue; // corpseLooted: looted but kept (keepCorpseAfterLoot), e.g. revivable skeletons.
-          if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
+          if (c.corpseCol === col && c.corpseRow === row && window.CreatureDeath.canInteractWithLootBag(c)) return window.CreatureDeath.decorateLootBag(c,makeCorpseWorldObject(c));
         }
         return null;
       }
@@ -5692,14 +5709,14 @@
         if (exact || action !== 'obj_loot_corpse') return exact;
         let best = null, bestDist = Infinity;
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted || !window.CreatureDeath.canInteractWithLootBag(c)) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
           if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
           best = c;
           bestDist = dist;
         }
-        return best ? makeCorpseWorldObject(best) : null;
+        return best ? window.CreatureDeath.decorateLootBag(best,makeCorpseWorldObject(best)) : null;
       }
 
       // dmgOpts: { tag: 'sharp'|'blunt'|'poison', heavy: boolean } — routes
@@ -5778,6 +5795,7 @@
       }
 
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        if(c?.ruinSkeletonTheme==='kanthic'&&dmgOpts?.tag==='kanthic-plasm')return false; // Native plasm immunity.
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
         if (c?._downed) return false; // A downed companion is untargetable until it is revived (js/companion-downed.js).
@@ -7458,7 +7476,7 @@
         if (now - _corpseVisualLodAt < 400) return; // Wall clock, so a slow frame rate does not stretch the interval.
         _corpseVisualLodAt = now;
         for (const c of corpseObjects) { // Promotion shares the per-frame allowance set by updateHostiles, so corpses wake over successive ticks.
-          if (!window.WildlifeVisualLod.isStreamableCorpse(c)) continue;
+          if (c._pitLootRest || !window.WildlifeVisualLod.isStreamableCorpse(c)) continue; // Already a lightweight bag.
           if (c.areaId !== currentArea) { if (!c._wildlifeVisualsReleased) releaseCreatureVisuals(c); continue; }
           updateWildlifeVisualLod(c, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
         }
@@ -7763,6 +7781,7 @@
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
             advanceCreatureProneThrow(c, entityDt);
+            if(c._deathTransitionStarted)continue;
             if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
@@ -7773,8 +7792,10 @@
             c.knockbackT = Math.max(0, c.knockbackT - entityDt);
             const knockbackVX = c.knockbackVX, knockbackVY = c.knockbackVY; // Preserved until collision deficit/profile resolution completes.
             const nkx = c.x + knockbackVX * entityDt, nky = c.y + knockbackVY * entityDt;
+            const pitStartX=c.x,pitStartY=c.y; // Last supported knockback origin.
             const ckSwept = sweepKnockbackMotion(c, nkx, nky, TILE * 0.32, knockbackVX, knockbackVY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
             c.x = ckSwept.x; c.y = ckSwept.y;
+            if(checkCreaturePitDeath(c,pitStartX,pitStartY))continue;
             if (ckSwept.blockedX || ckSwept.blockedY) {
               const impact = resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
               c.knockbackT = 0;
@@ -33690,8 +33711,12 @@
         characterGroundShadowSurfaceOffset,
         tileSurfaceYInArea,
         corpseObjects,
+        getPlayer: () => player,
         getCurrentArea: () => currentArea,
         getGrid: () => grid,
+        getActiveGrid: () => window.GridTileAccessors.getActiveGrid(),
+        getDefaultScene: () => scene,
+        disposeCreaturePresentation,
       });
 
       window.FarmCrates?.init({

@@ -15,7 +15,7 @@
     "js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6",
     "js/combat/combat-enemy-dodge.js?v=20261127-ruin-skeletons",
     "js/combat/combat-maskbound-headtaker.js?v=20261126neckPlanarIntegration1",
-    "js/combat/combat-lich.js?v=20261118pursuitRetreat1",
+    "js/combat/combat-lich.js?v=20261127pitloot1",
     "js/combat/combat-special-liches.js?v=20261118combatOrbit1"
 ]; // Versioned modules evaluated before gameplay boot.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
