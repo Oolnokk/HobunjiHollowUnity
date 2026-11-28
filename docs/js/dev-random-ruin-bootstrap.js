@@ -41,7 +41,7 @@
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261116dungeonJump1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261127formulaAudit4"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261108h810cd97"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
-  if (!window.RopeCore) document.write('<script src="js/rope-core.js?v=20261122ropestraight1"></scr' + 'ipt>'); // The ruin rope runtime delegates its swing math to RopeCore (also loaded by index.html for other rope users).
+  if (!window.RopeCore) document.write('<script src="js/rope-core.js?v=20261127ropeRestart1"></scr' + 'ipt>'); // The ruin rope runtime delegates its swing math to RopeCore (also loaded by index.html for other rope users).
   document.write('<script src="js/ruin-melody-glyph-decal.js?v=20261115tierMelodyRebase1"></scr' + 'ipt>'); // Procedural, non-interactive floor inscription for each generated melody.
   document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261123h338fb8c"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20261122hdfaa5d6"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.

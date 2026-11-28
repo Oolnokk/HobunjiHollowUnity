@@ -85,7 +85,11 @@
       rope.yaw += move.side * C.BRAKE_YAW_RATE * dt;
       rope.length = Math.max(C.MIN_LENGTH, Math.min(rope.maxLength, rope.length - move.forward * C.BRAKE_LENGTH_RATE * dt));
     } else {
-      if (move.forward * rope.omega > 0) rope.omega += move.forward * C.PUMP * dt; // Pump with the swing, not against it: height builds over several back-and-forth swings.
+      // A straightened rope has no gravity torque or momentum to pump; movement must be able to start it.
+      const atRest = Math.abs(rope.angle) < 0.001 && Math.abs(rope.omega) < 0.001; // Only seed a near-vertical, stationary swing, not a turning point at height.
+      if (move.forward * rope.omega > 0 || (atRest && Math.abs(move.forward) > 0.001)) {
+        rope.omega += move.forward * C.PUMP * dt; // Same acceleration when starting or pumping; never inject a release kick.
+      }
       rope.omega += (-C.GRAVITY / Math.max(0.4, rope.length)) * Math.sin(rope.angle) * dt;
       rope.omega *= Math.exp(-C.ATTACHED_DAMPING * dt);
       rope.angle += rope.omega * dt;
