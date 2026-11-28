@@ -83,9 +83,11 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
     assert.equal(imlaoBare[slot].id,'none','Imlao must not wear any '+slot+' other than his circlet');
   assert.equal(liches.decoratePortraitProfile({bodyColors:{C:{hex:'#D4D6C9'}},hat:{id:'clothes::hat::tangedcirclet'}},liches.specialRoster('kanthic')).hat.id,'clothes::hat::tangedcirclet','Imlao keeps the tanged circlet every guardian wears');
   assert.equal(imlaoBare.bodyColors.C.hex,liches.bodyColor3For('kanthic'));
-  const minionEyes=liches.decoratePortraitProfile({bodyColors:{}},{ruinSkeletonTheme:'kanthic',appearance:{gender:'female'}});
+  const minionEyes=liches.decoratePortraitProfile({bodyColors:{C:{hex:'#D4D6C9'}}},{ruinSkeletonTheme:'kanthic',appearance:{gender:'female'}});
   assert.ok(minionEyes.eyes.layers[0].url.endsWith('hskel_eyeglow_f.png'));
   assert.ok(minionEyes.eyes.layers[1].pixelDyeOnly);
+  assert.equal(minionEyes.bodyColors.C.hex,'#D4D6C9','minion eyes do not replace its bone pigment');
+  assert.equal(minionEyes.bodyColors[minionEyes.eyes.layers[1].pixelDye.paletteColorKey].hex,liches.bodyColor3For('kanthic'));
   const incorrectlyDressed=liches.specialRoster('kanthic');
   incorrectlyDressed.equippedCosmetics.push('ragged_hood','tangedcirclet','facewrap');
   incorrectlyDressed.cosmeticSlots.ragged_hood='hood';
