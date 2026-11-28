@@ -134,6 +134,7 @@
       ruin.lastAcceptedPx = { x:deps.player.x, y:deps.player.y };
       ruin.lastSafePx = { ...ruin.lastAcceptedPx };
       ruin.falling = null;
+      ruin.obeliskFall=null;ruin.obeliskAttachedY=null;ruin.obeliskAttachedId=null;ruin.airPeakY=null; // Teleports cancel old fall state.
     }
     syncRuinPresentationHeight(y);
     if (options.snapCamera !== false) deps._snapCameraTarget?.();
