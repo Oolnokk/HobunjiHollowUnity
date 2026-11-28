@@ -116,6 +116,14 @@ for(let seed=0;seed<12;seed++){
     sampledPortals++;
     assert(context.CliffRouteNetwork.shelfContains(p.shelf,p.plate.x,p.plate.z,-.13),
       'the music plate must stay inside the actual irregular balcony polygon');
+    assert(p.plate.radius>0&&p.plate.radius<=.46,'plate radius stays within the authored one-tile maximum');
+    assert(context.CliffRouteNetwork.shelfClearanceAt(p.shelf,p.plate.x,p.plate.z)>=p.plate.radius+.01999,
+      'the complete slab, not just its center, sits on the structural cap');
+    for(let i=0;i<72;i++){
+      const angle=i*Math.PI/36; // Independent rim sampling, not just the new clearance helper.
+      assert(context.CliffRouteNetwork.shelfContains(p.shelf,p.plate.x+p.plate.radius*Math.cos(angle),p.plate.z+p.plate.radius*Math.sin(angle)),
+        'every sampled point around the plate is supported by the cap polygon');
+    }
     assert(p.shelf.footprint.some(cell=>cell.c===Math.floor(p.plate.x)&&cell.r===Math.floor(p.plate.z)),
       'the music plate must stand above a real registered balcony tile');
     assert(Math.hypot(p.plate.x-p.entry.c-.5,p.plate.z-p.entry.r-.5)>.65,

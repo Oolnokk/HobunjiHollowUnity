@@ -35,7 +35,7 @@
       : Number.isFinite(continuous) ? continuous : deps.tileSurfaceYInArea?.(tile, area);
     if (!Number.isFinite(baseY)) return null;
     const groundY = window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, baseY, area, maxSupportY) ?? baseY; // Ignore raised decks that are still overhead.
-    return window.DynamicSurfaces?.samplePressurePlate?.(area, x, z, groundY, maxSupportY)?.y ?? groundY; // Jump takeoff and landing share the plate's live cap.
+    return window.DynamicSurfaces?.samplePressurePlate?.(area, x, z, groundY, Math.min(maxSupportY, groundY + CONFIG.maxStepUp))?.y ?? groundY; // Only a local step belongs to ordinary ground; elevated plates remain independent dynamic supports.
   }
 
   function coverAtTile(tile, col, row) {
@@ -73,7 +73,9 @@
       kind: window.HobunjiWalkableElevation?.isBalconyAt?.(x, z, floorY, deps.getCurrentArea()) ? 'balcony' : 'ground',
     } : null; // Keep a roof landing supported until the next jump or real fall-off.
     const dynamic = window.DynamicSurfaces?.sampleSupport?.(x, z, { maxY, minY: -Infinity, area: deps.getCurrentArea() });
-    if (dynamic && (!best || dynamic.y > best.y)) best = { y: dynamic.y, kind: 'dynamic', id: dynamic.id };
+    if (dynamic && (!best || dynamic.y > best.y || (dynamic.record?.shelfId && dynamic.y === best.y))) {
+      best = { y: dynamic.y, kind: 'dynamic', id: dynamic.id, shelfId: dynamic.record?.shelfId }; // A cliff plate or cap keeps its shelf identity even when the ground sampler returns the same height.
+    }
     const c0 = Math.floor(x - CONFIG.radius), c1 = Math.floor(x + CONFIG.radius);
     const r0 = Math.floor(z - CONFIG.radius), r1 = Math.floor(z + CONFIG.radius);
     for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) {
@@ -486,6 +488,13 @@
     if (!blockingReason(tx, tz, top)) { player.x = tx * deps.TILE; player.y = tz * deps.TILE; debug.slides++; }
   }
 
+  function handOffBalcony(player, support) {
+    if (!support.shelfId || player.prone || player.dodging || !window.ClimbSystem?.acceptBalconyLanding?.(support.shelfId, support.y)) return false;
+    reset(player, 'landed on cliff balcony');
+    player.physicalFeetY = support.y; // Keep the exact slab or shelf top across the ownership transfer.
+    return true;
+  }
+
   function land(state, support) {
     const player = deps.player;
     state.feetY = support.y;
@@ -502,6 +511,7 @@
     });
     if (cliffImpact?.lethal) { reset(player, 'lethal prone cliff landing'); return; }
     state.proneFall = false; // A supported roof landing must not charge the impact again on its next tick.
+    if (handOffBalcony(player, support)) return;
     if (support.kind === 'ground') {
       window.DevRandomRuin?.acceptFreeJumpLanding?.(support.y); // Prevent multi-story ruins from charging the same drop a second time.
       reset(player, 'landed on ground');
@@ -568,6 +578,7 @@
           state.feetY + CONFIG.maxStepUp);
         if (after && after.y >= state.feetY - CONFIG.maxStepUp) {
           state.feetY = after.y;
+          if (handOffBalcony(player, after)) return !nativeDodge; // A recovered actor or a landing near the lip can transfer once safely inside the shelf.
           if (after.kind === 'ground') { reset(player, 'walked onto ground'); return !nativeDodge; }
           setElevation(player, state);
           player.vx = 0; player.vy = 0;

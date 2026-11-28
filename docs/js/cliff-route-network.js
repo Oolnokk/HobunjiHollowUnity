@@ -607,6 +607,20 @@
     return Math.abs(along) <= shelf.width / 2 + pad &&
       across >= rear - pad && across <= rear + overhangDepthAt(shelf, u) + pad;
   }
+  function shelfClearanceAt(shelf, x, z) {
+    if (!shelfContains(shelf, x, z)) return 0;
+    // The cap outline is piecewise linear at u=-1, 0, 1; these are the same
+    // vertices used by the rendered lid, including curved-front offsets.
+    const corners = [[-1,-1],[0,-1],[1,-1],[1,1],[0,1],[-1,1]].map(([u,v]) => miniCliffTopPoint(shelf,u,v));
+    let clearance = Infinity; // Minimum distance to any cap boundary segment.
+    for (let i=0;i<corners.length;i++) {
+      const a=corners[i], b=corners[(i+1)%corners.length];
+      const dx=b[0]-a[0], dz=b[2]-a[2], len2=dx*dx+dz*dz;
+      const t=len2?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[2])*dz)/len2)):0;
+      clearance=Math.min(clearance,Math.hypot(x-a[0]-t*dx,z-a[2]-t*dz));
+    }
+    return clearance;
+  }
   function miniCliffTouchesCell(shelf, outline, col, row) {
     // A cap can touch a cell only at a thin triangular corner; five-point
     // sampling missed these cells and made real rendered ledges non-walkable.
@@ -937,7 +951,7 @@
     return meshes;
   }
   return Object.freeze({
-    build, forGrid, verifyReachability, componentAt, crossing, toward, findIntentionalDrop, nextHop, shelfContains, shelfAt, highestBelow, render, overlapsClimb,
+    build, forGrid, verifyReachability, componentAt, crossing, toward, findIntentionalDrop, nextHop, shelfContains, shelfClearanceAt, shelfAt, highestBelow, render, overlapsClimb,
     getRewardState, herbRewardMesh, senseTargets, setRewardStage, serializeRewards, restoreRewards, releaseArea,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({

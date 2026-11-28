@@ -90,8 +90,8 @@ async function main(){
   assert(ruin.includes('maxColumns:1'),'each carved interior pillar carries a single vertical note column');
   assert(!ruin.includes('surfaces:[scoreFace]'),'no interior melody glyph is ever decaled onto the rough cave wall');
   assert(caves.includes('supportedScorePillarPair'),'exterior melodies also use paired standing score pillars');
-  assert(caves.includes('new THREE.CylinderGeometry(.46,.46,.09,24)'),'outdoor melody stone must stay entirely within one tile');
-  assert(caves.includes('Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46'),'outdoor timing trigger must match the new one-tile plate');
+  assert(caves.includes('const MAX_PLATE_RADIUS=.46')&&caves.includes('new THREE.CylinderGeometry(radius,radius,.09,24)'),'outdoor melody stone must stay entirely within one tile');
+  assert(caves.includes('Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=portal.plate.radius'),'outdoor timing trigger must match the new one-tile plate');
   assert(ruin.includes('const MELODY_PLATE_RADIUS=0.46'),'interior melodies need one canonical one-tile radius');
   assert(ruin.includes('radius:MELODY_PLATE_RADIUS'),'interior judge must use the same radius as its stone plate');
   assert(ruin.includes("rec.plateArtStoneMesh=visiblePlate"),'ordinary ruin melody plates must also carry the concentric inscription');
