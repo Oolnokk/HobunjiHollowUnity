@@ -76,7 +76,7 @@
       const next=records.get(id);
       if(!next||next.kind!=='small'||disposed)return false;
       if(activeId===id)return false; // Proximity can last many frames, but save writes must not.
-      if(activeId&&activeId!=='shaft')render(records.get(activeId),false);
+      if(activeId&&records.get(activeId)?.kind==='small')render(records.get(activeId),false);
       activeId=id;render(next,true);
       root.RuinInteractionAudio?.igniteTorch?.();
       showToast?.('Checkpoint attuned.',true);
@@ -288,6 +288,7 @@
         record.doorGated=true;
         record.holder.position.set(x+n.x*.25,y+.45,z+n.z*.25); // Wall-side dish, with safe gallery respawn point separate from the mount.
         record.holder.children[0].visible=false; // No standing pedestal on the wall.
+        const bracket=new THREE.Mesh(foot,stone);bracket.scale.set(.45,.35,.45);bracket.rotation.x=Math.PI/2;bracket.position.set(-n.x*.20,.10,-n.z*.20);bracket.rotation.z=n.x?Math.PI/2:0;record.holder.add(bracket); // Reuse the shared stone geometry for a wall support.
         record.light.x=record.holder.position.x;record.light.z=record.holder.position.z;
         if(deferredDoorCheckpoint){deferredDoorCheckpoint=false;if(activeId&&records.get(activeId)?.kind==='small')render(records.get(activeId),false);activeId=record.id;render(record,true);}
         return true;
@@ -304,6 +305,7 @@
       }
       if(saved.shaftLit===true){unlockedShaftIds.add('shaft');render(shaft,true);} // Version-1 worlds predate multi-floor unlocks.
       shaftLit=unlockedShaftIds.has('shaft');
+      if(records.get(activeId)?.kind==='small')render(records.get(activeId),false);
       activeId=null;
       const wanted=typeof saved.activeCheckpoint==='string'?saved.activeCheckpoint:null;
       deferredDoorCheckpoint=wanted==='sanctum-door'&&!records.has(wanted);
