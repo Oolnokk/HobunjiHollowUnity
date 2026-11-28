@@ -147,7 +147,8 @@
       const empty={id:'none',layers:[],tintSlot:null}; // Imlao has no hood, hat, face covering, or facial ornament, including randomly forced headwear.
       profile.hood=empty;profile.mask=empty;profile.upperFace=empty;
       if(!/tangedcirclet/.test(profile.hat?.id || ''))profile.hat=empty; // Only the tanged circlet every guardian wears (over its hidden flame headband) is allowed.
-      profile.facialHair=empty;profile.eyes=empty; // The authored eye-emission layers below are not cosmetic headwear.
+      profile.facialHair=empty;profile.eyes=empty;
+      return profile; // Imlao is deliberately headless; do not invent eyes on the absent skull.
     }
     const url='cosmetics/appearance/harlyao_skeleton/hskel_eyeglow_'+((roster.appearance?.gender==='female'||type==='tothal')?'f':'m')+'.png'; // Uses the user-uploaded skeleton appearance PNG for each named guardian.
     const pixelDye={sourceHex:'#7F00FF',paletteColorKey:eyeSlot,defaultHex:bodyColor3For(type),glow:{blur:3,radius:.65,intensity:3.5}}; // Same exact purple-marker family, two-layer dye and emissive eye lighting as the Hachutu binding mask.
