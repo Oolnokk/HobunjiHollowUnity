@@ -66,10 +66,15 @@ class MeshBasicMaterial {
   clone() { return new MeshBasicMaterial({...this}); }
   dispose() {}
 }
+class Matrix4 {
+  constructor(value=0){this.value=value;}
+  copy(other){this.value=other.value;return this;}
+}
 class SkinnedMesh extends Group {
   constructor(geometry,material) {
     super();this.isMesh=this.isSkinnedMesh=true;this.geometry=geometry;
     this.material=material;this.skeleton={};this.bindMatrix={};
+    this.matrix=new Matrix4();this.matrixWorld=new Matrix4();
   }
   bind(skeleton,matrix) { this.skeleton=skeleton;this.bindMatrix=matrix; }
 }
@@ -160,8 +165,11 @@ function testRuntime() {
   let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
   deps.playerMesh=headJoint;
   const targetSources=new Map(); // Holds actual Targetables source functions so stale entries can be tested after state transitions.
+  const outlineDepthMeshes=new Set(); // Observe registration of the actual rear-only draw, not its hidden source.
   const window={
-    THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
+    PngPlaneOutlineOccluder:{registerDepthMesh:mesh=>outlineDepthMeshes.add(mesh)},
+    PNGPlaneAvatar:{buildSinglePlaneAvatarModel(){}},
+    THREE:{Vector3,Group,Euler,Quaternion,Matrix4,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
     Targetables:{addSource:(key,fn)=>targetSources.set(key,fn),makeActor:entry=>({entry})},
     ProceduralHandAttachments:{gameDeps:deps},
     PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>posteriorY},
@@ -171,6 +179,7 @@ function testRuntime() {
     ResourceSystem:{spendFooting(){}},ActionArcUI:{stowForCarry(){}},
   };
   const context={window,console,performance:{now:()=>clock},localStorage:{getItem:()=>null,setItem(){}}};
+  vm.runInNewContext(read('docs/js/portrait-plane-outline-parity.js'),context,{filename:'portrait-plane-outline-parity.js'});
   vm.runInNewContext(read('docs/js/shattercasks.js'),context,{filename:'shattercasks.js'});
   window.Shattercasks.tick(.2); // Completes initial world-id loading before creating the test Burden.
   const causes=[]; // Tracks the custom impact callback invoked by the real carrier-damage path.
@@ -212,6 +221,17 @@ function testRuntime() {
   const rearPass=firstAvatar.children.find(child=>child.userData?.shattercaskRearOverlay);
   assert.equal(rearPass?.renderOrder,2.05,'the isolated skinned back PNG renders before the Burden');
   assert.equal(rearPass?.material[1].depthWrite,false,'rear pixels do not prevent the stowed Burden from rendering');
+  assert(outlineDepthMeshes.has(rearPass),'visible skinned rear overlay supplies outline occlusion depth');
+  assert.equal(rearPass.userData.__hobunjiPortraitOutlineParity,true,'rear replacement also uses the visible-pose adapter');
+  const rearMaterial=rearPass.material[1];
+  portrait.matrixWorld.value=12;
+  rearPass.onBeforeRender(null,scene,null,null,rearMaterial); rearPass.onAfterRender();
+  assert.equal(rearPass.matrixWorld.value,12,'existing source-follow hook still runs');
+  portrait.matrixWorld.value=27; rearMaterial.colorWrite=false;
+  rearPass.onBeforeRender(null,scene,null,null,rearMaterial);
+  assert.equal(rearPass.matrixWorld.value,12,'rear depth replay uses the visible source-follow pose');
+  rearPass.onAfterRender();rearMaterial.colorWrite=true;
+  assert.equal(rearPass.matrixWorld.value,27,'rear depth replay restores the prior hook pose');
   assert.equal(portrait.material[0].visible,true,'front PNG remains visible');
   assert.equal(portrait.material[1].visible,false,'the original skinned back pass is not drawn twice');
   const lateDetail=new Group();lateDetail.isMesh=true;lateDetail.visible=true;lateDetail.renderOrder=0; // Simulates an asynchronous authored GLB child after pickup.
@@ -304,6 +324,8 @@ function testRuntime() {
   window.Shattercasks.tick(.2); // Same-root skinned replacement should also clean up stale material and overlay state.
   assert.equal(nextAvatar.children.filter(node=>node.userData?.shattercaskRearOverlay).length,1,
     'same-avatar skinned rebuild does not create a duplicate rear pass');
+  assert(outlineDepthMeshes.has(nextAvatar.children.find(node=>node.userData?.shattercaskRearOverlay)), 'replacement rear overlay participates in PNG outline depth');
+  assert.equal(nextAvatar.children.find(node=>node.userData?.shattercaskRearOverlay).userData.__hobunjiPortraitOutlineParity,true,'rebuilt rear installs the same adapter');
   assert.equal(nextPortrait.material[1].visible,true,
     'replaced skinned plane restores its native rear material while it remains in the active avatar group');
   currentBodyRoot=new Group();currentBodyRoot.name='player_rebuilt_body_root';
@@ -335,6 +357,7 @@ function testRuntime() {
   assert.equal(secondPart.material.transparent,false,'hand burden does not inherit the back object blend mode');
   assert.equal(rigidBack.renderOrder,2.05,'rigid rear plane precedes the stowed burden even with another item held');
   assert.equal(rigidBack.material.depthWrite,false,'rigid rear PNG does not block the stowed burden depth');
+  assert(outlineDepthMeshes.has(rigidBack),'rigid rear also participates in PNG outline depth');
   assert.equal(rigidPortrait.renderOrder,2.25,'rigid front PNG follows the stowed burden and remains opaque to it');
   assert.equal(rigidPortrait.material.depthWrite,true,'rigid front PNG retains its occluding depth');
   assert(!window.Shattercasks.stowOnBack(),'a second held burden cannot overwrite the occupied back slot');
