@@ -53,6 +53,7 @@
     const state = {
       visibleMatrixWorld: new THREE.Matrix4(), // Last matrix used by an ordinary visible draw.
       visibleCapturedAt: -Infinity, // Timestamp paired with visibleMatrixWorld for adjacency validation.
+      restoreMatrices: [], // Reusable per-nesting-level matrices; no per-frame Matrix4 clones.
       restoreStack: [], // Supports grouped/multiple draw callbacks without leaking a temporary occlusion-pass matrix.
     };
 
@@ -85,7 +86,9 @@
       // Object3D.onBeforeRender runs before WebGLRenderer derives modelViewMatrix
       // and normalMatrix. Replacing matrixWorld here therefore freezes this
       // depth-only redraw to the exact transform that produced the visible portrait.
-      state.restoreStack.push(this.matrixWorld.clone());
+      const slot = state.restoreStack.length; // Nested draw callbacks each retain their own temporary pose.
+      const restoreMatrix = state.restoreMatrices[slot] ||= new THREE.Matrix4();
+      state.restoreStack.push(restoreMatrix.copy(this.matrixWorld));
       this.matrixWorld.copy(state.visibleMatrixWorld);
       lockedDepthDraws++;
     };
@@ -167,6 +170,7 @@
   }
 
   global.HobunjiPortraitOutlineParity = Object.freeze({
+    installMeshHook, // Carry-specific PNGs created outside the normal avatar builder use the same visible-pose replay.
     getMirrorShoulderPerchWithPortrait: () => true,
     setMirrorShoulderPerchWithPortrait: () => true, // Compatibility no-op: portrait-aware perch mirroring is now fixed on and has no Settings surface.
     getDebug() {
