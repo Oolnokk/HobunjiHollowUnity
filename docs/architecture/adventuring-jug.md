@@ -1,6 +1,6 @@
 # Adventuring jug — draft integration contract
 
-**Not playable yet.** The rules module is implemented and tested in isolation. Before merging, connect it to the existing runtime owners.
+**Draft runtime integration.** The jug is now selectable and uses the live action slots, save metadata, physical traces, consecration and fire APIs. Browser and full CI verification remain required.
 
 - Water holds 12 units; Life Water holds 6. Fill only from a validated ordinary water source or the Life Totem basin's authored liquid surface. Empty before switching liquid types.
 - Action 1 releases one unit; trace from the held jug mouth to the first physical tile or receptacle, including lower elevations. Action 2 releases one unit in a forward cone, with no receptacle transfer. Action 3 releases the remaining contents into a receptacle or a ring of validated surface cells. Receptacle capacity limits accepted units; overflow is lost. Resolve each action only once.
@@ -9,4 +9,4 @@
 - Use the simulation clock in milliseconds and existing frame scheduler. Clear area effects on teardown. Persist only getState/restore values with the character, never actor references or in-flight tokens.
 - PersistentGroundFire currently represents circles, not individual tiles. Migrate the owner to individually extinguishable surface cells with floor separation and authored campfire VFX. On an actual ground/support impact, a burning thrown torch must ignite an exact 3x3 footprint, not walls/actors.
 - AdventuringTools registry and game.js own equipment and action routing; CharacterHeldTools owns shared PNG rendering. Existing jar_liquid.png is possible temporary art; dedicated jug and belt rig art preferable. Provide a third action without taking Interact. Pixel Probe should expose jug units, hit surface/vessel, roll protection and consecrated tile count.
-- Runtime input, physics, rendering, fire/plasm hooks, actor AI, puzzle receivers and full CI remain unverified/unimplemented.
+- Temporary jar art and consecration decals are integrated; a dedicated belt sprite and authored puzzle receivers still need work. Runtime input, physics, rendering, actor AI, and full CI remain unverified.

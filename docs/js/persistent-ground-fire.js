@@ -128,7 +128,7 @@
     for(let tz=centerZ-extent;tz<=centerZ+extent;tz++)for(let tx=centerX-extent;tx<=centerX+extent;tx++){
       if(!square3x3&&(tx!==centerX||tz!==centerZ)&&Math.hypot(tx+.5-px,tz+.5-pz)>range)continue;
       const sy=supportY(area,tx,tz,floorY);
-      if(!Number.isFinite(sy)||window.DevRandomRuinTileOccupancy?.solidAt?.(tx+.5,tz+.5,.05,sy+.35)&&area==='map_i_dev_random_ruin')continue;
+      if(!Number.isFinite(sy)||area==='map_i_dev_random_ruin'&&window.DevRandomRuinTileOccupancy?.solidAt?.(tx+.5,tz+.5,.05,sy+.35))continue;
       const old=lookupCell(area,tx,tz,sy);
       if(old){
         old.remaining=Math.max(old.remaining,ttl);

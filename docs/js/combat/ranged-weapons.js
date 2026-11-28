@@ -1074,6 +1074,21 @@
     return null;
   }
 
+  // The jug uses the same finite terrain and support sweep as ranged projectiles.
+  function traceLiquidSegment(start,end) {
+    if(!deps)return null;
+    const radius=.015;
+    const shaftT=shaftCoverT(start,end,radius),floorT=dynamicSupportHitT(start,end,radius);
+    let first=steppedTerrainImpact(start,end,radius);
+    if(shaftT!==null&&(!first||shaftT<=first.t))first={kind:'solid-tile',t:shaftT};
+    if(floorT!==null&&(!first||floorT<first.t))first={kind:'floor',t:floorT};
+    if(!first)return null;
+    const x=THREE.MathUtils.lerp(start.x,end.x,first.t),z=THREE.MathUtils.lerp(start.z,end.z,first.t),y=THREE.MathUtils.lerp(start.y,end.y,first.t);
+    if(first.kind==='ground')first.y=deps.worldSurfaceY(x*deps.TILE,z*deps.TILE);
+    else if(first.kind==='floor')first.y=window.DynamicSurfaces?.sampleSupport?.(x,z,{area:deps.getCurrentArea(),minY:y-.12,maxY:y+.12,pad:.02})?.y;
+    return first;
+  }
+
   function terrainImpactForStep(p) {
     const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
@@ -2431,7 +2446,7 @@
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {
-    init, applyConfig, throwAdventuringTorch, startPlayerAction, cancelPlayerAction, playerActionLabel,
+    init, applyConfig, traceLiquidSegment, throwAdventuringTorch, startPlayerAction, cancelPlayerAction, playerActionLabel,
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     playerActionState: () => playerAction, // Borrowed read-only live state for animation consumers; unlike __rangedDebug this does not allocate/copy every frame.
     isPlayerThrownFireThroughStrike, fireReleaseFrac, fireWindupFrac, // Shared firing timeline for weapon animation and direct shoulder/hand drivers.
