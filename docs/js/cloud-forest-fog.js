@@ -49,9 +49,14 @@
   // distance while nearby things stay readable.
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
   const TZATZUL_NEST_LIGHTING = Object.freeze({ r: 18, g: 22, b: 31, a: 0.68 }); // Abduction arenas keep cave-colored mist but retain roughly a third of the unlit image for boss/hatchling readability.
-  const KANTHIC_MIST_OPACITY_SCALE = 2; // Amplifies only the three Kanthic cylinder textures, never the scene darkness.
-  const KANTHIC_MIST_RADIUS_SCALE = 0.5; // Bring the existing player-centered mist shells closer only in Kanthic ruins.
-  const KANTHIC_MIST_COLOR = 0xa69abf; // Muted violet-gray cylinder tint; depth fog retains its original midnight color.
+  // Independent Kanthic defaults, expressed relative to the shared live sliders.
+  // Inner shells darken with the Cloud Forest texture; the outer shell is solid black.
+  const KANTHIC_MIST_PROFILE = Object.freeze([
+    Object.freeze({ radius: 1.25, opacity: 0.42 }),
+    Object.freeze({ radius: 2.25, opacity: 0.78 }),
+    Object.freeze({ radius: 4.5, opacity: 1 }),
+  ]); // Used by the existing three player-centered meshes only.
+  const KANTHIC_VOID_HEIGHT = 128; // Span the shaft above and below the player without adding cylinder segments.
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const RUIN_SCREEN_TINT_ALPHA = 0.07; // Used once per ruin lighting redraw for a gentle full-screen tradition tint.
   const RUIN_SCREEN_TINT = Object.freeze({
@@ -258,7 +263,11 @@
     redrawMesh.renderOrder = mesh.renderOrder;
     redrawMesh.layers.set(MIST_REDRAW_LAYER);
     redrawScene.add(redrawMesh);
-    return { mesh, material, config, redrawMesh };
+    const voidMaterial = index === LAYER_CONFIG.length - 1 ? new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 1, side: THREE.BackSide,
+      depthWrite: false, depthTest: true, fog: false,
+    }) : null; // The outer Kanthic shell must not inherit the cloud texture's transparent holes.
+    return { mesh, material, config, redrawMesh, voidMaterial };
   }
 
   function init(injectedDeps) {
@@ -415,9 +424,12 @@
       }
     } else {
       updateFogLighting(activeScene, undergroundLightingForArea(currentArea));
-      // The midnight palette and 95% darkness were masking the cylinder texture twice.
-      // Keep the distance fog dark; give only the existing textured shells more contrast.
-      if (kanthicMist) for (const layer of layers) layer.material.color.setHex(KANTHIC_MIST_COLOR);
+      if (kanthicMist) {
+        // Black mist only subtracts visibility; it cannot brighten the outer void.
+        for (const layer of layers) layer.material.color.setHex(0x000000);
+        activeScene?.fog?.color?.setHex(0x000000);
+        if (activeScene?.background?.isColor) activeScene.background.setHex(0x000000);
+      }
     }
 
     if (!group.visible) return; // Clear calm weather submits no mist meshes or outline redraw.
@@ -425,20 +437,24 @@
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
-    const strengthScale = cloudForest ? 1 : snowy ? slopeOpacityScale : kanthicMist ? KANTHIC_MIST_OPACITY_SCALE : 1; // Only Kanthic amplifies the user-tuned mist opacity.
+    const strengthScale = cloudForest ? 1 : snowy ? slopeOpacityScale : 1; // All non-Kanthic biomes retain their original opacity policy.
     const driftScale = snowy ? 1.5 + (slopeWindStrength + shiftBlizzard) * 2.5 + (slopePrecipitationStrength >= 3 ? 2.5 : 0) : 1; // Extreme shift adds drift beyond normalized ambient wind.
     for (let i = 0; i < layers.length; i++) {
-      const { mesh, material, config } = layers[i];
+      const { mesh, material, config, redrawMesh, voidMaterial } = layers[i];
       const live = layerLive[i];
-      // Preserve zero-opacity sliders, the Slope cap and the material's valid [0, 1] range.
-      const opacity = clamp01(clamp01(live.opacity) * strengthScale);
-      material.opacity = opacity;
+      const profile = kanthicMist ? KANTHIC_MIST_PROFILE[i] : null; // Retain relative slider control without affecting the outdoor defaults.
+      const useVoid = !!(profile && voidMaterial);
+      const effectiveMaterial = useVoid ? voidMaterial : material; // Shared by the base and outline redraw, with no new draw calls.
+      mesh.material = redrawMesh.material = effectiveMaterial;
+      const opacity = clamp01(clamp01(live.opacity) * (profile ? profile.opacity / config.defaultOpacity : strengthScale));
+      effectiveMaterial.opacity = opacity;
       mesh.visible = opacity > 0.002;
       if (!mesh.visible) continue;
 
-      const radius = Math.max(0.1, live.radiusTiles * (kanthicMist ? KANTHIC_MIST_RADIUS_SCALE : 1));
-      mesh.position.set(px, groundY + config.height * 0.5, pz);
-      mesh.scale.set(radius, config.height, radius);
+      const radius = Math.max(0.1, profile ? live.radiusTiles * profile.radius / config.defaultRadiusTiles : live.radiusTiles);
+      const height = useVoid ? KANTHIC_VOID_HEIGHT : config.height; // Tall outer shell prevents the abyss showing through the open shaft sides.
+      mesh.position.set(px, useVoid ? groundY : groundY + height * 0.5, pz);
+      mesh.scale.set(radius, height, radius);
       mesh.rotation.y = t * config.spinSpeed;
       material.map.offset.x = (material.map.offset.x + dt * config.driftSpeed * driftScale) % 1;
       material.map.offset.y = (material.map.offset.y + dt * config.driftSpeed * 0.6 * driftScale) % 1;
@@ -449,8 +465,8 @@
     lastRedrawLayerCount = 0;
     if (!group?.visible || attachedScene !== scene || group.parent !== scene) return;
 
-    for (const { mesh, material, redrawMesh } of layers) {
-      redrawMesh.visible = mesh.visible && material.opacity > 0;
+    for (const { mesh, redrawMesh } of layers) {
+      redrawMesh.visible = mesh.visible && mesh.material.opacity > 0;
       if (!redrawMesh.visible) continue;
       redrawMesh.matrixWorld.copy(mesh.matrixWorld); // The base pass already applied gameplay and developer overrides.
       lastRedrawLayerCount++;
@@ -1250,7 +1266,7 @@
       if(record.hidden)record.mesh.visible=false; // No base-pass emissive draw, including every off-room glyph.
     }
     prepareKanthicFlames(scene,bounds,cull);
-    if(kanthicProxyScene)kanthicProxyScene.fog=scene.fog;
+    if(kanthicProxyScene)kanthicProxyScene.fog=null; // Room-local depth-tested runes and existing emissive flames pierce the black mist.
     if(!hasKanthicEmission()||Number(lightingDeps.getSceneTransAlpha?.())>0){restoreKanthicCanvas();return true;}
     const canvas=lightingDeps.lctx?.canvas;
     if(!canvas?.style||!canvas.width||!canvas.height){restoreKanthicCanvas();return true;}
@@ -1614,9 +1630,10 @@
 
     lastInteriorDarknessDraw = null; // Never report an interior base fill after returning outside.
     const { r, g, b, a } = undergroundFog ? undergroundLightingForArea(currentArea) : getFullDayLighting();
-    const darknessAlpha = undergroundFog && activeRuinTradition() === 'kanthic' ? Math.max(a, KANTHIC_STANDARD_DARKNESS_ALPHA) : a; // Stronger ordinary ambient darkness replaces the old hard circular cutout.
+    const kanthicVoid = undergroundFog && currentArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic'; // A black overlay cannot add color back to the black outer shell.
+    const darknessAlpha = kanthicVoid ? Math.max(a, KANTHIC_STANDARD_DARKNESS_ALPHA) : a; // Stronger ordinary ambient darkness replaces the old hard circular cutout.
     ctx.globalCompositeOperation = darknessAlpha < 0.09 ? 'screen' : 'multiply';
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${darknessAlpha})`;
+    ctx.fillStyle = kanthicVoid ? `rgba(0,0,0,${darknessAlpha})` : `rgba(${r}, ${g}, ${b}, ${darknessAlpha})`;
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
@@ -1632,7 +1649,7 @@
       if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
       if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
     });
-    if (currentArea === 'map_i_dev_random_ruin') paintRuinScreenTint(ctx,rect,activeRuinTradition()); // Fog-backed ruins receive the same low-opacity full-screen tint.
+    if (currentArea === 'map_i_dev_random_ruin' && !kanthicVoid) paintRuinScreenTint(ctx,rect,activeRuinTradition()); // Fog-backed ruins receive the same low-opacity full-screen tint.
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
@@ -1712,7 +1729,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic mist cylinders use closer radii, stronger opacity and a separate muted violet-gray tint; darkness, depth fog and light pools are unchanged.',
+        latestChange: 'Kanthic mist progressively darkens through close textured shells to a solid black outer shell; depth-tested runes and brazier flames pierce it.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
@@ -1739,7 +1756,7 @@
           lantern: { ...tuning.lantern },
         },
         outlineMistRedrawLayers: group?.visible ? lastRedrawLayerCount : 0,
-        effectiveMistLayers: group?.visible ? layers.map(({ mesh, material }) => ({ visible: mesh.visible, radiusTiles: mesh.scale.x, opacity: material.opacity, color: `#${material.color.getHexString()}` })) : [], // Actual material values for phone-readable QA.
+        effectiveMistLayers: group?.visible ? layers.map(({ mesh }) => ({ visible: mesh.visible, radiusTiles: mesh.scale.x, height: mesh.scale.y, opacity: mesh.material.opacity, color: `#${mesh.material.color.getHexString()}`, textured: !!mesh.material.map })) : [], // Actual material values for phone-readable QA.
         treeFade: window.ZoneTreeFade?.snapshot(),
         layers: layerLive.map(l => ({ ...l })),
       };
