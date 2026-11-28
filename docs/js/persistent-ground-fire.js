@@ -129,8 +129,12 @@
     }
     for(const object of fireFurniture){
       if(object.userData?.fireHazard!==true)continue;
-      let node=object;while(node&&node!==scene&&node.visible!==false)node=node.parent;
-      if(node!==scene)continue;
+      let node=object,extinguished=false;
+      while(node&&node!==scene&&node.visible!==false){
+        if(node.userData?.festivalWeatherFire&&window.WeatherFX?.isRaining?.()){extinguished=true;break;}
+        node=node.parent;
+      }
+      if(node!==scene||extinguished)continue;
       if(!object.getWorldPosition||!window.THREE?.Vector3)continue;
       firePosition ||= new window.THREE.Vector3();object.getWorldPosition(firePosition);
       if(!Number.isFinite(firePosition.x+firePosition.y+firePosition.z))continue;
