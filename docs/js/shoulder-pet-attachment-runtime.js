@@ -95,8 +95,8 @@
     return sample;
   }
 
-  function repinForRender(group,undo,renderDebug) {
-    return renderPins.get(group)?.(undo,renderDebug) || false;
+  function repinForRender(group,undo,renderDebug,camera) {
+    return renderPins.get(group)?.(undo,renderDebug,camera) || false;
   }
 
   function create({ THREE, getOwnerMesh, getOwnerNeckJoint, getPlayerMesh = getOwnerMesh, getPlayerNeckJoint = getOwnerNeckJoint,
@@ -112,6 +112,8 @@
     const sampledPerch = new THREE.Vector3(), renderPerch = new THREE.Vector3(), localTarget = new THREE.Vector3(), gripOffset = new THREE.Vector3();
     const renderGrip = new THREE.Vector3(); // Actual world-space grip readback for the mobile diagnostic.
     const rotationLimits = window.ShoulderPetRotationLimits?.create?.(THREE); // One prepared deformation-envelope solver per owner.
+    const cameraLimits = window.ShoulderPetDeformationEnvelope; // Reuse the silhouette solver's camera arc math for the final pose.
+    const radiansPerDegree = Math.PI / 180; // Converts between bone yaw in degrees and world yaw in radians.
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
     const worldUp = new THREE.Vector3(0, 1, 0); // Axis for the upright pet's heading and observation turn.
     const constraintOwnerFrame=new THREE.Quaternion(); // Reused owner-heading scratch for legacy owner-relative limits.
@@ -234,7 +236,17 @@
     function awayLimitAtYaw(yaw) {return awayLimit(awayBasis.setFromAxisAngle(worldUp,yaw));}
     function signedAwayYaw(magnitude,limit) {return Math.sign(limit)*Math.min(Math.abs(magnitude),Math.abs(limit));}
     function clampAwayYaw(yaw,limit) {return yaw*limit>0?signedAwayYaw(yaw,limit):0;}
-    function setPassiveYaw(avatar,yaw) {
+    function clampHeadCameraYaw(zone, bodyYaw, yaw, projection) {
+      // The horizontal projection of the head card's normal determines when it is edge-on.
+      // Scale and broad-face lean can amplify or reduce its apparent yaw.
+      if (!cameraLimits || !zone || !yaw || !(projection > 0)) return yaw;
+      const local = yaw * radiansPerDegree; // Bone yaw before root scale and lean.
+      const projected = Math.atan2(projection * Math.sin(local), Math.cos(local)) / radiansPerDegree; // World offset from the body heading.
+      const safe = cameraLimits.nearestHeadOutside(zone, bodyYaw, projected, Math.min(0, projected), Math.max(0, projected)); // Bound the solve to the original glance.
+      // Shorten the existing glance, so the camera correction cannot introduce an inward turn.
+      return safe === projected ? yaw : Math.atan2(Math.sin(safe * radiansPerDegree), projection * Math.cos(safe * radiansPerDegree)) / radiansPerDegree;
+    }
+    function applyHeadYaw(avatar,yaw) {
       if(typeof avatar?.updateHeadYaw!=='function')return;
       const rig=avatar.headRig;
       if(!rig || Math.abs((Number(rig.currentYawDeg)||0)-yaw)>1e-6)avatar.updateHeadYaw(yaw,1000);
@@ -336,9 +348,10 @@
         prepareAway(playerMesh,perchWorldPosition,rawGrip,renderedScale);
         passiveLimit=awayLimit(worldQuaternion);
         passiveRequested=signedAwayYaw(Number(passive.currentYawDeg)||0,passiveLimit);
-        setPassiveYaw(pet.avatarRef,passiveRequested);
+        applyHeadYaw(pet.avatarRef,passiveRequested);
       }
       let geometryConstraint = null; // Live bone envelopes constrain the requested angles before composing the grip.
+      const cameraZone = getCameraDeadzone?.(perchWorldPosition); // Shared by the silhouette solve and the final leaned head.
       if (rotationLimits && useRenderedGrip && typeof getOwnerPortraitMeshes === 'function') {
         const ownerFrame=keepHeadingUpright(worldQuaternionWithoutReflection(playerMesh,constraintOwnerFrame));
         geometryConstraint = rotationLimits?.constrain({
@@ -346,15 +359,19 @@
           scale: renderedScale, quaternion: worldQuaternion,
           ownerFrameYaw: 2*Math.atan2(ownerFrame.y,ownerFrame.w), perchSide: renderedPerchX,
           passiveAwayLimit: passive && useRenderedGrip ? awayLimitAtYaw : null, // Candidate headings may reverse the allowed side.
-          cameraDeadzone: typeof getCameraDeadzone === 'function' ? getCameraDeadzone() : null, // Camera-edge-on zone: perps + radius, same convention as PerpRotation.
+          cameraDeadzone: cameraZone,
         });
       }
       lastHeadPitch=lastPetSide=0;
       const headSideLean = useRenderedGrip ? applyHeadSideLean(worldQuaternion,perchWorldPosition,rawGrip,renderedScale) : 0; // One-sided broad-face lean, independent of the yaw collision solver.
-      if(passive && useRenderedGrip){
-        passiveLimit=awayLimit(worldQuaternion); // Includes the final collision-corrected heading and broad-face tilt.
-        const applied=Number(pet.avatarRef?.headRig?.currentYawDeg)||0;
-        setPassiveYaw(pet.avatarRef,clampAwayYaw(applied,passiveLimit));
+      if (useRenderedGrip && pet?.avatarRef?.headRig) {
+        let applied = Number(pet.avatarRef.headRig.currentYawDeg) || 0; // Starts with the geometry solver's chosen turn.
+        if (passive) {
+          passiveLimit = awayLimit(worldQuaternion);
+          applied = clampAwayYaw(applied, passiveLimit);
+        }
+        applyHeadYaw(pet.avatarRef, clampHeadCameraYaw(cameraZone, 2 * Math.atan2(worldQuaternion.y, worldQuaternion.w), applied,
+          renderedScale.x / (renderedScale.z * Math.cos(headSideLean))));
       }
       awayReady=false;awayPerch=awayGrip=awayScale=null;
       const gripWorldOffset = new THREE.Vector3(
@@ -405,7 +422,7 @@
         : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
       group.position.copy(localPosition);
       group.quaternion.copy(localQuaternion);
-      if(c.shoulderCuriosity && !finalTransform.gripLocalPosition)setPassiveYaw(c.avatarRef,0); // Unanchored legacy pets cannot prove an outward direction.
+      if(c.shoulderCuriosity && !finalTransform.gripLocalPosition)applyHeadYaw(c.avatarRef,0); // Unanchored legacy pets cannot prove an outward direction.
       // Solve in the actual parent space, including nonuniform/reflected parent
       // scale. World-space quaternion subtraction alone does not account for it.
       if(group.isObject3D && group.scale && finalTransform.gripLocalPosition && finalTransform.perchWorldPosition){
@@ -436,7 +453,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Head-side broad-face tilt follows the owner head, with the authored grip pinned.',
+        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Head turns honor the live camera deadzone while the authored grip stays pinned.',
         rotationSource: finalTransform.rotationSource || finalTransform.faceRotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),
@@ -475,7 +492,7 @@
         if(!pin || pin.owner!==getPlayerMesh() || pin.sampler!==samplePerch){
           const owner=getPlayerMesh();
           const record={owner,grip:new THREE.Vector3(),pixel:null,local:new THREE.Vector3(),lean:0,headPitch:0,side:0};
-          pin=(undo,renderDebug)=>{
+          pin=(undo,renderDebug,camera)=>{
             if(group.visible===false || !group.parent || record.owner!==getPlayerMesh())return false;
             const target=samplePerch(record.owner,record.pixel,renderPerch);
             if(!target){
@@ -491,11 +508,22 @@
             const before=renderGrip.distanceTo(renderPerch);
             let finalLean=record.lean,rotationChanged=false;
             lastHeadPitch=record.headPitch;lastPetSide=record.side;
-            const neck=getPlayerNeckJoint();
-            if(neck?.isObject3D && typeof neck.getWorldPosition==='function'){
-              const heading=worldQuaternionWithoutReflection(group,renderedHeading);
+            const neck=getPlayerNeckJoint(); // A live neck lets the render pose update broad-face lean.
+            const zone=getCameraDeadzone?.(renderPerch,camera); // The actual drawn camera and perch may have moved since simulation.
+            const heading=worldQuaternionWithoutReflection(group,renderedHeading); // Reuse for body and head checks.
+            let bodyYaw=0; // Filled from the final upright heading before lean is reapplied.
+            if (zone || (neck?.isObject3D && typeof neck.getWorldPosition==='function')) {
               if(Math.abs(record.lean)>1e-6)heading.multiply(inversePriorLean.setFromAxisAngle(broadSideAxis,-record.lean));
               keepHeadingUpright(heading);
+              bodyYaw=2*Math.atan2(heading.y,heading.w);
+              if (zone && cameraLimits) {
+                // Restore a readable body heading only if late composition put the neutral card inside the zone.
+                const correction=cameraLimits.nearestHeadOutside(zone,bodyYaw,0,-180,180); // Zero when the neutral card is already clear.
+                if (correction) {
+                  bodyYaw+=correction*radiansPerDegree;
+                  heading.setFromAxisAngle(worldUp,bodyYaw);
+                }
+              }
               finalLean=applyHeadSideLean(heading,renderPerch,record.grip,group.scale);
               renderedLocalRotation.copy(worldQuaternionWithoutReflection(group.parent,renderedLocalRotation)).invert().multiply(heading);
               const current=group.quaternion;
@@ -507,19 +535,24 @@
                 current.copy(renderedLocalRotation);
               }
             }
-            let renderAwayLimit=null,renderHeadYaw=null;
-            if(c.shoulderCuriosity && c.avatarRef?.headRig && typeof c.avatarRef.updateHeadYaw==='function'){
-              // A late neck/deadzone change can switch the occupied side.
-              // Clamp to neutral rather than introducing an untested opposite
-              // turn during rendering; the next simulation pin solves it.
-              prepareAway(record.owner,renderPerch,record.grip,group.scale);
-              renderAwayLimit=awayLimit(worldQuaternionWithoutReflection(group,renderedHeading));
-              awayReady=false;awayPerch=awayGrip=awayScale=null;
+            let renderAwayLimit=null,renderHeadYaw=null,headCameraMarginDeg=null;
+            if((c.shoulderCuriosity || zone) && c.avatarRef?.headRig && typeof c.avatarRef.updateHeadYaw==='function'){
+              if (c.shoulderCuriosity) {
+                prepareAway(record.owner,renderPerch,record.grip,group.scale);
+                renderAwayLimit=awayLimit(heading);
+                awayReady=false;awayPerch=awayGrip=awayScale=null;
+              }
               const avatar=c.avatarRef,rig=avatar.headRig,oldYaw=Number(rig.currentYawDeg)||0,oldTarget=rig.targetYawDeg;
-              renderHeadYaw=clampAwayYaw(oldYaw,renderAwayLimit);
+              const projection=group.scale.x/(group.scale.z*Math.cos(finalLean)); // Root transform's horizontal projection of head-card yaw.
+              const allowed=renderAwayLimit===null?oldYaw:clampAwayYaw(oldYaw,renderAwayLimit);
+              renderHeadYaw=clampHeadCameraYaw(zone,bodyYaw,allowed,projection);
               if(Math.abs(renderHeadYaw-oldYaw)>1e-6){
-                undo.push(()=>{setPassiveYaw(avatar,oldYaw);rig.targetYawDeg=oldTarget;});
-                setPassiveYaw(avatar,renderHeadYaw);
+                undo.push(()=>{applyHeadYaw(avatar,oldYaw);rig.targetYawDeg=oldTarget;});
+                applyHeadYaw(avatar,renderHeadYaw);
+              }
+              if (zone && cameraLimits) {
+                const yaw=renderHeadYaw*radiansPerDegree; // Actual displayed yaw used for the mobile probe.
+                headCameraMarginDeg=cameraLimits.zoneMargin(zone,bodyYaw+Math.atan2(projection*Math.sin(yaw),Math.cos(yaw)))/radiansPerDegree;
               }
             }
             localTarget.copy(renderPerch);group.parent.worldToLocal(localTarget);
@@ -537,7 +570,7 @@
               debug.renderPin={source:target?'live-skinned-pixel':'local-fallback',beforeError:before,afterError:renderGrip.distanceTo(renderPerch),
                 perch:renderPerch.toArray(),grip:renderGrip.toArray(),corrected:changed || rotationChanged,
                 headSideLeanDeg:finalLean*180/Math.PI,ownerHeadPitchDeg:lastHeadPitch*180/Math.PI,petHeadSide:lastPetSide,
-                passiveAwayLimitDeg:renderAwayLimit,passiveHeadYawDeg:renderHeadYaw};
+                passiveAwayLimitDeg:renderAwayLimit,passiveHeadYawDeg:renderHeadYaw,headCameraMarginDeg};
               if(renderDebug)renderDebug.shoulderPerchPin=debug.renderPin;
             }
             return true;

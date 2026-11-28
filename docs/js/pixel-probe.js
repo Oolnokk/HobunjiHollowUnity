@@ -665,6 +665,7 @@
         const away = attachmentDebug?.passiveYaw; // The passive magnitude is unsigned until the physical shoulder pose is resolved.
         if(away) lines.push(`Passive shoulder yaw: requested=${away.requested.toFixed(2)}° outward limit=${away.limit.toFixed(2)}° applied=${away.applied.toFixed(2)}°`);
         const renderPin = attachmentDebug?.renderPin; // Separately report the actual composed render pose, not the restored simulation transform.
+        if (Number.isFinite(renderPin?.headCameraMarginDeg)) lines.push(`Rendered shoulder head camera margin: ${renderPin.headCameraMarginDeg.toFixed(2)}° (negative = inside)`);
         if(renderPin) lines.push(`Rendered shoulder pin: ${renderPin.source}; before=${renderPin.beforeError.toFixed(6)}u after=${renderPin.afterError.toFixed(6)}u corrected=${renderPin.corrected}; headPitch=${Number(renderPin.ownerHeadPitchDeg||0).toFixed(2)}° side=${Number(renderPin.petHeadSide||0).toFixed(4)}u broad-face lean=${Number(renderPin.headSideLeanDeg||0).toFixed(2)}°; passive yaw=${renderPin.passiveHeadYawDeg?.toFixed(2) ?? 'n/a'}° limit=${renderPin.passiveAwayLimitDeg?.toFixed(2) ?? 'n/a'}°; PERCH=(${renderPin.perch.map(v=>v.toFixed(5)).join(', ')}) GRIP=(${renderPin.grip.map(v=>v.toFixed(5)).join(', ')})`);
         const perchWorld = attachmentDebug?.authoredPerchWorldPosition;
         const gripWorld = attachmentDebug?.alignedGripWorldPosition;

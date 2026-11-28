@@ -82,6 +82,11 @@ const creaturePerspectivePerps = context.PerpRotation.cameraRelativeCreaturePerp
 assert.ok(creaturePerspectivePerps, 'world-position creature perps resolve for a valid animal/camera pair');
 assert.ok(Math.abs(angleDiff(creaturePerspectivePerps[0], -Math.PI / 4)) < 1e-9,
   'side-view animal edge-on angle follows the direct creature-to-camera bearing instead of the portrait quarter-turn');
+const reusablePerps = [0, 0]; // Shoulder attachment reuses the same angle array between frames.
+assert.equal(context.PerpRotation.cameraRelativeCreaturePerpsAtWorldPosition(
+  edgeCreature.avatarRef.group.position, context.__climbDebug.getCameraDebug().camPos, reusablePerps
+), reusablePerps);
+assert.deepEqual(reusablePerps, Array.from(creaturePerspectivePerps));
 const creatureFacing = -Math.PI / 4; // Used below as the animal card's true edge-on direction for this perspective camera position.
 const creatureSnap = context.PerpRotation.creatureSnapSwayTarget(
   creatureState,
