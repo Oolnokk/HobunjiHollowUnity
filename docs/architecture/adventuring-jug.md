@@ -14,3 +14,5 @@
 ## Follow-up audit
 
 Refill failure no longer expends a unit. Paid belt-water dodges clear current burning and kindling and reject duplicated roll-start notifications. Neutral noncombat NPCs have no Health resource yet; no artificial combat pools were added.
+
+Arena spell plasm now uses separately removable cells sharing one geometry/material. Both ruin and arena deposits consult consecration before creating or refreshing covered surfaces. Tests exercise floor isolation, removal, contact and prevention.

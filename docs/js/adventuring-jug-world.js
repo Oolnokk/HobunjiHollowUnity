@@ -39,7 +39,7 @@
       nowMs:()=>window.SimClock.now(),
       onStateChanged:(actor,state)=>{if(actor===local()){deps.saveState?.(state);deps.refresh?.();}},
       extinguishTile:(t,owner)=>window.PersistentGroundFire?.extinguishTile?.(t),
-      clearPlasmTile:t=>window.DevRandomRuinLichThemes?.clearPlasmTile?.(t),
+      clearPlasmTile:t=>t.area==='map_i_dev_random_ruin'?window.DevRandomRuinLichThemes?.clearPlasmTile?.(t):window.HarlyaoLichCombat?.clearPlasmTile?.(t),
       fillReceptacle:(receiver,liquid,units,owner)=>receiver.accept(liquid,units,owner),
       onConsecrated:showSurface,onConsecrationExpired:removeSurface,
       actorsInArea:deps.actorsInArea,actorTile:deps.actorTile,

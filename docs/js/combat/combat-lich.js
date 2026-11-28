@@ -924,46 +924,14 @@
     }
   }
 
+  // Shared tile geometry lets cleansing remove only the touched surface instead of deleting an entire spell.
   function buildPetroleumSurfaceGeometry() {
-    if (petroleumSurfaceGeometry || typeof THREE === 'undefined') return petroleumSurfaceGeometry;
-    const segments = 28; // Similar low-poly surface density to the snow micro-plateau while remaining cheap enough for many overlapping hazards.
-    const topRadius = 0.76; // Flat central cap before the shallow snow-like edge incline returns to ground.
-    const positions = [0, PETROLEUM_SURFACE_DEPTH, 0]; // Center vertex is the highest point, exactly one-quarter Western Slope snow depth.
-    const uvs = [0.5, 0.5];
-    const indices = [];
-    for (let i = 0; i < segments; i++) {
-      const angle = i / segments * Math.PI * 2;
-      const irregular = 1 + Math.sin(i * 2.17) * 0.055 + Math.cos(i * 1.31) * 0.035; // Deterministic uneven edge keeps the petroleum from reading as a perfect spell circle.
-      const tx = Math.cos(angle) * topRadius * irregular;
-      const tz = Math.sin(angle) * topRadius * irregular;
-      positions.push(tx, PETROLEUM_SURFACE_DEPTH, tz);
-      uvs.push((tx + 1) * 0.5, (tz + 1) * 0.5);
-    }
-    for (let i = 0; i < segments; i++) {
-      const angle = i / segments * Math.PI * 2;
-      const irregular = 1 + Math.sin(i * 2.17) * 0.055 + Math.cos(i * 1.31) * 0.035;
-      const ox = Math.cos(angle) * irregular;
-      const oz = Math.sin(angle) * irregular;
-      positions.push(ox, 0, oz); // Outer rim meets the real ground just like Western Slope snow's exposed micro-plateau edges.
-      uvs.push((ox + 1) * 0.5, (oz + 1) * 0.5);
-    }
-    for (let i = 0; i < segments; i++) {
-      const next = (i + 1) % segments;
-      const topA = 1 + i;
-      const topB = 1 + next;
-      const outerA = 1 + segments + i;
-      const outerB = 1 + segments + next;
-      indices.push(0, topA, topB); // Flat textured top cap.
-      indices.push(topA, outerA, outerB, topA, outerB, topB); // Shallow sloped side, snow-micro-plateau style.
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals?.();
-    geometry.computeBoundingSphere?.();
-    petroleumSurfaceGeometry = geometry;
-    return petroleumSurfaceGeometry;
+    if(petroleumSurfaceGeometry||typeof THREE==='undefined')return petroleumSurfaceGeometry;
+    const g=new THREE.BufferGeometry(),h=PETROLEUM_SURFACE_DEPTH;
+    g.setAttribute('position',new THREE.Float32BufferAttribute([-.5,h,-.5,-.5,h,.5,.5,h,.5,.5,h,-.5],3));
+    g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,0,1,1,1,1,0],2));
+    g.setIndex([0,1,2,0,2,3]);g.computeVertexNormals?.();g.computeBoundingSphere?.();
+    return petroleumSurfaceGeometry=g;
   }
 
   function loadPetroleumTexture() {
@@ -1014,6 +982,19 @@
     return petroleumSurfaceMaterial;
   }
 
+  const plasmCellKey=(x,z)=>Math.floor(x)+','+Math.floor(z); // Physical tile occupancy mirrors the visible surface.
+  function clearPlasmTile(t){
+    if(!t||![t.x,t.y,t.z].every(Number.isFinite))return 0;
+    let removed=0;
+    for(const patch of puddles){
+      if(patch.ruinPlasm||patch.areaId!==t.area||Math.abs(patch.groundY-t.y)>.2)continue;
+      const key=plasmCellKey(t.x,t.z),cell=patch.cells?.get(key);
+      if(!cell)continue;
+      patch.group.remove(cell);patch.cells.delete(key);removed++;
+      if(!patch.cells.size)disposePetroleumPuddle(patch);
+    }
+    return removed;
+  }
   function disposePetroleumPuddle(puddle) {
     if (!puddle) return;
     puddles.delete(puddle);
@@ -1031,10 +1012,11 @@
     }
     const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
     const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
+    if(window.AdventuringJug?.isConsecrated?.({area:areaId,x:worldX,z:worldZ,y:groundY}))return null;
     for(const existing of puddles){
       if(existing.ruinPlasm && existing.ruinPlasm.isActive?.()===false){disposePetroleumPuddle(existing);continue;}
       if(existing.areaId!==areaId||Math.abs(existing.groundY-groundY)>.01)continue;
-      if(existing.ruinPlasm ? !existing.ruinPlasm.contains?.(worldX,worldZ,groundY) : Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
+      if(existing.ruinPlasm ? !existing.ruinPlasm.contains?.(worldX,worldZ,groundY) : !existing.cells?.has(plasmCellKey(worldX,worldZ))||Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
       existing.ageS=0; // Nearby follow-up impacts refresh a patch instead of stacking draw calls on the same space.
       lastEvent='plasm:refresh';
       return existing;
@@ -1050,24 +1032,22 @@
       puddles.add(puddle);totalPuddles++;lastEvent='plasm:deposited';
       return puddle;
     }
-    const geometry = buildPetroleumSurfaceGeometry();
-    const material = petroleumMaterial();
-    if (!geometry || !material) return null;
-    if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value); // Evict only after a valid new deposit.
-    const group = new THREE.Group(); // Keep the legacy public API name for the Testing Arena's existing controls.
-    group.name = 'kanthic_plasm_surface';
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = 'kanthic_plasm_spell_patch';
-    mesh.rotation.y = random() * Math.PI * 2;
-    mesh.scale.set(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES);
-    mesh.renderOrder = 3;
-    group.add(mesh);
-    group.position.set(worldX,groundY,worldZ);
+    const geometry=buildPetroleumSurfaceGeometry(),material=petroleumMaterial();
+    if(!geometry||!material)return null;
+    const cells=new Map(),group=new THREE.Group();group.name='kanthic_plasm_surface';
+    const cx=Math.floor(worldX),cz=Math.floor(worldZ);
+    for(let z=cz-1;z<=cz+1;z++)for(let x=cx-1;x<=cx+1;x++){
+      if((x!==cx||z!==cz)&&Math.hypot(x+.5-worldX,z+.5-worldZ)>PUDDLE_RADIUS_TILES)continue;
+      if(owner.areaGrid?.length&&!owner.areaGrid[z]?.[x])continue;
+      if(Math.abs(groundYAt(owner,(x+.5)*tile,(z+.5)*tile)-groundY)>.2)continue;
+      if(window.AdventuringJug?.isConsecrated?.({area:areaId,x,z,y:groundY}))continue;
+      const mesh=new THREE.Mesh(geometry,material);mesh.name='kanthic_plasm_spell_patch';mesh.renderOrder=3;
+      mesh.position.set(x+.5,groundY,z+.5);group.add(mesh);cells.set(plasmCellKey(x,z),mesh);
+    }
+    if(!cells.size)return null;
+    if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value);
     owner.scene.add(group);
-    const puddle = {
-      owner, areaId, x:xPx, y:yPx, group, mesh, groundY,
-      ageS:0, radiusPx:PUDDLE_RADIUS_TILES*(deps.TILE||64),
-    }; // Stable, shared mesh+material. Only its twelve-second lifetime changes, not its footprint.
+    const puddle={owner,areaId,x:xPx,y:yPx,group,cells,groundY,ageS:0,radiusPx:PUDDLE_RADIUS_TILES*tile};
     puddles.add(puddle);
     totalPuddles++;
     lastEvent = 'plasm:deposited';
@@ -1619,8 +1599,9 @@
       for(const puddle of puddles){
         if(puddle.owner===actor||puddle.areaId!==(actor.areaId||area))continue;
         if(puddle.ruinPlasm)continue; // Tile composer owns these patches; never run a second immersion clock.
+        if(!puddle.cells?.has(plasmCellKey(actor.x/tile,actor.y/tile))||actor.climbing||actor.onRope||actor._onRope)continue;
         const dist=Math.hypot(actor.x-puddle.x,actor.y-puddle.y);
-        if(dist>puddle.radiusPx||dist>=nearestDist||actor.climbing||actor.onRope||actor._onRope)continue;
+        if(dist>=nearestDist)continue; // Contact follows the remaining rendered tiles exactly.
         const support=inRuin
           ? (actor===deps.player
             ? (window.DevRandomRuin?.getPlayerGroundSupportY?.()??deps.playerMesh?.position?.y)
@@ -1633,7 +1614,9 @@
       const state=actor._kanthicPuddleSink||(actor._kanthicPuddleSink={elapsed:0});
       puddleTouchedActors.add(actor);
       state.elapsed=Math.min(PUDDLE_SINK_SECONDS,state.elapsed+dt); // Overlaps never speed up immersion.
-      const dx=nearest.x-actor.x,dy=nearest.y-actor.y,dist=Math.hypot(dx,dy);
+      const centerStillCovered=nearest.cells?.has(plasmCellKey(nearest.x/tile,nearest.y/tile));
+      const cell=nearest.cells?.get(plasmCellKey(actor.x/tile,actor.y/tile)); // Never pull into a cleansed central tile.
+      const dx=(centerStillCovered?nearest.x:cell.position.x*tile)-actor.x,dy=(centerStillCovered?nearest.y:cell.position.z*tile)-actor.y,dist=Math.hypot(dx,dy);
       const pullPx=Math.min(dist,PUDDLE_PULL_TILES_S*tile*dt*(1+state.elapsed/PUDDLE_SINK_SECONDS));
       if(dist>.001&&pullPx>0){
         const nx=actor.x+dx/dist*pullPx,ny=actor.y+dy/dist*pullPx;
@@ -2084,7 +2067,7 @@
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye, clearBossEffects,
     lichCastStep, updateLichHoverPresentation, prepareEmptyCastWeapon, LICH_CAST_WEAPON_KEY, // Also used by unarmed shadow-wind Wyrm-witches (ghoul-special-variants.js). // Shared animation/presentation authority for isolated loadout previews.
-    updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth,
+    updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth, clearPlasmTile,
     debugSnapshot,
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
