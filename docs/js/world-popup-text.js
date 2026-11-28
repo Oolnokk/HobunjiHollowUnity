@@ -546,14 +546,21 @@
         Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance);
     };
     const searchCount = Math.max(240, (existing.length + 1) * 240);
+    const preferNear = scatter && compactCombat && existing.length > 0; // Preserve the first popup's direction; only tighten subsequent placements.
+    let nearest = null, nearestDistanceSq = Infinity; // Best non-overlapping candidate in camera-plane distance.
     for (let index = 0; index < searchCount; index++) {
       const angle = index * 2.399963229728653 + (scatter ? 0.55 : 0);
       const radius = scatter
         ? Math.max(0.18, worldHeight * 1.8) * radiusScale * Math.sqrt(1 + index / 7) // Start off-center and distribute the burst in different directions.
         : Math.max(0.18, worldHeight * 3.2) * radiusScale * Math.sqrt(index / 239);
+      if (preferNear && radius * radius * 0.85 * 0.85 >= nearestDistanceSq) break; // All subsequent ellipse samples have a greater minimum distance.
       const point = { x: Math.cos(angle) * radius * (scatter ? 1.35 : 1), y: Math.sin(angle) * radius * (scatter ? 0.85 : 0.62) };
-      if (isFree(point)) return point;
+      if (!isFree(point)) continue;
+      if (!preferNear) return point;
+      const distanceSq = point.x * point.x + point.y * point.y; // Actual radius, not the elliptical spiral parameter.
+      if (distanceSq < nearestDistanceSq) { nearest = point; nearestDistanceSq = distanceSq; }
     }
+    if (nearest) return nearest;
     if (reserved) return { x: 0, y: reserved.reduce((top, item) => Math.max(top, item.top), 0) + bounds.height * peak * 0.5 + worldHeight * radiusScale * 0.1 }; // Safe fallback for an unusually crowded burst.
     const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0);
     return { x: 0, y: topEdge + bounds.height * 0.5 + pathYClearance };
@@ -1321,7 +1328,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Combat Float+ text is 65% of its previous size; candidate scatter radius is 80%. Impact emphasis and overlap avoidance are retained.',
+      latestChange: 'Combat Float+ text is 65% of its previous size; candidate scatter radius is 80%; subsequent burst entries prefer the nearest clear position. Impact emphasis and overlap avoidance are retained.',
       combatFloatTextScale: COMBAT_FLOAT_TEXT_SCALE,
       combatFloatRadiusScale: COMBAT_FLOAT_RADIUS_SCALE,
       lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
