@@ -387,6 +387,8 @@
         headwearSeen.add(mesh);
         if(!rearHeadwearXray.has(mesh)){
           const materials=(Array.isArray(mesh.material)?mesh.material:[mesh.material]).filter(Boolean);
+          window.PngPlaneOutlineOccluder?.registerDepthMesh?.(mesh); // Rear headwear may disable visible depth writes during stow.
+          window.HobunjiPortraitOutlineParity?.installMeshHook?.(mesh);
           rearHeadwearXray.set(mesh,{order:mesh.renderOrder,materials:materials.map(material=>
             [material,{depthTest:material.depthTest,depthWrite:material.depthWrite}])});
         }
@@ -408,8 +410,11 @@
         rigidSeen.add(mesh);
         const material=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
         if(!material)return;
-        if(!backXray.has(mesh))backXray.set(mesh,{
-          material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
+        if(!backXray.has(mesh)){
+          window.PngPlaneOutlineOccluder?.registerDepthMesh?.(mesh);
+          window.HobunjiPortraitOutlineParity?.installMeshHook?.(mesh); // Idempotent for already registered rigid portraits.
+          backXray.set(mesh,{material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
+        }
         mesh.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
         // Keep world depth tests, but never let the rear PNG write depth over
         // a stowed Burden that must render in front of it.
@@ -452,6 +457,9 @@
         overlay.matrixWorld.copy(mesh.matrixWorld); // Follow live body/neck motion, not a frozen pickup pose.
       };
       mesh.parent.add(overlay);
+      // The visible rear-only replacement supplies depth at its actual color-pass pose, not the hidden original rear material.
+      window.PngPlaneOutlineOccluder?.registerDepthMesh?.(overlay);
+      window.HobunjiPortraitOutlineParity?.installMeshHook?.(overlay);
       skinnedRearOverlays.set(mesh,{overlay,backMaterial,wasVisible:backMaterial.visible,order:mesh.renderOrder});
       mesh.renderOrder=stowed?STOWED_FRONT_RENDER_ORDER:mesh.renderOrder;
       backMaterial.visible=false; // Original rear pass must not double-blend under the overlaid rear.
