@@ -23,6 +23,10 @@ for (const name of ['tColor', 'tEdgeId', 'tEdgeIdDepth', 'tSceneDepth', 'uTexel'
   assert.ok(name in a.uniforms, `game.js writes uniform ${name}`);
 }
 assert.equal(a.uniforms.uDepthOutlinesOn.value, 0, 'screen depth strokes are opt-in');
+assert.equal(a.uniforms.uDepthOutlineDistanceTaper.value, 0, 'taper is opt-in');
+assert.equal(a.uniforms.uDepthOutlineWobble.value, 0, 'wobble is opt-in');
+assert.notEqual(a.uniforms.uOutlineClipToWorld.value, b.uniforms.uOutlineClipToWorld.value);
+assert.deepEqual(Array.from(a.uniforms.uOutlineClipToWorld.value), [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
 assert.equal(a.uniforms.uSeamOutlinesOn.value, 0, 'seam outlines start off');
 assert.equal(a.depthTest, false); assert.equal(a.depthWrite, false);
 const frag = a.fragmentShader;
@@ -60,6 +64,19 @@ function scalarShaderFunction(name, globals = {}) {
 }
 const depthStep = scalarShaderFunction('depthStepStrength');
 const thinInk = scalarShaderFunction('protectThinGeometry');
+const distanceScale = scalarShaderFunction('outlineDistanceScale');
+const wobbleAmplitude = scalarShaderFunction('outlineWobbleAmplitude');
+assert.equal(distanceScale(0), 1);
+assert.equal(distanceScale(5), 1);
+assert.ok(Math.abs(distanceScale(30) - 0.35) < 1e-12);
+assert.equal(distanceScale(100), distanceScale(30));
+assert.equal(wobbleAmplitude(5), 0.32);
+assert.ok(wobbleAmplitude(30) < wobbleAmplitude(8));
+for (let depth = 0; depth < 100; depth += 0.25) {
+  assert.ok(distanceScale(depth + 0.25) <= distanceScale(depth));
+  assert.ok(wobbleAmplitude(depth + 0.25) <= wobbleAmplitude(depth));
+  assert.ok(12 * distanceScale(depth) * (1 - wobbleAmplitude(depth)) >= 3);
+}
 for (const orthographic of [0, 1]) {
   const near = 0.1, far = 200;
   const rawGap = scalarShaderFunction('rawGapThreshold', {
@@ -97,6 +114,11 @@ assert.match(frag, /vec2 edges = vec2\(1\.0 - minus\.y, 1\.0 - plus\.y\)/, 'mask
 assert.match(frag, /if \(axisInterior && minus\.y > 0\.5 && plus\.y > 0\.5\)/, 'viewport clamping and mask boundaries are excluded from slope math');
 assert.match(frag, /vec2 stroke = uTexel \* 12\.0/, 'retain existing silhouette width');
 assert.equal((frag.match(/curveSample\(vUv/g) || []).length, 4, 'no additional neighbor taps');
+assert.match(frag, /if \(uDepthOutlineDistanceTaper > 0\.5\) stroke \*= outlineDistanceScale\(centerDepth\)/);
+assert.match(frag, /if \(uDepthOutlineWobble > 0\.5\)/);
+assert.match(frag, /uOutlineClipToWorld \* vec4\(vUv \* 2\.0 - 1\.0, rawDepth \* 2\.0 - 1\.0, 1\.0\)/);
+const variationBody = frag.slice(frag.indexOf('float worldInkVariation('), frag.indexOf('vec3 applyScreenOutline('));
+assert.ok(!variationBody.includes('texture2D'), 'world-space wobble adds no texture lookup');
 assert.match(frag, /protectThinGeometry\(horizontal\.x, horizontal\.y, vertical\.x, vertical\.y\)/, 'thin protection is used by the composite');
 
 // Mask misses must skip scene-depth sampling, not merely skip the ink math.

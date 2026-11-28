@@ -64,6 +64,16 @@
 
   // group, id, name, desc, default (on = the shipped optimisation), available(), read(), write(on), ownsPersistence.
   const TOGGLES = [
+    { group: 'Experimental depth outlines', id: 'depthOutlineDistanceTaper', name: 'Thinner distant depth outlines', on: false,
+      desc: 'Screen-space depth mode only. Near ink retains its original width; distant ink becomes thinner. No extra render passes or depth samples.',
+      available: () => typeof window.WorldRenderPipeline?.setDepthOutlineDistanceTaper === 'function',
+      read: () => window.WorldRenderPipeline.getDepthOutlineDistanceTaper(),
+      write: on => window.WorldRenderPipeline.setDepthOutlineDistanceTaper(on) },
+    { group: 'Experimental depth outlines', id: 'depthOutlineWobble', name: 'Wobbly depth outlines', on: false,
+      desc: 'Screen-space depth mode only. Stable world-space variation in inward ink thickness mimics hand-drawn lines; fades with distance. Independent of distance thinning.',
+      available: () => typeof window.WorldRenderPipeline?.setDepthOutlineWobble === 'function',
+      read: () => window.WorldRenderPipeline.getDepthOutlineWobble(),
+      write: on => window.WorldRenderPipeline.setDepthOutlineWobble(on) },
     { group: 'Character rendering', id: 'frozenPortraits', name: 'Frozen NPC and animal portraits', on: true,
       desc: 'Use rigid portrait geometry for neutral, hunched and weapon-ready poses. Independent head motion uses the live rig.',
       available: () => !!window.PNGPlaneAvatar?.meshBudget?.frozenSnapshot,

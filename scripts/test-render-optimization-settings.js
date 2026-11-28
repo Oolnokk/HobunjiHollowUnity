@@ -55,8 +55,11 @@ const rain = { name: 'world_rain_planes', visible: true, parent: null };
 const scene = { isScene: true, getObjectByName: name => (name === 'world_rain_planes' ? rain : null) };
 rain.parent = scene;
 let outlineMode = 'screen'; // Fake pipeline owner for the experimental selector.
+let taper = false, wobble = false; // Independent screen ink experiments.
 const win = {
-  WorldRenderPipeline:{defaultGeneratedOutlineMode:'screen',getGeneratedOutlineMode:()=>outlineMode,setGeneratedOutlineMode:v=>outlineMode=v},
+  WorldRenderPipeline:{defaultGeneratedOutlineMode:'screen',getGeneratedOutlineMode:()=>outlineMode,setGeneratedOutlineMode:v=>outlineMode=v,
+    getDepthOutlineDistanceTaper:()=>taper,setDepthOutlineDistanceTaper:v=>taper=v===true,
+    getDepthOutlineWobble:()=>wobble,setDepthOutlineWobble:v=>wobble=v===true},
   DenseForestWallBatches: { staticMatrixSnapshot:()=>({enabled:staticWallMatrices}), setStaticMatrixEnabled:v=>{staticWallMatrices=log('staticWallMatrices',v===true);return staticWallMatrices;} },
   ZonePropRenderBatches: { snapshot: () => ({ enabled: propOn }), setEnabled: v => { propOn = log('prop', v !== false); return propOn; } },
   HeldObjectRenderOrder: {
@@ -116,6 +119,19 @@ const input = id => document.getElementById('settingRenderOpt_' + id);
 for (const id of ['propBatches', 'denStateMemo', 'wheelListCrossFrame', 'leanDualWieldSync', 'gearParticlesOnce', 'npcWeaponsBasePass', 'replayScissor', 'frameScopedHooks', 'treeInstancing', 'facetedRocks', 'rainSheets', 'skyClouds']) assert.ok(input(id), id + ' has a toggle');
 for (const id of ['farmTileBatches', 'grassChunks', 'wildernessDistanceCull', 'hideFadedTrees', 'replayCull']) assert.equal(input(id), null, id + ': no owner here, no row');
 assert.equal(input('propBatches').checked, false, 'reflects the applied stored value');
+assert.equal(input('depthOutlineDistanceTaper').checked, false);
+assert.equal(input('depthOutlineWobble').checked, false);
+input('depthOutlineDistanceTaper').checked = true; input('depthOutlineDistanceTaper').dispatch('change');
+assert.equal(taper, true); assert.equal(wobble, false);
+input('depthOutlineWobble').checked = true; input('depthOutlineWobble').dispatch('change');
+assert.equal(wobble, true);
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).depthOutlineDistanceTaper, true);
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).depthOutlineWobble, true);
+taper = false; wobble = false;
+S.applyStored();
+assert.equal(taper, true); assert.equal(wobble, true);
+assert.equal(input('depthOutlineDistanceTaper').checked, true);
+assert.equal(input('depthOutlineWobble').checked, true);
 assert.equal(input('replayScissor').checked, true);
 assert.equal(input('treeInstancing').checked, false, 'tree instancing is off by default');
 assert.equal(input('staticWallMatrices').checked,false,'static wall experiment is off by default');
@@ -192,6 +208,9 @@ assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, 
 assert.equal(storage.has('hobunjiRenderOptimizations'), false);
 assert.equal(outlineMode,'screen');
 assert.equal(outlineSelect.value,'screen');
+assert.equal(taper,false); assert.equal(wobble,false);
+assert.equal(input('depthOutlineDistanceTaper').checked,false);
+assert.equal(input('depthOutlineWobble').checked,false);
 assert.equal(localRing,true); assert.equal(realTimeShadows,false);
 assert.equal(staticWallMatrices,false,'reset disables static wall experiment');
 assert.equal(mixedWaterPrune,false);assert.equal(replayRegistryMemo,false);assert.equal(slowClassificationFallback,false);

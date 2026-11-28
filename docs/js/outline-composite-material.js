@@ -18,6 +18,10 @@
         tShellMaskDepth: { value: null }, // Depth of only the curved, shell-tagged geometry.
         uDepthOutlinesOn: { value: 0 }, // Uniform branch: no extra samples in shell/none modes.
         uOrthographic: { value: 0 },
+        uDepthOutlineDistanceTaper: { value: 0 }, // Experimental, screen ink only.
+        uDepthOutlineWobble: { value: 0 }, // Experimental, screen ink only.
+        // Valid identity even before the first enabled frame; the pipeline supplies clip-to-world.
+        uOutlineClipToWorld: { value: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]) },
         uDepthFogMode: { value: 0 },
         uDepthFogColor: { value: new THREE.Color(0) },
         uDepthFogNear: { value: 0 }, uDepthFogFar: { value: 1 }, uDepthFogDensity: { value: 0 },
@@ -40,6 +44,8 @@
         uniform float uSeamOutlinesOn;
         uniform highp sampler2D tShellMaskDepth;
         uniform float uDepthOutlinesOn, uOrthographic, uDepthFogMode;
+        uniform float uDepthOutlineDistanceTaper, uDepthOutlineWobble;
+        uniform highp mat4 uOutlineClipToWorld;
         uniform vec3 uDepthFogColor;
         uniform float uDepthFogNear, uDepthFogFar, uDepthFogDensity;
         uniform float uSeamColorDistThresh, uSeamOcclusionTolerance;
@@ -101,6 +107,26 @@
           float overlap = max(min(left, right), min(down, up));
           return edge * (1.0 - 0.45 * overlap);
         }
+        // Camera-axis depth is already available. Keep near ink unchanged, and
+        // retain a nonzero far stroke so distant curves do not blink out.
+        float outlineDistanceScale(float depth) {
+          return 1.0 - 0.65 * smoothstep(5.0, 30.0, depth);
+        }
+        float outlineWobbleAmplitude(float depth) {
+          return 0.32 * (1.0 - 0.85 * smoothstep(8.0, 30.0, depth));
+        }
+        // Smooth triangle wave: no trig, texture reads or time-dependent seed.
+        float inkWave(float phase) {
+          float t = 1.0 - abs(fract(phase) * 2.0 - 1.0);
+          return 2.0 * t * t * (3.0 - 2.0 * t) - 1.0;
+        }
+        float worldInkVariation(float rawDepth) {
+          highp vec4 p = uOutlineClipToWorld * vec4(vUv * 2.0 - 1.0, rawDepth * 2.0 - 1.0, 1.0);
+          highp vec3 world = p.xyz / p.w;
+          // Two non-axis-aligned wavelengths; bounded, stable in world space.
+          return 0.65 * inkWave(dot(world, vec3(2.1, 1.7, 2.9)))
+               + 0.35 * inkWave(dot(world, vec3(-4.7, 3.1, 1.9)) + 0.37);
+        }
         vec3 applyScreenOutline(vec3 color) {
           float centerMask = texture2D(tShellMaskDepth, vUv).r;
           // Empty mask pixels never receive screen ink: avoid the scene-depth fetch and conversion.
@@ -108,7 +134,13 @@
           float centerRaw = texture2D(tSceneDepth, vUv).r;
           float centerDepth = linearDepth(centerRaw);
           if (visibleCurve(centerMask, centerRaw, centerDepth) < 0.5) return color;
-          vec2 stroke = uTexel * 12.0; // Keep the same four taps and silhouette reach.
+          vec2 stroke = uTexel * 12.0; // Original four symmetric taps; default look unchanged.
+          if (uDepthOutlineDistanceTaper > 0.5) stroke *= outlineDistanceScale(centerDepth);
+          if (uDepthOutlineWobble > 0.5) {
+            // Modulate only the inward ink reach, not the visible center/depth
+            // mask. Opposite taps stay symmetric for planar-slope rejection.
+            stroke *= 1.0 + outlineWobbleAmplitude(centerDepth) * worldInkVariation(centerRaw);
+          }
           float low = rawGapThreshold(centerDepth, max(0.105, centerDepth * 0.009));
           float high = rawGapThreshold(centerDepth, max(0.225, centerDepth * 0.018));
           vec2 margin = min(vUv, vec2(1.0) - vUv);

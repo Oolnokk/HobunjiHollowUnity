@@ -365,6 +365,43 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
 }
 
 
+// Experiments survive pre-init setting restoration and never add a render pass.
+{
+  const h = createWorldRenderPipelineHarness({outlineMode:'default'});
+  const p = h.pipeline;
+  assert.equal(p.getDepthOutlineDistanceTaper(),false);
+  assert.equal(p.getDepthOutlineWobble(),false);
+  p.setDepthOutlineDistanceTaper(true); // Settings load before game init.
+  h.init(); p.resize(640,360);
+  const u = p.materials.composite.uniforms;
+  const baseline = h.renders(h.frame()).length;
+  assert.equal(u.uDepthOutlineDistanceTaper.value,1);
+  assert.equal(u.uDepthOutlineWobble.value,0);
+  p.setDepthOutlineDistanceTaper(false);
+  p.setDepthOutlineWobble(true);
+  assert.equal(h.renders(h.frame()).length,baseline);
+  assert.equal(u.uDepthOutlineDistanceTaper.value,0);
+  assert.equal(u.uDepthOutlineWobble.value,1);
+  const matrix = u.uOutlineClipToWorld.value;
+  assert.equal(matrix.a,h.camera.matrixWorld);
+  assert.equal(matrix.b,h.camera.projectionMatrixInverse);
+  const updates = matrix.updates;
+  p.setDepthOutlineDistanceTaper(true);
+  assert.equal(h.renders(h.frame()).length,baseline);
+  assert.equal(u.uDepthOutlineDistanceTaper.value,1);
+  assert.equal(u.uOutlineClipToWorld.value,matrix);
+  assert.ok(matrix.updates>updates);
+  p.setGeneratedOutlineMode('shell'); h.frame();
+  assert.equal(u.uDepthOutlineDistanceTaper.value,0);
+  assert.equal(u.uDepthOutlineWobble.value,0);
+  p.setGeneratedOutlineMode('screen'); h.frame();
+  assert.equal(u.uDepthOutlineDistanceTaper.value,1);
+  assert.equal(u.uDepthOutlineWobble.value,1);
+  assert.equal(p.snapshot().depthOutlineWobble,true);
+  p.setDepthOutlineWobble(false); h.frame();
+  assert.equal(u.uDepthOutlineWobble.value,0);
+}
+
 // Screen ink must receive the same atmosphere as authored PNG ink.
 {
   const h = createWorldRenderPipelineHarness({outlineMode:'default'}).init();
