@@ -779,7 +779,7 @@
 
   function ropeChainPitAt(x,z,feetY=null) {
     // Ground ownership is story-specific even for native hallways.
-    if(!Number.isFinite(feetY))return null;
+    if(!inRuin()||!Number.isFinite(feetY))return null;
     return state?.ropeChains?.find(chain=>Math.abs(feetY-chain.floorY)<=.5&&insideRopeChain(chain,x,z))||null;
   }
 
@@ -804,23 +804,23 @@
 
   function updateRopeChainCheckpoints() {
     if(globalThis.RuinCheckpointTravel?.isActive?.())return; // White fire takes precedence; rope banks no longer silently overwrite a discovered checkpoint.
-    if(!state?.ropeChains?.length||state.activeRope||state.flight)return;
+    if(!state?.ropeChains?.length||state.activeRope||state.flight||deps.player?._freeJump)return;
     const player=playerWorld();
     if(!player)return;
+    player.y=window.DevRandomRuin?.getPlayerGroundSupportY?.()??player.y;
     for(const chain of state.ropeChains)for(const side of ['start','end']){
-      if(chain.external&&Math.abs(player.y-chain.floorY)>.85)continue; // Different stacked story at the same X/Z must not overwrite this wing's fatal-void checkpoint.
+      if(Math.abs(player.y-chain.floorY)>.85)continue; // Different stacked story at the same X/Z must not overwrite this wing's fatal-void checkpoint.
       const point=side==='start'?chain.entry:chain.exit,id=chain.checkpointIds[side];
       if(state.checkpoints.active?.id===id)continue;
       const along=chain.axis==='x'?player.x:player.z,cross=chain.axis==='x'?player.z:player.x;
       const pointAlong=chain.axis==='x'?point.x:point.z;
       const minCross=chain.axis==='x'?chain.bounds.minZ:chain.bounds.minX;
       const maxCross=chain.axis==='x'?chain.bounds.maxZ:chain.bounds.maxX;
-      const support=chain.external?DS.sampleSupport?.(player.x,player.z,{
-        minY:chain.floorY-.32,maxY:chain.floorY+.32,pad:.02,
-      }):sampleSupport(player.x,player.z);
+      const support=DS.sampleSupport?.(player.x,player.z,{
+        minY:player.y-.32,maxY:player.y+.32,pad:.02,
+      });
       if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!support)continue;
-      activateCheckpoint(id,point,true,chain.external?chain.floorY:null); // Entering either side replaces the other side, including after a reverse traversal.
-      return;
+      if(activateCheckpoint(id,point,true,point.y))return; // Only a supported bank replaces the previous checkpoint.
     }
   }
 
@@ -1851,14 +1851,21 @@
     return {x:crossX,z:door.z,side:Math.sign(b)||1};
   }
 
+  function safeCheckpointPoint(point) {
+    if(!point||![point.x,point.y,point.z].every(Number.isFinite))return null;
+    for(const offset of [[0,0],[.35,0],[-.35,0],[0,.35],[0,-.35],[.7,0],[-.7,0],[0,.7],[0,-.7]]){
+      const x=point.x+offset[0],z=point.z+offset[1];
+      const support=DS.sampleSupport?.(x,z,{minY:point.y-.45,maxY:point.y+.45,pad:.02});
+      if(support&&!ropeChainPitAt(x,z,support.y)&&!ropeBlockedAt(x,z,ROPE_COLLISION_RADIUS,support.y))return {x,z,y:support.y};
+    }
+    return null;
+  }
+
   function activateCheckpoint(id, point, announce = true, fixedStoryY = null) {
     if (!state || !point) return false;
-    const storyY=fixedStoryY===null?null:Number(fixedStoryY); // External stacked checkpoints must never snap to a higher story sharing X/Z.
-    const support=Number.isFinite(storyY)?DS.sampleSupport?.(point.x,point.z,{
-      minY:storyY-.32,maxY:storyY+.32,pad:.02,
-    }):sampleSupport(point.x,point.z);
-    const final={x:point.x,z:point.z,
-      y:Number(support?.y ?? (Number.isFinite(storyY)?storyY:point.y) ?? 0)};
+    const storyY=Number.isFinite(fixedStoryY)?fixedStoryY:point.y;
+    const final=safeCheckpointPoint({...point,y:storyY})||(id==='ruin-entry'?clonePoint(point):null);
+    if(!final)return false; // Never replace a good checkpoint with an unsupported doorway or another story.
     state.checkpoints.active={id,point:final,at:performance.now()};
     state.checkpoints.triggered.add(id);
     state.checkpoints.activationCount++;
@@ -1878,7 +1885,8 @@
   function updateDoorwayCheckpoints() {
     if(globalThis.RuinCheckpointTravel?.isActive?.()){state.lastPlayerWorld=playerWorld();return;} // Legacy doorway saves cannot beat a white brazier.
     const nowPoint=playerWorld();
-    if(!nowPoint||state.activeRope||state.flight){state.lastPlayerWorld=nowPoint;return;}
+    if(!nowPoint||state.activeRope||state.flight||deps.player?._freeJump){state.lastPlayerWorld=null;return;}
+    nowPoint.y=window.DevRandomRuin?.getPlayerGroundSupportY?.()??nowPoint.y;
     const previous=state.lastPlayerWorld;
     if(previous){
       const jumped=Math.hypot(nowPoint.x-previous.x,nowPoint.z-previous.z)>.75;
@@ -1895,9 +1903,10 @@
         const point=door.axis==='x'
           ? {x:door.x+side*inset,z:trigger.z,y:nowPoint.y}
           : {x:trigger.x,z:door.z+side*inset,y:nowPoint.y};
-        activateCheckpoint(door.id,point,true);
-        state.checkpoints.lastDoorSide.set(door.id,side);
-        break;
+        if(activateCheckpoint(door.id,point,true,nowPoint.y)){
+          state.checkpoints.lastDoorSide.set(door.id,side);
+          break;
+        }
       }
     }
     state.lastPlayerWorld=nowPoint;
@@ -1943,18 +1952,8 @@
     if(deps.player.staggered)deps.player.staggered={active:false,direction:null,endsAt:0};
     deps.player.invulnUntil=performance.now()+CHECKPOINT_INVULN_MS;
     window.PlayerJump?.reset?.(); // A raised landing or rope flight must release its height before the checkpoint takes over.
-    // Prefer real support on the intended story rather than an unrelated deck.
-    const safePoint=(point)=>{
-      if(!point)return null;
-      for(const offset of [[0,0],[.35,0],[-.35,0],[0,.35],[0,-.35],[.7,0],[-.7,0],[0,.7],[0,-.7]]){
-        const x=point.x+offset[0],z=point.z+offset[1];
-        if(ropeChainPitAt(x,z,point.y))continue;
-        const support=DS.sampleSupport?.(x,z,{minY:point.y-.45,maxY:point.y+.45,pad:.02});
-        if(support&&!ropeBlockedAt(x,z,ROPE_COLLISION_RADIUS,support.y))return {x,z,y:support.y};
-      }
-      return null;
-    };
-    const landing=safePoint(checkpoint.point)||safePoint(state.checkpoints.active.point)||safePoint(state.entryCheckpointPoint);
+    // Checkpoint activation and respawn use the same physical support validation.
+    const landing=safeCheckpointPoint(checkpoint.point)||safeCheckpointPoint(state.checkpoints.active.point)||safeCheckpointPoint(state.entryCheckpointPoint);
     if(landing)checkpoint={...checkpoint,point:landing};
     if(!landing){
       state.flight=null;
@@ -2615,7 +2614,7 @@
       return;
     }
     if(f.y<-2.5&&!DS.sampleSupport?.(f.x,f.z,{minY:-60,maxY:f.y+.25,pad:.02})){ // Only a fall out of the world returns to the checkpoint; deep pits and lava are fallen into, not teleported out of.
-      respawnAtCheckpoint('rope-fall');
+      if(!respawnAtCheckpoint('rope-fall'))window.PlayerDowned?.dieImmediately?.('rope-fall');
       return;
     }
     setPlayerWorld(f,true,false);
