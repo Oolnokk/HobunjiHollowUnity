@@ -68,6 +68,9 @@ assert.equal(new Set(manuals.map(manual => manual.key)).size, manuals.length, 'm
 for (const manual of manuals) {
   assert.equal(itemDefs[manual.key].combatManualAbilityId, manual.abilityId, `${manual.label} targets its exact ability`);
 }
+const scrollApi = windowStub.TechniqueScrolls; // Real scroll registry and weighted outcome eligibility, not a stub.
+for (const tier of [1, 2, 3]) assert.equal(scrollApi.hasUnlearnedTechniqueForTier(tier), true);
+assert.equal(scrollApi.hasUnlearnedTechniqueForTier(99), false);
 const targetManual = windowStub.TechniqueScrolls.manualForAbility('blinkDodge');
 inventory[targetManual.key] = 1;
 activeItem = itemDefs[targetManual.key];
@@ -99,6 +102,8 @@ const scrollAction = windowStub.HobunjiDrunkGameplayBridge.getHeldItemAction();
 assert.match(scrollAction?.label || '', /^Read Tier 1 Technique Scroll$/, 'a held technique scroll exposes Read on the action arch');
 assert.equal(windowStub.HobunjiDrunkGameplayBridge.consumeHeldItemImmediate(), true, 'the action arch immediate dispatcher reads a technique scroll');
 assert.equal(inventory[scroll.key], 0, 'reading through the immediate dispatcher consumes the technique scroll');
+for (const [id] of abilityDefs) scrollApi.unlockAbility(id, 'test');
+for (const tier of [1, 2, 3]) assert.equal(scrollApi.hasUnlearnedTechniqueForTier(tier), false, 'fully learned tiers stop glowing');
 
 const lootConfig = JSON.parse(fs.readFileSync('docs/config/loot/loot-pools.json', 'utf8'));
 const manualLoot = lootConfig.pools.treasureChest.entries.find(entry => entry.id === 'combatManual');
