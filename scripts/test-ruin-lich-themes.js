@@ -69,7 +69,8 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
   const presentationHeights=[]; // Detect hazards stealing rope/bridge presentation height.
   const player = {x:playerX * 64, y:playerZ * 64, health:100, facing:3};
   const window = {
-    THREE, DevRandomRuinSimplePuzzles:{registerComposer(next) { composer = next; },respawnAtCheckpoint:options.respawnAtCheckpoint},
+    THREE, PersistentGroundFire:options.fireSources?{plasmFireSources:options.fireSources}:null,
+    DevRandomRuinSimplePuzzles:{registerComposer(next) { composer = next; },respawnAtCheckpoint:options.respawnAtCheckpoint},
     DevRandomRuinTileOccupancy:{
       solidAt:() => false, refresh() {}, clearSolids() {},
       addSolidBox(_id, box, enabled) { footprint = {box,enabled}; },
@@ -480,6 +481,26 @@ function assertPlasmSeams(t) {
     1/30,980,1320,1850,1);
   assert.ok(Math.abs(sixty.vx-thirty.vx)<.1,
     'Friction decay must be frame-rate-independent at 30 and 60 fps');
+  t.composer.clear();
+}
+{
+  const flames=[];
+  const t=setup('kanthic',11.5,11.5,{fireSources:()=>flames});
+  const lower=t.api.createPlasmPatch([{x:20,z:20,y:0},{x:21,z:20,y:0}],{ignoreClear:true,ttl:5});
+  const upper=t.api.createPlasmPatch([{x:20,z:20,y:8}],{ignoreClear:true,ttl:5});
+  assert(lower&&upper);
+  flames.push({x:20.5,z:20.5,y:0,radius:.6}); // Precisely one tile, on the lower story.
+  t.tick(1,.1);
+  assert(!lower.contains(20.5,20.5,0));
+  assert(lower.contains(21.5,20.5,0));
+  assert(upper.contains(20.5,20.5,8),'fire cannot cleanse an identical tile on a higher floor');
+  assert(lower.mesh.children.some(n=>n.name==='kanthic_plasm_seam_glow'),'partial timed cleanse preserves the animated seam');
+  flames[0].radius=1.5;t.tick(1,.1);
+  assert.equal(lower.isActive(),false,'last tile retires its timer and live handle');
+  assert(upper.isActive());
+  flames.length=0;
+  const renewed=t.api.createPlasmPatch([{x:20,z:20,y:0}],{ignoreClear:true,ttl:5});
+  assert(renewed?.isActive(),'new plasm can appear after fire is gone');
   t.composer.clear();
 }
 console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cached surfaces, shared lantern darkness, Tothal friction and icicles, teardown.');
