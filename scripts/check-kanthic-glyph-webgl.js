@@ -87,6 +87,10 @@ const {chromium}=require('playwright');
       const mistGroup=voidScene.getObjectByName('cloud_forest_mist_cylinders');
       const projected=new T.Vector3();
       const fixedPlayer={x:-1.5,y:0};
+      const portraitRoot=new T.Group(), portrait=new T.Mesh(new T.PlaneGeometry(.8,1.2),new T.MeshBasicMaterial());
+      portraitRoot.add(portrait);voidScene.add(portraitRoot);
+      portraitRoot.userData.neckRig={skinnedPlane:portrait};
+      window.PlayerBodyTransformComposer={getPlayerMesh:()=>portraitRoot};
       let cinematic=false;
       window.RuinRoomSystem.lightAllowed=()=>!cinematic; // Camera lantern cannot be rejected by a remote player's room ownership.
       window.RuinRoomSystem.withLightClip=(_ctx,_source,_project,draw)=>cinematic?false:draw();
@@ -99,8 +103,11 @@ const {chromium}=require('playwright');
       window.CinematicCameraRuntime={isActive:()=>cinematic};
       window.RuinRoomSystem.glyphRegionAt=x=>x>10?'room:shot':region;
       bounds['room:shot']={minX:10,maxX:20,minZ:0,maxZ:10,minY:0,maxY:10};
-      function cameraSample(x,y,z,tx,ty,tz,shot,playerX,playerZ){
+      function cameraSample(x,y,z,tx,ty,tz,shot,playerX,playerZ,portraitOffset=.35,detached=false){
         cinematic=shot;fixedPlayer.x=playerX;fixedPlayer.y=playerZ;
+        portraitRoot.position.set(playerX,0,playerZ);
+        portrait.position.set(Math.sign(playerX)*.22,portraitOffset,.2); // Rendered pose differs from the logical floor anchor.
+        if(detached)portraitRoot.remove(portrait);else if(portrait.parent!==portraitRoot)portraitRoot.add(portrait);
         camera.position.set(x,y,z);camera.lookAt(tx,ty,tz);camera.updateMatrixWorld(true);
         api.update(.016); // Simulate ordinary gameplay mist placement before final render-camera sync.
         api.prepareKanthicGlyphFrame(voidScene,clock+=20,camera);
@@ -108,14 +115,14 @@ const {chromium}=require('playwright');
           const diag=api.getDebugState(),anchor=diag.kanthicCameraAtmosphere;
           const dir=camera.getWorldDirection(new T.Vector3());
           const expected=camera.position.clone().addScaledVector(dir,.75);
-          const expectedLight=shot?camera.position.clone().addScaledVector(dir,2.25):new T.Vector3(fixedPlayer.x,.5,fixedPlayer.y);
+          const expectedLight=shot?camera.position.clone().addScaledVector(dir,2.25):detached?new T.Vector3(fixedPlayer.x,.5,fixedPlayer.y):portrait.getWorldPosition(new T.Vector3());
           const exact=mistGroup.children.every(m=>m.position.distanceTo(expected)<1e-8);
           const lightExact=new T.Vector3(anchor.lantern.x,anchor.lantern.y,anchor.lantern.z).distanceTo(expectedLight)<1e-8;
           ctx.globalCompositeOperation='source-over';ctx.clearRect(0,0,1024,1024);ctx.fillStyle='black';ctx.fillRect(0,0,1024,1024);
           window.__drawLanternTest();
           const lightPixel=expectedLight.clone().project(camera);
           const lx=Math.round((lightPixel.x+1)*512),ly=Math.round((1-lightPixel.y)*512);
-          return {exact,lightExact,mode:anchor.lantern.mode,radius:anchor.lantern.radiusTiles,apiRadius:api.getKanthicLanternRadiusTiles(),shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
+          return {exact,lightExact,mode:anchor.lantern.mode,source:anchor.lantern.anchor,detached,radius:anchor.lantern.radiusTiles,apiRadius:api.getKanthicLanternRadiusTiles(),shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
         }finally{api.endKanthicGlyphFrame();}
       }
       const cameraSamples=[cameraSample(0,1,3,0,1,0,false,-1.5,0),
@@ -123,7 +130,10 @@ const {chromium}=require('playwright');
         cameraSample(0,1,3,0,1,0,true,-100,-100), // Mode changes with no camera movement.
         cameraSample(4,3,4,7,2,4,true,-100,-100),cameraSample(14,6,5,17,5,5,true,-100,-100),
         cameraSample(0,1,3,0,1,0,true,-100,-100),
-        cameraSample(0,1,3,0,1,0,false,-1.5,0)]; // Return to player ownership without camera movement.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0), // Return to portrait ownership without camera movement.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0,1.25), // Portrait alone moves vertically while the player and camera stay still.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0,.35,true), // Detached rig safely falls back to logical player coordinates.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0)]; // Reattached portrait takes ownership again.
       rt.dispose();renderer.dispose();
       return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect,cameraSamples};
     });
@@ -151,7 +161,10 @@ const {chromium}=require('playwright');
       assert.equal(sample.radius,2,'debug reports the 2-tile default');
       assert.equal(sample.apiRadius,2,'rope and other light consumers receive the same radius');
       assert(sample.alpha<100,'real lantern mask opens at its selected source: '+JSON.stringify(sample));
-      if(!sample.shot)assert(sample.centerAlpha>180,'normal gameplay does not illuminate the camera center instead of the player: '+JSON.stringify(sample));
+      if(!sample.shot){
+        assert.equal(sample.source,sample.detached?'ground-fallback':'portrait-plane');
+        assert(sample.centerAlpha>180,'normal gameplay does not illuminate the camera center instead of the player: '+JSON.stringify(sample));
+      }
     }
     assert.equal(results.cameraSamples[4].region,'room:shot','cinematic glyph ownership follows the rendered view');
     assert.equal(results.cameraSamples[6].region,'room:void','returning to gameplay restores player-room ownership');
