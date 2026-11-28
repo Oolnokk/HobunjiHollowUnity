@@ -77,6 +77,12 @@
   }
   function allManuals() { return allTechniques().map(def => manualForAbility(def.id)).filter(Boolean); }
 
+  function hasUnlearnedTechniqueForTier(scrollTier) {
+    const weights = UNLOCK_WEIGHTS[Number(scrollTier)]; // Match the actual randomized scroll's eligible categories without rolling.
+    return !!weights && CATS.some(category => weights[category] > 0 &&
+      categoryTechniques(category).some(def => !unlocked.has(def.id)));
+  }
+
   function rollTechniqueUnlock(scrollTier) {
     const tier = Math.max(1, Math.min(3, Math.floor(Number(scrollTier) || 1))); // Used to select the requested scroll outcome row.
     const weights = UNLOCK_WEIGHTS[tier]; // Used to build the final weighted list after learned attacks are removed.
@@ -454,7 +460,7 @@
   }, { once: true });
 
   window.TechniqueScrolls = {
-    SCROLLS, SOURCE_WEIGHTS, UNLOCK_WEIGHTS, isUnlocked, unlockAbility, rollScrollTier, rollTechniqueUnlock, grantScroll, consumeScroll, consumeTechniqueScroll: consumeScroll,
+    SCROLLS, SOURCE_WEIGHTS, UNLOCK_WEIGHTS, isUnlocked, hasUnlearnedTechniqueForTier, unlockAbility, rollScrollTier, rollTechniqueUnlock, grantScroll, consumeScroll, consumeTechniqueScroll: consumeScroll,
     manualKeyForAbility, manualForAbility, allManuals, ensureManualItemDef, rollManualKey, consumeManual,
     getUnlockedTechniqueIds: () => [...unlocked].sort(),
     getDebug() {
