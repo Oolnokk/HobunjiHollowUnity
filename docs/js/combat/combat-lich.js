@@ -370,7 +370,7 @@
     entity._lichHoverOffsetWorld = 0; // Current presentation-only lift exposed through Pixel Probe/debug snapshots.
     entity.avatarRef?.legs?.setHoverMode?.(true); // Procedural legs immediately enter the dangling airborne solver instead of taking a first walking step.
     entity._lichPrimaryCooldownS = 0.7 + random() * 0.8; // Staggers first casts when several liches are spawned together.
-    entity._lichSummonCooldownS = entity.lichType==='kanthic' ? 2.5 + random() * 2 : 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
+    entity._lichSummonCooldownS = entity.lichType==='kanthic' ? 10 + random() * 5 : 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
     entity._lichCommand = 'approach'; // Referential command read live by every target currently Entranced by this lich.
     entity._lichCommandChangedAt = performance.now(); // Used by diagnostics and to avoid visually noisy rapid command flapping.
     entity._lichSummons = new Set(); // Tracks this lich's summoned Minion objects for the live-cap check.
@@ -1032,8 +1032,9 @@
     const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
     const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
     for(const existing of puddles){
+      if(existing.ruinPlasm && existing.ruinPlasm.isActive?.()===false){disposePetroleumPuddle(existing);continue;}
       if(existing.areaId!==areaId||Math.abs(existing.groundY-groundY)>.01)continue;
-      if(!existing.ruinPlasm?.contains?.(worldX,worldZ,groundY)&&Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
+      if(existing.ruinPlasm ? !existing.ruinPlasm.contains?.(worldX,worldZ,groundY) : Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
       existing.ageS=0; // Nearby follow-up impacts refresh a patch instead of stacking draw calls on the same space.
       lastEvent='plasm:refresh';
       return existing;
@@ -1593,7 +1594,7 @@
       if(!puddle.ruinPlasm&&fireSources.some(f=>Math.abs(f.y-puddle.groundY)<=1.2&&Math.hypot(f.x-puddle.x/tileSize,f.z-puddle.y/tileSize)<=f.radius)){
         disposePetroleumPuddle(puddle);continue; // Ordinary fire extinguishes free-standing spell puddles outside the tile-based ruin composer.
       }
-      if(!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
+      if(puddle.ruinPlasm?.isActive?.()===false||!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
     }
     if(!puddles.size){
       for(const actor of puddleTouchedActors)clearPuddleSink(actor);
