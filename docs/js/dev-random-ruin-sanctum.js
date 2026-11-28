@@ -203,7 +203,7 @@
     fire.lit = true;
     fire.anchor.visible = true;
     if (fire.lightSource) fire.lightSource.active = true;
-    if (fire.holder?.userData && fire.ordinaryFire) fire.holder.userData.fireHazard = true; // A real flame can renew a carried torch. // The same flame now lifts the darkness overlay, not just its 3D particles.
+    if (fire.ordinaryFire && fire.contact?.userData) fire.contact.userData.fireHazard = true; // A real flame can renew a carried torch. // The same flame now lifts the darkness overlay, not just its 3D particles.
   }
 
   function extinguishFire(fire) {
@@ -211,7 +211,7 @@
     fire.lit=false;
     if(fire.anchor)fire.anchor.visible=false;
     if(fire.lightSource)fire.lightSource.active=false;
-    if(fire.holder?.userData&&fire.ordinaryFire)fire.holder.userData.fireHazard=false;
+    if(fire.ordinaryFire&&fire.contact?.userData)fire.contact.userData.fireHazard=false;
   }
 
   function rotateKanthicFires(owner,dt) {
@@ -779,7 +779,12 @@
     root.add(holder);
     fire.holder = holder;
     fire.ordinaryFire=shortOrdinary; // Only the short orange arena braziers burn plasm.
-    if(shortOrdinary){holder.userData.fireHazard=false;holder.userData.ordinaryFire=true;}
+    if(shortOrdinary){
+      holder.userData.ordinaryFire=true;
+      const contact=new THREE.Mesh(new THREE.CylinderGeometry(.43,.37,.84,10),new THREE.MeshBasicMaterial({visible:false})); // Fixed flame-height contact, never the emitter's unbounded particle box.
+      contact.name='kanthic-sanctum-fire-contact';contact.position.y=1.2;contact.userData.devRuinFootprintIgnore=true;
+      contact.userData.fireHazard=false;contact.userData.ordinaryFire=true;holder.add(contact);fire.contact=contact;
+    }
     fire.lightSource = {x,y:y0+(shortOrdinary?.63:1.4),z,floorY:y0,floorTolerance:3,radius:shortOrdinary?1.5:9.5,strength:.97,color:shortOrdinary?[255,175,92]:[175,220,255],active:false,flameAnchor:fire.anchor,flameHalo:fire.halo}; // Static 2D light mask follows this brazier's lit state.
     return fire;
   }
@@ -1496,7 +1501,7 @@
     clear() {
       if (!s) return;
       resetSanctumEncounter('ruin-teardown'); // Cancel all delayed reveals/spawns before the larger ruin detaches.
-      for(const fire of [...(s.arenaFires||[]),...(s.vaultFires||[])])fire.emitter?.dispose?.(); // Dispose independent particle buffers, not shared furniture assets.
+      for(const fire of [...(s.arenaFires||[]),...(s.vaultFires||[])]){fire.emitter?.dispose?.();fire.contact?.geometry?.dispose?.();fire.contact?.material?.dispose?.();} // Dispose independent particle buffers, not shared furniture assets.
       if (s.bgs) window.Music?.unregisterFurnitureSfxSource?.(s.bgs);
       removeLichHeart(); // Old pickup and its glow material must not survive ruin teardown.
       for (const coffin of [...(s.coffins||[]),...(s.roomCoffins||[])]) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
@@ -1531,7 +1536,7 @@
     resetEncounter:reason => resetSanctumEncounter(reason || 'debug'), // Mobile diagnostics and regression tests can force an encounter reset without desktop DevTools.
     buildLichBrazier,
     lightSources:() => s?.sanctumLights || [], // Zero-allocation read path for both darkness compositors and mobile diagnostics.
-    litOrdinaryFireObjects:()=> (s?.arenaFires||[]).filter(f=>f.ordinaryFire&&f.lit).map(f=>f.holder),
+    litOrdinaryFireObjects:()=> (s?.arenaFires||[]).filter(f=>f.ordinaryFire&&f.lit&&f.contact).map(f=>f.contact),
     ordinaryFireSources:()=> (s?.arenaFires||[]).filter(f=>f.ordinaryFire&&f.lit).map(f=>f.lightSource), // Active nonmagical corner flames only.
     debugUpdateIntro:now => updateBossIntro(now), // Run one real intro-pose tick without rebuilding the dungeon (mobile diagnostics and isolated regression tests).
     getState:() => s,
