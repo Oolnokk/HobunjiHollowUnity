@@ -43,12 +43,29 @@ for(const file of ['adventuring-jug.js','adventuring-jug-world.js'])vm.runInCont
 const jug=window.AdventuringJug;
 jug.init({tileSize:64,getPlayer:()=>p,getArea:()=>area,getScene:()=>scene,isHolding:()=>held,getMouth:()=>mouth,getAim:()=>aim,isWaterTile:()=>water,
   saveState:s=>save.push(s),actorsInArea:()=>actors,actorTile:position,actorArea:a=>position(a).area,dodgeSupportY:()=>floor,canEscape:()=>true});
-assert(jug.use('jug_pour'),'ordinary source fills jug');
+function perform(action){
+  if(!jug.use(action))return false;
+  jug.advancePose(10); // Slow frame pins exact strike; no premature expenditure.
+  const result=jug.releasePose();
+  assert.equal(jug.releasePose(),false,'Repeated render/strike notification cannot expend again');
+  jug.advancePose(10); // Return to neutral; projectiles remain independent.
+  return result;
+}
+assert(perform('jug_pour'),'ordinary source fills jug');
 assert.equal(jug.debug().units,12);
-assert.equal(jug.use('jug_pour'),false,'full refill is not a pour');
+assert.equal(perform('jug_pour'),false,'full refill is not a pour');
 assert.equal(jug.debug().units,12);
 water=false;
 assert(jug.use('jug_pour'));
+assert.equal(jug.use('jug_splash'),false,'No overlapping liquid gestures');
+assert.equal(jug.debug().units,12,'Windup spends no units');
+const idle=jug.advancePose(0);assert.equal(idle.pitch,90);
+const mid=jug.advancePose(.12);assert(mid.pitch>90&&mid.pitch<205);
+assert.equal(jug.releasePose(),false,'No early strike');
+held=false;jug.update(.01);held=true;
+assert.equal(jug.releasePose(),false,'Stowing cancels a pending pour');
+assert.equal(jug.debug().units,12);
+assert(perform('jug_pour'));
 assert.equal(jug.debug().units,11);
 assert.equal(wet.length,0,'no effect before droplet impact');
 jug.update(.6);
@@ -56,36 +73,45 @@ assert.equal(wet.length,1);
 assert.equal(wet[0].y,0);
 jug.update(.6);assert.equal(wet.length,1,'impact resolves exactly once');
 wall=true;
-assert(jug.use('jug_pour'));jug.update(.6);assert.equal(wet.length,1,'solid obstruction blocks liquid from the floor behind it');
+assert(perform('jug_pour'));jug.update(.6);assert.equal(wet.length,1,'solid obstruction blocks liquid from the floor behind it');
 wall=false;
 aim=new V(.95,-Math.sqrt(1-.95*.95),0);
-assert(jug.use('jug_pour'));jug.update(1.2);
+assert(perform('jug_pour'));jug.update(1.2);
 assert.equal(wet.at(-1).x,3,'Gravity-compensated pour reaches the distant tile selected by the reticle');
 aim=new V(0,-1,0);
 jug.restore(p,{liquid:'water',units:3});
 const receiver=new Obj();receiver.testY=.8;scene.add(receiver);
 const unregister=jug.registerReceptacle({root:receiver,area,accept:(l,n)=>{accepted+=n;return n;}});
-assert(jug.use('jug_empty'));jug.update(.6);assert.equal(accepted,3);assert.equal(jug.debug().units,0);
+assert(perform('jug_empty'));jug.update(.6);assert.equal(accepted,3);assert.equal(jug.debug().units,0);
 unregister();scene.remove(receiver);
 // A receiver removed after release cannot receive an old flight's contents.
 jug.restore(p,{liquid:'water',units:2});scene.add(receiver);
 const retire=jug.registerReceptacle({root:receiver,area,accept:(l,n)=>{accepted+=n;return n;}});
-assert(jug.use('jug_empty'));retire();jug.update(.6);assert.equal(accepted,3);scene.remove(receiver);
+assert(perform('jug_empty'));retire();jug.update(.6);assert.equal(accepted,3);scene.remove(receiver);
 jug.restore(p,{liquid:'water',units:1});held=false;p.dodging=true;
 assert(jug.beginDodge(p));assert.equal(jug.beginDodge(p),false);assert.equal(doused,1);assert.equal(jug.debug().units,0);
 assert(jug.dodgeProtected(p,area),'last unit protects complete roll');
 jug.dodgeStep(p,32,32,96,32);assert(wet.some(t=>t.x===1));
 p.dodging=false;jug.update(.01);assert(!jug.dodgeProtected(p,area));
 held=true;const basin=new Obj();basin.userData.lifeTotemAuthoritativeLiquidMaterial=true;basin.testY=.8;scene.add(basin);
-assert(jug.use('jug_pour'));assert.equal(jug.debug().liquid,'lifeWater');assert.equal(jug.debug().units,6);scene.remove(basin);
+assert(perform('jug_pour'));assert.equal(jug.debug().liquid,'lifeWater');assert.equal(jug.debug().units,6);scene.remove(basin);
 held=false;p.dodging=true;assert.equal(jug.beginDodge(p),false,'Life Water never powers belt dodge');p.dodging=false;held=true;
-assert(jug.use('jug_pour'));jug.update(.6);assert(jug.isConsecrated({area,x:0,z:0,y:0}));assert.equal(plasm.length,1);
+assert(perform('jug_pour'));jug.update(.6);assert(jug.isConsecrated({area,x:0,z:0,y:0}));assert.equal(plasm.length,1);
 jug.update(0);jug.update(0);assert.equal(heal.length,0);
 jug.update(1.1);assert.equal(heal.length,2);assert.equal(hurt.length,1);assert.equal(hurt[0][0],undead);assert.equal(hurt[0][2].noStagger,true);
 assert(jug.escapeTarget(undead));assert(!jug.escapeTarget(enemy));
 assert(!jug.isConsecrated({area,x:0,z:0,y:3}));assert(!jug.isConsecrated({area:'farm',x:0,z:0,y:0}));
 jug.update(20);assert(!jug.isConsecrated({area,x:0,z:0,y:0}));
-floor=3;mouth=new V(.5,4,.5);assert(jug.use('jug_pour'));jug.update(.6);assert(jug.isConsecrated({area,x:0,z:0,y:3}));assert(!jug.isConsecrated({area,x:0,z:0,y:0}));
-assert(jug.use('jug_pour'));const before=wet.length;area='farm';scene=new Obj();jug.update(.6);assert.equal(wet.length,before,'area change cancels in-flight effects');
+floor=3;mouth=new V(.5,4,.5);assert(perform('jug_pour'));jug.update(.6);assert(jug.isConsecrated({area,x:0,z:0,y:3}));assert(!jug.isConsecrated({area,x:0,z:0,y:0}));
+assert(perform('jug_pour'));const before=wet.length;area='farm';scene=new Obj();jug.update(.6);assert.equal(wet.length,before,'area change cancels in-flight effects');
 assert.equal(jug.debug().flights,0);assert.equal(jug.debug().activeConsecratedTiles,0);
-console.log('PASS jug world bridge: sources, first impact, receiver, roll, life-water and scene ownership');
+// Distinct motion endpoints, exact release time, and return to the same upright neutral.
+jug.restore(p,{liquid:'water',units:12});area='farm';held=true;water=false;
+for(const [action,pitch,units] of [['jug_splash',158,11],['jug_empty',265,0]]){
+  assert(jug.use(action));
+  const strike=jug.advancePose(100);assert.equal(strike.pitch,pitch);
+  assert(jug.releasePose());assert.equal(jug.debug().units,units);
+  assert.equal(jug.advancePose(100).pitch,90);
+  jug.update(3);
+}
+console.log('PASS jug world bridge: sources, first impact, receiver, roll, life-water, gesture timing and scene ownership');

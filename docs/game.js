@@ -25436,6 +25436,28 @@
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
 
+        if (activeTool==='adventuring'&&equipmentSlots.adventuring==='jug') {
+          const jug=window.AdventuringJug,mesh=toolMeshMap.adventuring,plane=mesh?.userData?.toolPlane;
+          if(jug&&plane){
+            const pose=jug.advancePose(paused?0:dt); // The jug timeline is sampled exactly once by the normal held-tool frame owner.
+            const facing=playerFacing,rad=Math.PI/180;
+            const rx=Math.cos(facing),rz=-Math.sin(facing),fx=Math.sin(facing),fz=Math.cos(facing);
+            toolHolder.userData.authoredToolActionActive=true; // No legacy jab, idle correction, or swing callback can overwrite this prop.
+            toolHolder.position.set(playerMesh.position.x+rx*(playerToolBaseX+pose.x)+fx*pose.z,
+              playerMesh.position.y+playerToolBaseY+pose.y,playerMesh.position.z+rz*(playerToolBaseX+pose.x)+fz*pose.z);
+            scaleToolWorldPointAroundPlayerCentroid(toolHolder.position,facing); // Existing species-relative shoulder orbit, including short characters.
+            _qFac.setFromAxisAngle(_tUp,facing);
+            _qToolYaw.setFromAxisAngle(_tUp,pose.yaw*rad);
+            _qAnim.setFromAxisAngle(_xAxis,pose.pitch*rad);
+            _qRoll.setFromAxisAngle(_zAxis,pose.roll*rad);
+            toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+            mesh.rotation.z=0;mesh.scale.x=Math.abs(mesh.scale.x);
+            plane.position.set(0,0,0);plane.rotation.set(-Math.PI/2,0,0);plane.scale.x=1;
+            // Release reads the real animated PNG aperture only after this transform exists.
+            jug.releasePose();
+            return;
+          }
+        }
         // Use logical facing for game-logic vectors; sweep will additively rotate the body.
         const θ = activeTool === 'adventuring' && combatSwingAnim === 'sweep' && combatSwingCone
           ? Math.PI / 2 - combatSwingCone.angle : playerFacing; // The torch animates toward the same committed bearing as its melee volume.
@@ -27599,6 +27621,7 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
+        if(tool!=='adventuring'||equipmentSlots.adventuring!=='jug')window.AdventuringJug?.cancelGesture?.('tool-switch');
         releaseManualClothingForEquipmentSwitch(); // Tool and weapon selection relinquish an explicit clothing Hold.
         if (activeTool === 'adventuring' && tool !== 'adventuring') {
           if (pendingAction?.tool === 'adventuring') pendingAction = null;
@@ -32703,12 +32726,13 @@
       window.AdventuringJug?.init?.({
         tileSize:TILE,getPlayer:()=>player,getArea:()=>currentArea,getScene:window.GridTileAccessors.getActiveScene,
         isHolding:()=>heldMode==='tool'&&activeTool==='adventuring'&&equipmentSlots.adventuring==='jug',
+        canAnimate:()=>!paused&&!menuOpen&&!dialogueOpen&&!cutscenePreviewActive&&sceneTransDir===0&&!player.climbing&&!player.onRope&&!player._onRope&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'tools')&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'actions'),
         getMouth:()=>{
           const mesh=toolMeshMap.adventuring;
           const plane=mesh?.userData?.toolPlane||mesh?.children?.[0]?.userData?.toolPlane;
           if(!plane)return null;
           plane.updateWorldMatrix(true,false);
-          return plane.localToWorld(new THREE.Vector3(0,(Number(plane.geometry?.parameters?.height)||.4)*.38,0)); // Upper mouth of the temporary jar PNG.
+          return plane.localToWorld(new THREE.Vector3(0,(Number(plane.geometry?.parameters?.height)||.4)*.48,0)); // Upper mouth of the temporary jar PNG.
         },
         getAim:origin=>origin&&currentPlayerPerspectiveDirection(origin),
         isWaterTile:t=>WATERWAY_TYPES.has(window.GridTileAccessors.getActiveGrid()?.[t.z]?.[t.x]?.type)&&Math.abs(activeSurfaceYAtWorld(t.x+.5,t.z+.5)-t.y)<=.35, // A bridge over a river is not a water source.

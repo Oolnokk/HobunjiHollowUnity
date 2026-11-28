@@ -24,3 +24,7 @@ Furniture Avatar Author exposes the required liquid, unit count, and intake part
 The pour resolves a nearby sight-line target with a gravity-compensated trajectory and sweeps the actual trajectory again for obstruction. Retired receptacles cannot receive delayed liquid. The standalone plasm fallback respects ruin support height, floor coverage and solid/protected tiles, and consecration clears it through the same tile API.
 
 Finite projectile radius may contact shaft floor voxels before the center crosses a dynamic support. Jug and burning-torch ground effects now recognize actual descending top contacts without treating wall and ceiling hits as floor impacts. The new test executes the shared production classifier.
+
+## Jug gesture animation
+
+The jug has a dedicated upright idle and three smooth holder poses. Pour tips forward (0.34 s strike), Splash flicks across the body (0.29 s strike), Empty fully inverts (0.46 s strike). The gameplay held-tool owner samples the gesture, applies species-relative positioning, then releases from the animated aperture. Stow, locks, dodge, death and scene changes cancel pending gestures; spent liquid and airborne droplets survive tool switches. No weapon idle fit may overwrite the jug pose. Pixel Probe exposes gesture phase, elapsed time, release status and sampled transform.

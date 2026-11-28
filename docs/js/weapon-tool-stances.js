@@ -225,6 +225,7 @@
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
       if (activeSlot === 'ranged') return null; // game.js/RangedWeapons own the loaded, unloaded, and aim-tracking ranged Neutral, even for dual-role melee shapes.
+      if (activeSlot === 'adventuring' && itemKey === 'jug') return null; // Dedicated upright carry and liquid gestures own the full holder transform.
       if (activeSlot === 'adventuring' && itemKey === 'torch') return idleStances.torchHold; // Dedicated idle state only for a held torch.
       if (def?.modular && MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]) return idleStances[MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]]; // An axe-head spear haft rests as an axe when equipped for woodcutting, for example.
       if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
@@ -482,7 +483,7 @@
   // The stance owner decides whether a held object can be adjusted without
   // stealing a work stroke, a ranged release, or a mouth-attached prop.
   function groundPoseEligible(slot, itemKey, holder) {
-    if (!slot || !itemKey || !holder?.visible) return false;
+    if (!slot || !itemKey || !holder?.visible || (slot==='adventuring'&&itemKey==='jug')) return false; // The compact jug is not a ground-reaching weapon; do not rotate its tipped mouth.
     if (slot === 'weapon') return true;
     if (holder.userData?.headRelativeBackPlane) return false;
     // Fitted tools retain their physical length through an authored stroke.

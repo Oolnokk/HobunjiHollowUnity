@@ -5,6 +5,16 @@
   const MAX_FLIGHTS=4, GRAVITY=9.8, STEP=.05, MAX_STEPS=48; // Bounded trace work per release.
   let deps=null,rules=null,area=null,scene=null,lastTrace=null; // Injected game authority and active-scene lifetime.
   const flights=[], receivers=new Set(), surfaces=new Map(); // Temporary flight visuals, authored puzzle receivers, and consecrated decals.
+  // Angles are holder-relative degrees: +90 pitch makes the canonical -90° PNG plane upright.
+  const idlePose=Object.freeze({x:0,y:.08,z:.16,pitch:90,yaw:0,roll:0});
+  const pose=(x,y,z,pitch,yaw=0,roll=0)=>Object.freeze({x,y,z,pitch,yaw,roll});
+  const gestures=Object.freeze({
+    jug_pour:{duration:.84,strike:.34,keys:[[0,idlePose],[.16,pose(0,.18,.23,105)],[.34,pose(0,.16,.34,205)],[.53,pose(0,.12,.33,215)],[.84,idlePose]]},
+    jug_splash:{duration:.62,strike:.29,keys:[[0,idlePose],[.17,pose(.10,.16,.10,108,-42,-12)],[.29,pose(0,.19,.38,158,0,0)],[.39,pose(-.12,.12,.25,173,44,12)],[.62,idlePose]]},
+    jug_empty:{duration:1.16,strike:.46,keys:[[0,idlePose],[.22,pose(0,.26,.20,125)],[.46,pose(0,.28,.36,265)],[.76,pose(0,.21,.37,270)],[1.16,idlePose]]},
+  }); // Three distinct smooth windup, release and recovery gestures; no generic weapon swing state.
+  const sampledPose={...idlePose}; // Reused for all pose samples, including idle frames.
+  let gesture=null,lastGesture=null; // One pending action; release only after the game writes its strike transform.
   let simulationMs=0; // Advances only with gameplay dt; menus do not consume consecration duration.
   let surfaceGeometry=null,surfaceMaterial=null; // Shared by every consecrated tile, never cloned per tick.
   const key=t=>t.x+','+t.z+','+t.y;
@@ -28,6 +38,7 @@
   function removeSurface(t){const mesh=surfaces.get(key(t));if(mesh){mesh.parent?.remove(mesh);surfaces.delete(key(t));}}
   function disposeFlight(f){f.points?.parent?.remove(f.points);f.points?.geometry?.dispose();f.points?.material?.dispose();}
   function clear(){
+    cancelGesture('area-or-character-change');
     if(area)rules?.clearArea(area);
     for(const f of flights){rules?.cancelImpact(f.ticket);disposeFlight(f);}
     flights.length=0;
@@ -155,7 +166,60 @@
     const impact={area:f.ticket.area,tile:primary.tile,tiles:f.paths.map(p=>p.tile).filter(Boolean),receptacle:f.ticket.action!=='splash'?primary.receiver:null};
     const result=rules.resolveImpact(f.ticket,impact);lastTrace={action:f.ticket.action,kind:primary.kind,point:primary.points.at(-1),...result};
   }
+  function canAnimate(){
+    const actor=local();
+    return held()&&!!actor&&Number(actor.health)>0&&!actor.dodging&&!actor.prone&&!actor._downed&&deps?.canAnimate?.()!==false;
+  }
+  function cancelGesture(reason){
+    if(!gesture)return;
+    lastGesture={action:gesture.action,phase:'cancelled',reason,released:gesture.released};
+    gesture=null;
+  }
   function use(action){
+    if(!rules||!ACTIONS.includes(action)||!canAnimate())return false;
+    ensureArea();
+    if(gesture||flights.length>=MAX_FLIGHTS||!scene)return false;
+    if(action!=='jug_pour'&&!rules.getState(local()).units)return false;
+    gesture={action,elapsed:0,released:false,releaseDue:false,area,actor:local()};
+    lastGesture={action,phase:'windup',released:false};return true;
+  }
+  function sampleGesture(def,elapsed){
+    const keys=def.keys;
+    let i=1;
+    while(i<keys.length-1&&elapsed>keys[i][0])i++;
+    const [a,from]=keys[i-1],[b,to]=keys[i];
+    const t=Math.max(0,Math.min(1,(elapsed-a)/(b-a))),smooth=t*t*(3-2*t);
+    for(const field of ['x','y','z','pitch','yaw','roll'])sampledPose[field]=from[field]+(to[field]-from[field])*smooth;
+    return sampledPose;
+  }
+  function advancePose(dt){
+    if(!gesture)return idlePose;
+    if(!canAnimate()||gesture.area!==getArea()||gesture.actor!==local()||scene!==getScene()){
+      cancelGesture('lost-action-ownership');return idlePose;
+    }
+    const def=gestures[gesture.action];
+    const next=gesture.elapsed+(Number.isFinite(dt)?Math.max(0,dt):0);
+    // Pin the strike frame even if a slow frame overshoots it. The mouth must
+    // be sampled from the tipped jar, never a recovery or stale idle transform.
+    gesture.elapsed=Math.min(next,gesture.released?def.duration:def.strike);
+    if(!gesture.released&&gesture.elapsed>=def.strike)gesture.releaseDue=true;
+    if(gesture.elapsed>=def.duration){
+      lastGesture={action:gesture.action,phase:'complete',released:gesture.released,result:gesture.result};
+      gesture=null;return idlePose;
+    }
+    return sampleGesture(def,gesture.elapsed);
+  }
+  function releasePose(){
+    if(!gesture?.releaseDue||gesture.released)return false;
+    if(!canAnimate()||gesture.area!==getArea()||gesture.actor!==local()||scene!==getScene()){
+      cancelGesture('lost-before-release');return false;
+    }
+    gesture.releaseDue=false;gesture.released=true; // Guard before invoking any callbacks (save/HUD).
+    gesture.result=release(gesture.action);
+    lastGesture={action:gesture.action,phase:'released',released:true,result:gesture.result};
+    return gesture.result;
+  }
+  function release(action){
     if(!rules||!held()||!ACTIONS.includes(action))return false;
     ensureArea();
     if(flights.length>=MAX_FLIGHTS)return false;
@@ -221,6 +285,7 @@
     const elapsed=Number.isFinite(dt)?Math.max(0,dt):0;
     simulationMs+=elapsed*1000;
     const actor=local();
+    if(gesture&&!canAnimate())cancelGesture('interrupted');
     if(!actor?.dodging||actor.health<=0||actor._downed||actor.prone)rules.endDodge(actor);
     for(let i=flights.length-1;i>=0;i--){
       const f=flights[i];f.age+=elapsed;
@@ -245,11 +310,11 @@
     return null;
   }
   window.AdventuringJug=Object.freeze({
-    init,held,buttons,use,registerReceptacle,beginDodge,dodgeStep,update,escapeTarget,isUndead,
+    init,held,buttons,use,advancePose,releasePose,cancelGesture,registerReceptacle,beginDodge,dodgeStep,update,escapeTarget,isUndead,
     onBelt:()=>!held()&&!!rules?.hasLiquid(local()),
     restore:(actor,state)=>{clear();return rules?.restore(actor,state);},
     isConsecrated:t=>rules?.isConsecrated(t)||false,
     dodgeProtected:(actor,a)=>rules?.dodgeProtected(actor,a)||false,
-    debug:()=>({...rules?.debug(local()),held:held(),flights:flights.length,lastTrace}),
+    debug:()=>({...rules?.debug(local()),held:held(),flights:flights.length,lastTrace,animation:gesture?{action:gesture.action,elapsed:gesture.elapsed,strike:gestures[gesture.action].strike,released:gesture.released,pose:{...sampledPose}}:null,lastGesture}),
   });
 })();
