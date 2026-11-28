@@ -346,9 +346,9 @@
     if (!nearestElevatorBlock || currentArea() !== MAP_ID) return;
     const bind = window.InputBindings?.getCurrentBindings?.()?.desktop?.interact;
     if (!bind || String(bind).split('+').pop().trim() !== event.code) return;
+    if (!window.DevRandomRuinInteractions?.invokeFocusedControl?.('elevatorpushblock', nearestElevatorBlock)) return; // Never push a nearby block unless the same live reticle selector offers it.
     event.preventDefault();
     event.stopImmediatePropagation();
-    pushElevatorBlock(nearestElevatorBlock);
   }, true);
 
   function updateBadge() {

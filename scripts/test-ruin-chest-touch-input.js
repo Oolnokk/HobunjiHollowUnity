@@ -72,13 +72,15 @@ const claimRow = {
   action: 'dev_ruin_world_fixed_action1_0', kind: 'dungeonchest', label: 'Open Weathered Dungeon Chest',
   inputAction: 'action1', priority: 22, nativeInput: false, onPress() { claimedChestOpens++; },
 }; // Same fields produced by the authoritative ruin mapper for a discovered chest.
+let liveRows = [claimRow]; // The press-time resolver may differ from the advertised snapshot.
 const claimContext = {
+  inRuin: () => true, currentRows: () => liveRows,
   window: { WorldActionInputClaims: claimsWindow.WorldActionInputClaims,
     AdventuringTools: { isHoldingTorch: () => false } },
   PROXIMITY_DOOR_KINDS: new Set(['transitdoor', 'v50nativetransitdoor']),
   INPUT_CLAIM_OWNER: 'dev-random-ruin',
 };
-const syncSource = between(ruin, '  function syncInputClaims(rows) {', '\n\n  // Distance is deliberately left out:');
+const syncSource = between(ruin, '  function liveClaimHandlers(row) {', '\n\n  // Distance is deliberately left out:');
 const syncClaims = vm.runInNewContext(syncSource + '\nsyncInputClaims', claimContext);
 syncClaims([claimRow]);
 const route = claimsWindow.GameplayInputRouter.route; // Real input router receives physical touch and keyboard events.
@@ -90,6 +92,10 @@ assert.equal(route('action1', 'release', { source: 'touch-arch:7' }), true);
 assert.equal(route('action1', 'press', { source: 'controller:Button0' }), true);
 assert.equal(claimedChestOpens, 2, 'controller uses same canonical claim');
 assert.equal(route('action1', 'release', { source: 'controller:Button0' }), true);
+liveRows = [];
+assert.equal(route('action1', 'press', { source: 'controller:look-away' }), true);
+assert.equal(claimedChestOpens, 2, 'a cached claim cannot open an off-reticle chest');
+route('action1', 'release', { source: 'controller:look-away' });
 claimsWindow.WorldActionInputClaims.clearClaims('dev-random-ruin');
 assert.equal(route('action1', 'press', { source: 'touch-arch:8' }), false,
   'lost claim falls back to generic action handling rather than activating a stale chest');
@@ -101,7 +107,7 @@ const holdReleases=[]; // Captures normal and canceled releases so the rope neve
 const holdRow={kind:'ropebrake',label:'Hold to Stop / Adjust Rope',inputAction:'action1',
   priority:99,nativeInput:false,touchIcon:'✋',
   onHoldStart(){holdStarts++;},onHoldEnd(detail){holdReleases.push(detail);} };
-syncClaims([holdRow]);
+liveRows = [holdRow]; syncClaims([holdRow]);
 const heldClaim=claimsWindow.WorldActionInputClaims.claimFor('action1');
 assert.equal(heldClaim?.showInArch,true,'hold-only adjust occupies a native press/release touch arch slot');
 assert.equal(heldClaim?.hudIcon,'✋','the held action retains its pictured hand icon');
@@ -109,7 +115,9 @@ assert.equal(route('action1','press',{source:'touch-arch:held'}),true);
 assert.equal(holdStarts,1,'a touch pointerdown begins rope straightening immediately');
 assert.equal(route('action1','press',{source:'touch-arch:held'}),true);
 assert.equal(holdStarts,1,'touch repeat does not retrigger the adjustment');
+liveRows = []; // Looking away after a valid hold must not strand the rope.
 assert.equal(route('action1','release',{source:'touch-arch:held'}),true);
+liveRows = [holdRow];
 assert.equal(holdReleases.length,1,'pointerup ends the straightening hold');
 assert.equal(route('action1','press',{source:'controller:held'}),true);
 assert.equal(holdStarts,2,'controller press uses the same held action');
@@ -122,7 +130,7 @@ assert.equal(claimsWindow.WorldActionInputClaims.claimFor('action1')?.showInArch
 
 // Test the actual HUD pointer capture, not just the claim callback: the visual
 // action arch must render context_arch_action1 so pointerdown and pointerup pair.
-syncClaims([holdRow]);
+liveRows = [holdRow]; syncClaims([holdRow]);
 const pointerListeners={}; // Test DOM remembers the capture listeners the production HUD registers.
 const archDocument={hidden:false,getElementById:()=>({}),
   addEventListener(type,callback){(pointerListeners[type] ||= []).push(callback);} };

@@ -83,7 +83,17 @@ const runtimeWindow = {
   DevRandomRuin: { setDebugBadgePart() {}, isSlidingPushBlock: () => true },
   ControllerInput: { frame: () => ({ isDown: () => true }) }, // Pressed controller A must never be polled as a push.
 };
-const runtimeDocument = { addEventListener() {}, getElementById: () => null };
+const motionListeners = {}; // Capture the legacy keyboard path to verify it cannot bypass the shared focus owner.
+const runtimeDocument = { addEventListener(type,callback) { motionListeners[type]=callback; }, getElementById: () => null };
+runtimeWindow.InputBindings={getCurrentBindings:()=>bindings};
+let aimedBlock=null, focusedInvocations=0;
+runtimeWindow.DevRandomRuinInteractions={invokeFocusedControl(kind,owner){
+  focusedInvocations++;
+  if(kind!=='elevatorpushblock'||owner!==aimedBlock)return false;
+  const control=runtimeWindow.DevRandomRuinMotionRuntime.getInteractionControls().find(c=>c.object===owner);
+  if(!control)return false;
+  control.onPress();return true;
+}};
 vm.runInNewContext(read('docs/js/dev-random-ruin-motion-runtime.js'), {
   window: runtimeWindow,
   document: runtimeDocument,
@@ -105,7 +115,14 @@ const controls = runtimeWindow.DevRandomRuinMotionRuntime.getInteractionControls
 assert.equal(controls.length, 1, 'the nearby block is published to the normal dungeon interaction provider');
 assert.equal(controls[0].claimAction1, true, 'pushing the block uses the separate Action 1 control');
 assert.equal(controls[0].kind, 'elevatorPushBlock', 'published action identifies its world-object type');
-assert.equal(controls[0].onPress(), true, 'the normal dungeon action can still move the block');
+let keyConsumed=0;
+const event={code:'KeyE',preventDefault(){keyConsumed++;},stopImmediatePropagation(){keyConsumed++;}};
+motionListeners.keydown(event);
+assert.equal(focusedInvocations,1,'legacy keyboard Interact asks the shared live focus resolver');
+assert.equal(keyConsumed,0,'off-reticle Interact is not intercepted');
+assert.equal(block.position.x,.7,'keyboard Interact must not push an off-reticle block');
+aimedBlock=block;motionListeners.keydown(event);
+assert.equal(keyConsumed,2,'aimed Interact consumes the key exactly once');
 assert.ok(block.position.x > .7, 'the action moved the block');
 motionArea = 'wilderness';
 assert.equal(controls[0].onPress(), false, 'a stale dungeon action cannot push the block after leaving');
