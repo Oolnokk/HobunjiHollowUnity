@@ -10,8 +10,8 @@ const {chromium}=require('playwright');
     await page.setContent('<html><body></body></html>');
     await page.addScriptTag({path:require.resolve('three/build/three.min.js')});
     const source=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8').replace('  function ordinaryBuildingInterior(area) {',
-      '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();unifiedLightingPaintRevision++;};window.WeatherFX.drawLightingOverlay=drawUnifiedLightingOverlay;};window.__drawLanternTest=()=>drawLanternMasksCompat(1);\n  function ordinaryBuildingInterior(area) {');
-    await page.evaluate(()=>{window.WeatherFX={init(){}};window.DevRandomRuinLichThemes={activeTheme:()=>'kanthic'};});
+      '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();unifiedLightingPaintRevision++;};window.WeatherFX.drawLightingOverlay=drawUnifiedLightingOverlay;};window.__drawLanternTest=()=>drawLanternMasksCompat(1);window.__useRealLighting=deps=>{lightingDeps=deps;window.WeatherFX.drawLightingOverlay=realTestOverlay;};\n  const realTestOverlay=drawUnifiedLightingOverlay;\n  function ordinaryBuildingInterior(area) {');
+    await page.evaluate(()=>{window.WeatherFX={init(){}};window.DevRandomRuinLichThemes={activeTheme:()=>'kanthic'};window.RenderHooks={ORDER:{PLAYER_BODY_COMPOSER:800},register:hook=>{window.__kanthicPoseHook=hook;},isWorldFrameOpen:()=>!!window.__testWorldFrame};});
     await page.addScriptTag({content:source});
     await page.addScriptTag({path:require('node:path').resolve('docs/js/png-plane-outline-occluder.js')});
     const results=await page.evaluate(()=>{
@@ -87,20 +87,30 @@ const {chromium}=require('playwright');
       const mistGroup=voidScene.getObjectByName('cloud_forest_mist_cylinders');
       const projected=new T.Vector3();
       const fixedPlayer={x:-1.5,y:0};
+      const portraitRoot=new T.Group(), portrait=new T.Mesh(new T.PlaneGeometry(.8,1.2),new T.MeshBasicMaterial());
+      portraitRoot.add(portrait);voidScene.add(portraitRoot);
+      portraitRoot.userData.neckRig={skinnedPlane:portrait};
+      window.PlayerBodyTransformComposer={getPlayerMesh:()=>portraitRoot};
       let cinematic=false;
-      window.RuinRoomSystem.lightAllowed=()=>!cinematic; // Camera lantern cannot be rejected by a remote player's room ownership.
-      window.RuinRoomSystem.withLightClip=(_ctx,_source,_project,draw)=>cinematic?false:draw();
-      window.__glyphTest({lctx:ctx,camera,player:fixedPlayer,TILE:1,npcWalkers:[],getPlayerWorldY:()=>0,
+      window.RuinRoomSystem.lightAllowed=()=>false; // Even a rendered portrait crossing a room edge must retain its own light.
+      window.RuinRoomSystem.withLightClip=()=>false; // Static room sources remain suppressed; both carried owners must bypass the unrelated filter.
+      const portraitDeps={lctx:ctx,camera,player:fixedPlayer,TILE:1,npcWalkers:[],getPlayerWorldY:()=>0,
         getCurrentArea:()=> 'map_i_dev_random_ruin',getActiveScene:()=>voidScene,getSceneTransAlpha:()=>0,
         getThreeRect:()=>({width:1024,height:1024}),worldToOverlay:(x,y,z)=>{
           projected.set(x,y,z).project(camera);
           return {x:(projected.x+1)*512,y:(1-projected.y)*512};
-        }},()=>{});
-      window.CinematicCameraRuntime={isActive:()=>cinematic};
+        },getLightningAlpha:()=>0,_isBuildingArea:()=>false,getFurnitureLightSources:()=>[]};
+      window.__glyphTest(portraitDeps,()=>{});
+      const shotRecord={areaId:'map_i_dev_random_ruin',camera:{id:'test-shot'},reason:'ruin-reveal'};
+      let selectedOnly=false;
+      window.CinematicCameraRuntime={isActive:()=>cinematic||selectedOnly,activeRecord:()=>cinematic||selectedOnly?shotRecord:null,appliedRecordFor:(view,area)=>cinematic&&view===camera&&area===shotRecord.areaId?shotRecord:null};
       window.RuinRoomSystem.glyphRegionAt=x=>x>10?'room:shot':region;
       bounds['room:shot']={minX:10,maxX:20,minZ:0,maxZ:10,minY:0,maxY:10};
-      function cameraSample(x,y,z,tx,ty,tz,shot,playerX,playerZ){
-        cinematic=shot;fixedPlayer.x=playerX;fixedPlayer.y=playerZ;
+      function cameraSample(x,y,z,tx,ty,tz,shot,playerX,playerZ,portraitOffset=.35,detached=false,selected=false){
+        cinematic=shot;selectedOnly=selected;fixedPlayer.x=playerX;fixedPlayer.y=playerZ;
+        portraitRoot.position.set(playerX,0,playerZ);
+        portrait.position.set(Math.sign(playerX)*.22,portraitOffset,.2); // Rendered pose differs from the logical floor anchor.
+        if(detached)portraitRoot.remove(portrait);else if(portrait.parent!==portraitRoot)portraitRoot.add(portrait);
         camera.position.set(x,y,z);camera.lookAt(tx,ty,tz);camera.updateMatrixWorld(true);
         api.update(.016); // Simulate ordinary gameplay mist placement before final render-camera sync.
         api.prepareKanthicGlyphFrame(voidScene,clock+=20,camera);
@@ -108,14 +118,14 @@ const {chromium}=require('playwright');
           const diag=api.getDebugState(),anchor=diag.kanthicCameraAtmosphere;
           const dir=camera.getWorldDirection(new T.Vector3());
           const expected=camera.position.clone().addScaledVector(dir,.75);
-          const expectedLight=shot?camera.position.clone().addScaledVector(dir,2.25):new T.Vector3(fixedPlayer.x,.5,fixedPlayer.y);
+          const expectedLight=shot?camera.position.clone().addScaledVector(dir,2.25):detached?new T.Vector3(fixedPlayer.x,.5,fixedPlayer.y):portrait.getWorldPosition(new T.Vector3());
           const exact=mistGroup.children.every(m=>m.position.distanceTo(expected)<1e-8);
           const lightExact=new T.Vector3(anchor.lantern.x,anchor.lantern.y,anchor.lantern.z).distanceTo(expectedLight)<1e-8;
           ctx.globalCompositeOperation='source-over';ctx.clearRect(0,0,1024,1024);ctx.fillStyle='black';ctx.fillRect(0,0,1024,1024);
           window.__drawLanternTest();
           const lightPixel=expectedLight.clone().project(camera);
           const lx=Math.round((lightPixel.x+1)*512),ly=Math.round((1-lightPixel.y)*512);
-          return {exact,lightExact,mode:anchor.lantern.mode,shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
+          return {exact,lightExact,mode:anchor.lantern.mode,source:anchor.lantern.anchor,detached,selectedShot:anchor.selectedShot,appliedShot:anchor.appliedShot,radius:anchor.lantern.radiusTiles,apiRadius:api.getKanthicLanternRadiusTiles(),shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
         }finally{api.endKanthicGlyphFrame();}
       }
       const cameraSamples=[cameraSample(0,1,3,0,1,0,false,-1.5,0),
@@ -123,9 +133,45 @@ const {chromium}=require('playwright');
         cameraSample(0,1,3,0,1,0,true,-100,-100), // Mode changes with no camera movement.
         cameraSample(4,3,4,7,2,4,true,-100,-100),cameraSample(14,6,5,17,5,5,true,-100,-100),
         cameraSample(0,1,3,0,1,0,true,-100,-100),
-        cameraSample(0,1,3,0,1,0,false,-1.5,0)]; // Return to player ownership without camera movement.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0), // Return to portrait ownership without camera movement.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0,1.25), // Portrait alone moves vertically while the player and camera stay still.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0,.35,true), // Detached rig safely falls back to logical player coordinates.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0), // Reattached portrait takes ownership again.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0,.35,false,true)]; // Selected but unapplied cinematic must never move the light to screen center.
+      // A real rendered pose is changed after preparation, then undone like the body compositor does.
+      // The final mask must use the captured pose in both GPU and DOM paths, with no surface repair during the late pass.
+      window.__useRealLighting(portraitDeps);
+      let repairs=0,boundRepairs=0,worldTargetBound=false;
+      window.WeatherFX.ensurePresentationSurface=()=>{repairs++;if(worldTargetBound)boundRepairs++;return {rect:{width:1024,height:1024}};};
+      function composedSample(withGlyph){
+        window.__testWorldFrame=true;selectedOnly=false;cinematic=false;region=withGlyph?'room:void':null;
+        portraitRoot.position.set(-1.5,0,0);portrait.position.set(-.22,.35,.2);
+        camera.position.set(0,1,3);camera.lookAt(0,1,0);camera.updateMatrixWorld(true);
+        api.prepareKanthicGlyphFrame(voidScene,clock+=20,camera);
+        let renderedCenter,anchor,afterRollback;
+        try{
+          worldTargetBound=true;renderer.setRenderTarget(rt);
+          portrait.position.y=1.15;portrait.position.x=-.4;
+          renderer.render(voidScene,camera);
+          const hookCtx={scene:voidScene,camera,worldScene:true};
+          if(!window.__kanthicPoseHook.appliesTo(hookCtx))throw Error('pose hook did not own first world draw');
+          window.__kanthicPoseHook.afterRender(hookCtx);
+          renderedCenter=portrait.getWorldPosition(new T.Vector3());
+          portrait.position.set(-.22,.35,.2); // Rollback before the glyph pass also exercises render-scope debug mode.
+          api.renderKanthicGlyphFrame(renderer,camera,voidScene,false);
+          anchor=api.getDebugState().kanthicCameraAtmosphere.lantern;
+        }finally{worldTargetBound=false;renderer.setRenderTarget(null);api.endKanthicGlyphFrame();window.__testWorldFrame=false;}
+        window.WeatherFX.drawLightingOverlay();
+        afterRollback=api.getDebugState().kanthicCameraAtmosphere.lantern;
+        const ndc=renderedCenter.clone().project(camera);
+        return {worldExact:new T.Vector3(anchor.x,anchor.y,anchor.z).distanceTo(renderedCenter)<1e-8,
+          screenExact:Math.hypot(anchor.screen.x-(ndc.x+1)*512,anchor.screen.y-(1-ndc.y)*512)<1e-6,
+          survivesRollback:afterRollback.x===anchor.x&&afterRollback.y===anchor.y&&afterRollback.z===anchor.z,
+          alpha:ctx.getImageData(Math.round(anchor.screen.x),Math.round(anchor.screen.y),1,1).data[3],boundRepairs,repairs};
+      }
+      const composedGpu=composedSample(true),composedDom=composedSample(false);
       rt.dispose();renderer.dispose();
-      return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect,cameraSamples};
+      return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect,cameraSamples,composedGpu,composedDom};
     });
     for(const x of [results.a,results.b]){
       assert(x.left[1]>150,'unoccluded active-room glyph is bright: '+JSON.stringify(x));
@@ -148,11 +194,25 @@ const {chromium}=require('playwright');
     for(const sample of results.cameraSamples){
       assert(sample.exact&&sample.lightExact,'mist follows the camera and lantern follows the correct owner: '+JSON.stringify(sample));
       assert.equal(sample.mode,sample.shot?'camera':'player');
+      assert.equal(sample.radius,2,'debug reports the 2-tile default');
+      assert.equal(sample.apiRadius,2,'rope and other light consumers receive the same radius');
       assert(sample.alpha<100,'real lantern mask opens at its selected source: '+JSON.stringify(sample));
-      if(!sample.shot)assert(sample.centerAlpha>180,'normal gameplay does not illuminate the camera center instead of the player: '+JSON.stringify(sample));
+      if(!sample.shot){
+        assert.equal(sample.source,sample.detached?'ground-fallback':'portrait-plane');
+        assert(sample.centerAlpha>180,'normal gameplay does not illuminate the camera center instead of the player: '+JSON.stringify(sample));
+      }
     }
     assert.equal(results.cameraSamples[4].region,'room:shot','cinematic glyph ownership follows the rendered view');
     assert.equal(results.cameraSamples[6].region,'room:void','returning to gameplay restores player-room ownership');
+    const selectedOnlySample=results.cameraSamples.at(-1);
+    assert.equal(selectedOnlySample.selectedShot,'test-shot');
+    assert.equal(selectedOnlySample.appliedShot,null);
+    assert.equal(selectedOnlySample.mode,'player','an unapplied record cannot own the lantern');
+    for(const sample of [results.composedGpu,results.composedDom]){
+      assert(sample.worldExact&&sample.screenExact&&sample.survivesRollback,'mask follows the actual rendered plane through rollback: '+JSON.stringify(sample));
+      assert(sample.alpha<100,'actual production darkness is cleared at the rendered portrait: '+JSON.stringify(sample));
+      assert.equal(sample.boundRepairs,0,'surface repair must precede the bound world depth target');
+    }
     assert(results.restored,'DOM canvas, source visibility, material clipping and renderer state restore');
     assert.deepEqual(errors,[],'no WebGL or page errors');
     console.log('Kanthic real WebGL: target/direct partial occlusion, room clipping, bounded upload and cleanup OK');

@@ -12,6 +12,7 @@
   let deps = null;
   const camerasByArea = new Map(); // areaId -> normalized authored cameras used by dialogue/cutscene camera lookup.
   let active = null; // { areaId, camera, reason } consumed by game.js's camera override.
+  const appliedShots = new WeakMap(); // Last successfully applied authored record per real camera, for render effects that need actual ownership.
   let dialogueContext = null; // Current NPC conversation, used by node-level camera swaps.
   let petFade = 0; // 0 = ordinary pet visibility, 1 = fully faded for the current cinematic shot.
   const fadedMaterials = new Map(); // mesh -> { originalMaterial, states }; temporary fade clones are restored/disposed when the shot ends.
@@ -142,9 +143,10 @@
   //                       camera aims through the diameter at its antipodal point.
   function createActorOrbitShot(subjects, options = {}) {
     const T = window.THREE;
-    if (!T?.Vector3 || !Array.isArray(subjects) || subjects.length !== 2
-      || subjects[0]?.id === subjects[1]?.id || subjects.some(actor => !actor?.root?.position)) return null;
-    const [a, b] = subjects;
+    const solo = options.singleSubject === true && subjects?.length === 1; // Opt-in for solitary boss reveals; ordinary dialogue still requires two distinct actors.
+    if (!T?.Vector3 || !Array.isArray(subjects) || (!solo && subjects.length !== 2)
+      || (!solo && subjects[0]?.id === subjects[1]?.id) || subjects.some(actor => !actor?.root?.position)) return null;
+    const [a, b = a] = subjects;
     const pA = new T.Vector3(), pB = new T.Vector3(), mid = new T.Vector3();
     const position = new T.Vector3(), target = new T.Vector3();
     const started = performance.now();
@@ -153,7 +155,7 @@
     const speedRad = finite(options.speedDegPerSec, 6) * Math.PI / 180;
     const focusActorId = String(options.focusActorId || '');
     const focusActor = subjects.find(actor => String(actor.id) === focusActorId) || null;
-    const heightMode = ['focusFace', 'focusFaceOffset', 'oppositeFaceArc'].includes(options.heightMode)
+    const heightMode = (solo ? ['focusFace', 'focusFaceOffset'] : ['focusFace', 'focusFaceOffset', 'oppositeFaceArc']).includes(options.heightMode)
       ? options.heightMode : 'default';
     const faceHeightOffset = finite(options.faceHeightOffset, 0);
     const eyeRatio = Math.max(0.1, finite(options.targetHeight, 0.68));
@@ -172,7 +174,7 @@
       return out;
     }
     function updateMidpoint() {
-      anchor(a, pA); anchor(b, pB);
+      anchor(a, pA); if(solo)pB.copy(pA);else anchor(b, pB);
       mid.copy(pA).add(pB).multiplyScalar(0.5);
       return mid;
     }
@@ -280,10 +282,11 @@
     let blend = null; // One transition record per actual activated shot.
     let transitions = 0; // Exposed to mobile/editor diagnostics for detecting unintended restarts.
     return {
-      reset() { blend = null; },
+      reset() { blend = null; appliedShots.delete(camera); },
       snapshot: () => ({ transitions, cameraId: blend?.record?.camera?.id || null, startedAt: blend?.startedAt ?? null }),
       apply(record = activeRecord()) {
         const shot = record?.camera; // Current authored/live shot resolved by the shared selection owner.
+        appliedShots.delete(camera); // Failed/aborted applications must not leave a camera marked cinematic.
         if (!shot) { blend = null; return false; }
         if (!blend || blend.record !== record) {
           blend = { record, startedAt: performance.now(), position: camera.position.clone(), target: lookPoint.clone(), fov: camera.fov };
@@ -307,6 +310,7 @@
         if (aspect) camera.aspect = aspect();
         camera.updateProjectionMatrix();
         framing?.(camera, shot);
+        appliedShots.set(camera, record);
         return true;
       },
     };
@@ -449,6 +453,11 @@
     return shouldStagePlayer() ? (active?.camera?.playerStage || null) : null;
   }
 
+  function appliedRecordFor(camera, areaId) {
+    const applied = camera && appliedShots.get(camera); // A registered/selected record is not proof this camera rendered it.
+    return applied && applied === active && (areaId == null || applied.areaId === String(areaId)) ? applied : null;
+  }
+
   function isActive() {
     return !!active?.camera;
   }
@@ -585,6 +594,7 @@
     endDialogue,
     activeCamera,
     activeRecord,
+    appliedRecordFor,
     resolvedTarget,
     resolvedPosition: () => active?.camera?.positionProvider?.() || active?.camera?.position,
     shouldStagePlayer,

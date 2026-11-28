@@ -1152,12 +1152,18 @@
     const arena = owner.layout.arena, floor = Number(owner.context.meta?.floorSurfaceY) || 0;
     const height = Math.max(1, Number(boss.avatarRef?.modelHeight) || 1.7);
     const x = boss.x / (deps?.TILE || 64), z = boss.y / (deps?.TILE || 64);
-    const shot = {
-      id:'sanctum_boss_reveal', shotKey:'sanctum-'+owner.encounterRevision,
-      position:{x:Math.max(arena.minX+2.8,x-4.8),y:floor+Math.max(1.55,height*.95),z:z+.55},
-      target:{x,y:floor+Math.max(1,height*.75),z},
-      fovDeg:34,blendSeconds:.95,dialogueFraming:false,
-    }; // Look back across the arena toward the solitary boss instead of moving the player camera itself.
+    const target = {x,y:floor+Math.max(1,height*.75),z}; // Keep the existing torso-centered reveal rather than drifting toward the player.
+    const start = {x:Math.max(arena.minX+2.8,x-4.8),y:floor+Math.max(1.55,height*.95),z:z+.55}; // Start on the original arena side, facing the lich's turn.
+    const shotId = 'sanctum_boss_reveal', shotKey = 'sanctum-'+owner.encounterRevision; // A fresh blend/orbit clock for every encounter.
+    const shot = camera?.createActorOrbitShot?.([{
+      id:String(boss.id || 'sanctum-lich'), root:{position:{x,y:floor,z}}, walker:{avatarHeight:height},
+      faceWorldPosition:()=>target, // Frozen combat actor: use the original authored world anchor, not the sprite's varying root height.
+    }], {
+      singleSubject:true,id:shotId,shotKey,distanceTiles:Math.hypot(start.x-x,start.z-z),
+      startAzimuthDeg:Math.atan2(start.x-x,start.z-z)*180/Math.PI,
+      heightMode:'focusFaceOffset',faceHeightOffset:start.y-target.y,
+      fovDeg:40,blendSeconds:.95,horizontalCameraCollision:true,
+    }) || {id:shotId,shotKey,position:start,target,fovDeg:40,blendSeconds:.95,dialogueFraming:false}; // Shared cutscene orbit defaults to 6 degrees/sec; static fallback for hosts without the orbit helper.
     if (!camera?.activate?.(MAP_ID,shot,{reason:'ruin-sanctum-boss-intro'})) {
       owner.lastEncounterEvent='camera-unavailable';
       deps?.hostileObjects?.add?.(boss);
@@ -1494,7 +1500,7 @@
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
-        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, introFacing:s.intro ? +s.intro.boss.facing.toFixed(3) : null, introShriekPlayed:!!s.intro?.shriekPlayed, introEchoesPlayed:s.intro?.echoesPlayed || 0, introLightActive:!!s.introLight?.active, sanctumLightsLit:(s.sanctumLights||[]).filter(light=>light.active).length, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
+        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, introFacing:s.intro ? +s.intro.boss.facing.toFixed(3) : null, introOrbit:s.intro ? window.CinematicCameraRuntime?.activeRecord?.()?.camera?.orbitDebug || null : null, introShriekPlayed:!!s.intro?.shriekPlayed, introEchoesPlayed:s.intro?.echoesPlayed || 0, introLightActive:!!s.introLight?.active, sanctumLightsLit:(s.sanctumLights||[]).filter(light=>light.active).length, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
         coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
       };
     },

@@ -126,7 +126,12 @@ vm.runInNewContext(read('docs/js/cinematic-camera-runtime.js'),timed);
 const rt=timed.window.CinematicCameraRuntime, view={position:new V(),fov:50,lookAt(){},updateProjectionMatrix(){}}, aim=new V();
 const blend=rt.createBlendController({camera:view,lookPoint:aim});
 const fixed={id:'hold',position:{x:10,y:2,z:0},target:{x:0,y:1,z:0},blendSeconds:1,fovDeg:50};
-const first=rt.activate('room',fixed);blend.apply();clock=500;blend.apply();assert.equal(view.position.x,5);
+const first=rt.activate('room',fixed);
+assert.equal(rt.appliedRecordFor(view,'room'),null,'selection does not control the view yet');
+blend.apply();assert.strictEqual(rt.appliedRecordFor(view,'room'),first);
+assert.equal(rt.appliedRecordFor(view,'other'),null,'another area cannot inherit an applied shot');
+assert.equal(rt.appliedRecordFor({},'room'),null,'another camera cannot inherit the shot');
+clock=500;blend.apply();assert.equal(view.position.x,5);
 assert.strictEqual(rt.activate('room',fixed),first);assert.equal(first.activatedAt,0);
 clock=750;blend.apply();assert.equal(view.position.x,8.4375);assert.equal(blend.snapshot().transitions,1);
 // Mutating a registered camera transform still creates a genuine new shot.
@@ -138,7 +143,9 @@ const live=()=>({id:'live',shotKey:'same-rig',positionProvider:()=>({x:targetX+4
 const liveRecord=rt.activate('room',live());blend.apply();targetX=7;assert.strictEqual(rt.activate('room',live()),liveRecord);blend.apply();assert.equal(view.position.x,11);assert.equal(aim.x,7);
 assert.equal(blend.snapshot().transitions,3);
 rt.activate('room',{...live(),shotKey:'different-offset'});blend.apply();assert.equal(blend.snapshot().transitions,4);
-rt.deactivate();assert.equal(blend.apply(),false);assert.equal(blend.snapshot().cameraId,null);
+blend.reset();assert.equal(rt.appliedRecordFor(view,'room'),null,'camera ownership reset clears the applied record');
+blend.apply();assert(rt.appliedRecordFor(view,'room'));
+rt.deactivate();assert.equal(rt.appliedRecordFor(view,'room'),null,'deactivation immediately releases ownership');assert.equal(blend.apply(),false);assert.equal(blend.snapshot().cameraId,null);
 console.log('Persistent shots, edited transforms, live targets and explicit zero-duration blends passed');
 
 // Capturing a new view preserves its FOV and refreshes the visible camera list immediately.

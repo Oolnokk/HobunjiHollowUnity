@@ -30,11 +30,13 @@ class Points extends Mesh{constructor(g,m){super(g,m);this.isMesh=false;this.isP
 class Texture{constructor(image){this.image=image;}}
 class Shader{constructor(o){Object.assign(this,o);}}
 let tradition='kanthic',area='map_i_dev_random_ruin',region='room:a',fade=0,paintCount=0,depthCount=0;
+let worldFrameOpen=false,poseHook=null; // Simulate the real RenderHooks bracket without a WebGL context.
 const bounds=(minX,maxX,minY=-Infinity,maxY=Infinity)=>({minX,maxX,minY,maxY,minZ:0,maxZ:5});
 const regions={'room:a':bounds(0,5,-1,5),'room:b':bounds(5,10,-1,5),shaft:bounds(10,20)};
 const roomSystem={activeGlyphRegion:()=>region,glyphRegionBounds:id=>regions[id]};
 const win={THREE:{Vector3:Vec,Box3:Box,Plane,Scene,Mesh,Points,CanvasTexture:Texture,ShaderMaterial:Shader,Camera,PlaneGeometry:class{}},
   WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition},RuinRoomSystem:roomSystem,
+  RenderHooks:{ORDER:{PLAYER_BODY_COMPOSER:800},register:hook=>{poseHook=hook;},isWorldFrameOpen:()=>worldFrameOpen},
   PngPlaneOutlineOccluder:{renderDepth(){depthCount++;}}};
 vm.runInNewContext(fog,{window:win,performance:{now:()=>2000},console});
 const api=win.CloudForestFog,canvas={width:500,height:500,style:{visibility:''}};
@@ -116,6 +118,49 @@ assert.equal(frame(2065),false);assert.equal(api.getDebugState().ruinEngravingGl
 renderer.render=normalRender;assert.equal(frame(2066),true);
 area='farm';assert.equal(api.prepareKanthicGlyphFrame(scene,2070),false);assert.equal(canvas.style.visibility,'');
 area='map_i_dev_random_ruin';tradition='hronal';assert.equal(api.prepareKanthicGlyphFrame(scene,2080),false);
+// The real player's named avatar must win over a carried child's valid neck rig.
+{
+tradition='kanthic';region=null;fireLight.active=false;
+const playerRoot=new Scene(),avatar=new Scene(),child=new Scene();
+avatar.name='player_avatar';child.name='carried_toddler';
+const bodyPoint=new Vec(2,1,3),childPoint=new Vec(8,8,8);
+const body={getWorldPosition:out=>out.copy(bodyPoint)},childPlane={getWorldPosition:out=>out.copy(childPoint)};
+avatar.userData={neckRig:{skinnedPlane:body}};child.userData={neckRig:{skinnedPlane:childPlane}};
+avatar.add(body);child.add(childPlane);playerRoot.add(child);playerRoot.add(avatar);scene.add(playerRoot);
+win.PlayerBodyTransformComposer={getPlayerMesh:()=>playerRoot};
+deps.player={x:2,y:3};deps.TILE=1;deps.getActiveScene=()=>scene;deps.getThreeRect=()=>({width:500,height:500});
+deps.camera=camera;camera.getWorldPosition=out=>out.set(0,1,3);camera.getWorldDirection=out=>out.set(0,0,-1);
+camera.matrixWorld={elements:Array.from({length:16},(_,i)=>i%5===0?1:0)};
+camera.projectionMatrix={elements:camera.matrixWorld.elements.slice()};
+const anchor=()=>api.getDebugState().kanthicCameraAtmosphere.lantern;
+function prepOnly(now){api.prepareKanthicGlyphFrame(scene,now,camera);api.endKanthicGlyphFrame();}
+prepOnly(2100);assert.equal(anchor().x,2);assert.equal(anchor().anchor,'portrait-plane');
+playerRoot.remove(avatar);prepOnly(2110);
+assert.equal(anchor().anchor,'ground-fallback','a carried toddler is never selected as the player during a rebuild');
+assert.equal(anchor().y,.5);
+playerRoot.add(avatar);prepOnly(2120);assert.equal(anchor().y,1);
+let paints=paintCount;prepOnly(2130);assert.equal(paintCount,paints,'unchanged camera and avatar retain the existing mask');
+camera.matrixWorld.elements[0]=.9;prepOnly(2140);
+assert.equal(paintCount,++paints,'camera roll invalidates the mask even with an unchanged forward ray');
+camera.projectionMatrix.elements[8]=.2;prepOnly(2150);
+assert.equal(paintCount,++paints,'off-axis projection invalidates without changing the camera position or FOV');
+// The frame-scoped compositor changes and restores the avatar around a native draw.
+let repairs=0,bound=false;
+win.WeatherFX.ensurePresentationSurface=()=>{assert(!bound,'no renderer repair with world depth bound');repairs++;return {rect:deps.getThreeRect()};};
+worldFrameOpen=true;
+api.prepareKanthicGlyphFrame(scene,2160,camera);
+assert.equal(paintCount,paints,'world-frame preparation repairs surfaces but defers the actual mask paint');
+assert.equal(repairs,1);
+bound=true;bodyPoint.y=1.8;
+const hookCtx={scene,camera,worldScene:true};
+assert(poseHook.appliesTo(hookCtx));poseHook.afterRender(hookCtx);assert.equal(anchor().y,1.8);
+assert(!poseHook.appliesTo(hookCtx),'auxiliary passes cannot overwrite the captured pose');
+bodyPoint.y=1;
+assert.equal(api.renderKanthicGlyphFrame(renderer,camera,scene),false,'unassigned corridor retains the DOM darkness fallback');
+assert.equal(paintCount,++paints,'one final paint even without glyphs');
+assert.equal(anchor().y,1.8,'render rollback cannot overwrite the displayed anchor');
+bound=false;api.endKanthicGlyphFrame();worldFrameOpen=false;
+}
 const rooms=require('../docs/js/ruin-room-system.js');
 let player={x:2,z:2},py=0;
 const session=rooms.mount({layout:{shaft:{x:10,z:10,w:10,d:10},rooms:[
