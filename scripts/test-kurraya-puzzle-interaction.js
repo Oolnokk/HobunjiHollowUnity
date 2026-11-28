@@ -116,6 +116,10 @@ function makeHost() {
   loadingGame.window.MusicMinigame.close();
 
   const game=makeHost();
+  game.window.Shattercasks = { heldBurdenInfo: () => ({ kind: 'familyBaby' }) };
+  assert.equal(game.window.MusicMinigame.beginPlayerSession(), false, 'music cannot take over the hands during toddler carry');
+  assert.equal(game.actions().instrumentLockCount, 0, 'a blocked start leaves gameplay controls alone');
+  game.window.Shattercasks = { heldBurdenInfo: () => null, backCarriedInfo: () => ({ kind: 'familyBaby' }) };
   assert.equal(game.window.MusicMinigame.beginPlayerSession(),true);
   assert.equal(game.window.MusicMinigame.state.instrumentMode,'puzzle');
   assert.equal(game.window.ControllerInput.owner,'music-puzzle','puzzle claims gameplay action inputs before the iframe loads');

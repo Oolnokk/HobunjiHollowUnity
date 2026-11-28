@@ -1298,6 +1298,7 @@
   });
   registerActivity('music', (payload, prop) => {
     if (!festivalHours()) return fail('The music gathering is not underway.');
+    if (window.Shattercasks?.heldBurdenInfo?.()) return fail('Free your hands before playing an instrument.');
     window.FestivalUI.close();
     window.MusicMinigame?.beginPlayerSession();
     if (!window.MusicMinigame?.state?.active) return fail('Equip a Kurraya before joining the musicians.');
