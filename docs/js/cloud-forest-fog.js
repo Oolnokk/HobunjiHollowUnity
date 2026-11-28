@@ -57,7 +57,8 @@
     Object.freeze({ radius: 4.5, opacity: 1 }),
   ]); // Used by the existing three player-centered meshes only.
   const KANTHIC_CAMERA_MIST_LEAD = 0.75; // Keep the lens inside the inner shell while centering its view just ahead of it.
-  const KANTHIC_CAMERA_LANTERN_DEPTH = 2.25; // Project the existing sub-tile light from a stable point along the active camera's view ray.
+  const KANTHIC_CAMERA_LANTERN_DEPTH = 2.25; // Project the lantern from a stable point along the active camera's view ray.
+  const KANTHIC_LANTERN_RADIUS_SCALE = 0.66; // Shared mask and radius API: midpoint between the former full radius and the 0.32 contraction.
   const KANTHIC_VOID_HEIGHT = 128; // Span the shaft above and below the player without adding cylinder segments.
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const RUIN_SCREEN_TINT_ALPHA = 0.07; // Used once per ruin lighting redraw for a gentle full-screen tradition tint.
@@ -789,7 +790,7 @@
     const currentArea = lightingDeps.getCurrentArea(); // Use the same carried-lantern gradient in every room; Tothal alone suppresses it.
     const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
     if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
-    const ruinLanternScale = ruinTradition === 'kanthic' ? 0.32 : 1; // Default 2.4 tiles contracts to 0.768 in Kanthic, with the same smooth falloff.
+    const ruinLanternScale = ruinTradition === 'kanthic' ? KANTHIC_LANTERN_RADIUS_SCALE : 1; // Default 2.4 tiles contracts to 1.584 in Kanthic, with the same smooth falloff.
     const ctx = lightingDeps.lctx;
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // The player farmhouse's special base-light rule uses its active scene identity.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Unlike mines, the farmhouse has no permanently lit player torch.
@@ -1743,7 +1744,7 @@
     invalidateKanthicGlyphs:()=>{ruinGlowNextScan=0;},
     setLayerRadius,
     setLayerOpacity,
-    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*0.32, // Reports the same effective tiny radius used by the shared compositor.
+    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*KANTHIC_LANTERN_RADIUS_SCALE, // Reports the same effective radius used by the shared compositor.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
     projectLightMask: (x, y, z, radiusTiles, context) => lightingDeps ? projectLightMask(x, y, z, radiusTiles, context) : null, // Secondary gameplay overlays share this projection and coverage.
     outdoorLightVisibilityAt: (x, y, z, radiusTiles = 0) => {
@@ -1780,7 +1781,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic black mist and lantern reveal follow the final camera pose, including cinematic blends; depth-tested emissions pierce the fog.',
+        latestChange: 'Kanthic lantern radius is halfway between its former full and contracted sizes; camera-following black mist and depth-tested emissions are unchanged.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
@@ -1807,7 +1808,7 @@
           lantern: { ...tuning.lantern },
         },
         outlineMistRedrawLayers: group?.visible ? lastRedrawLayerCount : 0,
-        kanthicCameraAtmosphere: kanthicCameraValid ? { center: {x:kanthicCameraMistCenter.x,y:kanthicCameraMistCenter.y,z:kanthicCameraMistCenter.z}, lantern: {x:kanthicCameraLantern.x,y:kanthicCameraLantern.y,z:kanthicCameraLantern.z} } : null, // Actual final-camera anchors for mobile QA.
+        kanthicCameraAtmosphere: kanthicCameraValid ? { center: {x:kanthicCameraMistCenter.x,y:kanthicCameraMistCenter.y,z:kanthicCameraMistCenter.z}, lantern: {x:kanthicCameraLantern.x,y:kanthicCameraLantern.y,z:kanthicCameraLantern.z,radiusTiles:tuning.lantern.radiusTiles*KANTHIC_LANTERN_RADIUS_SCALE} } : null, // Actual final-camera anchors and effective lantern radius for mobile QA.
         effectiveMistLayers: group?.visible ? layers.map(({ mesh }) => ({ visible: mesh.visible, radiusTiles: mesh.scale.x, height: mesh.scale.y, opacity: mesh.material.opacity, color: `#${mesh.material.color.getHexString()}`, textured: !!mesh.material.map })) : [], // Actual material values for phone-readable QA.
         treeFade: window.ZoneTreeFade?.snapshot(),
         layers: layerLive.map(l => ({ ...l })),
