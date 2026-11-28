@@ -44,7 +44,18 @@
     }, true);
   }
 
-  // Fetch each tiny manifest fresh; its component URLs retain their own cache-bust versions.
-  const manifestUrl = 'js/bootstrap/classic-groups/' + group + '.js?load=' + Date.now(); // Per-navigation manifest URL.
+  // Commit-pinned GitHack previews have immutable paths, so use its production CDN
+  // for the tiny manifests. Its development host can throttle requests, and
+  // random query tokens do not bypass GitHack's cache. Branch/local previews
+  // still fetch the latest manifest while each child retains its own version.
+  const pageLocation = window.location; // Selects the CDN only for an exact commit-pinned GitHack page.
+  const gitHackHost = pageLocation?.hostname === 'raw.githack.com'
+    || pageLocation?.hostname === 'rawcdn.githack.com'; // Both documented GitHack preview hosts.
+  const commitRoute = gitHackHost
+    ? String(pageLocation.pathname || '').match(/^\/[^/]+\/[^/]+\/[0-9a-f]{40}(?=\/docs(?:\/|$))/i)
+    : null; // Never redirect a mutable branch name or an unrelated local document.
+  const manifestUrl = commitRoute
+    ? 'https://rawcdn.githack.com' + commitRoute[0] + '/docs/js/bootstrap/classic-groups/' + group + '.js'
+    : 'js/bootstrap/classic-groups/' + group + '.js?load=' + Date.now(); // Fresh local/branch manifests.
   document.write('<script src="' + manifestUrl + '"><\/script>');
 })();

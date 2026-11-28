@@ -57,6 +57,27 @@ vm.runInNewContext(loader, context);
 assert.equal(listeners.length, 1, 'repeated group loads must not register duplicate event listeners');
 assert.equal(insertedScripts.length, 2, 'both groups still write their manifest tags');
 
+// Commit-pinned GitHack previews use immutable CDN paths, but mutable and
+// local previews retain cache-busted relative manifest URLs.
+browser.location = {
+  hostname: 'raw.githack.com',
+  pathname: '/Oolnokk/HobunjiHollowUnity/076f4f9a38b7d94daca3da7fe53b12f6819c716f/docs/index.html',
+}; // Browser URL for the host-selection regression.
+doc.currentScript.getAttribute = () => 'festival';
+vm.runInNewContext(loader, context);
+assert(insertedScripts[2].includes('https://rawcdn.githack.com/Oolnokk/HobunjiHollowUnity/076f4f9a38b7d94daca3da7fe53b12f6819c716f/docs/js/bootstrap/classic-groups/festival.js'));
+assert(!insertedScripts[2].includes('?load='), 'commit-pinned URLs are immutable');
+browser.location.pathname = '/Oolnokk/HobunjiHollowUnity/main/docs/index.html';
+vm.runInNewContext(loader, context);
+assert(insertedScripts[3].includes('classic-groups/festival.js?load=4321'), 'branch previews remain fresh');
+browser.location.hostname = 'localhost';
+browser.location.pathname = '/Oolnokk/HobunjiHollowUnity/076f4f9a38b7d94daca3da7fe53b12f6819c716f/docs/index.html';
+vm.runInNewContext(loader, context);
+assert(insertedScripts[4].includes('classic-groups/festival.js?load=4321'), 'localhost stays local');
+browser.location.hostname = 'rawcdn.githack.com';
+vm.runInNewContext(loader, context);
+assert(insertedScripts[5].includes('https://rawcdn.githack.com'), 'CDN-hosted pinned pages stay on the CDN');
+
 // A manifest in <head> may fail before the page has created document.body.
 nodes.clear();
 doc.body = null;
@@ -71,5 +92,7 @@ domReadyCallbacks[0].callback();
 assert.equal(nodes.size, 1, 'body availability surfaces previously silent head-time errors');
 assert.match(nodes.get('classicScriptLoadFailure').textContent, /combat-main, ruin-puzzles/);
 assert.equal(browser.HobunjiClassicScriptGroups.failedGroups.length, 4, 'diagnostics retain all early and late failures');
+listeners[0].callback({ target: { src: 'https://rawcdn.githack.com/o/r/076f4f9a38b7d94daca3da7fe53b12f6819c716f/docs/js/bootstrap/classic-groups/festival.js' } });
+assert(failedGroups.includes('festival'), 'cross-origin CDN resource errors retain mobile warning coverage');
 
 console.log('Manifest load and evaluation errors surface once on mobile without affecting successful startup.');
