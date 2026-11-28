@@ -126,6 +126,7 @@ assert.match(inventoryUiSource, /const trinketGroup = directChild\(section, 'gea
 assert.match(inventoryUiSource, /if \(trinketGroup\) used\.add\(trinketGroup\)/, 'decorator removes the trinket group from orphan leftovers');
 assert.match(inventoryUiSource, /if \(trinketGroup\) ownedSection\.appendChild\(trinketGroup\)/, 'decorator moves trinkets into owned gear');
 assert.match(inventoryUiSource, /\.gear-owned-trinkets \.trinket-inventory-row \{[^}]*flex:0 0 auto;[^}]*height:auto;/, 'trinket cards cannot shrink over adjacent rows');
+assert.match(inventoryUiSource, /if \(slot\.classList\.contains\('trinket-inventory-row'\)\) return;/, 'trinket cards do not become inert nested controller buttons');
 assert.match(inventoryUiSource, /orphanTrinketGroups:/, 'mobile diagnostics report misplaced trinket groups');
 assert.match(compactSource, /\.gear-owned-section\.gear-middle-inventory \{[\s\S]*?overflow-y:auto !important;/, 'owned gear remains the independent scrolling column');
 assert.match(compactSource, /\.inv-equip-section \{[\s\S]*?display:grid !important;/, 'the outer Gear workspace still has two columns');
