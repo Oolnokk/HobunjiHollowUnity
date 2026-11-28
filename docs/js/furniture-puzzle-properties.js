@@ -5,7 +5,7 @@
   'use strict';
 
   const ROLES = Object.freeze(['none', 'activator', 'mechanism']);
-  const ACTIVATORS = Object.freeze(['interact', 'projectile', 'pressurePlate', 'burdenPlate', 'keyStatue', 'torch', 'brazier', 'glyphObelisk', 'stackedObelisk', 'linkedCubePillars']);
+  const ACTIVATORS = Object.freeze(['interact', 'projectile', 'pressurePlate', 'burdenPlate', 'keyStatue', 'torch', 'brazier', 'glyphObelisk', 'stackedObelisk', 'linkedCubePillars', 'liquidVessel']);
   const MECHANISMS = Object.freeze(['toggle', 'stoneDoor', 'bridge', 'bridgeSequence', 'movingDais', 'collapsingStairs', 'pushPuzzleBlock', 'elevatorPushBlock', 'pressurePlate', 'witchBombDispenser', 'torch', 'brazier', 'signalObelisk', 'rotatingObelisk', 'linkedCubePair']);
 
   function text(value, fallback = '') { return String(value ?? fallback).trim(); }
@@ -98,6 +98,9 @@
       completionChannel: text(raw.completionChannel, 'B') || 'B',
       requiredBurdenKind: ['shattercask','soursap','keyStatue'].includes(text(raw.requiredBurdenKind, 'shattercask'))
         ? text(raw.requiredBurdenKind, 'shattercask') : 'shattercask',
+      requiredLiquid:raw.requiredLiquid==='lifeWater'?'lifeWater':'water', // Jug receptacle content is explicit, never inferred from art.
+      requiredLiquidUnits:Math.max(1,Math.min(12,Math.floor(number(raw.requiredLiquidUnits,3)))),
+      liquidPartId:text(raw.liquidPartId,raw.payloadPartId||''),
       payloadSurfaceId: text(raw.payloadSurfaceId),
       payloadPartId: text(raw.payloadPartId),
       bombFuseSeconds: Math.max(1, Math.min(120, number(raw.bombFuseSeconds, 10))), // Per-generated-tube fuse duration in seconds; consumed by HronalWitchBombs.

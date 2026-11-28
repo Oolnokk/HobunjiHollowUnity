@@ -1074,6 +1074,36 @@
     return null;
   }
 
+  // A descending finite projectile touches the top of a voxel at its radius
+  // before its center crosses a registered support plane. Reconcile those two
+  // reports only when the collision really lies on that support's top.
+  function liquidImpactSurfaceY(kind,point,radius,startY,endY,area) {
+    if(kind==='ground')return deps.worldSurfaceY(point.x*deps.TILE,point.z*deps.TILE);
+    if(kind!=='floor'&&kind!=='solid-tile')return null;
+    const support=window.DynamicSurfaces?.sampleSupport?.(point.x,point.z,{area,minY:point.y-radius-.04,maxY:point.y+.04,pad:0});
+    const y=support?.y;
+    if(!Number.isFinite(y))return null;
+    if(kind==='floor')return endY<startY?y:null; // Upward contact is the underside, not a wettable top.
+    if(endY>=startY||startY<y+radius-.025||endY>y+radius+.025)return null;
+    return Math.abs(point.y-(y+radius))<=.04?y:null; // A lateral wall hit remains a wall hit.
+  }
+
+  // The jug uses the same finite terrain and support sweep as ranged projectiles.
+  function traceLiquidSegment(start,end) {
+    if(!deps)return null;
+    const radius=.015;
+    const shaftT=shaftCoverT(start,end,radius),floorT=dynamicSupportHitT(start,end,radius);
+    let first=steppedTerrainImpact(start,end,radius);
+    if(shaftT!==null&&(!first||shaftT<=first.t))first={kind:'solid-tile',t:shaftT};
+    if(floorT!==null&&(!first||floorT<first.t))first={kind:'floor',t:floorT};
+    if(!first)return null;
+    const x=THREE.MathUtils.lerp(start.x,end.x,first.t),z=THREE.MathUtils.lerp(start.z,end.z,first.t),y=THREE.MathUtils.lerp(start.y,end.y,first.t);
+    const surfaceY=liquidImpactSurfaceY(first.kind,{x,y,z},radius,start.y,end.y,deps.getCurrentArea());
+    if(Number.isFinite(surfaceY)){first.y=surfaceY;if(first.kind==='solid-tile')first.kind='floor';}
+    else if(first.kind==='floor')first.kind='solid-tile'; // Never wet the top of a ceiling hit from below.
+    return first;
+  }
+
   function terrainImpactForStep(p) {
     const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
@@ -1911,6 +1941,12 @@
           y: THREE.MathUtils.lerp(p.prevWorldY, p.worldY, fraction),
           z: THREE.MathUtils.lerp(p.prevY, p.y, fraction) / deps.TILE,
         };
+        // Only a burning adventuring torch's real ground/support collision starts the 3x3 tile fire.
+        if(p.itemKey==='torch'&&p.dungeonFire&&p.team==='player'&&hit?.kind!=='cover'){
+          const point=lastTerrainImpact;
+          const floorY=liquidImpactSurfaceY(terrainImpact.kind,point,projectileCollisionRadiusWorld(p),p.prevWorldY,p.worldY,p.areaId);
+          if(Number.isFinite(floorY))window.PersistentGroundFire?.ignite?.({area:p.areaId,x:point.x,z:point.z,y:floorY,square3x3:true,source:'adventuringTorch'});
+        }
         if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t, true);
         if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
         continue;
@@ -2423,7 +2459,7 @@
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {
-    init, applyConfig, throwAdventuringTorch, startPlayerAction, cancelPlayerAction, playerActionLabel,
+    init, applyConfig, traceLiquidSegment, throwAdventuringTorch, startPlayerAction, cancelPlayerAction, playerActionLabel,
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     playerActionState: () => playerAction, // Borrowed read-only live state for animation consumers; unlike __rangedDebug this does not allocate/copy every frame.
     isPlayerThrownFireThroughStrike, fireReleaseFrac, fireWindupFrac, // Shared firing timeline for weapon animation and direct shoulder/hand drivers.

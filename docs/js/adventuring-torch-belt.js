@@ -6,6 +6,7 @@
 
   const SAMPLE_INTERVAL_MS = 100; // Resample the posterior rig at 10 Hz; avoid repeated profile lookup on each frame.
   let root = null; // One stowed attachment root, kept alive across drawing/stowing transitions.
+  let jugArt = null; // Reuses the held jug texture and shared posterior attachment; never allocates per frame.
   let art = null; // The reusable authored PNG owned by HobunjiBeltStowTorchDisplay.
   let fire = null; // Independent HobunjiStowedTorchFire adapter for PNG loading, tinting, motes and their lifetime.
   let lastSampleAt = -Infinity; // Throttles posterior profile lookup while preserving the live character height.
@@ -25,7 +26,8 @@
   }
   function equippedPlane() {
     const deps = global.ProceduralHandAttachments?.gameDeps || global.Combat?.deps;
-    return deps?.toolMeshMap?.adventuring?.userData?.toolPlane || null;
+    const equipped=deps?.toolMeshMap?.adventuring;
+    return equipped?.userData?.itemKey==='torch'||!equipped?.userData?.itemKey?equipped?.userData?.toolPlane||null:null; // A drawn jug must never resize the stowed torch.
   }
   function materialMap(material) {
     const parts = Array.isArray(material) ? material : [material];
@@ -119,7 +121,25 @@
     } // Rebuilds retire the old character's motes and force a new posterior/portrait attachment.
     const burning = torch.isLit(); // Always query the authoritative 30-second flame clock before showing a belt copy.
     const stowed = burning && !torch.isHoldingTorch();
-    root.visible = stowed;
+    const jugStowed=global.AdventuringJug?.onBelt?.()===true;
+    root.visible=stowed||jugStowed;
+    art.visible=stowed;
+    if(jugStowed&&!jugArt){
+      const texture=global.CharacterHeldTools?.toolTextures?.jug;
+      const image=texture?.image;
+      if(image?.width&&image?.height&&global.HobunjiSpritePngSurface?.makeMaterial){
+        const width=.32,height=width*image.height/image.width;
+        const material=global.HobunjiSpritePngSurface.makeMaterial(THREE,texture,'stowed-jug',{side:THREE.DoubleSide,depthWrite:false});
+        jugArt=new THREE.Mesh(new THREE.PlaneGeometry(width,height),material);
+        jugArt.name='stowed_jug_png';jugArt.userData.noOutline=true;jugArt.raycast=()=>{};jugArt.renderOrder=2.16;
+        jugArt.position.set(.22,.12,.025);jugArt.rotation.z=Math.PI/4; // Offset on the opposite belt side and cancel the default torch tilt.
+        root.add(jugArt);
+      }
+    }
+    if(jugArt)jugArt.visible=jugStowed;
+    if (!root.visible) { fire?.retire(); return; }
+    const timestamp = Number.isFinite(Number(frame.timestamp)) ? Number(frame.timestamp) : performance.now();
+    positionAtPosterior(body, timestamp, currentPortrait(body));
     if (!stowed) { fire?.retire(); return; } // Drawing, burnout and throws remove the stowed emitters; the one burn clock continues in AdventuringTools.
     fire?.ensure();
     if (!display?.gripSourcePoint && global.HobunjiHandToolGrips?.authoredPrimaryGripForTool) {
@@ -138,8 +158,6 @@
     display?.setSourceDimensions?.(sourceWidth, sourceHeight); // Cached child transform; no per-frame mesh allocations.
     const idleScale = Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Same live Neutral multiplier as the held torch, including editor overrides.
     display?.setIdleScale?.(idleScale); // Both ends remain equidistant from the actual stowed rotation midpoint.
-    const timestamp = Number.isFinite(Number(frame.timestamp)) ? Number(frame.timestamp) : performance.now();
-    positionAtPosterior(body, timestamp, currentPortrait(body));
     if (!fire?.active) return; // Original PNG or shared engine is not ready; never substitute a different flame style.
     root.updateWorldMatrix?.(true, true); // One final posterior/world-space matrix pass for the ordinary rising torch motes.
     fire?.step(timestamp, torch); // Source recolor, elapsed wick darkening and particle timing remain in the dedicated adapter.
@@ -150,7 +168,8 @@
     get debug() {
       const fireDebug = fire?.debug || {}; // Read independent VFX diagnostics only when the mobile probe opens.
       return {
-        visible: !!root?.visible && !!root.parent,
+        visible: !!root?.visible && !!art?.visible && !!root.parent,
+        jugVisible:!!root?.visible&&!!jugArt?.visible&&!!root.parent,
         attachedToPlayer: !!root && ownerBody === playerBody() && belongsToBody(root, ownerBody),
         attachedToPortrait: !!portraitMount && root?.parent === portraitMount,
         fireVisible: !!root?.visible && !!fireDebug.fireVisible,

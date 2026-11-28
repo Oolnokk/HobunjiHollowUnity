@@ -45,6 +45,21 @@ for(let i=0;i<32;i++)assert.equal(fire.ignite({area,x:i*5,z:7,seconds:12}),true)
 assert(fire.debugSnapshot().count<=14,'mobile fire zones obey a strict object cap');
 fire.clear();
 assert.equal(fire.debugSnapshot().count,0,'the explicit cleanup path removes all cached patches');
+// Tile-specific water and exact square footprint regressions.
+assert(fire.ignite({area,x:5.5,z:7.5,y:0,square3x3:true,source:'adventuringTorch'}));
+assert.equal(fire.debugSnapshot().tileCount,9);
+assert(fire.isBurningTile({area,x:4,z:6,y:0}));
+assert(!fire.isBurningTile({area,x:3,z:6,y:0}));
+assert(!fire.extinguishTile({area,x:4,z:6,y:3}));
+assert(fire.extinguishTile({area,x:4,z:6,y:0}));
+assert.equal(fire.debugSnapshot().tileCount,8);
+assert(!fire.isBurningTile({area,x:4,z:6,y:0}));
+assert(fire.isBurningTile({area,x:5,z:6,y:0}));
+assert(fire.ignite({area,x:5.5,z:7.5,y:3,square3x3:true}));
+assert.equal(fire.debugSnapshot().tileCount,17);
+assert(fire.extinguishTile({area,x:5,z:7,y:3}));
+assert(fire.isBurningTile({area,x:5,z:7,y:0}));
+fire.clear();
 // Visual regression: the same authored campfire particle definition must drive a broad
 // flame-shattercask patch, not the old cone meshes and translucent cylinder.
 class Group {
@@ -69,10 +84,11 @@ window.AuthoredFurniture={
 fire.init({TILE:64,getCurrentArea:()=>area,getActiveScene:()=>scene,getSplashEntities:()=>[]});
 assert.equal(fire.ignite({area,x:5,z:7,radius:2.3,source:'flameShattercask'}),true);
 Promise.resolve().then(()=>{
-  assert.equal(particles,7,'area fire uses distributed authored campfire emitters instead of cone geometry');
+  assert.equal(particles,fire.debugSnapshot().tileCount,'each live tile owns one authored campfire emitter');
+  const tileCount=particles;
   fire.update(.016);
   assert.equal(fire.debugSnapshot().campfireTemplateReady,true,'mobile diagnostics identify the ready authored flame source');
   fire.clear();
-  assert.equal(disposals,7,'every fire patch particle renderer is disposed when the area is retired');
+  assert.equal(disposals,tileCount,'every fire tile particle renderer is disposed when the area is retired');
   console.log('PASS Puzzle Cave persistent ground fire: damage, sconce proximity, area ownership, campfire particles, real-time expiry, and mobile cap');
 });

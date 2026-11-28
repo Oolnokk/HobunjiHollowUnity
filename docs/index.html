@@ -116,7 +116,9 @@
   <script src="js/action-arc-ui.js?v=20261118backCarryArch1"></script>
   <script src="js/belt-stow-torch-display.js?v=20261122stowSplit1"></script> <!-- Torch-only PNG, source pivot and optional preview flame. -->
   <script src="js/belt-stow-rig.js?v=20261122stowSplit1"></script> <!-- Shared rendered belt art and authoring rig coordinates. -->
-  <script src="js/adventuring-tools.js?v=20261128kanthicAudit5"></script> <!-- Adventure tools; torch and later unlocks. -->
+  <script src="js/adventuring-jug.js?v=20261128jugAudit3"></script>
+  <script src="js/adventuring-jug-world.js?v=20261128jugPose1"></script>
+  <script src="js/adventuring-tools.js?v=20261128jugWorld1"></script> <!-- Adventure tools; torch and later unlocks. -->
   <script src="js/tool-world-upright.js?v=20261114torchTipMinusY1"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. The feature manifest owns its ordered scripts and cache versions.
@@ -265,10 +267,10 @@
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261122basketCup1"></script>
-  <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
+  <script src="js/furniture-puzzle-properties.js?v=20261128jugAudit2"></script>
   <script src="js/game-feel.js?v=20261115kurrayaCuesAudit2"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
   <script src="js/ruin-interaction-audio.js?v=20261114posobj1754"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
-  <script src="js/furniture-puzzle-runtime.js?v=20261122ha675b43"></script>
+  <script src="js/furniture-puzzle-runtime.js?v=20261128jugAudit2"></script>
   <script src="js/interior-door-tiles.js?v=20261114dblleaf1"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
@@ -415,7 +417,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
-  <script src="js/persistent-ground-fire.js?v=20261128kanthicAudit6"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261128jugAudit3"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
   <script src="js/alchemy-flasks.js?v=20261119cheapGeometry1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
@@ -3010,7 +3012,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261127rootAnatomyRevert16"></script>
-  <script src="game.js?v=20261128hfeeae58"></script>
+  <script src="game.js?v=20261128jugPose1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

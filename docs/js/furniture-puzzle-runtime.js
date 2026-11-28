@@ -146,6 +146,10 @@
       object.userData.burdenPlateAnchor ||= null;
       object.userData.burdenPlateComplete = false;
     }
+    if(puzzle.behavior==='liquidVessel'){
+      object.userData.liquidVesselUnits=0; // Fresh puzzle instance owns its own received volume.
+      object.userData.puzzleActive=false;
+    }
     if (puzzle.behavior === 'keyStatue') {
       object.userData.keyStatuePayload ||= null;
       object.userData.keyStatueTaken = false;
@@ -622,6 +626,30 @@
     return animate(object, taken ? 1 : 0, puzzle.motion.durationSeconds);
   }
 
+  // Query the live graph on liquid release. No separate registration lifecycle or global retained puzzle meshes.
+  function liquidReceivers(mapId){
+    const graph=maps.get(String(mapId));if(!graph)return [];
+    const result=[];
+    for(const [id,object] of graph.nodes){
+      const d=object.userData,p=d.furniturePuzzle;
+      if(p?.role!=='activator'||p.behavior!=='liquidVessel')continue;
+      const opening=d.puzzlePartMeshes?.get?.(p.liquidPartId);
+      if(!opening)continue; // A solid vessel wall is not an intake; the authored opening must be identified.
+      const revision=d.puzzleRegistrationRevision;
+      result.push({area:String(mapId),root:opening,available:()=>maps.get(String(mapId))===graph&&graph.nodes.get(id)===object&&d.puzzleRegistrationRevision===revision,
+        accept(liquid,units){
+          if(maps.get(String(mapId))!==graph||graph.nodes.get(id)!==object||d.puzzleRegistrationRevision!==revision||liquid!==p.requiredLiquid||!Number.isFinite(units)||units<=0||d.puzzleActive)return 0;
+          const before=Number(d.liquidVesselUnits)||0,accepted=Math.min(Math.floor(units),p.requiredLiquidUnits-before);
+          if(accepted<=0)return 0;
+          d.liquidVesselUnits=before+accepted;
+          if(d.liquidVesselUnits>=p.requiredLiquidUnits){activate(mapId,id,true);window.RuinInteractionAudio?.puzzleComplete?.(object);}
+          else window.RuinInteractionAudio?.progress?.(d.liquidVesselUnits,p.requiredLiquidUnits);
+          return accepted;
+        },
+      });
+    }
+    return result;
+  }
   function debug() {
     return [...maps].map(([mapId, graph]) => ({
       mapId, wires:graph.wiring.length,
@@ -634,6 +662,7 @@
         payload:object.userData.burdenPlatePayload?.id || null,
         payloadComplete:!!object.userData.burdenPlateComplete,
         keyStatueTaken:!!object.userData.keyStatueTaken,
+        liquidVesselUnits:object.userData.furniturePuzzle?.behavior==='liquidVessel'?Number(object.userData.liquidVesselUnits)||0:null,
       })),
     }));
   }
@@ -641,7 +670,7 @@
   const getNode = (mapId, id) => maps.get(String(mapId))?.nodes.get(String(id)) || null;
 
   window.FurniturePuzzleRuntime = Object.freeze({
-    getNode, registerMap, registerNode, unregisterNode, clearMap, activate, toggle, setMechanism, toggleMechanism,
+    getNode, registerMap, registerNode, unregisterNode, clearMap, activate, toggle, setMechanism, toggleMechanism,liquidReceivers,
     setChannelSource, burdenPlateButtons, interactBurdenPlate, cancelBurdenPlate, keyStatueButtons, interactKeyStatue, setKeyStatueTaken, applyMechanism, debug,
   });
 })();

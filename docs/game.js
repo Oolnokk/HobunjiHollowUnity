@@ -1877,6 +1877,7 @@
       // 'sharp' when absent (see currentWeaponDamageType() below), so only
       // the blunt outliers need to be called out.
       const TOOL_ITEM_DEFS = {
+        jug: {label:'Jug',icon:'🏺',sprite:'assets/objectsprites/jar_liquid.png',slots:['adventuring'],animStyle:'thrust',toolIdleStyle:'thrust'}, // Temporary existing jar art; held through the canonical tool PNG pipeline.
         torch: { label:'Torch', icon:'🔥', sprite:'assets/toolsprites/torch.png', slots:['adventuring'], animStyle:'sweep', toolIdleStyle:'sweep' }, // Permanent starter adventuring tool.
         bronzehoe:    { label: 'Bronze Hoe',    icon: '🪓', sprite: 'assets/toolsprites/hoe_bronzehoe.png',        slots: ['hoe'],                    animStyle: 'chop'   },
         hatchet:      { label: 'Hatchet',       icon: '🪓', sprite: 'assets/toolsprites/axe_hatchet.png',          slots: ['axe', 'weapon'],           animStyle: 'sweep',  dmgType: 'sharp' },
@@ -7772,6 +7773,7 @@
 
           const windStartX = c.x, windStartY = c.y; // Idle fallback is eligible only if no other motion owner moved this actor.
           window.ResourceSystem?.beginMovementFrame?.(c);
+          const jugEscape=window.AdventuringJug?.escapeTarget?.(c); // Null for dry ground or living creatures.
           let moving = false, aimAngle = c.facing || 0, forageResult = null; // Shared foraging return feeds ordinary movement + sprite animation.
           if (c._knockbackLedgeFall) {
             advanceKnockbackLedgeFall(c, entityDt);
@@ -7807,6 +7809,11 @@
             } else if (c.knockbackT <= 0) {
               if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
+          } else if (jugEscape) {
+            const escape=jugEscape; // Existing swept locomotion; never teleport an undead across a wall.
+            c._banditAction?.cancel?.();c._banditAction=null;c.telegraphState=null;window.BanditCombat?.cancelLunge?.(c);
+            moving=moveCreatureToward(c,escape.x,escape.y,def.chaseSpeed||def.moveSpeed||TILE,entityDt,{pursuit:false});
+            aimAngle=Math.atan2(escape.y-c.y,escape.x-c.x);
           } else if (c.combatTutorialTarget && !c.combatTutorialHostile) {
             c.vx = 0; c.vy = 0; // Passive previews still run normal resource and swept knockback physics above.
           } else if (c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(c)) {
@@ -10661,6 +10668,7 @@
           : normalDodgeStaminaBefore >= DODGE_STAMINA_COST); // Ordinary exhausted rolls still animate; only fully funded rolls break a lethal grab.
         window.KnockbackCollisionImpact?.coolBurningOnDodge?.(player);
         player.dodging = true;
+        window.AdventuringJug?.beginDodge?.(player); // Only an accepted ordinary moving roll spends belt water.
         player.dodgeT = DODGE_DUR_S;
         window.FeyIllusions?.onDodgeStarted?.(player); // Panic multiplies the full authored roll time before the first swept movement step.
         player.dodgeDirX = dirX;
@@ -19787,6 +19795,7 @@
           const desiredY = window.FormatUtils.clamp(player.y + dodgeDy, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerDodgeOccupy); // Raised-support dodges use the same physical foot height as jumps, without altering native dodge timing or panicked-impact callbacks.
           player.x = dodgeSwept.x; player.y = dodgeSwept.y; // Commit physical contact before the impact can cause a lethal/respawn transition.
+          window.AdventuringJug?.dodgeStep?.(player,dodgeStartX,dodgeStartY,player.x,player.y);
           if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
             const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // Real first rejected sweep center, not a slowdown heuristic.
             const descriptor = knockbackCollisionDescriptorAt(struck.x, struck.y, PLAYER_RADIUS * 0.72, player.dodgeDirX, player.dodgeDirY);
@@ -21413,6 +21422,7 @@
           return;
         }
         if (activeAction === 'rootledoot_pick') { const aimed = getReticleTile(); window.Rootledoots?.pick?.(aimed.col, aimed.row); refreshActionBar(); return; }
+        if(activeAction?.startsWith('jug_')){if(window.AdventuringJug?.held?.()&&!menuOpen&&!dialogueOpen&&!paused&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'tools'))window.AdventuringJug.use(activeAction);return;}
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           // Compatibility fallback only — ordinary press/hold/release input
@@ -25426,6 +25436,28 @@
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
 
+        if (activeTool==='adventuring'&&equipmentSlots.adventuring==='jug') {
+          const jug=window.AdventuringJug,mesh=toolMeshMap.adventuring,plane=mesh?.userData?.toolPlane;
+          if(jug&&plane){
+            const pose=jug.advancePose(paused?0:dt); // The jug timeline is sampled exactly once by the normal held-tool frame owner.
+            const facing=playerFacing,rad=Math.PI/180;
+            const rx=Math.cos(facing),rz=-Math.sin(facing),fx=Math.sin(facing),fz=Math.cos(facing);
+            toolHolder.userData.authoredToolActionActive=true; // No legacy jab, idle correction, or swing callback can overwrite this prop.
+            toolHolder.position.set(playerMesh.position.x+rx*(playerToolBaseX+pose.x)+fx*pose.z,
+              playerMesh.position.y+playerToolBaseY+pose.y,playerMesh.position.z+rz*(playerToolBaseX+pose.x)+fz*pose.z);
+            scaleToolWorldPointAroundPlayerCentroid(toolHolder.position,facing); // Existing species-relative shoulder orbit, including short characters.
+            _qFac.setFromAxisAngle(_tUp,facing);
+            _qToolYaw.setFromAxisAngle(_tUp,pose.yaw*rad);
+            _qAnim.setFromAxisAngle(_xAxis,pose.pitch*rad);
+            _qRoll.setFromAxisAngle(_zAxis,pose.roll*rad);
+            toolHolder.quaternion.copy(_qFac).multiply(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+            mesh.rotation.z=0;mesh.scale.x=Math.abs(mesh.scale.x);
+            plane.position.set(0,0,0);plane.rotation.set(-Math.PI/2,0,0);plane.scale.x=1;
+            // Release reads the real animated PNG aperture only after this transform exists.
+            jug.releasePose();
+            return;
+          }
+        }
         // Use logical facing for game-logic vectors; sweep will additively rotate the body.
         const θ = activeTool === 'adventuring' && combatSwingAnim === 'sweep' && combatSwingCone
           ? Math.PI / 2 - combatSwingCone.angle : playerFacing; // The torch animates toward the same committed bearing as its melee volume.
@@ -27057,6 +27089,7 @@
           window.WildernessMap.updateFogAroundPlayer();
           if (!localPaused) window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
+          window.AdventuringJug?.update?.(localPaused?0:dt); // Simulation-owned transient liquid flights and 1 Hz consecration effects.
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
           window.BountyBoard.updateTracking(dt);
@@ -27588,6 +27621,7 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
+        if(tool!=='adventuring'||equipmentSlots.adventuring!=='jug')window.AdventuringJug?.cancelGesture?.('tool-switch');
         releaseManualClothingForEquipmentSwitch(); // Tool and weapon selection relinquish an explicit clothing Hold.
         if (activeTool === 'adventuring' && tool !== 'adventuring') {
           if (pendingAction?.tool === 'adventuring') pendingAction = null;
@@ -27723,7 +27757,7 @@
         const _cabStart = performance.now();
         try {
           const buttons = computeActionButtonsImpl(context); // Ripe crops claim the primary world-action slot even while food or a flask is held.
-          if (window.AdventuringTools?.isHoldingTorch?.()) return buttons; // Never reorder the reserved Swing/Throw slots.
+          if (window.AdventuringTools?.isHoldingTorch?.()||window.AdventuringJug?.held?.()) return buttons; // Never reorder the reserved Swing/Throw slots.
           const harvestIndex = buttons.findIndex(button => button.action === 'harvest' && button.allowed); // Used to move only an actionable crop ahead of held-item defaults.
           if (harvestIndex > 0) buttons.unshift(buttons.splice(harvestIndex, 1)[0]);
           return buttons;
@@ -27740,6 +27774,7 @@
         return eligibleWorldButtons(buttons);
       }
       function adventuringToolActionButtons() {
+        const jugButtons=window.AdventuringJug?.held?.()?window.AdventuringJug.buttons():null; // All three physical action slots belong to the held jug.
         const reticle = getReticleTile(); // Independent of the targeted world object or an underground floor tile.
         const tile = window.GridTileAccessors.getActiveGrid()?.[reticle.row]?.[reticle.col];
         const torchActions = (toolActions.adventuring || []).map((action, i) => {
@@ -27764,6 +27799,10 @@
           ? window.DevRandomRuinInteractions?.getDoorActionButtons?.() || [] : []; // Native V50 transit doors use their existing validated proximity/action owner.
         const siteDoor = ruinEntranceAt(reticle); // Wilderness entrance uses the same validated object as ordinary Interact.
         const siteActions = (siteDoor?.getButtons?.() || []).map(button => ({ ...button, worldInteraction: true, inputAction: 'interact', style: 'secondary', promptRoot: siteDoor.promptRoot || siteDoor.mesh }));
+        if(jugButtons){
+          const doors=siteActions.concat(woodenDoorActions,ruinDoorActions).slice(0,2).map((button,i)=>({...button,inputAction:'itemAction'+(i+1)}));
+          return jugButtons.concat(doors); // Touch can still use a door from the item arch.
+        }
         return torchActions.concat(siteActions, woodenDoorActions, ruinDoorActions);
       }
 
@@ -27793,7 +27832,7 @@
       }
 
       function computeActionButtonsImpl(context = null) {
-        if (window.AdventuringTools?.isHoldingTorch?.()) return adventuringToolActionButtons(); // Held torch owns both tool slots before contextual world overrides.
+        if (window.AdventuringTools?.isHoldingTorch?.()||window.AdventuringJug?.held?.()) return adventuringToolActionButtons(); // Held torch owns both tool slots before contextual world overrides.
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
         if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
@@ -28482,7 +28521,7 @@
               // timer run out. Desktop's direct pointerdown→useActiveAction() click
               // path never had this gate at all, which is why this only ever
               // surfaced as "the button doesn't work" on touch.
-              if (isNavAction || heldMode === 'item' || toolSwingT <= 0) useActiveAction();
+              if (isNavAction || act.startsWith('jug_') || heldMode === 'item' || toolSwingT <= 0) useActiveAction();
             }
 
             // Weapon tool-action buttons (cut/slash) route taps through the
@@ -28541,7 +28580,7 @@
               if (window.AdventuringTools?.isHoldingTorch?.() && ((el.id === 'btnAction1' && act !== 'torch_swing') || (el.id === 'btnAction2' && act !== 'torch_throw'))) return; // Do not begin a stale contextual hold.
               _pressedArchAction = act; // Retain the original action throughout this pointer's press/release pair.
               const physicalInputAction=({btnAction1:'action1',btnAction2:'action2',btnAction3:'action3',btnItemAction1:'itemAction1',btnItemAction2:'itemAction2'})[el.id]||null;
-              if(physicalInputAction&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch:' + ev.pointerId)){
+              if(physicalInputAction&&!act?.startsWith('jug_')&&dispatchWorldInputClaim(physicalInputAction,'press','touch-arch:' + ev.pointerId)){
                 _claimedInputAction=physicalInputAction;
                 return;
               }
@@ -29280,6 +29319,7 @@
         const el = document.getElementById('btnAction' + slotIndex);
         const action = el?.dataset.action;
         const buttons = computeActionButtons();
+        if (window.AdventuringJug?.held?.()&&slotIndex<=3) return buttons[slotIndex-1]||null;
         if (window.AdventuringTools?.isHoldingTorch?.() && slotIndex <= 2) return buttons[slotIndex - 1] || null; // Ignore stale DOM context from the previous held mode.
         return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
       }
@@ -29312,7 +29352,7 @@
         const toolSet = new Set(Object.values(toolActions).flat());
         const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
           || action === 'harvest'
-          || action.startsWith('alchemy_flask_')
+          || action.startsWith('alchemy_flask_') || action.startsWith('jug_')
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
           && b.action !== 'campfire_menu' // This interaction requires held Action 2, never the ordinary Interact tap.
@@ -29402,6 +29442,10 @@
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
+        }
+        if (phase==='press'&&['action1','action2','action3'].includes(actionId)&&window.AdventuringJug?.held?.()
+          &&!menuOpen&&!dialogueOpen&&!paused&&!farmEditMode&&!window.__mapEditorGizmoActive&&!window._desktopSelectionArc?.toolMenuOpen?.()&&!window._desktopSelectionArc?.entryMenuOpen?.()){
+          runActionButtonAtSlot(Number(actionId.slice(-1)),actionId);return;
         }
         if (phase === 'press' && (actionId === 'action1' || actionId === 'action2') && window.AdventuringTools?.isHoldingTorch?.()
           && !menuOpen && !dialogueOpen && !paused && !farmEditMode && !window.__mapEditorGizmoActive
@@ -30391,6 +30435,7 @@
           if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press', 'mouse:' + e.button); return; } // preventDefault also stops middle-click autoscroll.
+          if(['action1','action2','action3'].includes(mouseAction)&&window.AdventuringJug?.held?.()){runInputAction(mouseAction,'press','mouse:'+e.button,e);return;}
           if ((mouseAction === 'action1' || mouseAction === 'action2') && window.AdventuringTools?.isHoldingTorch?.()) { runInputAction(mouseAction, 'press', 'mouse:' + e.button, e); return; }
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
@@ -31678,6 +31723,11 @@
         getAimAngle: () => controllerLookActive ? controllerLookAngle : mouseLookActive ? mouseLookAngle : targetAimAngle,
         getGroundY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getGroundYAtWorld: activeSurfaceYAtWorld,
+        canIgniteGroundTile:(area,x,z,y)=>{
+          if(area!==currentArea)return false;
+          const t=window.GridTileAccessors.getActiveGrid()?.[z]?.[x];
+          return !!t&&!WATERWAY_TYPES.has(t.type)&&!isSolid(t.type)&&!t.mapBoundary&&!t.incline;
+        },
         getPlayerInteractionRay: currentPlayerInteractionRay,
         isShoulderView: () => activeCameraMode === SHOULDER_SURF_MODE || !isDesktop || lastInputDevice === 'controller' || !!mobileArchCombatAim,
         makeFlaskProjectile: itemKey => makeHeldItemPlaneMesh({ key: itemKey }),
@@ -32669,9 +32719,40 @@
           return true;
         },
         refreshActionBar,
-        selectTorch: () => { equipmentSlots.adventuring = 'torch'; setActiveTool('adventuring'); },
+        selectTorch: () => {if(equipmentSlots.adventuring!=='torch'){equipmentSlots.adventuring='torch';rebuildToolMeshes();}setActiveTool('adventuring');},
+        selectJug: () => {if(equipmentSlots.adventuring!=='jug'){window.AdventuringTools?.stow?.();equipmentSlots.adventuring='jug';rebuildToolMeshes();}setActiveTool('adventuring');},
       };
       window.AdventuringTools?.init?.(adventuringToolDeps);
+      window.AdventuringJug?.init?.({
+        tileSize:TILE,getPlayer:()=>player,getArea:()=>currentArea,getScene:window.GridTileAccessors.getActiveScene,
+        isHolding:()=>heldMode==='tool'&&activeTool==='adventuring'&&equipmentSlots.adventuring==='jug',
+        canAnimate:()=>!paused&&!menuOpen&&!dialogueOpen&&!cutscenePreviewActive&&sceneTransDir===0&&!player.climbing&&!player.onRope&&!player._onRope&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'tools')&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'actions'),
+        getMouth:()=>{
+          const mesh=toolMeshMap.adventuring;
+          const plane=mesh?.userData?.toolPlane||mesh?.children?.[0]?.userData?.toolPlane;
+          if(!plane)return null;
+          plane.updateWorldMatrix(true,false);
+          return plane.localToWorld(new THREE.Vector3(0,(Number(plane.geometry?.parameters?.height)||.4)*.48,0)); // Upper mouth of the temporary jar PNG.
+        },
+        getAim:origin=>origin&&currentPlayerPerspectiveDirection(origin),
+        isWaterTile:t=>WATERWAY_TYPES.has(window.GridTileAccessors.getActiveGrid()?.[t.z]?.[t.x]?.type)&&Math.abs(activeSurfaceYAtWorld(t.x+.5,t.z+.5)-t.y)<=.35, // A bridge over a river is not a water source.
+        saveState:state=>window.CharacterMetaSave?.update?.(ch=>{ch.adventuringJug=state;}),
+        refresh:refreshActionBar,toast:showToast,
+        actorsInArea:area=>[...(window.ActorRegistry?.getPlayers?.()||[player]),...hostileObjects,...companionObjects,...npcWalkers].filter(a=>(window.ActorRegistry?.areaOf?.(a)||a.area||(a===player?currentArea:null))===area),
+        actorArea:actor=>window.ActorRegistry?.areaOf?.(actor)||actor?.area||(actor===player?currentArea:null),
+        actorTile:(actor,area)=>{
+          const x=Number.isFinite(actor.x)?actor.x/TILE:actor.root?.position?.x,z=Number.isFinite(actor.y)?actor.y/TILE:actor.root?.position?.z;
+          if(!Number.isFinite(x)||!Number.isFinite(z))return null;
+          const y=actor.physicalFeetY??actor.shaftSupportY??actor.surfaceYOverride?.()??actor.surfaceY??(actor===player&&currentArea==='map_i_dev_random_ruin'?window.DevRandomRuin?.getPlayerGroundSupportY?.():null)??activeSurfaceYAtWorld(x,z);
+          return {area,x,z,y};
+        },
+        dodgeSupportY:(actor,x,z)=>{
+          const feet=actor.physicalFeetY??(currentArea==='map_i_dev_random_ruin'?window.DevRandomRuin?.getPlayerGroundSupportY?.():null)??activeSurfaceYAtWorld(x,z);
+          const support=window.DynamicSurfaces?.sampleSupport?.(x,z,{area:currentArea,minY:feet-.35,maxY:feet+.35,pad:.02});
+          return support?.y??feet;
+        },
+        canEscape:(actor,x,y,floor)=>canOccupyAt(x,y,TILE*.27,floor+.35), // Check at body height; the shared occupancy probe subtracts its radius.
+      });
       window.ActionArcUI.init({
         toolBtn,
         WHEEL_SLOTS,
@@ -33904,7 +33985,8 @@
       window.__hobunjiGameStarted = false;
 
       async function spawnPlayerAvatar(playerData) {
-        window.AdventuringTools?.init?.({...adventuringToolDeps, getUnlocked:()=>playerData?.adventuringToolUnlocks || []}); // Hydrate unlocked tools from the actual loaded character.
+        window.AdventuringTools?.init?.({...adventuringToolDeps, getUnlocked:()=>playerData?.adventuringToolUnlocks || []});
+        window.AdventuringJug?.restore?.(player,playerData?.adventuringJug); // Hydrate unlocked tools from the actual loaded character.
         // Restore this world's saved date/time/weather (see
         // _loadWorldCalendar/_saveWorldCalendar) before anything reads
         // calendar.day — checkTothalShift() below derives the current
@@ -34152,7 +34234,7 @@
           || !Object.prototype.hasOwnProperty.call(savedEquipmentSlots, slot); // Only slots absent from an old save receive starter defaults.
         const usableStarterTool = key => gearInventory.tools[key] && gearInventory.archivedTools?.[key] !== true; // Long-term stored tools cannot be selected as starter fallbacks.
         // Preserve explicit nulls in saved equipment slots; never re-equip gear the player deliberately put away.
-        equipmentSlots.adventuring = 'torch'; // All pre-existing characters receive the torch without buying one.
+        equipmentSlots.adventuring = savedEquipmentSlots?.adventuring==='jug'?'jug':'torch'; // Both starter adventuring tools are available on old saves.
         if (needsLegacyAssignment('hoe')) {
           if (usableStarterTool('hoe_nativeCopper')) equipmentSlots.hoe ||= 'hoe_nativeCopper';
           else if (usableStarterTool('bronzehoe')) equipmentSlots.hoe ||= 'bronzehoe';

@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const window={};vm.runInNewContext(fs.readFileSync('docs/js/furniture-puzzle-properties.js','utf8'),{window});
+const api=window.FurniturePuzzleProperties;
+assert(api.ACTIVATORS.includes('liquidVessel'));
+let p=api.normalizePuzzle({role:'activator',behavior:'liquidVessel',requiredLiquid:'lifeWater',requiredLiquidUnits:6,liquidPartId:'opening'});
+assert.equal(p.behavior,'liquidVessel');assert.equal(p.requiredLiquid,'lifeWater');assert.equal(p.requiredLiquidUnits,6);assert.equal(p.liquidPartId,'opening');
+p=api.normalizePuzzle({role:'activator',behavior:'liquidVessel',requiredLiquidUnits:99});
+assert.equal(p.requiredLiquidUnits,12);assert.equal(p.requiredLiquid,'water');
+console.log('PASS jug puzzle vessel metadata');

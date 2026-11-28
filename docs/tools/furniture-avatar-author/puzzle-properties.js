@@ -37,6 +37,13 @@
       <label style="margin-top:5px">Reverse duration at 100% progress · seconds</label><input id="puzzleReverseDuration" type="number" min="0" step=".05">
       <p class="muted">The primary channel fires on payload placement. The completion channel fires only after the OFF → ON motion finishes. Removing the payload reverses from the current progress over reverse duration × progress.</p>
     </div>
+    <div id="puzzleLiquidFields" style="display:none;margin-top:8px;padding:8px;border:1px solid rgba(148,163,184,.3);border-radius:8px">
+      <b>Liquid Vessel</b>
+      <div class="g2" style="margin-top:5px"><div><label>Required liquid</label><select id="puzzleRequiredLiquid"><option value="water">Water</option><option value="lifeWater">Life Water</option></select></div><div><label>Required units</label><input id="puzzleLiquidUnits" type="number" min="1" max="12" step="1"></div></div>
+      <label style="margin-top:5px">Receiving opening part ID</label><input id="puzzleLiquidPart" placeholder="ID of the opening mesh">
+      <button id="puzzleUseSelectedLiquidPart" type="button" style="margin-top:5px">Use selected part</button>
+      <p class="muted">The jug fills this opening with Pour or Empty. Splash cannot fill it. The activator completes when its required volume is reached.</p>
+    </div>
     <fieldset style="margin-top:8px"><legend>Reacts to events</legend>
       <p class="muted">Act on a world event directly, no wire needed: e.g. a cracked pillar that falls when a blast reaches it. Leave radius empty to use the event's own radius.</p>
       <div id="puzzleInputRows"></div>
@@ -173,6 +180,10 @@
     el('puzzleCompletionChannel').value = displayed.completionChannel;
     el('puzzlePayloadSurface').value = displayed.payloadSurfaceId;
     el('puzzleBurdenFields').style.display = displayed.behavior === 'burdenPlate' ? '' : 'none';
+    el('puzzleLiquidFields').style.display=displayed.behavior==='liquidVessel'?'':'none';
+    el('puzzleRequiredLiquid').value=displayed.requiredLiquid;
+    el('puzzleLiquidUnits').value=displayed.requiredLiquidUnits;
+    el('puzzleLiquidPart').value=displayed.liquidPartId;
     writeState('puzzleOff', displayed.motion.off); writeState('puzzleOn', displayed.motion.on);
     renderInputs(puzzle?.inputs || []);
     el('puzzleInputAdd').disabled = !puzzle;
@@ -186,6 +197,7 @@
       role, behavior:el('puzzleBehavior').value, channel:el('puzzleChannel').value, interactionRange:el('puzzleRange').value,
       completionChannel:el('puzzleCompletionChannel').value, inputs:readInputs(),
       requiredBurdenKind:el('puzzleRequiredBurden').value, payloadSurfaceId:el('puzzlePayloadSurface').value,
+      requiredLiquid:el('puzzleRequiredLiquid').value,requiredLiquidUnits:el('puzzleLiquidUnits').value,liquidPartId:el('puzzleLiquidPart').value,
       prompt:el('puzzlePrompt').value, onPrompt:el('puzzleOnPrompt').value, offPrompt:el('puzzleOffPrompt').value,
       startsActive:el('puzzleStartsActive').checked, directInteraction:el('puzzleDirect').checked, blocksMovement:el('puzzleBlocks').checked,
       motion:{ off:readState('puzzleOff'), on:readState('puzzleOn'), parts:state.puzzle?.motion?.parts||{}, durationSeconds:el('puzzleDuration').value, reversalSeconds:el('puzzleReverseDuration').value, collisionOpenProgress:el('puzzleCollision').value },
@@ -211,6 +223,11 @@
     render();
     if (typeof queueUndoHistory === 'function') queueUndoHistory(label);
   }
+  el('puzzleUseSelectedLiquidPart').onclick=()=>{
+    const id=preview.selectedPartId||(state.selectedType==='part'?state.selectedId:null); // Reuse the existing part selector, not a second object registry.
+    if(!id||!meshes.get(id))return;
+    el('puzzleLiquidPart').value=id;read();
+  };
   el('puzzleInputAdd').onclick = () => setInputs([...readInputs(), { event:'blast' }], 'puzzle event input added');
   el('puzzleInputRows').addEventListener('click', event => {
     const button = event.target.closest?.('[data-remove]');

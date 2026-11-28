@@ -2,7 +2,7 @@
   'use strict';
   // combat-enemies: feature-owned classic scripts in the original parser execution order.
   const scriptUrls = [
-    "js/combat/ranged-weapons.js?v=20261126spiritHealAudit1",
+    "js/combat/ranged-weapons.js?v=20261128jugSurface5",
     "js/combat/ranged-hud-reticle.js?v=20261114musicReticleMerge1",
     "js/combat/melee-hud-reticle.js?v=20261125deepAudit1",
     "js/combat/enemy-loadout-rules.js?v=20261127ruinViewer1",
@@ -15,7 +15,7 @@
     "js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6",
     "js/combat/combat-enemy-dodge.js?v=20261127-ruin-skeletons",
     "js/combat/combat-maskbound-headtaker.js?v=20261126neckPlanarIntegration1",
-    "js/combat/combat-lich.js?v=20261128kanthicAudit5",
+    "js/combat/combat-lich.js?v=20261128jugAudit4",
     "js/combat/combat-special-liches.js?v=20261128kanthicAudit5"
 ]; // Versioned modules evaluated before gameplay boot.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');

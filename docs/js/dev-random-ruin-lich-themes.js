@@ -1072,7 +1072,7 @@
     // A finite tile patch uses the very same curved, textured surface as room plasm.
     for(let dz=0;dz<2;dz++)for(let dx=0;dx<2;dx++){
       const tx=baseX+dx,tz=baseZ+dz,y=floorY(kit,tx+.5,tz+.5);
-      if(protectedPlasmTile(kit,tx,tz)||!clearAt(tx+.5,tz+.5,y))continue;
+      if(protectedPlasmTile(kit,tx,tz)||!clearAt(tx+.5,tz+.5,y)||window.AdventuringJug?.isConsecrated?.({area:'map_i_dev_random_ruin',x:tx,z:tz,y}))continue;
       const key=tileKey(tx,tz),existing=plasmPatchAt(tx+.5,tz+.5,y);
       if(existing&&Math.abs(existing.plasmFloorY.get(key)-y)<.01)continue; // Never stack translucent copies of the same floor tile.
       patch.plasm.add(key);patch.plasmFloorY.set(key,y);
@@ -1103,6 +1103,7 @@
       const tx=Math.floor(Number(t.x)),tz=Math.floor(Number(t.z));
       if(!Number.isFinite(tx)||!Number.isFinite(tz))continue;
       const y=Number.isFinite(Number(t.y))?Number(t.y):floorY(kit,tx+.5,tz+.5);
+      if(window.AdventuringJug?.isConsecrated?.({area:'map_i_dev_random_ruin',x:tx,z:tz,y}))continue; // Even ignoreClear platform/drip/bomb deposits respect consecration.
       if(!opts.ignoreClear&&(protectedPlasmTile(kit,tx,tz)||!clearAt(tx+.5,tz+.5,y)))continue;
       const key=tileKey(tx,tz),existing=plasmPatchAt(tx+.5,tz+.5,y);
       if(existing&&Math.abs(existing.plasmFloorY.get(key)-y)<.01)continue;
@@ -1211,7 +1212,7 @@
         for(let tz=Math.floor(z-range);tz<=Math.floor(z+range);tz++)for(let tx=Math.floor(x-range);tx<=Math.floor(x+range);tx++){
           const key=tileKey(tx,tz);
           if(!patch.plasm.has(key)||(tx+.5-x)**2+(tz+.5-z)**2>rangeSq)continue;
-          if(Number.isFinite(y)&&(!Number.isFinite(patch.plasmFloorY.get(key))||Math.abs(patch.plasmFloorY.get(key)-y)>1.2))continue;
+          if(Number.isFinite(y)&&(!Number.isFinite(patch.plasmFloorY.get(key))||Math.abs(patch.plasmFloorY.get(key)-y)>(source.floorTolerance??1.2)))continue;
           patch.plasm.delete(key);patch.plasmFloorY.delete(key);removed++;changed=true;
         }
       }
@@ -1464,6 +1465,7 @@
     spawnBossPillar,updateArenaBossPillars,clearArenaBossPillars, // Testing Arena and the real ruin use the same preset-footprint pillar charge and explosion pipeline.
     plasmTexture:() => world?.plasmMaterial?.map || null, // Shared Kanthic material source for headless Imlao's temporary body retexture.
     isPlasmAt:(x,z)=>!!plasmPatchAt(x,z), // Exact stationary render/physics occupancy.
+    clearPlasmTile:t=>t?.area==='map_i_dev_random_ruin'?clearPlasmSources([{x:Math.floor(t.x)+.5,z:Math.floor(t.z)+.5,y:t.y,radius:.1,floorTolerance:.2}]):0,
     clearPlasmRadius, // Dungeon Fire removes only live Kanthic tiles, rebuilding just the connected surfaces it actually changes.
     plasmTileCenters, // The cleansing-brazier composer chooses a reproducible location on real plasm rather than an arbitrary room floor.
     isProtectedPlasmAt:(x,z)=>!!(world?.theme==='kanthic'&&protectedPlasmTile(world.kit,Math.floor(x),Math.floor(z))), // Shared landing/doorway safety for both room and lich-spell plasm.

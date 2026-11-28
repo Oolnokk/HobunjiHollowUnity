@@ -13,6 +13,8 @@
   let lastThrowOrigin='none'; // Pixel Probe/mobile debug identifies whether a launch sampled the held torch plane.
   function init(injected) {
     deps = injected; lit = false; litUntilMs = null; torchThrowHold = null; torchThrowPending = null; torchThrowRecovering = false; torchThrowHeldHidden = false; lastThrowOrigin = 'none'; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
+    // The jug is the second starter tool when the live game provides its equipment adapter.
+    if(typeof deps.selectJug==='function'){tools.set('jug',{id:'jug',label:'Jug',icon:'🏺',onSelect:()=>deps.selectJug()});unlocked.add('jug');}
     for (const key of (deps.getUnlocked?.() || [])) if (tools.has(key)) unlocked.add(key);
   }
   function register(def) { if (!def?.id || !def.label || typeof def.onSelect !== 'function') return false; tools.set(def.id,def); return true; }
@@ -272,7 +274,7 @@
         lit, held, onBelt: !held && lit, burnDurationMs: TORCH_BURN_MS,
         burnRemainingMs: lit ? Math.max(0, litUntilMs - nowMs()) : 0,
         throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
-        unlocked: [...unlocked], lastEvent, lastStrike,
+        unlocked: [...unlocked], lastEvent, lastStrike, jug:window.AdventuringJug?.debug?.()||null,
         belt: window.AdventuringTorchBelt?.debug || null, // Pixel Probe includes actual belt attachment, texture and flame visibility on mobile.
         lastProjectile: window.RangedWeapons?.lastTorchThrow || null, // Expose the actual reticle target, converged launch vector and sprite scale in the existing mobile Pixel Probe torch section.
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
