@@ -1088,7 +1088,7 @@
         (!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
     },dispose(){
       if(!owner.spellPlasm.delete(patch))return;
-      patch.mesh.parent?.remove(patch.mesh);patch.mesh.geometry.dispose?.();
+      patch.mesh?.parent?.remove(patch.mesh);patch.mesh?.geometry?.dispose?.();
     }};
   }
 
@@ -1365,7 +1365,7 @@
       if(world.spellPlasm.size||world.rooms.some(room=>room.plasm?.size)){
         const player=kit.deps.player;
         const feet=Number(player?.physicalFeetY??window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y);
-        clearPlasmSources(window.PersistentGroundFire?.plasmFireSources?.('map_i_dev_random_ruin',world.group.parent,player,kit.deps.TILE,feet)||[]);
+        clearPlasmSources(window.PersistentGroundFire?.plasmFireSources?.('map_i_dev_random_ruin',window.DevRandomRuin?.getRuntimeContext?.()?.scene||world.context.scene||world.group.parent,player,kit.deps.TILE,feet)||[]);
       }
       updatePlasm(kit,dt);tickTimedPlasm(dt);
     }
