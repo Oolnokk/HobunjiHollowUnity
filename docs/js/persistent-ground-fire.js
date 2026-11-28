@@ -106,6 +106,39 @@
     lastIgnition={area:patch.area,x:px,z:pz,radius:patch.radius,source:patch.source};
     return true;
   }
+  const PLASM_FIRE_RADIUS=1.5; // Every ordinary flame clears a modest local area, not an entire dungeon.
+  let fireScene=null,fireScanAt=-Infinity,fireFurniture=[]; // Scan only while plasm exists, amortized across calls.
+  let firePosition=null; // Reuse the scratch world point for all physical fire sources.
+  function plasmFireSources(area,scene,player,tile,feetY){
+    const sources=[];
+    if(window.AdventuringTools?.isLit?.()&&player&&Number(player.health)>0&&Number.isFinite(feetY))
+      sources.push({x:player.x/tile,z:player.y/tile,y:feetY,radius:PLASM_FIRE_RADIUS}); // Same authoritative flame for held and belt-stowed torch.
+    for(const fire of zones)if(fire.area===area&&fire.age<fire.seconds&&!/skeleton|magic|lich|enchant/i.test(fire.source))
+      sources.push({x:fire.x,z:fire.z,y:fire.y,radius:Math.min(2,Math.max(1,fire.radius))});
+    if(area==='map_i_dev_random_ruin')for(const light of window.DevRandomRuinSanctum?.ordinaryFireSources?.()||[])
+      if(light.active!==false)sources.push({x:light.x,z:light.z,y:light.floorY,radius:PLASM_FIRE_RADIUS});
+    const now=performance.now();
+    if(scene!==fireScene||now-fireScanAt>=750){
+      fireScene=scene;fireScanAt=now;fireFurniture=[];
+      scene?.traverse?.(object=>{
+        // Recognize conventional physical fire furniture, not magical seals, checkpoint flames or eye glow.
+        const key=String(object.userData?.authoredFurnitureKey||object.userData?.ruinFurnitureKey||object.name||'');
+        if(object.userData?.fireHazard===true&&!/ruin-(small|shaft)|lich|magic|blue|checkpoint/i.test(key)&&/campfire|fireplace|torch|fire.source|sconce|brazier/i.test(key))fireFurniture.push(object);
+      });
+    }
+    for(const object of fireFurniture){
+      if(object.userData?.fireHazard!==true)continue;
+      let node=object;while(node&&node!==scene&&node.visible!==false)node=node.parent;
+      if(node!==scene)continue;
+      if(!object.getWorldPosition||!window.THREE?.Vector3)continue;
+      firePosition ||= new window.THREE.Vector3();object.getWorldPosition(firePosition);
+      if(!Number.isFinite(firePosition.x+firePosition.y+firePosition.z))continue;
+      // Furniture anchors can be above their supporting floor; the 3D tolerance below prevents cross-story cleansing.
+      sources.push({x:firePosition.x,z:firePosition.z,y:firePosition.y,radius:PLASM_FIRE_RADIUS});
+    }
+    return sources;
+  }
+
   function intersects(area,x,z,distance=0,floorY=null) {
     const px=Number(x),pz=Number(z);
     if(!Number.isFinite(px)||!Number.isFinite(pz))return false;
@@ -153,7 +186,7 @@
     }
   }
   window.PersistentGroundFire=Object.freeze({
-    init(injected){deps=injected||null;},ignite,intersects,update,clear,attachCampfireFlame,
+    init(injected){deps=injected||null;},ignite,intersects,update,clear,attachCampfireFlame,plasmFireSources,
     debugSnapshot:()=>({count:zones.length,campfireTemplateReady:!!campfireTemplate,lastIgnition,zones:zones.map(z=>({
       area:z.area,x:z.x,y:z.y,z:z.z,remaining:+(z.seconds-z.age).toFixed(1),source:z.source
     }))}),
