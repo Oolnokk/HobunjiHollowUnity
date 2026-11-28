@@ -23,7 +23,7 @@
   document.write('<script src="js/dev-random-ruin-config.js?v=20260929config1"></scr' + 'ipt>'); // docs/config/random-ruin/ruin-config.json loader, read by every ruin module below.
   if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261110tankanring1"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261114heartRewards1"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
-  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261128kanthicSanctum4"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
+  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261128kanthicAudit5"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20261018badge1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261117structuralInstance1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261117structuralInstance1"></scr' + 'ipt>');
@@ -49,15 +49,15 @@
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
   document.write('<script src="js/ruin-hidden-secrets-native.js?v=20261116groundedSidePuzzles1"></scr' + 'ipt>'); // Optional caches and broods occupy unclaimed native V50 rooms after authored puzzles.
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261018targethum1"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
-  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261128kanthicSanctum4"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
+  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261128kanthicAudit5"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   if(!window.RootSnareHands)document.write('<script src="js/root-snare-hands.js?v=20261101hachutu1"></scr' + 'ipt>'); // Reuse the real Root Growth Author three-digit hands for the playable Hachutu labyrinth.
   document.write('<script src="js/root-snare-runner.js?v=20261101fullbody1"></scr' + 'ipt>'); // Reuses the author preview's exact 1.5 + 1.5 + 3-second tug curve.
   document.write('<script src="js/root-snare-toss.js?v=20261101fullbody1"></scr' + 'ipt>'); // Baked renderable-only tumbling halves, no gameplay bone reparenting.
   document.write('<script src="js/root-snare-player-tear.js?v=20261101fullbody4"></scr' + 'ipt>'); // Full skinned character silhouette, dynamic cinematic view and insta-death.
   document.write('<script src="js/dev-hachutu-ruin.js?v=20261125enemyClassAudit1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
-  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261128kanthicSanctum4"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
-  document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261116shortfire1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
+  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261128kanthicAudit5"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
+  document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261128kanthicAudit5"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261127ruinLook2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261123hdca48af"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20261114adventRuin2"></scr' + 'ipt>');
