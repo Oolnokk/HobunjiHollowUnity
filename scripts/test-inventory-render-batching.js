@@ -126,4 +126,33 @@ assert.deepEqual(requests[0], [changedTile], 'readability receives only the dirt
 scheduling();
 frames.shift()();
 assert.equal(requests[1], null, 'explicit full refresh retains the original whole-menu behavior');
-console.log('PASS inventory: batched Pack DOM, badges, stack identity, icon hooks, filter, hidden gate, and scoped readability');
+// Exercise the real Pack decoration on repeated stacks and stale glow classes.
+const packStart = uiSource.indexOf('  function decoratePackSlots() {');
+const packEnd = uiSource.indexOf('  function buildGearLayout()', packStart);
+assert(packStart >= 0 && packEnd > packStart);
+function makeTile(key, classes = []) {
+  const names = new Set(classes); // Tracks the same class toggles as a real DOM tile.
+  return {
+    dataset: { key }, title: key,
+    classList: { contains: name => names.has(name), toggle(name, on) { if (on) names.add(name); else names.delete(name); } },
+    setAttribute() {}, removeAttribute() {},
+  };
+}
+const lessonTiles = [makeTile('manual'), makeTile('manual'), makeTile('apple', ['unlearned-lesson']), makeTile('manual', ['empty', 'unlearned-lesson']), makeTile('manual', ['pack-clothing-tile', 'unlearned-lesson'])];
+let lessonKnown = false; // Change live knowledge without replacing the DOM.
+const knowledgeQueries = [];
+const decoratePack = new Function('document', 'window', 'makeKeyboardClickable', uiSource.slice(packStart, packEnd) + '\nreturn decoratePackSlots;')(
+  { querySelectorAll: () => lessonTiles },
+  { InventoryHeldOverride: { hasUnlearnedLesson(key) { knowledgeQueries.push(key); return key === 'manual' && !lessonKnown; } } },
+  () => {},
+);
+const glowing = () => lessonTiles.map(tile => tile.classList.contains('unlearned-lesson'));
+decoratePack();
+assert.deepEqual(glowing(), [true, true, false, false, false], 'only unread lesson stacks glow');
+assert.deepEqual(knowledgeQueries, ['manual', 'apple'], 'split stacks query knowledge once per key');
+lessonKnown = true;
+decoratePack();
+assert.deepEqual(glowing(), [false, false, false, false, false], 'learning removes the glow from every duplicate');
+assert.match(uiSource, /\.unlearned-lesson \.iib-icon\s*\{\s*filter:drop-shadow\(/, 'glow is applied to alpha-bearing icon, not its tile');
+
+console.log('PASS inventory: batched Pack DOM, badges, stack identity, icon hooks, filter, hidden gate, scoped readability and lesson glow');

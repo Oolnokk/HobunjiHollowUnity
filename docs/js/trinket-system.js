@@ -610,12 +610,31 @@
     const list = document.createElement('div');
     list.className = 'trinket-inventory-list';
     list.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
-    const sorted = owned.slice().sort((a, b) => Number(isEquipped(b.uid)) - Number(isEquipped(a.uid)));
+    const equippedIds = new Set(equippedEntries().map(entry => entry.uid)); // Snapshot for sorting and rendering without repeatedly normalizing gear.
+    const categoryLabels = { icon: 'Icons', companion: 'Companion', combat: 'Combat' }; // Authored categories for available trinket headings.
+    const categoryLabel = entry => categoryLabels[entry.def?.category] || entry.def?.category || 'Other';
+    const sorted = owned.slice().sort((a, b) =>
+      Number(equippedIds.has(b.uid)) - Number(equippedIds.has(a.uid)) ||
+      categoryLabel(a).localeCompare(categoryLabel(b)) ||
+      costOf(a.id) - costOf(b.id) ||
+      (a.def?.displayName || a.id).localeCompare(b.def?.displayName || b.id) ||
+      String(a.uid).localeCompare(String(b.uid)));
+    let previousHeading = null; // Insert one heading per contiguous equipped/available category.
     for (const entry of sorted) {
+      const heading = equippedIds.has(entry.uid) ? 'Equipped' : 'Available — ' + categoryLabel(entry); // Keep equipped trinkets together regardless of their category.
+      if (heading !== previousHeading) {
+        const sectionLabel = document.createElement('div'); // Noninteractive section label; existing row buttons remain controller targets.
+        sectionLabel.className = 'inv-equip-label trinket-inventory-heading';
+        sectionLabel.style.cssText = 'margin:6px 0 2px;font-weight:700;';
+        sectionLabel.textContent = heading;
+        list.appendChild(sectionLabel);
+        previousHeading = heading;
+      }
       const def = entry.def;
-      const equipped = isEquipped(entry.uid);
+      const equipped = equippedIds.has(entry.uid); // UI snapshot; equip() revalidates against live state on click.
       const cost = costOf(entry.id);
-      const check = equipped ? null : canEquip(entry.uid);
+      const check = equipped ? null : !def ? { ok: false, reason: 'unknown-trinket' } :
+        used + cost > cap ? { ok: false, reason: 'insufficient-attunement', free: Math.max(0, cap - used) } : { ok: true };
       const row = document.createElement('div');
       row.className = 'inv-equip-slot trinket-inventory-row' + (equipped ? ' active-slot occupied' : '');
       row.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:8px;padding:5px 8px;flex:0 0 auto;height:auto;box-sizing:border-box;text-align:left;justify-content:flex-start;';

@@ -168,6 +168,25 @@ windowStub.CookingSystem.init(itemDeps);
 windowStub.FarmCrates.init(itemDeps);
 
 const api = windowStub.InventoryHeldOverride;
+// Exercise the read-only knowledge query used for the green alpha glow.
+let knownRecipe = false, knownManual = false, knownMastery = false, knownPlan = false, tierHasLesson = true; // Mutable ownership fixtures verify the glow clears without consuming a stack.
+windowStub.AlchemySystem.isRecipeKnown = () => knownRecipe;
+windowStub.TechniqueScrolls.hasUnlearnedTechniqueForTier = () => tierHasLesson;
+const oldManualCheck = windowStub.TechniqueScrolls.isUnlocked;
+const oldMasteryCheck = windowStub.CombatProgression.hasEffectUnlock;
+windowStub.TechniqueScrolls.isUnlocked = () => knownManual;
+windowStub.CombatProgression.hasEffectUnlock = () => knownMastery;
+ITEM_DEFS.testPlan = { label: 'Test Plan' };
+windowStub.CraftingPanel = { blueprintForItem: key => key === 'testPlan' ? { key } : null, ownsBlueprint: () => knownPlan };
+const lessonKeys = ['alchemy_recipe_healingPotion', 'combatManualBlinkDodge', 'masteryTablet', 'masteryScroll', 'techniqueScrollTier1', 'testPlan']; // One representative of every lesson family.
+for (const key of lessonKeys) assert.equal(api.hasUnlearnedLesson(key), true, key);
+knownRecipe = knownManual = knownMastery = knownPlan = true; tierHasLesson = false;
+for (const key of lessonKeys) assert.equal(api.hasUnlearnedLesson(key), false, key + ' learned');
+for (const key of ['apple', 'redberrySeeds', 'mysteryDyeRed', 'missing']) assert.equal(api.hasUnlearnedLesson(key), false, key + ' is not a lesson');
+windowStub.TechniqueScrolls.isUnlocked = oldManualCheck;
+windowStub.CombatProgression.hasEffectUnlock = oldMasteryCheck;
+delete windowStub.CraftingPanel;
+delete ITEM_DEFS.testPlan;
 assert.equal(api.getInventoryUseAction('alchemy_recipe_healingPotion')?.verb, 'Read', 'stale physical recipe keys are directly readable from Inventory');
 assert.equal(api.getInventoryUseAction('frostcapMoss')?.kind, 'rawReagent', 'raw reagents expose direct Eat');
 assert.equal(api.getInventoryUseAction('healingPotionBottle')?.kind, 'drink', 'drinkable potions expose direct Drink');

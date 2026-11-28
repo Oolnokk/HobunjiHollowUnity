@@ -83,6 +83,8 @@ trinkets._setFallbackGear({
   trinkets: [
     { uid: 'one', id: 'iconNaoung' },
     { uid: 'two', id: 'harlyaoReachShard' },
+    { uid: 'three', id: 'glassFang' },
+    { uid: 'four', id: 'unstableBalance' },
   ],
   equippedTrinkets: ['one'],
 });
@@ -96,8 +98,13 @@ assert(originalGroup.classList.contains('gear-owned-trinkets'), 'trinkets expose
 assert(originalGroup.querySelector('.trinket-attunement-label'), 'attunement header stays inside its group');
 const cards = originalGroup.querySelector('.trinket-inventory-list');
 assert(cards, 'trinket card list stays within its group');
-assert.equal(cards.children.length, 2, 'both equipped and unequipped items remain visible');
-assert(cards.children.every(card => card.classList.contains('trinket-inventory-row')), 'all cards have stable trinket styling hooks');
+const rows = cards.children.filter(card => card.classList.contains('trinket-inventory-row')); // Keep the card assertion independent of new section labels.
+assert.equal(rows.length, 4, 'all equipped and unequipped items remain visible');
+assert.deepEqual(cards.children.filter(card => card.classList.contains('trinket-inventory-heading')).map(card => card.textContent), ['Equipped', 'Available — Combat']);
+assert(rows[0].classList.contains('active-slot'), 'equipped trinkets are first');
+assert.match(rows[1].innerHTML, /Harlyao Reach Shard/);
+assert.match(rows[2].innerHTML, /Unstable Balance/, 'same-cost entries sort alphabetically');
+assert.match(rows[3].innerHTML, /Glass Fang/, 'higher-cost entries follow lower-cost entries');
 assert(originalGroup.querySelector('.trinket-debug'), 'trinket diagnostics remain inside the group');
 
 const ownedSection = new Element('div'); // Simulates InventoryUI's completed owned-gear column.
@@ -119,6 +126,7 @@ assert.match(inventoryUiSource, /const trinketGroup = directChild\(section, 'gea
 assert.match(inventoryUiSource, /if \(trinketGroup\) used\.add\(trinketGroup\)/, 'decorator removes the trinket group from orphan leftovers');
 assert.match(inventoryUiSource, /if \(trinketGroup\) ownedSection\.appendChild\(trinketGroup\)/, 'decorator moves trinkets into owned gear');
 assert.match(inventoryUiSource, /\.gear-owned-trinkets \.trinket-inventory-row \{[^}]*flex:0 0 auto;[^}]*height:auto;/, 'trinket cards cannot shrink over adjacent rows');
+assert.match(inventoryUiSource, /if \(slot\.classList\.contains\('trinket-inventory-row'\)\) return;/, 'trinket cards do not become inert nested controller buttons');
 assert.match(inventoryUiSource, /orphanTrinketGroups:/, 'mobile diagnostics report misplaced trinket groups');
 assert.match(compactSource, /\.gear-owned-section\.gear-middle-inventory \{[\s\S]*?overflow-y:auto !important;/, 'owned gear remains the independent scrolling column');
 assert.match(compactSource, /\.inv-equip-section \{[\s\S]*?display:grid !important;/, 'the outer Gear workspace still has two columns');

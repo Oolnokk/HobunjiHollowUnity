@@ -187,6 +187,22 @@
     return scroll ? Number(scroll[0]) || 0 : 0;
   }
 
+  function hasUnlearnedLesson(key) {
+    const def = canonicalDef(key); // Canonical inventory metadata, including dynamically registered lessons.
+    if (!def) return false;
+    const blueprint = window.CraftingPanel?.blueprintForItem?.(key); // Plans use the crafting owner's permanent knowledge.
+    if (blueprint) return window.CraftingPanel.ownsBlueprint?.(blueprint) === false && !blueprint.moteOnly && !blueprint.masteryUnlockId;
+    if (def.masteryUnlock) {
+      const lesson = def.masteryUnlock; // Exact damage family, rank and mastery effect.
+      return window.CombatProgression?.hasEffectUnlock?.(lesson.type, lesson.rank, lesson.effectId) === false;
+    }
+    if (def.combatManualAbilityId) return window.TechniqueScrolls?.isUnlocked?.(def.combatManualAbilityId) === false;
+    const tier = techniqueScrollTier(key, def); // Randomized scrolls glow only if their roll can still teach something.
+    if (tier > 0) return window.TechniqueScrolls?.hasUnlearnedTechniqueForTier?.(tier) === true;
+    const recipe = recipeScrollId(key, def); // A known recipe can still be read but should not advertise new knowledge.
+    return !!recipe && window.AlchemySystem?.isRecipeKnown?.(recipe) === false;
+  }
+
   function inventoryUseAction(key) {
     const inventory = itemDeps?.inventory || equipmentDeps?.inventory;
     if (!key || !(Number(inventory?.[key]) > 0)) return null;
@@ -583,6 +599,7 @@
     releaseForNormalSelection,
     clearExhaustedBagHold,
     getInventoryUseAction: inventoryUseAction,
+    hasUnlearnedLesson,
     useInventoryItem,
     refreshInventoryUseButton: scheduleDirectUseUi,
     getDebug() {
