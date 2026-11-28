@@ -168,20 +168,19 @@
     return best;
   }
 
-  function nearestLadder() {
+  function nearbyLadders() {
     prepareSemanticObjects();
     const player = playerWorldPosition();
-    if (!player) return null;
-    let best = null;
-    let bestDist = LADDER_RANGE * LADDER_RANGE;
+    const nearby = []; // All reachable ladders compete in the shared reticle selector.
+    if (!player) return nearby;
     for (const ladder of ladders) {
       const pos = worldPosition(ladder);
       if (!pos) continue;
       const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladder);
-      const dist=Number.isFinite(reach)?reach**2:(pos.x-player.x)**2+(pos.z-player.z)**2;
-      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; } // Never select a ladder on a different story because its X/Z matches.
+      const dist=Number.isFinite(reach)?reach:Math.hypot(pos.x-player.x,pos.y-player.y,pos.z-player.z);
+      if (dist <= LADDER_RANGE) nearby.push({ ladder, distance:dist }); // Never select a ladder on a different story because its X/Z matches.
     }
-    return best;
+    return nearby;
   }
 
   function supportCandidatesForLadder(ladder) {
@@ -339,6 +338,7 @@
           : horizontalDistanceToOwner(owner, player, point);
         const range = Math.max(.1, Number(control.range) || LADDER_RANGE);
         if (distance > range) continue;
+        if (!owner && point && Math.abs(player.y-point.y)>.9) continue; // Point-only exits must not activate from a stacked floor.
         const labelValue = typeof control.label === 'function' ? control.label() : control.label;
         const label = String(labelValue || 'Interact');
         const identity = `${kind}|${owner?.id || owner?.name || (point ? `${point.x},${point.y},${point.z}` : '')}|${label}`;
@@ -524,8 +524,8 @@
     const rows = providerRows(now); // Contextual actions only: glyphs are shot with the ordinary ranged input, so no "Fire <weapon>" row is added near them.
     // Ledges are climbed with a forward dodge (see the ClimbSystem world-climb
     // provider below), like cliffs; no listed prompt.
-    const ladderHit = nearestLadder();
-    if (ladderHit && !rows.some(row => row.owner === ladderHit.ladder || row.kind === 'ladder')) {
+    for (const ladderHit of nearbyLadders()) {
+      if (rows.some(row => row.owner === ladderHit.ladder)) continue;
       rows.push({
         key:`ladder|${ladderHit.ladder.id}`,
         kind:'ladder',
@@ -732,6 +732,13 @@
       return actionButtonsFromRows(rows.filter(row => PROXIMITY_DOOR_KINDS.has(row.kind))).map(button => ({
         ...button, inputAction: 'interact', style: 'secondary',
       })); // Door is an extra explicit Interact action; never displace Torch Swing/Throw.
+    },
+    invokeFocusedControl(kind, owner) {
+      if (!inRuin() || !owner) return false;
+      const row = currentRows().find(entry => entry.kind === kind && entry.owner === owner);
+      if (typeof row?.onPress !== 'function') return false;
+      row.onPress();
+      return true; // Aimed contextual Interact consumes the key even if the block cannot move.
     },
     invokeDoorAction(action) {
       if (!inRuin()) return false;
