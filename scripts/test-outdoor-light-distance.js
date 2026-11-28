@@ -128,4 +128,20 @@ assert.equal(stats.considered, 0, 'interior lamps are never counted as outdoor-c
 assert.equal(lightingWindow.CloudForestFog.outdoorLightVisibilityAt(30, 0, 0, 4), 1,
   'secondary glows retain full brightness in enclosed rooms');
 
-console.log('Outdoor light visibility distance, three-pass fading, elevation, and interior isolation passed');
+// Use the real shared projection with the mock viewport: the emitter center
+// can be outside the screen while its soft pool overlaps the visible scene.
+const project = lightingWindow.CloudForestFog.projectLightMask;
+const edge = project(102, 0, 0, 4, ctx); // Center x=202, viewport ends at 200.
+assert(edge && edge.center.x > 200 && edge.coverage === 1, 'offscreen emitter retains full-strength overlapping pool');
+assert.equal(project(105, 0, 0, 4, ctx), null, 'fully offscreen pool does no gradient work');
+const front = project(2, 0, -8, 4, ctx); // Camera depth 2.
+const plane = project(2, 0, -10, 4, ctx);
+const behind = project(2, 0, -10.5, 4, ctx);
+assert(front && plane && behind, 'the overlapping pool survives the camera-plane crossing');
+assert(front.coverage > plane.coverage && plane.coverage > behind.coverage && behind.coverage > 0, 'near-camera coverage decreases continuously');
+assert(front.radius > plane.radius && plane.radius > behind.radius, 'near-camera radius shrinks rather than jumping');
+assert.equal(project(2, 0, -14, 4, ctx), null, 'fully behind-camera sphere contributes nothing');
+assert(project(2, 0, 491, 4, ctx).coverage < 1, 'far-plane overlap fades');
+assert.equal(project(2, 0, 494, 4, ctx), null, 'sphere beyond the far plane contributes nothing');
+
+console.log('Outdoor light visibility distance, three-pass fading, elevation, interior isolation and offscreen pool continuity passed');
