@@ -555,10 +555,14 @@
         : Math.max(0.18, worldHeight * 3.2) * radiusScale * Math.sqrt(index / 239);
       if (preferNear && radius * radius * 0.85 * 0.85 >= nearestDistanceSq) break; // All subsequent ellipse samples have a greater minimum distance.
       const point = { x: Math.cos(angle) * radius * (scatter ? 1.35 : 1), y: Math.sin(angle) * radius * (scatter ? 0.85 : 0.62) };
-      if (!isFree(point)) continue;
-      if (!preferNear) return point;
+      if (!preferNear) {
+        if (isFree(point)) return point;
+        continue;
+      }
       const distanceSq = point.x * point.x + point.y * point.y; // Actual radius, not the elliptical spiral parameter.
-      if (distanceSq < nearestDistanceSq) { nearest = point; nearestDistanceSq = distanceSq; }
+      if (distanceSq >= nearestDistanceSq || !isFree(point)) continue; // Avoid checking envelopes for candidates that cannot improve the result.
+      nearest = point;
+      nearestDistanceSq = distanceSq;
     }
     if (nearest) return nearest;
     if (reserved) return { x: 0, y: reserved.reduce((top, item) => Math.max(top, item.top), 0) + bounds.height * peak * 0.5 + worldHeight * radiusScale * 0.1 }; // Safe fallback for an unusually crowded burst.
