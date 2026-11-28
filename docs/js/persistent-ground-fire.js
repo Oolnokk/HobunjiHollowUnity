@@ -53,6 +53,12 @@
       emitter.rate=Math.max(3,Math.round(Number(source.rate||38)*rateScale));
       const capacity=Math.max(8,Math.ceil(emitter.rate*Number(source.lifetime||.72))+3);
       state.visual=window.AuthoredFurniture.createEmitterVisual(anchor,emitter,capacity);
+      const points=state.visual?.points; // Optional conservative bound for the Kanthic depth replay, not a new emitter.
+      if(points?.userData){
+        const lifetime=Number(emitter.lifetime)||.72;
+        const travel=(Math.abs(emitter.speed)+Math.sqrt(3)*Math.abs(emitter.spread)*.5)*lifetime;
+        points.userData.hobunjiFlameBoundsRadius=Math.abs(emitter.radius)+travel+Math.abs(emitter.gravity||0)*lifetime*lifetime+2*Math.abs(emitter.size);
+      }
       state.visual?.update?.(Math.min(.05,1/emitter.rate),true); // Show particles promptly even immediately after the torch is lit.
     }).catch(error=>window.__farmLog?.('[puzzle-fire] flame renderer failed: '+String(error?.message||error),'warn'));
     return {

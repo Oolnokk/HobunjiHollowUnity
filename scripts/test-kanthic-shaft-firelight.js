@@ -130,7 +130,7 @@ assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,beforeUpperS
 
 // Real tagged brazier sources emit only near the player in Kanthic, regardless of their original room-wide radius.
 let theme='kanthic';fakeWindow.DevRandomRuinLichThemes={activeTheme:()=>theme};
-const tagged={...source,flameAnchor:{},roomBound:true};
+const tagged={...source,flameAnchor:{},floorTolerance:1.2,roomBound:true};
 function sampleBrazier(px,py=0){
   drawingDeps.player.x=px;drawingDeps.player.y=10;drawingDeps.getPlayerWorldY=()=>py;
   maskDraws.length=0;fakeWindow.__probeRuinMasks([tagged],drawingDeps);
@@ -143,6 +143,13 @@ assert.equal(far,null,'distant brazier casts no local light');
 assert.equal(sampleBrazier(10,16),null,'different floors cannot light the player');
 assert.equal(near.radius,middle.radius,'near fade changes intensity without jumping radius');
 assert(near.alpha<=.72,'near light retains a modest maximum strength');
+const belowThreshold=sampleBrazier(10,1.19),aboveThreshold=sampleBrazier(10,1.21);
+assert(belowThreshold&&aboveThreshold&&Math.abs(belowThreshold.alpha-aboveThreshold.alpha)<.01,'no legacy floor-height snap for a nearby flame');
+tagged.flameAnchor.visible=false;assert.equal(sampleBrazier(10),null,'a hidden story or extinguished anchor never casts a pool');
+tagged.flameAnchor.visible=true;
+tagged.flameAnchor.getWorldPosition=v=>v.set(11,1.4,10);
+assert(sampleBrazier(14),'proximity follows the actual transformed flame instead of the original light record');
+delete tagged.flameAnchor.getWorldPosition;
 theme='hronal';assert(sampleBrazier(14).radius>near.radius,'other traditions retain original broad light');
 
 

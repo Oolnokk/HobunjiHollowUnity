@@ -26,7 +26,7 @@ class Camera{constructor(){this.layers=new Layers();}}
 class Mesh{
   constructor(geometry,material){this.geometry=geometry;this.material=material;this.visible=true;this.isMesh=true;this.matrix={copy(){}};this.matrixWorld={};this.layers=new Layers();}
 }
-class Points extends Mesh{constructor(g,m){super(g,m);this.isMesh=false;this.isPoints=true;}}
+class Points extends Mesh{constructor(g,m){super(g,m);this.isMesh=false;this.isPoints=true;this.userData={};}}
 class Texture{constructor(image){this.image=image;}}
 class Shader{constructor(o){Object.assign(this,o);}}
 let tradition='kanthic',area='map_i_dev_random_ruin',region='room:a',fade=0,paintCount=0,depthCount=0;
@@ -81,6 +81,7 @@ assert.equal(calls[1][0].material,shaft.material);
 // A lit canonical particle emitter participates even in a room with no glyphs.
 regions['room:fire']=bounds(30,35,-1,5);region='room:fire';
 const flame=new Points({}, {visible:true,depthTest:true});
+flame.userData.hobunjiFlameBoundsRadius=1;
 const halo={visible:true};
 const anchor={visible:true,children:[flame,halo],getWorldPosition:v=>v.set(32,1,2)};
 scene.add(anchor);flame.parent=anchor;halo.parent=anchor;
@@ -91,6 +92,21 @@ renderer.render=function(s,c){if(s.name==='kanthic_room_glyph_depth'){assert.equ
 assert.equal(frame(2031),true);assert.equal(calls[1].length,1);assert(calls[1][0].isPoints);assert.equal(calls[1][0].geometry,flame.geometry);
 assert.equal(flame.visible,true);assert.equal(halo.visible,true);assert.equal(api.getDebugState().ruinEngravingGlowMasks.flamesDrawn,1);
 fireLight.active=false;renderer.render=nativeRender;assert.equal(frame(2032),false,'unlit brazier does not force the GPU darkness pass');
+// A conservative sphere culls the whole emitter without reading sentinel positions.
+let flameInView=false;
+win.THREE.Frustum=class{setFromProjectionMatrix(){} intersectsObject(){return true;} intersectsSphere(s){assert.equal(s.center.x,32);assert.equal(s.radius,1);return flameInView;}};
+win.THREE.Matrix4=class{multiplyMatrices(){return this;}};
+win.THREE.Sphere=class{constructor(){this.center=new Vec();}};
+camera.isCamera=true;fireLight.active=true;
+calls.length=0;api.prepareKanthicGlyphFrame(scene,2033,camera);
+assert.equal(flame.visible,false,'offscreen particles skip the base pass too');
+assert.equal(api.hasKanthicLightingPass(),false,'offscreen flame alone cannot trigger a GPU darkness draw');
+assert.equal(api.getDebugState().ruinEngravingGlowMasks.flamesCulled,1);
+api.endKanthicGlyphFrame();assert.equal(flame.visible,true);
+flameInView=true;api.prepareKanthicGlyphFrame(scene,2034,camera);
+assert.equal(api.hasKanthicLightingPass(),true,'returning to view immediately restores the emission pass');
+assert.equal(api.renderKanthicGlyphFrame(renderer,camera,scene),true);api.endKanthicGlyphFrame();
+assert.equal(flame.visible,true);assert.equal(flame.material.clippingPlanes,undefined);
 fireLight.active=true;region=null;assert.equal(frame(2040),false);assert.equal(calls.length,0);
 assert.equal(canvas.style.visibility,'','unassigned corridor uses ordinary darkness and no GPU glyph work');
 region='room:a';fade=1;assert.equal(frame(2050),false);assert.equal(canvas.style.visibility,'');

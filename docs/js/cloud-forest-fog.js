@@ -954,6 +954,7 @@
   const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0,nearbyBraziers:0}; // Distinguishes local illumination from darkness-piercing flame pixels.
   const KANTHIC_BRAZIER_RADIUS=0.95; // Maximum local pool, in world tiles.
   const KANTHIC_BRAZIER_FULL_DISTANCE=1.1, KANTHIC_BRAZIER_FADE_DISTANCE=3.2; // Smooth player-relative fade, including elevation.
+  const kanthicBrazierPosition=new window.THREE.Vector3(); // Reused actual flame center for proximity and projection.
   function kanthicBrazierProximity(light){
     const p=lightingDeps.player, tile=Number(lightingDeps.TILE);
     const dx=light.x-Number(p?.x)/tile, dz=light.z-Number(p?.y)/tile;
@@ -969,15 +970,27 @@
     const ctx = lightingDeps.lctx;
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
     const kanthic=isKanthicGlyphArea();
-    for (const light of lights) {
-      if (light.active === false) continue; // Optional Kanthic shaft braziers cannot reveal anything until the player ignites them.
+    for (const source of lights) {
+      if (source.active === false) continue; // Ignition still owns whether a fixture emits.
+      const brazier=kanthic&&!!source.flameAnchor; // Other room rewards, portable lanterns, rope torches and boss reveals retain their own light policy.
+      let light=source, proximity=1; // The original light record remains immutable to other consumers.
+      if(brazier){
+        let visible=true; // Match actual holder/story visibility before creating any light mask.
+        for(let node=source.flameAnchor;node;node=node.parent)if(node.visible===false){visible=false;break;}
+        if(!visible)continue;
+        const position=source.flameAnchor.getWorldPosition?.(kanthicBrazierPosition);
+        const center=position||source; // Legacy/test records can still supply scalar coordinates.
+        proximity=kanthicBrazierProximity(center);
+        if(proximity<=0)continue; // No room lookup, projection, shadow query or gradient for distant braziers.
+        if(position)light={...source,x:position.x,y:position.y,z:position.z};
+        // The continuous 3D proximity fade already rejects distant stories. Do
+        // not apply the old hard floorTolerance cutoff to a nearby brazier.
+      }else{
+        const playerY=Number(lightingDeps.getPlayerWorldY?.());
+        const floorTolerance=Number.isFinite(light.floorTolerance)?light.floorTolerance:10;
+        if(Number.isFinite(light.floorY)&&Number.isFinite(playerY)&&Math.abs(light.floorY-playerY)>floorTolerance)continue;
+      }
       if(!ruinRoomLightAllowed(light))continue;
-      const playerY = Number(lightingDeps.getPlayerWorldY?.()); // Prevent a tall shaft's upper-story fire from illuminating unrelated floors below.
-      const floorTolerance = Number.isFinite(light.floorTolerance) ? light.floorTolerance : 10; // Per-room lights stay on their own story.
-      if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > floorTolerance) continue;
-      const brazier=kanthic&&!!light.flameAnchor; // Other room rewards, portable lanterns, rope torches and boss reveals retain their own light policy.
-      const proximity=brazier?kanthicBrazierProximity(light):1;
-      if(proximity<=0)continue; // No projection, shadow query or gradient for distant braziers.
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
       const radiusTiles = brazier?Math.min(KANTHIC_BRAZIER_RADIUS,light.radius):light.roomBound===true
@@ -1030,7 +1043,7 @@
   const kanthicPendingAtlases=new WeakSet(); // Async engraving atlas promises invalidate discovery once, without a per-frame scene traversal.
   let kanthicFrustum=null,kanthicFrustumMatrix=null,kanthicLightingPrepared=false; // Scratch camera cull and pre-world lighting readiness.
   const ruinGlowSource={x:0,y:0,z:0}; // Legacy Hronal/Tothal radial light source.
-  const ruinGlowStats={found:0,drawn:0,flamesDrawn:0,triangles:0,examined:0,scans:0,region:null,roomCandidates:0,depthPasses:0,textureUploads:0,uploadPixels:0,lastError:null};
+  const ruinGlowStats={found:0,drawn:0,flamesDrawn:0,flamesCulled:0,triangles:0,examined:0,scans:0,region:null,roomCandidates:0,depthPasses:0,textureUploads:0,uploadPixels:0,lastError:null};
   let ruinGlowScene=null,ruinGlowNextScan=0,ruinGlowMeshes=[],kanthicIndexedScene=null; // Discovery follows scene/room lifecycle and delayed atlases.
   let kanthicRecords=[],kanthicActiveRecords=[],kanthicRegion=null,kanthicRegionBounds=null,kanthicFrame=false; // Room-local GPU candidates, rebuilt only on region change or discovery.
   let kanthicProxyScene=null,kanthicQuadScene=null,kanthicQuadCamera=null,kanthicTexture=null; // Borrowed geometry/materials and one reusable darkness quad.
@@ -1043,8 +1056,13 @@
   function hideKanthicFlamePart(part){
     if(part&&part.visible!==false){kanthicFlameHidden.push(part);part.visible=false;}
   }
-  function prepareKanthicFlames(scene,bounds){
-    ruinGlowStats.flamesDrawn=0;
+  let kanthicFlameSphere=null; // One conservative particle bound for all offscreen checks.
+  function restoreKanthicFlameParts(){
+    for(const part of kanthicFlameHidden)part.visible=true;
+    kanthicFlameHidden.length=0;
+  }
+  function prepareKanthicFlames(scene,bounds,cull){
+    ruinGlowStats.flamesDrawn=ruinGlowStats.flamesCulled=0;
     kanthicFlameSeen.clear();
     for(const proxy of kanthicFlameProxies.values())proxy.visible=false;
     if(!bounds||!kanthicProxyScene||Number(lightingDeps.getSceneTransAlpha?.())>0)return;
@@ -1065,6 +1083,18 @@
       // deliberately make ordinary geometry-bound culling unsuitable for Points.
       for(const part of anchor.children||EMPTY_LIGHT_LIST){
         if(part.visible===false||part.material?.visible===false||!part.geometry||!part.material||(!part.isPoints&&!part.isMesh))continue;
+        part.updateWorldMatrix?.(true,false);
+        const bound=Number(part.userData?.hobunjiFlameBoundsRadius); // Canonical emitter travel bound, excluding inactive sentinel vertices.
+        if(cull&&bound>0&&THREE.Sphere&&kanthicFrustum.intersectsSphere){
+          kanthicFlameSphere||=new THREE.Sphere();
+          kanthicFlameSphere.center.copy(ruinGlowProjection);
+          kanthicFlameSphere.radius=bound*Math.max(1,part.matrixWorld?.getMaxScaleOnAxis?.()||1);
+          if(!kanthicFrustum.intersectsSphere(kanthicFlameSphere)){
+            hideKanthicFlamePart(part); // Offscreen in both passes; avoid drawing the original darkened particle batch as well.
+            ruinGlowStats.flamesCulled++;
+            continue;
+          }
+        }
         let proxy=kanthicFlameProxies.get(part);
         if(!proxy){
           const Type=part.isPoints?THREE.Points:THREE.Mesh;
@@ -1073,7 +1103,6 @@
           proxy.matrixAutoUpdate=false;proxy.frustumCulled=false;proxy.layers.set(KANTHIC_GLYPH_LAYER);
           kanthicFlameProxies.set(part,proxy);kanthicProxyScene.add(proxy);
         }
-        part.updateWorldMatrix?.(true,false);
         proxy.geometry=part.geometry;proxy.material=part.material;proxy.renderOrder=part.renderOrder;
         proxy.matrix.copy(part.matrixWorld);proxy.matrixWorldNeedsUpdate=true;proxy.visible=true;
         hideKanthicFlamePart(part);
@@ -1145,7 +1174,7 @@
   function resetKanthicGlyphCache(){
     restoreKanthicCanvas();
     kanthicRecords=[];kanthicActiveRecords=[];kanthicRegion=null;kanthicRegionBounds=null;
-    kanthicFlameProxies.clear();kanthicFlameSeen.clear();ruinGlowStats.flamesDrawn=0;
+    kanthicFlameProxies.clear();kanthicFlameSeen.clear();ruinGlowStats.flamesDrawn=ruinGlowStats.flamesCulled=0;
     setKanthicClipBounds(null);
     kanthicTexture?.dispose?.();kanthicTexture=null;kanthicUploadCanvas=null;kanthicUploadAt=-Infinity;kanthicWidth=kanthicHeight=0;
     if(kanthicQuadScene)kanthicQuadScene.children[0].material.uniforms.tLighting.value=null;
@@ -1172,7 +1201,7 @@
     if(scanned||changed){
       kanthicRegion=region;kanthicRegionBounds=bounds;setKanthicClipBounds(bounds);
       kanthicActiveRecords=bounds?kanthicRecords.filter(record=>glyphIntersectsRegion(record.bounds,bounds)):[];
-      if(!kanthicProxyScene){kanthicProxyScene=new window.THREE.Scene();kanthicProxyScene.name='kanthic_room_glyph_depth';}
+      if(!kanthicProxyScene){kanthicProxyScene=new window.THREE.Scene();kanthicProxyScene.name='kanthic_room_glyph_depth';kanthicProxyScene.userData||={};kanthicProxyScene.userData.hobunjiOutlineSequenceNeutral=true;}
       for(let i=kanthicProxyScene.children.length-1;i>=0;i--)kanthicProxyScene.remove(kanthicProxyScene.children[i]);
       kanthicFlameProxies.clear();
       for(const record of kanthicActiveRecords){
@@ -1213,7 +1242,7 @@
       record.hidden=record.mesh.visible!==false;
       if(record.hidden)record.mesh.visible=false; // No base-pass emissive draw, including every off-room glyph.
     }
-    prepareKanthicFlames(scene,bounds);
+    prepareKanthicFlames(scene,bounds,cull);
     if(kanthicProxyScene)kanthicProxyScene.fog=scene.fog;
     if(!hasKanthicEmission()||Number(lightingDeps.getSceneTransAlpha?.())>0){restoreKanthicCanvas();return true;}
     const canvas=lightingDeps.lctx?.canvas;
@@ -1227,14 +1256,13 @@
       window.WeatherFX?.drawLightingOverlay?.();
       kanthicWidth=canvas.width;kanthicHeight=canvas.height;
       kanthicLightingPrepared=true;
-    }catch(error){ruinGlowStats.lastError=String(error?.message||error);restoreKanthicCanvas();}
+    }catch(error){ruinGlowStats.lastError=String(error?.message||error);restoreKanthicFlameParts();restoreKanthicCanvas();}
     return true;
   }
   function endKanthicGlyphFrame(){
     if(!kanthicFrame)return;
     for(const record of kanthicRecords)if(record.hidden){record.mesh.visible=true;record.hidden=false;}
-    for(const part of kanthicFlameHidden)part.visible=true;
-    kanthicFlameHidden.length=0;
+    restoreKanthicFlameParts();
     kanthicFrame=false;kanthicLightingPrepared=false;
   }
   function boundedKanthicTextureSource(canvas){
@@ -1267,7 +1295,7 @@
         kanthicTexture.minFilter=THREE.LinearFilter;kanthicTexture.magFilter=THREE.LinearFilter;
         kanthicTexture.generateMipmaps=false;kanthicUploadAt=-Infinity;
         if(!kanthicQuadScene){
-          kanthicQuadScene=new THREE.Scene();kanthicQuadScene.name='kanthic_lighting_quad';kanthicQuadCamera=new THREE.Camera();kanthicQuadCamera.layers.set(KANTHIC_GLYPH_LAYER);
+          kanthicQuadScene=new THREE.Scene();kanthicQuadScene.name='kanthic_lighting_quad';kanthicQuadScene.userData||={};kanthicQuadScene.userData.hobunjiOutlineSequenceNeutral=true;kanthicQuadCamera=new THREE.Camera();kanthicQuadCamera.layers.set(KANTHIC_GLYPH_LAYER);
           const material=new THREE.ShaderMaterial({
             uniforms:{tLighting:{value:kanthicTexture}},
             vertexShader:'varying vec2 vUv; void main(){vUv=uv; gl_Position=vec4(position.xy,0.0,1.0);}',
