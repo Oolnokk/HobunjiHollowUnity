@@ -115,7 +115,7 @@ const {chromium}=require('playwright');
           window.__drawLanternTest();
           const lightPixel=expectedLight.clone().project(camera);
           const lx=Math.round((lightPixel.x+1)*512),ly=Math.round((1-lightPixel.y)*512);
-          return {exact,lightExact,mode:anchor.lantern.mode,shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
+          return {exact,lightExact,mode:anchor.lantern.mode,radius:anchor.lantern.radiusTiles,apiRadius:api.getKanthicLanternRadiusTiles(),shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
         }finally{api.endKanthicGlyphFrame();}
       }
       const cameraSamples=[cameraSample(0,1,3,0,1,0,false,-1.5,0),
@@ -148,6 +148,8 @@ const {chromium}=require('playwright');
     for(const sample of results.cameraSamples){
       assert(sample.exact&&sample.lightExact,'mist follows the camera and lantern follows the correct owner: '+JSON.stringify(sample));
       assert.equal(sample.mode,sample.shot?'camera':'player');
+      assert.equal(sample.radius,2,'debug reports the 2-tile default');
+      assert.equal(sample.apiRadius,2,'rope and other light consumers receive the same radius');
       assert(sample.alpha<100,'real lantern mask opens at its selected source: '+JSON.stringify(sample));
       if(!sample.shot)assert(sample.centerAlpha>180,'normal gameplay does not illuminate the camera center instead of the player: '+JSON.stringify(sample));
     }
