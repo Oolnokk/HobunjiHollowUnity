@@ -1585,8 +1585,14 @@
   }
 
   function updatePuddles(dt) {
+    const areaId=currentLichArea(),tileSize=deps?.TILE||64;
+    const fireSources=puddles.size&&areaId!=='map_i_dev_random_ruin'
+      ? window.PersistentGroundFire?.plasmFireSources?.(areaId,deps?.getActiveScene?.()||puddles.values().next().value?.owner?.scene,deps?.player,tileSize,Number(deps?.player?.physicalFeetY??groundYAt(deps?.player,deps?.player?.x,deps?.player?.y)))||[] : [];
     for(const puddle of [...puddles]){
       puddle.ageS+=dt;
+      if(!puddle.ruinPlasm&&fireSources.some(f=>Math.abs(f.y-puddle.groundY)<=1.2&&Math.hypot(f.x-puddle.x/tileSize,f.z-puddle.y/tileSize)<=f.radius)){
+        disposePetroleumPuddle(puddle);continue; // Ordinary fire extinguishes free-standing spell puddles outside the tile-based ruin composer.
+      }
       if(!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
     }
     if(!puddles.size){
