@@ -622,6 +622,9 @@
   const kanthicCameraDirection = new window.THREE.Vector3(); // Reused final view axis.
   const kanthicCameraMistCenter = new window.THREE.Vector3(); // Shared center of the existing three mist cylinders.
   const kanthicCameraLantern = { x: 0, y: 0, z: 0, cameraLantern: true }; // Reused camera-relative carried-light source.
+  let kanthicSelectedShot = null, kanthicAppliedShot = null; // Pixel Probe distinguishes a selected shot from the camera's actual owner.
+  const kanthicMaskProjection = { x: 0, y: 0, radiusPx: 0, coverage: 0 }; // Reused carried-lantern screen projection for mobile QA.
+  let kanthicMaskProjected = false; // False if this paint did not project the chosen lantern.
   let kanthicCameraValid = false, kanthicCameraScene = null, kanthicRenderCamera = null; // Invalidate stale lighting on camera or scene changes.
   const kanthicPlayerLantern = { x: 0, y: 0, z: 0, anchor: 'ground-fallback' }; // Reused player portrait source and mobile anchor diagnostics.
   const kanthicPortraitCenter = new window.THREE.Vector3(); // Scratch for the live portrait plane's world-space center.
@@ -759,7 +762,10 @@
     const x = p.x + d.x * KANTHIC_CAMERA_LANTERN_DEPTH;
     const y = p.y + d.y * KANTHIC_CAMERA_LANTERN_DEPTH;
     const z = p.z + d.z * KANTHIC_CAMERA_LANTERN_DEPTH;
-    const useCamera = !!window.CinematicCameraRuntime?.isActive?.(); // Scripted shots own the view; ordinary orbit, movement and shake do not.
+    const runtime = window.CinematicCameraRuntime; // Selection alone can outlive the actual authored camera override.
+    kanthicSelectedShot = runtime?.activeRecord?.() || null;
+    kanthicAppliedShot = runtime?.appliedRecordFor?.(camera, lightingDeps?.getCurrentArea?.()) || null;
+    const useCamera = !!kanthicAppliedShot; // Only a shot applied to this camera in this area owns the lantern.
     const player = lightingDeps?.player, tile = lightingDeps?.TILE;
     const hasPortrait = !useCamera && sampleKanthicPortraitCenter(scene); // Skip visual-rig work during cinematics.
     const anchor = hasPortrait ? 'portrait-plane' : 'ground-fallback'; // Fallback only for unloaded or detached player rigs.
@@ -844,6 +850,7 @@
     const softInterior = enclosedLightingArea(currentArea); // Every enclosed room uses the eased edge, including mines and dens.
     const outdoors = !softInterior; // Outdoor player/watch lanterns obey the wilderness visibility fade; enclosed rooms retain their existing behavior.
     const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand their physical light radius.
+    if (ruinTradition === 'kanthic') kanthicMaskProjected = false;
     for (const carrier of carriers) {
       if(!carrier.cameraLantern&&!ruinRoomLightAllowed(carrier))continue;
       const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Ignore far-away watch lanterns; carried player light stays nearby.
@@ -851,6 +858,10 @@
       const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx, carrier.anchor === 'portrait-plane');
       if (!projected) continue;
       const { center, radius: shineR, coverage } = projected; // One shared pool projection, independent of emitter visibility.
+      if (carrier === kanthicSource) {
+        kanthicMaskProjected = true;
+        kanthicMaskProjection.x = center.x; kanthicMaskProjection.y = center.y; kanthicMaskProjection.radiusPx = shineR; kanthicMaskProjection.coverage = coverage;
+      }
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       const transmission = interiorLightTransmission(carrier.x, carrier.z, carrier.cameraLantern ? kanthicCameraPosition : null);
@@ -1285,6 +1296,7 @@
     kanthicLightingPrepared=false;
     if(!isKanthicGlyphArea()||!scene?.traverse){
       kanthicCameraValid=false;kanthicCameraScene=null;kanthicRenderCamera=null;kanthicLanternUsesCamera=false;kanthicPlayerLanternValid=false;
+      kanthicSelectedShot=null;kanthicAppliedShot=null;kanthicMaskProjected=false;
       if(kanthicIndexedScene||kanthicRecords.length||kanthicCanvas||kanthicRegion!==null)resetKanthicGlyphCache();
       return false;
     }
@@ -1816,7 +1828,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic lantern follows the live player portrait plane in gameplay and the rendered camera in scripted shots; 2-tile radius.',
+        latestChange: 'Kanthic lantern follows the player portrait unless an authored shot actually controls the current camera; 2-tile radius.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
@@ -1843,7 +1855,7 @@
           lantern: { ...tuning.lantern },
         },
         outlineMistRedrawLayers: group?.visible ? lastRedrawLayerCount : 0,
-        kanthicCameraAtmosphere: kanthicCameraValid ? { center: {x:kanthicCameraMistCenter.x,y:kanthicCameraMistCenter.y,z:kanthicCameraMistCenter.z}, lantern: { ...(kanthicLanternUsesCamera ? kanthicCameraLantern : kanthicPlayerLanternValid ? kanthicPlayerLantern : {}), mode: kanthicLanternUsesCamera ? 'camera' : 'player', radiusTiles:tuning.lantern.radiusTiles*KANTHIC_LANTERN_RADIUS_SCALE} } : null, // Actual selected lantern anchor and effective radius for mobile QA.
+        kanthicCameraAtmosphere: kanthicCameraValid ? { center: {x:kanthicCameraMistCenter.x,y:kanthicCameraMistCenter.y,z:kanthicCameraMistCenter.z}, lantern: { ...(kanthicLanternUsesCamera ? kanthicCameraLantern : kanthicPlayerLanternValid ? kanthicPlayerLantern : {}), mode: kanthicLanternUsesCamera ? 'camera' : 'player', radiusTiles:tuning.lantern.radiusTiles*KANTHIC_LANTERN_RADIUS_SCALE, screen:kanthicMaskProjected ? {...kanthicMaskProjection} : null}, selectedShot:kanthicSelectedShot?.camera?.id || null, selectedReason:kanthicSelectedShot?.reason || null, appliedShot:kanthicAppliedShot?.camera?.id || null, appliedReason:kanthicAppliedShot?.reason || null } : null, // Actual selected lantern anchor, screen position and camera ownership for mobile QA.
         effectiveMistLayers: group?.visible ? layers.map(({ mesh }) => ({ visible: mesh.visible, radiusTiles: mesh.scale.x, height: mesh.scale.y, opacity: mesh.material.opacity, color: `#${mesh.material.color.getHexString()}`, textured: !!mesh.material.map })) : [], // Actual material values for phone-readable QA.
         treeFade: window.ZoneTreeFade?.snapshot(),
         layers: layerLive.map(l => ({ ...l })),
