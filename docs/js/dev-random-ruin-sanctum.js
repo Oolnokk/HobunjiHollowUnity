@@ -634,7 +634,7 @@
       const patterns=[...(door.decals||[]).map(d=>d.mesh||d.disc),door.center].filter(Boolean);
       for(const mesh of patterns)mesh.userData.ruinDoorRuneGlow=true;
       window.CloudForestFog?.invalidateKanthicGlyphs?.();
-      if(door.group?.position){const p=door.group.position;door.runeLight={x:p.x+(door.site?.normal?.x||0)*.35,y:p.y+(door.height||3.1)*.55,z:p.z+(door.site?.normal?.z||0)*.35,radius:1.35,strength:.36,color:[153,113,235],active:true,doorRune:true};(s.sanctumLights||=[]).push(door.runeLight);}
+      if(door.group?.position){const p=door.group.position;door.runeLight={x:p.x+(door.site?.normal?.x||0)*.35,y:p.y+(door.height||3.1)*.55,z:p.z+(door.site?.normal?.z||0)*.35,floorY:p.y,floorTolerance:2.5,radius:1.35,strength:.36,color:[153,113,235],active:true,doorRune:true};(s.sanctumLights||=[]).push(door.runeLight);}
     }
     (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     door.awakeAt = performance.now();
@@ -1524,9 +1524,34 @@
     return planLayout(cols - wing, rows);
   }
 
+  // The reserved sanctum is outside the ordinary wing registry. Expose its render bounds
+  // separately so the glyph/flame compositor never changes encounter ownership.
+  function sanctumGlyphRegions(){
+    if(!s?.layout||s.context?.theme!=='kanthic')return null;
+    if(!s.glyphRegions){
+      const floor=Number(s.context.meta?.floorSurfaceY)||0;
+      const ceiling=Number(s.context.ceilingY);
+      const high=Math.max(floor+4,Number.isFinite(ceiling)?ceiling:floor+4);
+      s.glyphRegions=Object.entries(s.layout).filter(([name,b])=>['arena','passage','vault'].includes(name)&&b)
+        .map(([name,b])=>({id:'sanctum:'+name,bounds:{minX:b.minX-.16,maxX:b.maxX+.16,minZ:b.minZ-.16,maxZ:b.maxZ+.16,minY:floor-.65,maxY:high}}));
+    }
+    return s.glyphRegions;
+  }
+  function sanctumGlyphRegionAt(x,y,z){
+    if(!Number.isFinite(x+y+z))return null;
+    for(const {id,bounds:b} of sanctumGlyphRegions()||[]){
+      if(x>=b.minX&&x<=b.maxX&&z>=b.minZ&&z<=b.maxZ&&y>=b.minY&&y<=b.maxY)return id;
+    }
+    return null;
+  }
+  function sanctumGlyphRegionBounds(id){
+    return sanctumGlyphRegions()?.find(r=>r.id===id)?.bounds||null;
+  }
+
   window.DevRandomRuinSanctum = Object.freeze({
     reserve,
     planLayout,
+    glyphRegionAt:sanctumGlyphRegionAt,glyphRegionBounds:sanctumGlyphRegionBounds,
     igniteAll:() => { for (const brazier of s?.braziers || []) igniteBrazier(brazier); return !!s; }, // Diagnostics.
     enter:() => enterSanctum(),
     isGreatDoorUnlocked:() => !!s?.door && s.door.state !== 'sealed', // The unlocked Great Door's positional music replaces the ruin soundtrack until this ruin is cleared.
