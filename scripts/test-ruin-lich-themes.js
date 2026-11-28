@@ -17,15 +17,15 @@ assert.match(ruinSource, /getRuntimeContext:\(\)=>ruin\?\{[^}]*floorSet:ruin\.fl
 assert.match(puzzlesSource, /state\?\.context\?\.theme !== 'hronal'\) return null/, 'Rope lava is Hronal-only');
 assert.match(fogSource, /tradition === 'kanthic' \? 1/, 'Kanthic rooms retain pure blackness');
 assert.match(fogSource, /ruinTradition === 'tothal'\) return/, 'Tothal lantern illumination is disabled');
-assert.match(fogSource, /const KANTHIC_LANTERN_RADIUS_SCALE = 2 \/ 2\.4;/, 'Kanthic default radius is 2 tiles');
-assert.match(fogSource, /ruinLanternScale = ruinTradition === 'kanthic' \? KANTHIC_LANTERN_RADIUS_SCALE : 1/, 'Only Kanthic uses the 2-tile default radius for the shared feathered mask');
+assert.match(fogSource, /const KANTHIC_LANTERN_RADIUS_SCALE = 0\.66;/, 'Kanthic radius is the midpoint between the original 1.0 and contracted 0.32 scales');
+assert.match(fogSource, /ruinLanternScale = ruinTradition === 'kanthic' \? KANTHIC_LANTERN_RADIUS_SCALE : 1/, 'Only Kanthic uses the midpoint radius for the shared feathered mask');
 assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles\*KANTHIC_LANTERN_RADIUS_SCALE,/, 'Kanthic exposes the same live radius to rope and ruin light consumers');
 const lanternMaskSource = fogSource.slice(fogSource.indexOf('function drawLanternMasksCompat('), fogSource.indexOf('function ruinShadowPolygons(')); // Only the lantern path is forbidden from using a hard camera-centered clipping circle.
 assert(lanternMaskSource.length > 0, 'Shared lantern-mask function is present');
 assert.doesNotMatch(lanternMaskSource, /ctx\.clip\(/, 'No hard camera-centered lantern clipping circle may survive');
 assert.match(fogSource, /function renderKanthicGlyphFrame\(/, 'Kanthic glyphs are composited with real world depth rather than triangle-shaped Canvas2D cutouts');
 assert.match(fogSource, /KANTHIC_STANDARD_DARKNESS_ALPHA = 0\.95/, 'Kanthic darkness uses the shared underground ambient rendering pass');
-assert.match(fogSource, /radiusTiles: 2\.4,/, 'default lantern tuning remains 2.4 tiles, or 2 in Kanthic');
+assert.match(fogSource, /radiusTiles: 2\.4,/, 'default lantern tuning remains 2.4 tiles, or 1.584 in Kanthic');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');
 assert.match(bootstrapSource, /dev-random-ruin-lich-themes\.js/, 'Loader must include the theme composer');
 const interiorSource=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8'); // Ground height remains separate from the renderer's sinking height.
