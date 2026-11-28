@@ -6,7 +6,7 @@
   const entries = new Map(); // child ID -> shared burden + live NPC and persistence callback.
   const proxySources = new WeakMap(); // Proxy group -> source model/geometry, kept OUT of serializable Object3D.userData.
   const areas = new Set(['interior', 'farm', 'town']); // Settlement maps plus the real exterior zone registry.
-  const debug = { latestChange: 'Carried babies bake their live head-scaled portrait; silhouette-only backs use colored art', lastError: null }; // Mobile-facing failures.
+  const debug = { latestChange: 'Carried baby portraits replay alpha-tested outline depth at their visible pose', lastError: null }; // Mobile-facing failures.
 
   function isAllowedArea(value) {
     const area = String(value || ''); // Farmhouse and barn interior maps share the home policy.
@@ -79,6 +79,9 @@
       mesh.userData.noOutline = true; // Source PNG already contains its own black ink.
       mesh.userData.hobunjiFamilyBabyPhysicalCarry = true; // Protect the infant from the legacy held-weapon replay.
       group.add(mesh);
+      // Color layering disables stowed depth writes; use the existing PNG depth-only replay and visible-pose adapter.
+      window.PngPlaneOutlineOccluder?.registerDepthMesh?.(mesh);
+      window.HobunjiPortraitOutlineParity?.installMeshHook?.(mesh);
     } else {
       const geometry = new THREE.PlaneGeometry(width, height); // Simple fallback for rigid or not-yet-rigged NPCs.
       for (const [texture, rear] of [[front, false], [back, true]]) {
@@ -89,6 +92,8 @@
         plane.userData.noOutline = true;
         plane.userData.hobunjiFamilyBabyPhysicalCarry = true; // Fallback faces obey the same physical baby rule.
         group.add(plane);
+        window.PngPlaneOutlineOccluder?.registerDepthMesh?.(plane);
+        window.HobunjiPortraitOutlineParity?.installMeshHook?.(plane); // Same protection for fallback faces.
       }
     }
     group.visible = false; // The real baby NPC is visible until a parent picks them up.

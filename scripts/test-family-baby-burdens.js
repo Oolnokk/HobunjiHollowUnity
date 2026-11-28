@@ -6,10 +6,15 @@ class Vector {
   set(x, y, z) { Object.assign(this, { x, y, z }); return this; }
   copy(other) { return this.set(other.x, other.y, other.z); }
 }
+class Matrix4 {
+  constructor(value = 0) { this.value = value; }
+  copy(other) { this.value = other.value; return this; }
+}
 class Group {
   constructor() { this.isObject3D = true; this.parent = null; this.children = []; this.visible = true;
+    this.matrixWorld = new Matrix4();
     this.position = new Vector(); this.rotation = new Vector(); this.scale = new Vector(1, 1, 1);
-    this.userData = {}; }
+    this.userData = {}; this.layers = { mask: 1, enable(bit) { this.mask |= 1 << bit; }, set(bit) { this.mask = 1 << bit; } }; }
   add(node) { node.parent?.remove(node); node.parent = this; this.children.push(node); }
   remove(node) { this.children = this.children.filter(child => child !== node); if (node.parent === this) node.parent = null; }
   traverse(fn) { fn(this); for (const child of this.children) child.traverse(fn); }
@@ -19,8 +24,9 @@ class Group {
 class Mesh extends Group { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
 class PlaneGeometry { constructor(w, h) { this.width = w; this.height = h; } dispose() { this.disposed = true; } }
 class MeshBasicMaterial { constructor(options) { Object.assign(this, options); } dispose() { this.disposed = true; } }
-const THREE = { Group, Mesh, Vector3: Vector, PlaneGeometry, MeshBasicMaterial, FrontSide: 0 }; // Small structural stand-in for actual THREE objects.
+const THREE = { Group, Mesh, Matrix4, Vector3: Vector, PlaneGeometry, MeshBasicMaterial, FrontSide: 0, LessEqualDepth: 3 }; // Small structural stand-in for actual THREE objects.
 const scene = new Group(), babyRoot = new Group(), spouseRoot = new Group(), portrait = new Group();
+scene.isScene = true;
 babyRoot.position.set(6.5, 0, 6.5); spouseRoot.position.set(6.7, 0, 6.5);
 scene.add(babyRoot); scene.add(spouseRoot); spouseRoot.add(portrait);
 const babyAvatar = { userData: { frontTexture: {}, backTexture: {}, portraitModelWidth: .3, portraitModelHeight: .3 } };
@@ -50,9 +56,13 @@ const api = {
     item.onLost?.(item); item.group.parent?.remove(item.group); return true; },
 };
 const window = {
-  THREE, Shattercasks: api,
+  THREE, Shattercasks: api, PNGPlaneAvatar: { buildSinglePlaneAvatarModel() {} },
   RomanceSystem: { helpers: { deps: () => ({ getCurrentArea: () => currentArea }), findWalker: id => id === 'spouse-id' ? spouseWalker : null } },
 };
+vm.runInNewContext(fs.readFileSync('docs/js/png-plane-outline-occluder.js', 'utf8'), { window, THREE });
+const pngDepth = window.PngPlaneOutlineOccluder;
+let clock = 1000; // The adjacent visible/depth draws share a fresh snapshot.
+vm.runInNewContext(fs.readFileSync('docs/js/portrait-plane-outline-parity.js', 'utf8'), { window, performance: { now: () => clock } });
 vm.runInNewContext(fs.readFileSync('docs/js/family-baby-burdens.js', 'utf8'), { window, console });
 const carry = window.FamilyBabyBurdens, persist = () => persistCount++;
 assert(carry.sync(child, babyWalker, 'basket', persist));
@@ -70,6 +80,36 @@ assert.equal(carry.isProxyActive(child.id), true, 'an invisible carried baby can
 assert.equal(carry.sync(child, babyWalker, 'basket', persist).burden.id, 'family_baby_test-baby');
 back = held; held = null; carry.sync(child, babyWalker, 'basket', persist);
 assert.equal(child.carryPose, 'back', 'player stowing is observed without a second carry implementation');
+const stowedFaces = back.group.children;
+for (const [index, face] of stowedFaces.entries()) {
+  assert(face.layers.mask & (1 << pngDepth.LAYER));
+  assert.equal(face.userData.__hobunjiPortraitOutlineParity, true, 'carry-specific face installs the real visible-pose adapter');
+  face.material.depthWrite = false; face.material.colorWrite = true;
+  face.matrixWorld.value = 10 + index;
+  face.onBeforeRender(null, scene, null, null, face.material); face.onAfterRender();
+  face.matrixWorld.value = 50 + index; // Simulate the composed color pose being undone before the depth replay.
+}
+clock += 10;
+const depthCamera = new Group();
+let depthDraws = 0;
+pngDepth.init({ camera: depthCamera, renderer: { render(root, camera) {
+  assert.equal(root, scene); assert.equal(camera.layers.mask, 1 << pngDepth.LAYER);
+  for (const [index, face] of stowedFaces.entries()) {
+    assert.equal(face.material.depthWrite, true); assert.equal(face.material.colorWrite, false);
+    assert.equal(face.material.depthFunc, THREE.LessEqualDepth); assert.equal(face.material.alphaTest, .35);
+    face.onBeforeRender(null, root, camera, null, face.material);
+    assert.equal(face.matrixWorld.value, 10 + index, 'depth-only infant silhouette follows the rendered pose');
+    face.onAfterRender();
+    assert.equal(face.matrixWorld.value, 50 + index, 'depth-only pose is restored');
+  }
+  depthDraws++;
+} } });
+pngDepth.renderDepth(scene);
+assert.equal(depthDraws, 1, 'stowed child participates in the existing PNG outline depth pass');
+pngDepth.renderDepth(scene);
+assert.equal(depthDraws, 2, 'repeat draw preserves the same visible pose and restores again');
+for (const face of stowedFaces) { assert.equal(face.material.depthWrite, false); assert.equal(face.material.colorWrite, true); }
+assert.equal(depthCamera.layers.mask, 1, 'camera layer restored after depth replay');
 held = back; back = null; carry.sync(child, babyWalker, 'basket', persist);
 assert.equal(child.carryPose, 'arms', 'player retrieving from back returns to arms');
 const item = held; held = null; item.carried = false; item.flying = true;
@@ -82,6 +122,8 @@ assert.equal(item.flying, false, 'shared physical impact stops the baby flight')
 assert.equal(babyRoot.visible, true, 'original baby NPC returns only after landing');
 assert.equal(child.carryBy, null); assert.equal(child.carrySpot.area, 'interior'); assert.equal(babyRoot.visible, true);
 assert.equal(carry.isProxyActive(child.id), false, 'the baby NPC becomes command-targetable after landing');
+pngDepth.renderDepth(scene);
+assert.equal(depthDraws, 2, 'hidden carry proxy does not participate in outline depth after landing');
 assert.equal(carry.spouseCarry(child, babyWalker, spouseWalker, 'back', persist), true);
 assert.equal(child.carryBy, 'spouse'); assert.equal(child.carryPose, 'back');
 assert.equal(carry.snapshot().babies[0].parent, portrait.name || null);
@@ -155,6 +197,8 @@ const sameBurden = carry.sync(child, rebuiltWalker, 'basket', persist).burden;
 assert.equal(sameBurden, beforeBaking, 'switching the artwork keeps the one physical baby');
 assert.equal(sameBurden.group.children.length, 1, 'posed portrait replaces the flat proxy faces');
 assert.equal(sameBurden.group.children[0].geometry, bakedGeometry);
+assert(sameBurden.group.children[0].layers.mask & (1 << pngDepth.LAYER), 'baked portrait registers for outline depth');
+assert.equal(sameBurden.group.children[0].userData.__hobunjiPortraitOutlineParity, true, 'baked proxy installs pose parity');
 assert.equal(sameBurden.group.children[0].position.z, .13,
   'baked infant keeps the original portrait depth; the mesh anchor must not be added twice');
 assert.equal(sameBurden.group.children[0].material[1].map, newerFront, 'posed rear face remains colored');
@@ -185,6 +229,10 @@ rebuiltWalker.avatarGroup.userData.neckRig.headScaleJoint.position = new Vector(
 carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(bakeCalls, 2, 'head-offset adjustment triggers exactly one replacement bake');
 assert.equal(sameBurden.group.children[0].geometry, shiftedGeometry);
+assert(sameBurden.group.children[0].layers.mask & (1 << pngDepth.LAYER), 'replacement portrait registers for outline depth');
+assert.equal(sameBurden.group.children[0].userData.__hobunjiPortraitOutlineParity, true, 'replacement proxy installs pose parity');
+pngDepth.prune();
+assert.equal(pngDepth.snapshot().registered, 1, 'retired portrait registrations are pruned');
 assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'rebuild refreshes collision mesh references');
 assert.equal(bakedGeometry.disposed, true, 'old baked geometry is disposed after the art swap');
 assert.equal(oldBakedMesh.material[0].disposed, true, 'retired front material is disposed');
