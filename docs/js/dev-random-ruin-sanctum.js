@@ -634,7 +634,7 @@
       const patterns=[...door.decals.map(d=>d.mesh||d.disc),door.center].filter(Boolean);
       for(const mesh of patterns)mesh.userData.ruinDoorRuneGlow=true;
       window.CloudForestFog?.invalidateKanthicGlyphs?.();
-      if(door.group?.position){const p=door.group.position;door.runeLight={x:p.x+door.site.normal.x*.35,y:p.y+door.height*.55,z:p.z+door.site.normal.z*.35,radius:1.35,strength:.36,color:[153,113,235],active:true,doorRune:true};s.sanctumLights.push(door.runeLight);}
+      if(door.group?.position){const p=door.group.position;door.runeLight={x:p.x+(door.site?.normal?.x||0)*.35,y:p.y+(door.height||3.1)*.55,z:p.z+(door.site?.normal?.z||0)*.35,radius:1.35,strength:.36,color:[153,113,235],active:true,doorRune:true};s.sanctumLights.push(door.runeLight);}
     }
     (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     door.awakeAt = performance.now();
@@ -760,6 +760,7 @@
 
   function standingBrazier(kit, root, x, z, y0, shortOrdinary = false) {
     const holder = new THREE.Group();
+    holder.name=shortOrdinary?'kanthic-sanctum-ordinary-brazier':'ruin-sanctum-brazier';
     holder.position.set(x, y0, z);
     const authored = authoredPiece('ruinStandingBrazier');
     if (authored) {
@@ -778,7 +779,7 @@
     root.add(holder);
     fire.holder = holder;
     fire.ordinaryFire=shortOrdinary; // Only the short orange arena braziers burn plasm.
-    if(shortOrdinary)holder.userData.fireHazard=false;
+    if(shortOrdinary){holder.userData.fireHazard=false;holder.userData.ordinaryFire=true;}
     fire.lightSource = {x,y:y0+(shortOrdinary?.63:1.4),z,floorY:y0,floorTolerance:3,radius:shortOrdinary?1.5:9.5,strength:.97,color:shortOrdinary?[255,175,92]:[175,220,255],active:false,flameAnchor:fire.anchor,flameHalo:fire.halo}; // Static 2D light mask follows this brazier's lit state.
     return fire;
   }
