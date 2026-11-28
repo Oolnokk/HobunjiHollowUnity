@@ -782,6 +782,12 @@
       &&(!chain.external||!Number.isFinite(y)||(y>=chain.floorY-3.4&&y<=chain.floorY+1.35)))||null;
   }
 
+  function crossedRopeChainDeathPlane(x,z,previousY,feetY) {
+    if(!inRuin()||!state||!Number.isFinite(previousY)||!Number.isFinite(feetY))return false;
+    const chain=ropeChainPitAt(x,z,previousY)||ropeChainPitAt(x,z,feetY);
+    return !!chain&&feetY<chain.floorY-.5&&previousY>=chain.floorY-3.4;
+  }
+
   function instantRopeChainDeath() {
     if(!inRuin()||!state)return false;
     // PlayerDowned's direct death skips Second Wind, crawl and the downed HUD;
@@ -968,7 +974,7 @@
     return {
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
       roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,torch,torchEndOffset,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
-      yaw,length,maxLength:Math.max(length,maxLength),minBobY,angle,launchAngle:angle,omega:0,
+      yaw,length,restYaw:yaw,restLength:length,maxLength:Math.max(length,maxLength),minBobY,angle,launchAngle:angle,omega:0, // Authored retry geometry.
       attached:false,braking:false,startPlatform,endPlatform,externalMount:!!mountObject,
       hazard:null,
       grabPoint,shaftRopeId,launchPad,bob:null,lastSafeBob:null,collisionStops:0,autoGrabCount:0,airCatchCount:0,
@@ -1846,7 +1852,7 @@
       minY:storyY-.32,maxY:storyY+.32,pad:.02,
     }):sampleSupport(point.x,point.z);
     const final={x:point.x,z:point.z,
-      y:Number.isFinite(storyY)?storyY:Number(support?.y ?? point.y ?? 0)};
+      y:Number(support?.y ?? (Number.isFinite(storyY)?storyY:point.y) ?? 0)};
     state.checkpoints.active={id,point:final,at:performance.now()};
     state.checkpoints.triggered.add(id);
     state.checkpoints.activationCount++;
@@ -1914,7 +1920,7 @@
   function respawnAtCheckpoint(reason='death') {
     if(!inRuin()||!state?.checkpoints?.active||!deps?.player)return false; // Canonical game respawn calls this for every death source; never hijack deaths after leaving the test ruin.
     const whitePoint=globalThis.RuinCheckpointTravel?.activeRespawnPoint?.();
-    const checkpoint=whitePoint?{id:'white-fire',point:whitePoint}:state.checkpoints.active; // Death, rope falls and other resets use the same saved white flame.
+    let checkpoint=whitePoint?{id:'white-fire',point:whitePoint}:state.checkpoints.active; // Death, rope falls and other resets use the same saved white flame.
     const context=state.context;
     for(const composer of composers){
       try{composer.onPlayerDeath?.(state.kit,reason);}catch(error){console.warn('[Random Test Ruin] composer death reset failed',error);}
@@ -1931,10 +1937,24 @@
     if(deps.player.staggered)deps.player.staggered={active:false,direction:null,endsAt:0};
     deps.player.invulnUntil=performance.now()+CHECKPOINT_INVULN_MS;
     window.PlayerJump?.reset?.(); // A raised landing or rope flight must release its height before the checkpoint takes over.
+    // Prefer real support on the intended story rather than an unrelated deck.
+    const safePoint=(point)=>{
+      if(!point)return null;
+      for(const offset of [[0,0],[.35,0],[-.35,0],[0,.35],[0,-.35],[.7,0],[-.7,0],[0,.7],[0,-.7]]){
+        const x=point.x+offset[0],z=point.z+offset[1];
+        if(ropeChainPitAt(x,z,point.y))continue;
+        const support=DS.sampleSupport?.(x,z,{minY:point.y-.45,maxY:point.y+.45,pad:.02});
+        if(support&&!ropeBlockedAt(x,z,ROPE_COLLISION_RADIUS,support.y))return {x,z,y:support.y};
+      }
+      return null;
+    };
+    const landing=safePoint(checkpoint.point)||safePoint(state.checkpoints.active.point)||safePoint(state.entryCheckpointPoint);
+    if(landing)checkpoint={...checkpoint,point:landing};
     setPlayerWorld(checkpoint.point,true,true);
     state.flight=null;
     if(state.activeRope){state.activeRope.attached=false;state.activeRope.braking=false;}
     state.activeRope=null;
+    for(const rope of state.ropes)restoreRopeGeometry(rope); // Restore unoccupied traversal ropes on death.
     restoreRopeEquipment();
     state.lastPlayerWorld=clonePoint(checkpoint.point);
     deps._snapCameraTarget?.();
@@ -1947,6 +1967,7 @@
 
   function buildCheckpoints(context) {
     const entry=supportPoint(context.spawn.x,context.spawn.z,0);
+    state.entryCheckpointPoint=clonePoint(entry); // Entrance fallback for invalid saved landings.
     state.checkpoints={
       active:null,
       doorwayCount:(context.meta?.doorways||[]).length,
@@ -2506,8 +2527,20 @@
 
   const fixedBrakeIntent=Object.freeze({forward:0,side:0}); // The shaft brake stops the swing without moving it out of the generated route.
   const ropeSweepBlocked=(from,to)=>sweptRopePoint(from,to).blocked;
+  function adjustmentIntent(rope) {
+    const camera=deps?.getActiveCamera?.();
+    if(!camera?.getWorldDirection)return ropeIntent(rope);
+    const dir=camera.getWorldDirection(ropeDirection); // Reuse visual scratch vector only during adjustment.
+    if(!dir||Math.hypot(dir.x,dir.z)<1e-5)return ropeIntent(rope);
+    const yaw=Math.atan2(dir.z,dir.x); // Camera forward in player.angle's world X/Z convention.
+    deps.player.angle=yaw;
+    if(rope.shaftRopeId)return fixedBrakeIntent;
+    const move=RopeCore.intent({yaw},{strength:deps.player.inputStrength,x:deps.player.inputX,z:deps.player.inputY});
+    move.cameraYaw=yaw;
+    return move;
+  }
   function updateAttachedRope(rope,dt) {
-    const intent=ropeIntent(rope);
+    const intent=rope.braking?adjustmentIntent(rope):ropeIntent(rope);
     const step=RopeCore.stepAttached(rope,rope.shaftRopeId&&rope.braking?fixedBrakeIntent:intent,dt,ropeSweepBlocked);
     const bob=updateRopeVisual(rope); // Blocked or not, the rider sits at the (safe) bob.
     rope.lastSafeBob=clonePoint(bob);
@@ -2536,12 +2569,12 @@
       f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
     if(!deps?.player?.prone&&catchAirborneRope(f,previous))return; // Prone victims cannot re-grab another rope while descending.
-    const chain=ropeChainPitAt(f.x,f.z,f.y);
+    const fatalCrossing=crossedRopeChainDeathPlane(f.x,f.z,previous.y,f.y);
     // The player must die BEFORE sampling floors lower down the same X/Z:
     // a missed upper-story catch could otherwise land on a lower deck and
     // evade the instant-death abyss. Likewise never mistake an overhead
     // support at another level for the intended landing bank.
-    if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;}
+    if(fatalCrossing){instantRopeChainDeath();return;}
     const support=f.shaftRopeId&&f.vy<=0
       ?DS.sampleSupport?.(f.x,f.z,{minY:f.y-.08,maxY:previous.y+.03,pad:.02}) // A fast fall can cross a full slab between two frames.
       :f.layerRopeChain
@@ -2591,9 +2624,35 @@
     }
   }
 
+  function restoreRopeGeometry(rope) {
+    if(rope.attached||rope.burden||!Number.isFinite(rope.restLength))return;
+    rope.length=rope.restLength;rope.yaw=rope.restYaw;rope.angle=0;rope.omega=0;rope.braking=false;
+    rope.lastSafeBob=clonePoint(updateRopeVisual(rope)); // Synchronize the grip and collision origin.
+  }
+  function resetDepartedRopes() {
+    if(state.activeRope||state.flight||deps.player?._freeJump)return;
+    const p=playerWorld();
+    if(!p)return;
+    const meta=state.context.meta;
+    for(const rope of state.ropes){
+      if(rope.attached||rope.burden||!Number.isFinite(rope.restLength)||
+        (rope.length===rope.restLength&&rope.yaw===rope.restYaw))continue;
+      if(!rope.resetBounds){
+        const chain=state.ropeChains.find(c=>c.id===rope.ropeChainHallId);
+        const room=(meta?.rooms||[]).find(r=>String(r.id)===String(rope.roomId))||
+          (meta?.rooms||[]).find(r=>{const b=roomBounds(meta,r);return rope.anchor.x>=b.minX&&rope.anchor.x<=b.maxX&&rope.anchor.z>=b.minZ&&rope.anchor.z<=b.maxZ;});
+        rope.resetBounds=chain?.bounds||(room?roomBounds(meta,room):null); // Only adjusted ropes need a room lookup.
+      }
+      const b=rope.resetBounds;
+      const y=window.DevRandomRuin?.getPlayerGroundSupportY?.()??p.y;
+      if((b&&(p.x<b.minX-.15||p.x>b.maxX+.15||p.z<b.minZ-.15||p.z>b.maxZ+.15))||
+        y>rope.anchor.y+.4||y<rope.anchor.y-rope.maxLength-2)restoreRopeGeometry(rope);
+    }
+  }
   function updateRopes(now,dt) {
     if(state.lavaMaterial?.uniforms?.uTime)state.lavaMaterial.uniforms.uTime.value=now/1000; // Same animated water shader as ordinary water, recolored for lava.
     updateFlight(dt);
+    resetDepartedRopes();
     if(!state.flight){
       for(const rope of state.ropes){
         if(rope.attached)updateAttachedRope(rope,dt);
@@ -2684,7 +2743,7 @@
         touchIcon:'✋',
         label:rope.shaftRopeId?'Hold to Brake':'Hold to Stop / Adjust Rope',
         onHoldStart:()=>{rope.braking=true;},
-        onHoldEnd:()=>{rope.braking=false;},
+        onHoldEnd:()=>{if(rope.attached&&rope.braking&&!rope.shaftRopeId)updateAttachedRope(rope,0);rope.braking=false;}, // Capture final aim between frames.
       });
     }
     return controls;
@@ -2714,7 +2773,7 @@
       })),
       ropes:state.ropes.map(rope=>({
         id:rope.id,roomId:rope.roomId,attached:rope.attached,braking:rope.braking,
-        length:+rope.length.toFixed(3),angle:+rope.angle.toFixed(3),omega:+rope.omega.toFixed(3),yaw:+rope.yaw.toFixed(3), // Mobile/browser diagnostics prove movement input changes the live pendulum rather than a canned traversal.
+        length:+rope.length.toFixed(3),restLength:rope.restLength,restYaw:rope.restYaw,angle:+rope.angle.toFixed(3),omega:+rope.omega.toFixed(3),yaw:+rope.yaw.toFixed(3), // Mobile/browser diagnostics prove movement input changes the live pendulum rather than a canned traversal.
         ceilingY:+rope.ceilingY.toFixed(3),ceilingMounted:rope.mount?.parent===state.group,weaponStowed:!!state.ropeHeldToolSnapshot,
         anchor:clonePoint(rope.anchor),bob:clonePoint(rope.bob),grabPoint:clonePoint(rope.grabPoint),
         bottomY:+(rope.anchor.y-rope.length).toFixed(3),minBobY:+(rope.minBobY||0).toFixed(3),
@@ -2894,8 +2953,8 @@
     catchAirborneRope, // Called by PlayerJump after a physical airborne approach, including jumps into generated ruin ropes.
     respawnAtCheckpoint,
     getIlluminableRopes:()=>state&&inRuin()?state.ropes:[], // Kanthic lantern lighting can project onto the actual hanging rope endpoints without creating a light per mesh.
-    isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z),playerWorld()?.y), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
-    instantRopeChainDeath,
+    isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z),deps?.player?._freeJump?.feetY??window.DevRandomRuin?.getPlayerGroundSupportY?.()??playerWorld()?.y), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
+    crossedRopeChainDeathPlane,instantRopeChainDeath,
     // Every unsolved projectile target this runtime owns (ceiling glyphs and
     // composer targets), for the proximity hum; [] outside the ruin.
     listProjectileTargets:()=>!state||!inRuin()?[]:[
