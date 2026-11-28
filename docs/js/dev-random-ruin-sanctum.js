@@ -202,7 +202,26 @@
     if (!fire || fire.lit) return;
     fire.lit = true;
     fire.anchor.visible = true;
-    if (fire.lightSource) fire.lightSource.active = true; // The same flame now lifts the darkness overlay, not just its 3D particles.
+    if (fire.lightSource) fire.lightSource.active = true;
+    if (fire.holder?.userData && fire.ordinaryFire) fire.holder.userData.fireHazard = true; // A real flame can renew a carried torch. // The same flame now lifts the darkness overlay, not just its 3D particles.
+  }
+
+  function extinguishFire(fire) {
+    if(!fire)return;
+    fire.lit=false;
+    if(fire.anchor)fire.anchor.visible=false;
+    if(fire.lightSource)fire.lightSource.active=false;
+    if(fire.holder?.userData&&fire.ordinaryFire)fire.holder.userData.fireHazard=false;
+  }
+
+  function rotateKanthicFires(owner,dt) {
+    if(!owner?.inSanctum||owner.context?.theme!=='kanthic'||!owner.arenaFires?.length)return;
+    owner.cornerFireClock=(owner.cornerFireClock||0)+Math.max(0,dt);
+    const next=Math.floor(owner.cornerFireClock/30)%owner.arenaFires.length; // One active corner, cycling every thirty simulation seconds.
+    if(owner.cornerFireIndex===next)return;
+    owner.cornerFireIndex=next;
+    owner.arenaFires.forEach((fire,i)=>i===next?igniteFire(fire):extinguishFire(fire));
+    window.CloudForestFog?.refreshLightingOverlay?.();
   }
 
   function updateFire(fire, now, dt) {
@@ -615,7 +634,13 @@
     door.awakeAt = performance.now();
     if (door.group) window.GameFeel?.beginReveal?.(door.group); // Show the player the door they just woke (skipped in combat / when on screen / too far).
     if (!s.bgs && window.Music?.registerFurnitureSfxSource) {
-      s.bgs = window.Music.registerFurnitureSfxSource(MAP_ID, door.group.position.x, door.group.position.z, { url:BGS_URL, rangeTiles:16, volume:.8, semitones:DOOR_SEMITONES });
+      s.bgs = window.Music.registerFurnitureSfxSource(MAP_ID, door.group.position.x, door.group.position.z, { url:BGS_URL, rangeTiles:16, volume:.8, semitones:DOOR_SEMITONES,
+        volumeAt:dist=>{
+          if(!window.DevRandomRuin?.isPlayerInShaft?.())return Math.max(0,1-dist/16);
+          const dy=(Number(window.DevRandomRuin?.getPlayerGroundSupportY?.())||0)-door.group.position.y;
+          return Math.max(.014,1/(1+(Math.hypot(dist,dy)/6)**2)); // Quiet but audible anywhere in the shaft, including its upper stories.
+        }
+      });
     }
   }
 
@@ -726,7 +751,7 @@
     kit.registerSurface({ id:'devruin-sanctum-floor-' + id, bounds:{ minX:rect.minX, maxX:rect.maxX, minZ:rect.minZ, maxZ:rect.maxZ }, topY:y0, priority:2 });
   }
 
-  function standingBrazier(kit, root, x, z, y0) {
+  function standingBrazier(kit, root, x, z, y0, shortOrdinary = false) {
     const holder = new THREE.Group();
     holder.position.set(x, y0, z);
     const authored = authoredPiece('ruinStandingBrazier');
@@ -740,11 +765,14 @@
       bowl.position.y = 1.08;
       holder.add(shaft, bowl);
     }
-    const fire = createBlueFire(holder, 1.5); // Shared authored/fallback flame drives the actual blue particle visual.
+    if(shortOrdinary)holder.scale.setScalar(.45); // 55% shorter than standard sanctum braziers, comfortably within torch-swing reach.
+    const fire = createBlueFire(holder, 1.5, shortOrdinary ? {bright:'#ffcf82',base:'#ff792d',halo:0xff9b42} : null); // Shared authored/fallback flame drives the actual blue particle visual.
     fire.anchor.position.y = 1.23;
     root.add(holder);
     fire.holder = holder;
-    fire.lightSource = {x,y:y0+1.4,z,floorY:y0,floorTolerance:3,radius:9.5,strength:.97,color:[175,220,255],active:false,flameAnchor:fire.anchor,flameHalo:fire.halo}; // Static 2D light mask follows this brazier's lit state.
+    fire.ordinaryFire=shortOrdinary; // Only the short orange arena braziers burn plasm.
+    if(shortOrdinary)holder.userData.fireHazard=false;
+    fire.lightSource = {x,y:y0+(shortOrdinary?.63:1.4),z,floorY:y0,floorTolerance:3,radius:shortOrdinary?1.5:9.5,strength:.97,color:shortOrdinary?[255,175,92]:[175,220,255],active:false,flameAnchor:fire.anchor,flameHalo:fire.halo}; // Static 2D light mask follows this brazier's lit state.
     return fire;
   }
 
@@ -837,7 +865,7 @@
     s.arenaFires = [
       [arena.minX + 1.4, arena.minZ + 1.4], [arena.maxX - 1.4, arena.minZ + 1.4],
       [arena.minX + 1.4, arena.maxZ - 1.4], [arena.maxX - 1.4, arena.maxZ - 1.4],
-    ].map(([x, z]) => standingBrazier(kit, root, x, z, y0));
+    ].map(([x, z]) => standingBrazier(kit, root, x, z, y0, context.theme==='kanthic'));
 
     // Four stone coffins, two on each long wall, facing the arena centre.
     // Their Harlyao skeletons rise with the lich, and it raises them again.
@@ -1194,7 +1222,8 @@
       owner.rearDoor.progress=owner.bossDefeated?1:0;
       updateRearDoor(0);
     }
-    for (const fire of owner.arenaFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; if(fire.lightSource)fire.lightSource.active=false; }
+    owner.cornerFireClock=0;owner.cornerFireIndex=null;
+    for (const fire of owner.arenaFires || []) extinguishFire(fire);
     if (!owner.bossDefeated) for (const fire of owner.vaultFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; if(fire.lightSource)fire.lightSource.active=false; }
     owner.lastEncounterEvent = 'reset:'+reason;
   }
@@ -1208,8 +1237,9 @@
       if (s!==owner || owner.encounterRevision!==entryRevision || !owner.enteringSanctum || (typeof deps?.getCurrentArea==='function' && deps.getCurrentArea()!==MAP_ID)) return;
       owner.enteringSanctum = false;
       teleport(entry);
-      for (const fire of owner.arenaFires || []) igniteFire(fire);
       owner.inSanctum = true;
+      if(owner.context?.theme==='kanthic'){owner.cornerFireClock=0;owner.cornerFireIndex=null;rotateKanthicFires(owner,0);}
+      else for (const fire of owner.arenaFires || []) igniteFire(fire);
       if (!s.boss && !s.bossDefeated && !s.bossPending) {
         s.bossPending = true;
         const owner=s, revision=owner.encounterRevision; // Timers must not resurrect a guardian after death or a return-door exit.
@@ -1412,6 +1442,7 @@
       tryAwakenDoor(); // Cheap scalar check; respond immediately to the last upper-floor brazier.
       const allLit = !!s.door && s.door.state !== 'sealed';
       for (const brazier of s.braziers) updateFire(brazier.fire, now, dt);
+      rotateKanthicFires(s,dt);
       for (const fire of s.arenaFires || []) updateFire(fire, now, dt);
       for (const fire of s.vaultFires || []) {
         if (s.bossDefeated) igniteFire(fire);
@@ -1444,7 +1475,7 @@
         built:s.built, rejects:s.rejects.slice(), doorSiteStats:s.doorSiteStats || null,
         braziers:s.braziers.map(b => ({ id:b.id, label:b.label, lit:b.lit, at:p(b.holder) })),
         door:s.door ? { state:s.door.state, progress:+s.door.progress.toFixed(3), at:p(s.door.group), front:s.door.front, attachedToShaft:!!s.door.attachedToShaft, shaftSide:s.door.site?.side||null, decals:s.door.decals.length } : null,
-        bgs:!!s.bgs, layout:s.layout, entry:s.entry || null, bossType:s.bossType || null,
+        bgs:!!s.bgs, cornerFireIndex:s.cornerFireIndex??null, cornerFireClock:s.cornerFireClock||0, cornerFires:(s.arenaFires||[]).map(f=>({lit:f.lit,scale:f.holder?.scale?.x})), layout:s.layout, entry:s.entry || null, bossType:s.bossType || null,
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
@@ -1489,6 +1520,7 @@
     resetEncounter:reason => resetSanctumEncounter(reason || 'debug'), // Mobile diagnostics and regression tests can force an encounter reset without desktop DevTools.
     buildLichBrazier,
     lightSources:() => s?.sanctumLights || [], // Zero-allocation read path for both darkness compositors and mobile diagnostics.
+    ordinaryFireSources:()=> (s?.arenaFires||[]).filter(f=>f.ordinaryFire&&f.lit).map(f=>f.lightSource), // Active nonmagical corner flames only.
     debugUpdateIntro:now => updateBossIntro(now), // Run one real intro-pose tick without rebuilding the dungeon (mobile diagnostics and isolated regression tests).
     getState:() => s,
   });
