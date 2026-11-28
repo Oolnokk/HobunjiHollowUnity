@@ -55,8 +55,36 @@ const {chromium}=require('playwright');
       const spriteTarget=frame(false),spriteDirect=frame(true);
       region=null;api.prepareKanthicGlyphFrame(scene,clock+=20,camera);api.endKanthicGlyphFrame();
       const restored=canvas.style.visibility===''&&glyph.visible&&glyph.material.clippingPlanes===null&&renderer.localClippingEnabled===false;
+      // Exercise the production cylinder geometry against actual rendered pixels.
+      const voidScene=new T.Scene();voidScene.background=new T.Color(0x303030);
+      const previousFetch=window.fetch;
+      window.fetch=async()=>({ok:true,json:async()=>({})});
+      api.init({THREE:{...T,TextureLoader:class{load(){}}},TILE:1,player:{x:0,y:0},
+        getPlayerGroundY:()=>0,isCloudForestArea:()=>false,getCurrentArea:()=> 'map_i_dev_random_ruin',getActiveScene:()=>voidScene});
+      window.fetch=previousFetch;
+      api.update(.016);
+      camera.position.set(0,1,3);camera.lookAt(0,1,0);camera.updateMatrixWorld(true);
+      const farWall=new T.Mesh(new T.PlaneGeometry(4,4),new T.MeshBasicMaterial({color:0xffffff}));
+      farWall.position.set(0,1,-6);voidScene.add(farWall);
+      const nearWall=new T.Mesh(new T.PlaneGeometry(.6,2),new T.MeshBasicMaterial({color:0xffffff}));
+      nearWall.position.set(-1,1,0);voidScene.add(nearWall);
+      const farRune=new T.Mesh(new T.PlaneGeometry(.6,2),glyph.material.clone());
+      farRune.name='engraving-glyph-glow';farRune.position.set(1,1,-5.99);voidScene.add(farRune);
+      region='room:void';bounds[region]={minX:-2,maxX:2,minZ:-7,maxZ:2,minY:-2,maxY:4};
+      function voidFrame(direct){
+        const target=direct?null:rt;renderer.setRenderTarget(target);
+        api.prepareKanthicGlyphFrame(voidScene,clock+=20,camera);
+        try{
+          renderer.render(voidScene,camera);
+          if(!direct)api.renderOutlineMist(renderer,camera,voidScene);
+          if(!api.renderKanthicGlyphFrame(renderer,camera,voidScene,direct))throw Error('void glyph pass not drawn');
+          function pixel(x){const a=new Uint8Array(4);if(target)renderer.readRenderTargetPixels(target,x,64,1,1,a);else renderer.getContext().readPixels(x,64,1,1,renderer.getContext().RGBA,renderer.getContext().UNSIGNED_BYTE,a);return [...a];}
+          return {near:pixel(32),far:pixel(64),rune:pixel(96)};
+        }finally{api.endKanthicGlyphFrame();}
+      }
+      const voidTarget=voidFrame(false),voidDirect=voidFrame(true);
       rt.dispose();renderer.dispose();
-      return {a,b,c,d,spriteTarget,spriteDirect,restored};
+      return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect};
     });
     for(const x of [results.a,results.b]){
       assert(x.left[1]>150,'unoccluded active-room glyph is bright: '+JSON.stringify(x));
@@ -70,6 +98,11 @@ const {chromium}=require('playwright');
       assert(x.spriteOpaque[1]<25,'opaque alpha-tested actor pixels block glyphs: '+JSON.stringify(x));
       assert(x.spriteTransparent[1]>150,'transparent actor texels retain visible wall glyphs: '+JSON.stringify(x));
       assert(x.covered[1]<25,'sprite replay with a colored scene background must not clear the preexisting wall depth: '+JSON.stringify(x));
+    }
+    for(const x of [results.voidTarget,results.voidDirect]){
+      assert(x.near[0]>4,'near geometry retains visible ambient light: '+JSON.stringify(x));
+      assert(x.far.slice(0,3).every(c=>c===0),'ordinary geometry beyond the outer cylinder is black: '+JSON.stringify(x));
+      assert(x.rune[1]>150,'the distant rune pierces the same outer cylinder: '+JSON.stringify(x));
     }
     assert(results.restored,'DOM canvas, source visibility, material clipping and renderer state restore');
     assert.deepEqual(errors,[],'no WebGL or page errors');
