@@ -91,15 +91,16 @@
     }
     scene.add(group);zone.mesh=group;zone.scene=scene;
   }
+  function ordinaryGroundFire(source){return !/skeleton|magic|lich|enchant/i.test(String(source));}
   function ignite({area,x,z,y=0,radius=1.5,seconds=DEFAULT_DURATION,source='unknown'}={}) {
     const px=Number(x),pz=Number(z),floorY=Number(y);
     if(!String(area||'')||!Number.isFinite(px)||!Number.isFinite(pz)||!Number.isFinite(floorY)||
        String(area)!==String(deps?.getCurrentArea?.()||''))return false;
     const patch={area:String(area),x:px,z:pz,y:floorY,radius:Math.max(.3,Math.min(4,Number(radius)||1.5)),
       seconds:Math.max(.5,Math.min(25,Number(seconds)||DEFAULT_DURATION)),age:0,damageTimer:0,
-      source:String(source)};
+      source:String(source),ordinary:ordinaryGroundFire(source)};
     // Neighboring splashes extend the fire but never grow unbounded or multiply damage on one tile.
-    const old=zones.find(z=>z.area===patch.area&&Math.abs(z.y-floorY)<=FLOOR_TOLERANCE&&Math.hypot(z.x-px,z.z-pz)<.5);
+    const old=zones.find(z=>z.area===patch.area&&z.ordinary===patch.ordinary&&Math.abs(z.y-floorY)<=FLOOR_TOLERANCE&&Math.hypot(z.x-px,z.z-pz)<.5);
     if(old){old.seconds=Math.max(old.seconds,old.age+patch.seconds);return true;}
     if(zones.length>=MAX_ZONES)dispose(zones.shift());
     zones.push(patch);buildVisual(patch);
@@ -113,7 +114,7 @@
     const sources=[];
     if(window.AdventuringTools?.isLit?.()&&player&&Number(player.health)>0&&Number.isFinite(feetY))
       sources.push({x:player.x/tile,z:player.y/tile,y:feetY,radius:PLASM_FIRE_RADIUS}); // Same authoritative flame for held and belt-stowed torch.
-    for(const fire of zones)if(fire.area===area&&fire.age<fire.seconds&&!/skeleton|magic|lich|enchant/i.test(fire.source))
+    for(const fire of zones)if(fire.area===area&&fire.age<fire.seconds&&fire.ordinary)
       sources.push({x:fire.x,z:fire.z,y:fire.y,radius:Math.min(2,Math.max(1,fire.radius))});
     if(area==='map_i_dev_random_ruin')for(const light of window.DevRandomRuinSanctum?.ordinaryFireSources?.()||[])
       if(light.active!==false)sources.push({x:light.x,z:light.z,y:light.floorY,radius:PLASM_FIRE_RADIUS});
@@ -124,7 +125,7 @@
         // Recognize conventional physical fire furniture, not magical seals, checkpoint flames or eye glow.
         const key=String(object.userData?.authoredFurnitureKey||object.userData?.ruinFurnitureKey||object.name||'');
         if(object.userData?.ordinaryFire===true)return; // Explicit sanctum sources already entered above; never double-count.
-        if(object.userData?.fireHazard===true&&!/ruin-(small|shaft)|lich|magic|blue|checkpoint|rune/i.test(key)&&/campfire|bonfire|fireplace|torch|fire.source|sconce|brazier|candle/i.test(key))fireFurniture.push(object);
+        if(Object.prototype.hasOwnProperty.call(object.userData||{},'fireHazard')&&!/ruin-(small|shaft)|lich|magic|blue|checkpoint|rune/i.test(key)&&/campfire|bonfire|fireplace|torch|fire.source|sconce|brazier|candle/i.test(key))fireFurniture.push(object);
       });
     }
     for(const object of fireFurniture){
