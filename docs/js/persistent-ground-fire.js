@@ -117,13 +117,14 @@
       sources.push({x:fire.x,z:fire.z,y:fire.y,radius:Math.min(2,Math.max(1,fire.radius))});
     if(area==='map_i_dev_random_ruin')for(const light of window.DevRandomRuinSanctum?.ordinaryFireSources?.()||[])
       if(light.active!==false)sources.push({x:light.x,z:light.z,y:light.floorY,radius:PLASM_FIRE_RADIUS});
-    const now=performance.now();
+    const now=typeof performance!=='undefined'?performance.now():Date.now();
     if(scene!==fireScene||now-fireScanAt>=750){
       fireScene=scene;fireScanAt=now;fireFurniture=[];
       scene?.traverse?.(object=>{
         // Recognize conventional physical fire furniture, not magical seals, checkpoint flames or eye glow.
         const key=String(object.userData?.authoredFurnitureKey||object.userData?.ruinFurnitureKey||object.name||'');
-        if(object.userData?.fireHazard===true&&!/ruin-(small|shaft)|lich|magic|blue|checkpoint/i.test(key)&&/campfire|fireplace|torch|fire.source|sconce|brazier/i.test(key))fireFurniture.push(object);
+        if(object.userData?.ordinaryFire===true)return; // Explicit sanctum sources already entered above; never double-count.
+        if(object.userData?.fireHazard===true&&!/ruin-(small|shaft)|lich|magic|blue|checkpoint|rune/i.test(key)&&/campfire|bonfire|fireplace|torch|fire.source|sconce|brazier|candle/i.test(key))fireFurniture.push(object);
       });
     }
     for(const object of fireFurniture){
@@ -181,6 +182,7 @@
     }
   }
   function clear(area=null){
+    fireScene=null;fireScanAt=-Infinity;fireFurniture.length=0; // A retired world must not be retained by the fire-source cache.
     for(let i=zones.length-1;i>=0;i--)if(area==null||zones[i].area===String(area)){
       dispose(zones[i]);zones.splice(i,1);
     }
