@@ -138,18 +138,17 @@
     return roster;
   }
   function decoratePortraitProfile(profile,roster) {
-    if (!profile || !roster?.specialLichId) return profile;
-    const type=Object.keys(DATA).find(key=>DATA[key].id===roster.specialLichId);
+    if (!profile || (!roster?.specialLichId && roster?.ruinSkeletonTheme!=='kanthic')) return profile;
+    const type=roster.specialLichId ? Object.keys(DATA).find(key=>DATA[key].id===roster.specialLichId) : 'kanthic';
     if (!type)return profile;
     profile.bodyColors={...(profile.bodyColors || {}),C:{hex:roster.appearance?.bodyColors?.C?.hex || bodyColor3For(type)}}; // Override the ordinary skeleton's fixed bone-C guard only for named guardians.
-    if (type==='kanthic') {
+    if (type==='kanthic' && roster.specialLichId) {
       const empty={id:'none',layers:[],tintSlot:null}; // Imlao has no hood, hat, face covering, or facial ornament, including randomly forced headwear.
       profile.hood=empty;profile.mask=empty;profile.upperFace=empty;
       if(!/tangedcirclet/.test(profile.hat?.id || ''))profile.hat=empty; // Only the tanged circlet every guardian wears (over its hidden flame headband) is allowed.
-      profile.facialHair=empty;profile.eyes=empty;
-      return profile;
+      profile.facialHair=empty;profile.eyes=empty; // The authored eye-emission layers below are not cosmetic headwear.
     }
-    const url='cosmetics/appearance/harlyao_skeleton/hskel_eyeglow_'+(type==='tothal'?'f':'m')+'.png'; // Uses the user-uploaded skeleton appearance PNG for each named guardian.
+    const url='cosmetics/appearance/harlyao_skeleton/hskel_eyeglow_'+((roster.appearance?.gender==='female'||type==='tothal')?'f':'m')+'.png'; // Uses the user-uploaded skeleton appearance PNG for each named guardian.
     const pixelDye={sourceHex:'#7F00FF',paletteColorKey:'C',defaultHex:bodyColor3For(type),glow:{blur:3,radius:.65,intensity:3.5}}; // Same exact purple-marker family, two-layer dye and emissive eye lighting as the Hachutu binding mask.
     const base={url,ax:0,ay:0,sx:1,sy:1,pos:'front',xformPreset:'B',pixelDye};
     profile.eyes={id:'special_hskel_eyeglow_'+type,slot:'eyes',tintSlot:null,layers:[base,{...base,pixelDyeOnly:true,paletteColorKey:'C'}]};
