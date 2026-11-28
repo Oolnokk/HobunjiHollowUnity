@@ -1365,7 +1365,18 @@
       if(world.spellPlasm.size||world.rooms.some(room=>room.plasm?.size)){
         const player=kit.deps.player;
         const feet=Number(player?.physicalFeetY??window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y);
-        clearPlasmSources(window.PersistentGroundFire?.plasmFireSources?.('map_i_dev_random_ruin',window.DevRandomRuin?.getRuntimeContext?.()?.scene||world.context.scene||world.group.parent,player,kit.deps.TILE,feet)||[]);
+        world.fireCleanseClock=(world.fireCleanseClock||0)+dt; // Batch remote fires at 10 Hz; a held/belt flame still protects the player before every immersion tick.
+        if(world.fireCleanseClock>=.1||world.lastFireCleanseAt==null){
+          world.fireCleanseClock=0;world.lastFireCleanseAt=now;
+          clearPlasmSources(window.PersistentGroundFire?.plasmFireSources?.('map_i_dev_random_ruin',window.DevRandomRuin?.getRuntimeContext?.()?.scene||world.context.scene||world.group.parent,player,kit.deps.TILE,feet)||[]);
+        }else if(player&&alive(player)&&window.AdventuringTools?.isLit?.()&&Number.isFinite(feet)){
+          // Only recompute when the flame actually enters a new tile or a hazard appears underfoot.
+          const tile=kit.deps.TILE,x=player.x/tile,z=player.y/tile;
+          const previous=world.lastTorchCleanse;
+          if(!previous||Math.hypot(x-previous.x,z-previous.z)>.20||Math.abs(feet-previous.y)>.2||plasmPatchAt(x,z,feet)?.plasm?.has(tileKey(x,z))){
+            clearPlasmSources([{x,z,y:feet,radius:1.5}]);world.lastTorchCleanse={x,z,y:feet};
+          }
+        }
       }
       updatePlasm(kit,dt);tickTimedPlasm(dt);
     }
