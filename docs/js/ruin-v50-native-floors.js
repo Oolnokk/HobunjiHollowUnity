@@ -541,7 +541,7 @@
         const flameBright=(brightRGB[0]<<16)|(brightRGB[1]<<8)|brightRGB[2];
         const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.08,rateScale:.95,colorA:'#'+flameBright.toString(16).padStart(6,'0'),colorB:'#'+flameHex.toString(16).padStart(6,'0')}); // The shared emitter only accepts six-digit hex strings.
         if(flameVisual)nativeFlames.push(flameVisual);
-        const brazierLight={x:cx,y:goalY+1.4,z:cz,floorY:goalY,radius:10.5,strength:.98,
+        const brazierLight={x:cx,y:goalY+1.4,z:cz,floorY:goalY,radius:10.5,strength:.98,flameAnchor:flame,
           color:flameRGB,active:false}; // Uses actual raised support Y, not the nominal story level; otherwise native plateau light floats underground.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         record.goalBrazier={pedestal,flame,restoreLit:()=>{

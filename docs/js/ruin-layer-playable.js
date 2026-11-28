@@ -465,8 +465,8 @@
         const lichRgb=[1,3,5].map(i=>parseInt(String(lichColor).slice(i,i+2),16));
         const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),roomBound:true,active:false}; // Kanthic's goal room is already lit by its brazier record below.
         if(goalLight)roomLights.push(goalLight);
-        const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,roomBound:true,
-          color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber in its lich's colour; other lich themes keep their original atmosphere.
+        const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,roomBound:true,flameAnchor:flame,flameHalo:lichBrazier?.fire.halo,
+          color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // The compositor limits this Kanthic brazier to nearby light while replaying its original flame.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         brazier.restoreLit=()=>{
