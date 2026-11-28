@@ -19,7 +19,7 @@
   const activeDyingCorpses = new Set(); // Tracks unfinished falls, avoiding a full scan of permanently lootable bodies per frame.
   let deps = null;
 
-  const deathDebug = { lastBegin: null, lastRecovery: null }; // Used by mobile diagnostics to expose chosen cause/clip and interrupted transitions.
+  const deathDebug = { lastBegin: null, lastRecovery: null, lastPitLoot: null }; // Used by mobile diagnostics to expose chosen cause/clip and interrupted transitions.
   function init(injectedDeps) { deps = injectedDeps; }
 
   function _deathCause(c) {
@@ -175,6 +175,102 @@
     return { x: (startCol + 0.5) * TILE, y: (startRow + 0.5) * TILE, col: startCol, row: startRow };
   }
 
+  // Recover the ordinary loot entitlement, not a second independent loot roll.
+  function actorFloor(c) {
+    const y=c?.shaftSupportY ?? c?.surfaceYOverride?.() ?? c?.physicalFeetY; // Actor-specific physical support.
+    if (Number.isFinite(y)) return y;
+    return (c?.avatarRef?.group?.position?.y || 0)-(Number(c?.halfHeight)||0.3);
+  }
+  function localFloor() {
+    const y=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Avoid sinking/airborne presentation height.
+    return Number.isFinite(y)?y:actorFloor(deps.getPlayer?.());
+  }
+  function findPitLootRest(c,prevX,prevY) {
+    const tile=deps.TILE,grid=deps.getGrid(),ds=window.DynamicSurfaces; // Current ruin only.
+    const player=deps.getPlayer?.(),floor=localFloor(); // The interacting player's story.
+    const queue=[],visited=new Set(); // Flood-fill once per lethal fall; no ongoing scan.
+    const plasm=new Set((window.DevRandomRuinLichThemes?.plasmTileCenters?.()||[])
+      .filter(p=>Math.abs(p.y-floor)<=0.35).map(p=>Math.floor(p.x)+','+Math.floor(p.z)));
+    function enqueue(col,row) {
+      const key=col+','+row; // Cache rejected tiles as well as reachable tiles.
+      if(visited.has(key))return;
+      visited.add(key);
+      const cell=grid?.[row]?.[col],x=col+0.5,z=row+0.5;
+      if(!cell||cell.incline||cell.mapBoundary||plasm.has(key))return;
+      const support=ds.sampleSupport(x,z,{minY:floor-0.35,maxY:floor+0.35,pad:0});
+      if(!support||!Number.isFinite(support.y))return;
+      if(window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(x,z,0.2,support.y)||
+         window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,0.2,support.y+0.35)||
+         ds.blockerAt?.(x,z,{radius:0.2,actorHeight:1.25,worldY:support.y,y:support.y})||
+         window.InteriorDoorTiles?.blocksBox?.(c.areaId,x,z,0.2)||
+         !deps.canOccupyAt(x*tile,z*tile,tile*0.2,support.y+0.25))return;
+      queue.push({x:x*tile,y:z*tile,col,row,surfaceY:support.y});
+    }
+    if(player)enqueue(Math.floor(player.x/tile),Math.floor(player.y/tile));
+    if(!queue.length&&Number.isFinite(prevX)&&Number.isFinite(prevY))enqueue(Math.floor(prevX/tile),Math.floor(prevY/tile));
+    let best=null,bestDist=Infinity; // Closest Euclidean tile among connected, supported safe tiles.
+    for(let i=0;i<queue.length;i++){
+      const p=queue[i],dist=(p.x-c.x)**2+(p.y-c.y)**2;
+      if(dist<bestDist){best=p;bestDist=dist;}
+      enqueue(p.col-1,p.row);enqueue(p.col+1,p.row);enqueue(p.col,p.row-1);enqueue(p.col,p.row+1);
+    }
+    return best;
+  }
+  function preparePitLoot(c,prevX,prevY) {
+    if(c?._pitLootRest)return true;
+    if(!deps||c?.isCompanion||c?.areaId!=='map_i_dev_random_ruin'||deps.getCurrentArea()!==c.areaId)return false;
+    const ds=window.DynamicSurfaces,x=c.x/deps.TILE,z=c.y/deps.TILE;
+    if(!ds?.pointInPit?.(x,z))return false;
+    // A registered lower landing makes this a survivable drop instead of a lethal pit.
+    if(ds.sampleSupport(x,z,{maxY:actorFloor(c)+0.15,pad:0}))return false;
+    const rest=findPitLootRest(c,prevX,prevY);
+    deathDebug.lastPitLoot={creature:c.id,fallX:x,fallZ:z,rest:rest||null};
+    if(!rest)return false;
+    c._pitLootRest=rest;
+    return true;
+  }
+  function showPitLootBag(c) {
+    const rest=c._pitLootRest,avatar=c.avatarRef,grp=avatar?.group,THREE=window.THREE; // Corpse lifetime owns the visual.
+    if(!grp||!rest)return false;
+    grp.position.set(rest.x/deps.TILE,rest.surfaceY+0.02,rest.y/deps.TILE);
+    grp.rotation.set(0,0,0);grp.scale.set(1,1,1);
+    if(c.groundShadow)c.groundShadow.visible=false;
+    if(avatar._pitLootSprite)return true;
+    if(!THREE?.Sprite||!THREE?.TextureLoader)return false;
+    const texture=new THREE.TextureLoader().load('assets/objectsprites/pouch.png'); // Existing seed inventory PNG; no generated outline.
+    window.HobunjiSpritePngSurface?.configureTexture?.(THREE,texture,'pit-loot-bag');
+    const mat=new THREE.SpriteMaterial({map:texture,transparent:true,alphaTest:0.05,depthWrite:true,toneMapped:false});
+    const sprite=new THREE.Sprite(mat);
+    sprite.name='pit-loot-bag';sprite.userData.noOutline=true;
+    sprite.center.set(0.5,0);sprite.scale.set(0.65,0.65,1);
+    for(const child of grp.children)child.visible=false;
+    grp.add(sprite);avatar._pitLootSprite=sprite;
+    const dispose=avatar.dispose; // Retire bag resources with the existing corpse rig.
+    avatar.dispose=function(...args){grp.remove(sprite);mat.dispose();texture.dispose();avatar._pitLootSprite=null;return dispose?.apply(this,args);};
+    return true;
+  }
+  function settlePitLoot(c) {
+    const p=c._pitLootRest;
+    c.x=p.x;c.y=p.y;c.corpseCol=p.col;c.corpseRow=p.row;
+    c.state='corpse';c.deathRecorded=false;c.keepCorpseAfterLoot=false;c.deathHadImpulse=false;
+    activeDyingCorpses.delete(c);deps.corpseObjects.add(c);
+    try{showPitLootBag(c);}catch(error){console.warn('[CreatureDeath] pit loot bag visual failed',error);}
+    return true;
+  }
+  function canInteractWithLootBag(c) {
+    return !c?._pitLootRest||Math.abs(c._pitLootRest.surfaceY-localFloor())<=0.75;
+  }
+  function decorateLootBag(c,obj) {
+    if(!c?._pitLootRest||!obj)return obj;
+    const buttons=obj.getButtons.bind(obj),action=obj.onAction.bind(obj); // Preserve the canonical loot transaction.
+    obj.getButtons=()=>buttons().map(b=>({...b,icon:'👜',label:'Loot bag'}));
+    obj.onAction=(key,...args)=>{
+      if(!deps.corpseObjects.has(c)||c.corpseLooted||!canInteractWithLootBag(c))return {ok:false,message:'Loot bag unavailable.'};
+      return action(key,...args);
+    };
+    return obj;
+  }
+
   function beginInternal(c, fromX, fromY) {
     window.PerchSupport?.release?.(c, 'died on perch'); // Bodies lose support immediately instead of freezing above the ground.
     window.MaskboundHeadtaker?.cancel?.(c, 'attacker-died'); // Death immediately releases a puppet's grapple, grips, foot IK and temporary head art.
@@ -191,6 +287,7 @@
     if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     c.deathCause = _deathCause(c); // The genuinely lethal Health transaction wins over earlier afflictions or weapon hits.
+    if (preparePitLoot(c)) return settlePitLoot(c);
     const sourceIsDistant = Number.isFinite(fromX) && Number.isFinite(fromY)
       && Math.hypot(c.x - fromX, c.y - fromY) > 1e-4; // A lethal DoT normally passes the victim's own coordinates; it has no impulse.
     const isDamageOverTime = /^(bleedingHealth|poisonedHealth|burningHealth|kindlingHealth)$/.test(String(c._lethalDamageCause || ''));
@@ -405,6 +502,7 @@
   // fallback, plus the fire char and the ground shadow position.
   function restoreSettledPose(c) {
     if (!deps || c?.state !== 'corpse' || !c.avatarRef?.group) return false;
+    if (c._pitLootRest) return showPitLootBag(c);
     const TILE = deps.TILE, grp = c.avatarRef.group;
     const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
     const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
@@ -434,11 +532,14 @@
     init,
     getCorpseObjects: () => deps?.corpseObjects || null, // Render-only consumers reuse the canonical registry without taking ownership.
     begin,
+    preparePitLoot,
+    decorateLootBag,
+    canInteractWithLootBag,
     restoreSettledPose,
     settleAsCorpse,
     recover,
     updateCorpses,
-    getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery }, activeDying: activeDyingCorpses.size, activeSprays: activeSprays.size }),
+    getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery }, lastPitLoot: deathDebug.lastPitLoot, activeDying: activeDyingCorpses.size, activeSprays: activeSprays.size }),
     formatDebug: () => deathDebug.lastRecovery
       ? `Creature death recovery: ${deathDebug.lastRecovery.creature} at ${deathDebug.lastRecovery.areaId}:${deathDebug.lastRecovery.col},${deathDebug.lastRecovery.row} | ${deathDebug.lastRecovery.reason}`
       : `Creature death: last begin ${deathDebug.lastBegin?.creature || 'none'} (${deathDebug.lastBegin?.cause || 'unknown'}, recorded=${!!deathDebug.lastBegin?.recording}); no recovery needed`,

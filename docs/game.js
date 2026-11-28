@@ -1234,14 +1234,25 @@
         c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
       }
 
+      function checkCreaturePitDeath(c, prevX, prevY) {
+        if(c.isCompanion||c.combatTutorialTarget||c.health<=0||!hostileObjects.has(c))return false;
+        if(!window.CreatureDeath.preparePitLoot(c,prevX,prevY))return false;
+        c.health=0;c._lethalDamageCause='fall-pit'; // Normal death transition handles kill rewards and ownership.
+        c.knockbackT=0;c.proneThrowT=0;clearKnockbackLedgeMotion(c);
+        window.KnockbackCollisionImpact?.cancel?.(c);
+        return transitionCreatureToDeath(c,c.x,c.y);
+      }
+
       function advanceCreatureProneThrow(c, dt) {
         if (!(c.proneThrowT > 0)) return false;
         c.proneThrowT = Math.max(0, c.proneThrowT - dt);
         const nextX = c.x + (Number(c.proneThrowVX) || 0) * dt;
         const nextY = c.y + (Number(c.proneThrowVY) || 0) * dt;
         const throwVX = Number(c.proneThrowVX) || 0, throwVY = Number(c.proneThrowVY) || 0; // Preserved until the shared collision resolver has measured the lost travel.
+        const pitStartX=c.x,pitStartY=c.y; // Last supported throw origin for loot recovery.
         const swept = sweepKnockbackMotion(c, nextX, nextY, TILE * 0.32, throwVX, throwVY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
         c.x = swept.x; c.y = swept.y;
+        if(checkCreaturePitDeath(c,pitStartX,pitStartY))return true;
         if (swept.blockedX || swept.blockedY) {
           const impact = resolveKnockbackCollision(c, swept, TILE * 0.32, throwVX, throwVY);
           c.proneThrowT = 0;
@@ -5622,8 +5633,8 @@
         // a guaranteed drop of everything they were wearing. Same
         // getButtons()/onAction() shape, so getCorpseObjectAt below and the
         // action bar are unaware of the difference.
-        if (c.isBandit) return window.BanditCamps.makeCorpseWorldObject(c);
-        return {
+        if (c.isBandit) return window.CreatureDeath.decorateLootBag(c,window.BanditCamps.makeCorpseWorldObject(c));
+        return window.CreatureDeath.decorateLootBag(c,{
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
           promptRoot: c._wildlifeVisualsReleased ? null : (c.avatarRef?.group || null), // A far, data-only corpse has no rig to anchor a prompt to.
@@ -5669,7 +5680,7 @@
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
             };
           },
-        };
+        });
       }
 
       // Zone-aware corpse lookup — getWorldObjectAt only otherwise covers
@@ -5677,7 +5688,7 @@
       function getCorpseObjectAt(col, row) {
         for (const c of corpseObjects) {
           if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue; // corpseLooted: looted but kept (keepCorpseAfterLoot), e.g. revivable skeletons.
-          if (c.corpseCol === col && c.corpseRow === row) return makeCorpseWorldObject(c);
+          if (c.corpseCol === col && c.corpseRow === row && window.CreatureDeath.canInteractWithLootBag(c)) return makeCorpseWorldObject(c);
         }
         return null;
       }
@@ -5692,7 +5703,7 @@
         if (exact || action !== 'obj_loot_corpse') return exact;
         let best = null, bestDist = Infinity;
         for (const c of corpseObjects) {
-          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted) continue;
+          if (c.state !== 'corpse' || c.areaId !== currentArea || c.corpseLooted || !window.CreatureDeath.canInteractWithLootBag(c)) continue;
           const dist = Math.hypot(c.x - player.x, c.y - player.y);
           const tileGap = Math.hypot((c.corpseCol ?? col) - col, (c.corpseRow ?? row) - row);
           if (dist > TILE * 2.25 || tileGap > 1.5 || dist >= bestDist) continue;
@@ -5778,6 +5789,7 @@
       }
 
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
+        if(c?.ruinSkeletonTheme==='kanthic'&&dmgOpts?.tag==='kanthic-plasm')return false; // Native plasm immunity.
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
         if (c?._downed) return false; // A downed companion is untargetable until it is revived (js/companion-downed.js).
@@ -7763,6 +7775,7 @@
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
             advanceCreatureProneThrow(c, entityDt);
+            if(c._deathTransitionStarted)continue;
             if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
@@ -7773,8 +7786,10 @@
             c.knockbackT = Math.max(0, c.knockbackT - entityDt);
             const knockbackVX = c.knockbackVX, knockbackVY = c.knockbackVY; // Preserved until collision deficit/profile resolution completes.
             const nkx = c.x + knockbackVX * entityDt, nky = c.y + knockbackVY * entityDt;
+            const pitStartX=c.x,pitStartY=c.y; // Last supported knockback origin.
             const ckSwept = sweepKnockbackMotion(c, nkx, nky, TILE * 0.32, knockbackVX, knockbackVY, (x, y) => canOccupyAt(x, y, TILE * 0.32));
             c.x = ckSwept.x; c.y = ckSwept.y;
+            if(checkCreaturePitDeath(c,pitStartX,pitStartY))continue;
             if (ckSwept.blockedX || ckSwept.blockedY) {
               const impact = resolveKnockbackCollision(c, ckSwept, TILE * 0.32, knockbackVX, knockbackVY);
               c.knockbackT = 0;
@@ -33690,6 +33705,7 @@
         characterGroundShadowSurfaceOffset,
         tileSurfaceYInArea,
         corpseObjects,
+        getPlayer: () => player,
         getCurrentArea: () => currentArea,
         getGrid: () => grid,
       });

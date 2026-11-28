@@ -1,0 +1,17 @@
+'use strict';
+const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../docs/js/creature-death.js'),'utf8');
+const assert=(ok,msg)=>{if(!ok)throw Error(msg)};
+const map='map_i_dev_random_ruin',corpses=new Set(),grid=Array.from({length:5},()=>Array.from({length:6},()=>({})));
+let lower=false;
+const w={DynamicSurfaces:{pointInPit:x=>x>=3&&x<4,sampleSupport:(x,z,o)=>{if(x>=3&&x<4)return lower&&o.maxY>=-2&&!(o.minY>-2)?{y:-2}:null;return x>=0&&x<6&&z>=0&&z<5?{y:0}:null;}},DevRandomRuin:{getPlayerGroundSupportY:()=>0,shaftBodyBlocksAtFeet:x=>x>=4},ResourceRings:{disposeRingHud(){}},DevRandomRuinLichThemes:{plasmTileCenters:()=>[{x:2.5,z:2.5,y:0}]}};
+new Function('window',source)(w);
+w.CreatureDeath.init({TILE:64,COLS:6,ROWS:5,clamp:(v,a,b)=>Math.max(a,Math.min(v,b)),getCurrentArea:()=>map,getGrid:()=>grid,getPlayer:()=>({x:32,y:160}),canOccupyAt:()=>true,corpseObjects:corpses});
+const c={id:'test',areaId:map,x:224,y:160,shaftSupportY:0,health:0};
+lower=true;assert(!w.CreatureDeath.preparePitLoot(c),'lower platform survived');
+lower=false;assert(w.CreatureDeath.preparePitLoot(c),'fatal pit found');
+assert(c._pitLootRest.col===2&&c._pitLootRest.row!==2,'nearest connected safe tile excludes plasm');
+assert(w.CreatureDeath.begin(c,c.x,c.y)&&corpses.has(c)&&c.state==='corpse','normal corpse registry');
+let calls=0;const obj=w.CreatureDeath.decorateLootBag(c,{getButtons:()=>[{action:'obj_loot_corpse',label:'old'}],onAction:()=>{calls++;corpses.delete(c);return {ok:true}}});
+assert(obj.getButtons()[0].label==='Loot bag','bag prompt');assert(obj.onAction('obj_loot_corpse').ok,'collect');assert(!obj.onAction('obj_loot_corpse').ok&&calls===1,'no repeated loot');
+assert(!w.CreatureDeath.preparePitLoot({areaId:map,x:160,y:160,shaftSupportY:0}),'ordinary ground unchanged');
+console.log('ruin pit loot: passed');
