@@ -626,8 +626,11 @@
   const kanthicMaskProjection = { x: 0, y: 0, radiusPx: 0, coverage: 0 }; // Reused carried-lantern screen projection for mobile QA.
   let kanthicMaskProjected = false; // False if this paint did not project the chosen lantern.
   let kanthicCameraValid = false, kanthicCameraScene = null, kanthicRenderCamera = null; // Invalidate stale lighting on camera or scene changes.
-  const kanthicPlayerLantern = { x: 0, y: 0, z: 0, anchor: 'ground-fallback' }; // Reused player portrait source and mobile anchor diagnostics.
+  const kanthicPlayerLantern = { x: 0, y: 0, z: 0, anchor: 'ground-fallback', playerLantern: true }; // Reused player portrait source and mobile anchor diagnostics.
   const kanthicPortraitCenter = new window.THREE.Vector3(); // Scratch for the live portrait plane's world-space center.
+  const kanthicCameraMatrix = new Float64Array(16), kanthicProjectionMatrix = new Float64Array(16); // Detect camera roll and off-axis projection changes without allocating signatures.
+  let kanthicDeferredLighting = false, kanthicPoseCaptured = false, kanthicPresentedPortrait = false; // Preserve the pose actually rendered, even after frame hooks undo it.
+  let kanthicLateCanvasPaint = false, kanthicPreparedRect = null; // Split pre-world surface repair from the CPU-only final mask paint.
   let kanthicLanternUsesCamera = false, kanthicPlayerLanternValid = false; // Detect shot handoffs and player movement even when the camera is stationary.
   let kanthicCameraFov, kanthicCameraAspect, kanthicCameraZoom, kanthicCameraNear, kanthicCameraFar; // Track projection changes without allocating a per-frame signature.
   const lightToSource = new window.THREE.Vector3(); // Reused camera-to-source vector; no per-light allocations.
@@ -738,11 +741,18 @@
     const root = window.PlayerBodyTransformComposer?.getPlayerMesh?.()
       || window.ProceduralHandAttachments?.gameDeps?.playerMesh; // The local player's actual visual rig, not a carried baby or NPC.
     if (!root || !scene) return false;
-    const portrait = root.userData?.neckRig?.skinnedPlane
-      || window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(root)?.userData?.neckRig?.skinnedPlane
-      || window.CharacterVisuals?.portraitMeshOf?.(root); // Existing cached portrait resolution, including unskinned avatars.
+    let avatar = root.userData?.neckRig?.skinnedPlane ? root : null; // The live player normally owns a directly named avatar group.
+    if (!avatar) for (const child of root.children || EMPTY_LIGHT_LIST) {
+      if (child.name === 'player_avatar') { avatar = child; break; }
+    }
+    if (!avatar) return false; // Never choose a baby's or shoulder pet's portrait while the player is rebuilding.
+    const portrait = avatar.userData?.neckRig?.skinnedPlane
+      || avatar.getObjectByName?.('npc_avatar_front_plane')
+      || window.CharacterVisuals?.portraitMeshOf?.(avatar); // Reuse the existing rigid-portrait fallback only inside the player's own avatar.
     if (!portrait?.getWorldPosition) return false;
     let node = portrait; // Reject an old/detached rig during a scene or appearance transition.
+    while (node && node !== avatar) node = node.parent;
+    if (node !== avatar) return false;
     while (node && node !== root) node = node.parent;
     if (node !== root) return false;
     while (node && node !== scene) node = node.parent;
@@ -752,7 +762,7 @@
   }
 
   // Sample the actual rendered camera, not a cinematic's eventual authored target.
-  function syncKanthicCameraAtmosphere(scene, camera = lightingDeps?.camera) {
+  function syncKanthicCameraAtmosphere(scene, camera = lightingDeps?.camera, reusePresentedPortrait = false) {
     if (!camera?.getWorldPosition || !camera?.getWorldDirection) return false;
     camera.updateWorldMatrix?.(true, false);
     camera.getWorldPosition(kanthicCameraPosition);
@@ -762,19 +772,30 @@
     const x = p.x + d.x * KANTHIC_CAMERA_LANTERN_DEPTH;
     const y = p.y + d.y * KANTHIC_CAMERA_LANTERN_DEPTH;
     const z = p.z + d.z * KANTHIC_CAMERA_LANTERN_DEPTH;
+    if(kanthicCameraScene!==scene||kanthicRenderCamera!==camera)kanthicPresentedPortrait=false;
     const runtime = window.CinematicCameraRuntime; // Selection alone can outlive the actual authored camera override.
     kanthicSelectedShot = runtime?.activeRecord?.() || null;
     kanthicAppliedShot = runtime?.appliedRecordFor?.(camera, lightingDeps?.getCurrentArea?.()) || null;
     const useCamera = !!kanthicAppliedShot; // Only a shot applied to this camera in this area owns the lantern.
     const player = lightingDeps?.player, tile = lightingDeps?.TILE;
-    const hasPortrait = !useCamera && sampleKanthicPortraitCenter(scene); // Skip visual-rig work during cinematics.
+    const reusePortrait = !useCamera && reusePresentedPortrait && kanthicPresentedPortrait && kanthicPlayerLanternValid
+      && !kanthicLanternUsesCamera && kanthicCameraScene === scene && kanthicRenderCamera === camera;
+    if (reusePortrait) kanthicPortraitCenter.set(kanthicPlayerLantern.x,kanthicPlayerLantern.y,kanthicPlayerLantern.z);
+    const hasPortrait = !useCamera && (reusePortrait || sampleKanthicPortraitCenter(scene)); // Skip visual-rig work during cinematics; retain the displayed pose after rollback.
     const anchor = hasPortrait ? 'portrait-plane' : 'ground-fallback'; // Fallback only for unloaded or detached player rigs.
+    if(!hasPortrait)kanthicPresentedPortrait=false;
     const px = hasPortrait ? kanthicPortraitCenter.x : player?.x / tile;
     const py = hasPortrait ? kanthicPortraitCenter.y : Number(lightingDeps?.getPlayerWorldY?.()) + 0.5;
     const pz = hasPortrait ? kanthicPortraitCenter.z : player?.y / tile;
     const playerValid = Number.isFinite(px) && Number.isFinite(py) && Number.isFinite(pz);
     const playerMoved = !useCamera && (playerValid !== kanthicPlayerLanternValid || (playerValid && (anchor !== kanthicPlayerLantern.anchor || px !== kanthicPlayerLantern.x || py !== kanthicPlayerLantern.y || pz !== kanthicPlayerLantern.z)));
-    const changed = !kanthicCameraValid || kanthicCameraScene !== scene || kanthicRenderCamera !== camera
+    let matrixChanged = false; // Camera roll/film shifts can move the screen projection without changing the forward ray.
+    const worldElements = camera.matrixWorld?.elements, projectionElements = camera.projectionMatrix?.elements;
+    for (let i=0;i<16;i++) {
+      if (worldElements && kanthicCameraMatrix[i] !== worldElements[i]) { kanthicCameraMatrix[i] = worldElements[i]; matrixChanged = true; }
+      if (projectionElements && kanthicProjectionMatrix[i] !== projectionElements[i]) { kanthicProjectionMatrix[i] = projectionElements[i]; matrixChanged = true; }
+    }
+    const changed = matrixChanged || !kanthicCameraValid || kanthicCameraScene !== scene || kanthicRenderCamera !== camera
       || useCamera !== kanthicLanternUsesCamera || playerMoved
       || kanthicCameraLantern.x !== x || kanthicCameraLantern.y !== y || kanthicCameraLantern.z !== z
       || kanthicCameraFov !== camera.fov || kanthicCameraAspect !== camera.aspect || kanthicCameraZoom !== camera.zoom
@@ -839,6 +860,7 @@
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
       z: lightingDeps.player.y / lightingDeps.TILE,
+      playerLantern: ruinTradition === 'kanthic', // Only the Kanthic carried light is exempt from unrelated room-source rejection.
     }];
     for (const walker of lightingDeps.npcWalkers) {
       if (walker.area === currentArea && walker.rec?.tags?.includes('watch')) {
@@ -852,19 +874,15 @@
     const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand their physical light radius.
     if (ruinTradition === 'kanthic') kanthicMaskProjected = false;
     for (const carrier of carriers) {
-      if(!carrier.cameraLantern&&!ruinRoomLightAllowed(carrier))continue;
+      if(!carrier.cameraLantern&&!carrier.playerLantern&&!ruinRoomLightAllowed(carrier))continue;
       const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Ignore far-away watch lanterns; carried player light stays nearby.
       if (visibility <= 0) continue;
       const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx, carrier.anchor === 'portrait-plane');
       if (!projected) continue;
       const { center, radius: shineR, coverage } = projected; // One shared pool projection, independent of emitter visibility.
-      if (carrier === kanthicSource) {
-        kanthicMaskProjected = true;
-        kanthicMaskProjection.x = center.x; kanthicMaskProjection.y = center.y; kanthicMaskProjection.radiusPx = shineR; kanthicMaskProjection.coverage = coverage;
-      }
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      const transmission = interiorLightTransmission(carrier.x, carrier.z, carrier.cameraLantern ? kanthicCameraPosition : null);
+      const transmission = carrier.playerLantern ? 1 : interiorLightTransmission(carrier.x, carrier.z, carrier.cameraLantern ? kanthicCameraPosition : null); // The player's own light cannot be blocked by the short logical-feet-to-portrait offset.
       if (transmission <= 0.005) continue;
       const effectiveStrength = lanternStrength * transmission * visibility * coverage; // Fade the actual darkness reveal, not just the decorative warm halo.
       grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * effectiveStrength})`);
@@ -882,6 +900,10 @@
       const shadows = ruinShadowPolygons(carrier, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)); // Carried light throws stone shadows like a wall torch (was an undefined name that aborted every dark-area overlay frame).
       withRuinRoomLightClip(ctx,carrier,()=>withRuinShadowClip(ctx,shadows,()=>{
         ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();
+        if (carrier === kanthicSource || carrier.playerLantern) {
+          kanthicMaskProjected = true; // Report only a mask that actually reached the canvas.
+          kanthicMaskProjection.x=center.x;kanthicMaskProjection.y=center.y;kanthicMaskProjection.radiusPx=shineR;kanthicMaskProjection.coverage=coverage;
+        }
         if(ruinTradition!=='kanthic')return; // Tothal's suppression and Hronal's original lantern behavior are deliberately untouched.
         // A rope's projected top and bottom can lie outside the floor-height lantern disk even
         // when its fibers are near the player in 3D. Clear darkness *on those fibers only*.
@@ -1042,7 +1064,7 @@
     return window.RuinRoomSystem.withLightRegion(ctx,(x,y,z)=>lightingDeps.worldToOverlay(x,y,z),draw); // One room-footprint clip around the entire light pass; never a painted room-shaped tint.
   }
   function withRuinRoomLightClip(ctx,source,draw){
-    if(source?.cameraLantern)return draw(); // Camera-carried reveal follows the shot, not the player's occupied-room filter; physical shadows still apply.
+    if(source?.cameraLantern||source?.playerLantern)return draw(); // Local carried light follows its actual owner, not a static emitter's room lookup; physical shadows still apply.
     if(lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin'||!window.RuinRoomSystem?.withLightClip)return draw();
     return window.RuinRoomSystem.withLightClip(ctx,source,null,draw); // Existing source-room filter, but no camera-projected rectangular paint mask.
   }
@@ -1292,15 +1314,35 @@
   function kanthicRegionAt(x,y,z){
     return window.DevRandomRuinSanctum?.glyphRegionAt?.(x,y,z)||window.RuinRoomSystem?.glyphRegionAt?.(x,y,z)||null;
   }
+  function prepareKanthicSurface() {
+    const canvas=lightingDeps.lctx?.canvas;
+    if(!canvas)return;
+    const w=canvas.width,h=canvas.height;
+    const now=performance.now();
+    // Repair before any world target is bound; skip the expensive surface measurement on unchanged throttled frames.
+    if(!kanthicPreparedRect||now-lastUnifiedLightingDraw>=LIGHTING_OVERLAY_MIN_INTERVAL_MS||Number(lightingDeps.getSceneTransAlpha?.())>0||Number(lightingDeps.getLightningAlpha?.())>0){
+      const surface=window.WeatherFX?.ensurePresentationSurface?.({reason:'kanthic-pre-world-lighting'});
+      kanthicPreparedRect=surface?.rect||lightingDeps.getThreeRect?.()||null;
+    }else kanthicPreparedRect=lightingDeps.getThreeRect?.()||kanthicPreparedRect;
+    if(w!==canvas.width||h!==canvas.height){lastUnifiedLightingDraw=-Infinity;kanthicUploadAt=-Infinity;}
+  }
+  function captureKanthicRenderPose(scene,camera){
+    if(!kanthicDeferredLighting||kanthicPoseCaptured||scene!==kanthicCameraScene||camera!==kanthicRenderCamera)return;
+    kanthicPoseCaptured=true;
+    syncKanthicCameraAtmosphere(scene,camera); // Called while frame-scoped presentation transforms are still applied.
+    kanthicPresentedPortrait=kanthicPlayerLanternValid&&!kanthicLanternUsesCamera&&kanthicPlayerLantern.anchor==='portrait-plane';
+  }
   function prepareKanthicGlyphFrame(scene,now,camera){
-    kanthicLightingPrepared=false;
+    kanthicLightingPrepared=false;kanthicDeferredLighting=false;kanthicPoseCaptured=false;
     if(!isKanthicGlyphArea()||!scene?.traverse){
       kanthicCameraValid=false;kanthicCameraScene=null;kanthicRenderCamera=null;kanthicLanternUsesCamera=false;kanthicPlayerLanternValid=false;
-      kanthicSelectedShot=null;kanthicAppliedShot=null;kanthicMaskProjected=false;
+      kanthicSelectedShot=null;kanthicAppliedShot=null;kanthicMaskProjected=false;kanthicPresentedPortrait=false;kanthicPreparedRect=null;
       if(kanthicIndexedScene||kanthicRecords.length||kanthicCanvas||kanthicRegion!==null)resetKanthicGlyphCache();
       return false;
     }
-    const cameraMoved=syncKanthicCameraAtmosphere(scene,camera);
+    kanthicDeferredLighting=!!window.RenderHooks?.isWorldFrameOpen?.(); // The real pipeline paints once, after the composed avatar is captured; standalone render hosts retain prepainting.
+    const cameraMoved=syncKanthicCameraAtmosphere(scene,camera,kanthicDeferredLighting);
+    if(kanthicDeferredLighting)prepareKanthicSurface();
     const system=window.RuinRoomSystem,sanctum=window.DevRandomRuinSanctum;
     const cinematic=kanthicCameraValid&&kanthicLanternUsesCamera; // Glyph region and lantern use the same scripted-camera ownership.
     const viewRegion=cinematic?(kanthicRegionAt(kanthicCameraLantern.x,kanthicCameraLantern.y,kanthicCameraLantern.z)
@@ -1363,7 +1405,7 @@
     if(kanthicProxyScene)kanthicProxyScene.fog=null; // Room-local depth-tested runes and existing emissive flames pierce the black mist.
     if(!hasKanthicEmission()||Number(lightingDeps.getSceneTransAlpha?.())>0){
       restoreKanthicCanvas();
-      if(cameraMoved)window.WeatherFX?.drawLightingOverlay?.(); // DOM fallback must move even in corridors with no emissive geometry.
+      if(cameraMoved&&!kanthicDeferredLighting)window.WeatherFX?.drawLightingOverlay?.(); // Standalone DOM fallback; the world pipeline paints after the actual pose even with no glyphs.
       return true;
     }
     const canvas=lightingDeps.lctx?.canvas;
@@ -1374,7 +1416,7 @@
       }
       // Surface recovery can dispatch a resize or switch the renderer target.
       // Paint before mainRT/base rendering, NEVER while its world depth is bound.
-      window.WeatherFX?.drawLightingOverlay?.();
+      if(!kanthicDeferredLighting)window.WeatherFX?.drawLightingOverlay?.();
       kanthicWidth=canvas.width;kanthicHeight=canvas.height;
       kanthicLightingPrepared=true;
     }catch(error){ruinGlowStats.lastError=String(error?.message||error);restoreKanthicFlameParts();restoreKanthicCanvas();}
@@ -1384,7 +1426,7 @@
     if(!kanthicFrame)return;
     for(const record of kanthicRecords)if(record.hidden){record.mesh.visible=true;record.hidden=false;}
     restoreKanthicFlameParts();
-    kanthicFrame=false;kanthicLightingPrepared=false;
+    kanthicFrame=false;kanthicLightingPrepared=false;kanthicDeferredLighting=false;kanthicPoseCaptured=false;
   }
   function boundedKanthicTextureSource(canvas){
     const pixels=canvas.width*canvas.height;
@@ -1403,6 +1445,13 @@
     return !!(canvas?.style&&canvas.width&&canvas.height);
   }
   function renderKanthicGlyphFrame(renderer,camera,scene,direct=false){
+    if(kanthicDeferredLighting&&kanthicFrame){
+      captureKanthicRenderPose(scene,camera); // Fallback if the render hook was disabled; ordinarily captured inside the first native world draw.
+      kanthicLateCanvasPaint=true;
+      try{window.WeatherFX?.drawLightingOverlay?.();}
+      catch(error){ruinGlowStats.lastError=String(error?.message||error);restoreKanthicCanvas();return false;}
+      finally{kanthicLateCanvasPaint=false;}
+    }
     if(!hasKanthicLightingPass()){restoreKanthicCanvas();return false;}
     const canvas=lightingDeps.lctx.canvas;
     const THREE=window.THREE;
@@ -1668,7 +1717,7 @@
     if(!isKanthicGlyphArea())restoreKanthicCanvas(); // Exiting a ruin restores the ordinary DOM lighting owner even before the next world frame.
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
-    if(isKanthicGlyphArea())syncKanthicCameraAtmosphere(activeScene, kanthicFrame ? kanthicRenderCamera || lightingDeps.camera : lightingDeps.camera); // Also covers overlay draws outside the world-render pipeline.
+    if(isKanthicGlyphArea())syncKanthicCameraAtmosphere(activeScene, kanthicFrame ? kanthicRenderCamera || lightingDeps.camera : lightingDeps.camera, kanthicPresentedPortrait); // Keep the exact rendered pose after the body compositor restores gameplay transforms.
     if (now - lastUnifiedLightingDraw < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0
         && currentArea === lastUnifiedLightingArea && activeScene === lastUnifiedLightingScene) return;
     lastUnifiedLightingDraw = now;
@@ -1677,8 +1726,8 @@
 
     const ctx = lightingDeps.lctx;
     ctx.globalAlpha = 1; // The darkness fill must not inherit opacity changes from another canvas consumer.
-    const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
-    const rect = surface?.rect || lightingDeps.getThreeRect();
+    const surface = kanthicLateCanvasPaint ? null : window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Never repair/resize WebGL while the world depth target is bound.
+    const rect = (kanthicLateCanvasPaint ? kanthicPreparedRect : surface?.rect) || lightingDeps.getThreeRect();
     ctx.clearRect(0, 0, rect.width, rect.height);unifiedLightingPaintRevision++;
     outdoorLightStats.considered = outdoorLightStats.drawn = outdoorLightStats.fading = outdoorLightStats.culled = 0; // Count only lights in the latest frame for mobile debugging.
     ruinFireMaskStats.sources=ruinFireMaskStats.lit=ruinFireMaskStats.projected=ruinFireMaskStats.drawn=ruinFireMaskStats.nearbyBraziers=0; // Reset once per frame so mobile diagnostics include every light owner.
@@ -1772,6 +1821,13 @@
     window.WeatherFX.__daylightWindowAtmosphereHook = true; // Diagnostics flag: the unified pass owns window composition before local light masks.
   }
 
+  window.RenderHooks?.register?.({
+    id:'kanthic-lantern-render-pose',owner:'cloud-forest-fog.js',scope:'frame',
+    order:(window.RenderHooks.ORDER?.PLAYER_BODY_COMPOSER??800)+1,
+    appliesTo:ctx=>kanthicDeferredLighting&&!kanthicPoseCaptured&&ctx.worldScene&&ctx.scene===kanthicCameraScene&&ctx.camera===kanthicRenderCamera,
+    afterRender:ctx=>captureKanthicRenderPose(ctx.scene,ctx.camera), // The native draw used this pose; also works when frame-scope debugging restores after every render.
+  });
+
   // Settings-tab sliders (game.js) call these directly, by layer index
   // (0=inner, 1=middle, 2=outer, matching LAYER_CONFIG's order) — read live
   // every frame in update(), so both take effect on the very next frame.
@@ -1828,7 +1884,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic lantern follows the player portrait unless an authored shot actually controls the current camera; 2-tile radius.',
+        latestChange: 'Kanthic lantern follows the rendered player portrait unless an applied cinematic owns the camera; room-independent carried light, 2-tile radius.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
