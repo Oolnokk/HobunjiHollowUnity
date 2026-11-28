@@ -621,7 +621,8 @@
   const kanthicCameraDirection = new window.THREE.Vector3(); // Reused final view axis.
   const kanthicCameraMistCenter = new window.THREE.Vector3(); // Shared center of the existing three mist cylinders.
   const kanthicCameraLantern = { x: 0, y: 0, z: 0, cameraLantern: true }; // Reused camera-relative carried-light source.
-  let kanthicCameraValid = false, kanthicCameraProjection = '', kanthicCameraScene = null; // Invalidate stale lighting on camera or scene changes.
+  let kanthicCameraValid = false, kanthicCameraScene = null, kanthicRenderCamera = null; // Invalidate stale lighting on camera or scene changes.
+  let kanthicCameraFov, kanthicCameraAspect, kanthicCameraZoom, kanthicCameraNear, kanthicCameraFar; // Track projection changes without allocating a per-frame signature.
   const lightToSource = new window.THREE.Vector3(); // Reused camera-to-source vector; no per-light allocations.
   const lightPlayerPosition = new window.THREE.Vector3(); // Reused player-depth plane origin for farmhouse light projection.
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
@@ -736,11 +737,13 @@
     const x = p.x + d.x * KANTHIC_CAMERA_LANTERN_DEPTH;
     const y = p.y + d.y * KANTHIC_CAMERA_LANTERN_DEPTH;
     const z = p.z + d.z * KANTHIC_CAMERA_LANTERN_DEPTH;
-    const projection = [camera.fov, camera.aspect, camera.zoom, camera.near, camera.far].join(':');
-    const changed = !kanthicCameraValid || kanthicCameraScene !== scene
+    const changed = !kanthicCameraValid || kanthicCameraScene !== scene || kanthicRenderCamera !== camera
       || kanthicCameraLantern.x !== x || kanthicCameraLantern.y !== y || kanthicCameraLantern.z !== z
-      || kanthicCameraProjection !== projection;
-    kanthicCameraValid = true; kanthicCameraScene = scene; kanthicCameraProjection = projection;
+      || kanthicCameraFov !== camera.fov || kanthicCameraAspect !== camera.aspect || kanthicCameraZoom !== camera.zoom
+      || kanthicCameraNear !== camera.near || kanthicCameraFar !== camera.far;
+    kanthicCameraValid = true; kanthicCameraScene = scene; kanthicRenderCamera = camera;
+    kanthicCameraFov = camera.fov; kanthicCameraAspect = camera.aspect; kanthicCameraZoom = camera.zoom;
+    kanthicCameraNear = camera.near; kanthicCameraFar = camera.far;
     kanthicCameraLantern.x = x; kanthicCameraLantern.y = y; kanthicCameraLantern.z = z;
     kanthicCameraMistCenter.set(p.x+d.x*KANTHIC_CAMERA_MIST_LEAD,p.y+d.y*KANTHIC_CAMERA_MIST_LEAD,p.z+d.z*KANTHIC_CAMERA_MIST_LEAD);
     if (group?.visible && attachedScene === scene) {
@@ -814,7 +817,7 @@
       const { center, radius: shineR, coverage } = projected; // One shared pool projection, independent of emitter visibility.
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      const transmission = interiorLightTransmission(carrier.x, carrier.z);
+      const transmission = interiorLightTransmission(carrier.x, carrier.z, carrier.cameraLantern ? kanthicCameraPosition : null);
       if (transmission <= 0.005) continue;
       const effectiveStrength = lanternStrength * transmission * visibility * coverage; // Fade the actual darkness reveal, not just the decorative warm halo.
       grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * effectiveStrength})`);
@@ -1242,7 +1245,7 @@
   function prepareKanthicGlyphFrame(scene,now,camera){
     kanthicLightingPrepared=false;
     if(!isKanthicGlyphArea()||!scene?.traverse){
-      kanthicCameraValid=false;kanthicCameraScene=null;
+      kanthicCameraValid=false;kanthicCameraScene=null;kanthicRenderCamera=null;
       if(kanthicIndexedScene||kanthicRecords.length||kanthicCanvas||kanthicRegion!==null)resetKanthicGlyphCache();
       return false;
     }
@@ -1462,13 +1465,13 @@
   }
   const NO_LIGHT_BLOCKERS = Object.freeze([]);
 
-  function interiorLightTransmission(sourceX, sourceZ) {
+  function interiorLightTransmission(sourceX, sourceZ, viewer = null) {
     const currentArea = lightingDeps?.getCurrentArea?.();
     const activeScene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
     if (!enclosedLightingArea(currentArea)) return 1;
     const player = lightingDeps.player;
-    const fromX = finiteOr(player?.x, 0) / lightingDeps.TILE;
-    const fromZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
+    const fromX = viewer ? viewer.x : finiteOr(player?.x, 0) / lightingDeps.TILE;
+    const fromZ = viewer ? viewer.z : finiteOr(player?.y, 0) / lightingDeps.TILE;
     const dx = sourceX - fromX, dz = sourceZ - fromZ;
     const lengthSquared = dx * dx + dz * dz;
     if (lengthSquared < 0.000001) return 1;
@@ -1612,7 +1615,7 @@
     if(!isKanthicGlyphArea())restoreKanthicCanvas(); // Exiting a ruin restores the ordinary DOM lighting owner even before the next world frame.
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
-    if(isKanthicGlyphArea())syncKanthicCameraAtmosphere(activeScene); // Also covers overlay draws outside the world-render pipeline.
+    if(isKanthicGlyphArea())syncKanthicCameraAtmosphere(activeScene, kanthicFrame ? kanthicRenderCamera || lightingDeps.camera : lightingDeps.camera); // Also covers overlay draws outside the world-render pipeline.
     if (now - lastUnifiedLightingDraw < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0
         && currentArea === lastUnifiedLightingArea && activeScene === lastUnifiedLightingScene) return;
     lastUnifiedLightingDraw = now;
@@ -1772,7 +1775,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic mist progressively darkens through close textured shells to a solid black outer shell; depth-tested runes and brazier flames pierce it.',
+        latestChange: 'Kanthic black mist and lantern reveal follow the final camera pose, including cinematic blends; depth-tested emissions pierce the fog.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
