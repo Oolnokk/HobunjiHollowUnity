@@ -9,6 +9,8 @@
   const POPUP_FONT_FAMILY = "'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used for popup measurement and canvas rendering.
   const TANKAN_FONT_FAMILY = "'TankanScript', 'KhymeryyanRomanLetters+Numbers', 'DM Mono', monospace"; // Used by the persistent Quick Attack condition callout.
   const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'; // Existing HUD font used to render the vertical Hahai condition callout.
+  const COMBAT_FLOAT_TEXT_SCALE = 0.65; // Used for damage/healing Float+ text, including the larger impact callout.
+  const COMBAT_FLOAT_RADIUS_SCALE = 0.8; // Used for combat placement radius and spacing, independently of glyph size.
   const CENTERED_LIST_SCALE = 0.25; // Interaction, reward, and progression lists render at one quarter of their former world-space size.
   const INTERACTION_LIST_SCALE = 0.25; // Keeps connector words at the former physical prompt size while segment fonts add emphasis selectively.
   const INTERACTION_VERB_COLOR = '#FFFFFF'; // Used for the enlarged, deliberately uncoded verb in every interaction row.
@@ -514,11 +516,12 @@
       .sort((a, b) => a.sequence - b.sequence);
   }
 
-  function claimFloatOffset(root, bounds, scatter = false, emphasis = false) {
+  function claimFloatOffset(root, bounds, scatter = false, emphasis = false, compactCombat = scatter) {
     const worldHeight = state.settings.floatPlus.worldHeight;
+    const radiusScale = compactCombat ? COMBAT_FLOAT_RADIUS_SCALE : 1; // Used for candidate offsets and spacing margins.
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
-    const pathXClearance = worldHeight * (scatter ? 0.7 : 0.24); // Allow scattered numbers to drift outward without crossing nearby text.
-    const pathYClearance = scatter ? Math.max(0.075, worldHeight * 0.55) : 0.075;
+    const pathXClearance = worldHeight * radiusScale * (scatter ? 0.7 : 0.24); // Allow scattered numbers to drift outward without crossing nearby text.
+    const pathYClearance = scatter ? Math.max(0.075, worldHeight * radiusScale * 0.55) : 0.075;
     // Reserve the full animation envelope (including the first-frame pop),
     // not just the resting text dimensions. Compute existing envelopes once
     // per emitted burst number, never on the frame loop.
@@ -535,23 +538,34 @@
     const isFree = point => {
       if (reserved) {
         const candidate = envelope(point.x, point.y, bounds.width, bounds.height, true, peak);
-        return reserved.every(other => candidate.right + worldHeight * 0.1 < other.left || candidate.left > other.right + worldHeight * 0.1 ||
-          candidate.top + worldHeight * 0.1 < other.bottom || candidate.bottom > other.top + worldHeight * 0.1);
+        return reserved.every(other => candidate.right + worldHeight * radiusScale * 0.1 < other.left || candidate.left > other.right + worldHeight * radiusScale * 0.1 ||
+          candidate.top + worldHeight * radiusScale * 0.1 < other.bottom || candidate.bottom > other.top + worldHeight * radiusScale * 0.1);
       }
       return existing.every(event =>
         Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
         Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance);
     };
     const searchCount = Math.max(240, (existing.length + 1) * 240);
+    const preferNear = scatter && compactCombat && existing.length > 0; // Preserve the first popup's direction; only tighten subsequent placements.
+    let nearest = null, nearestDistanceSq = Infinity; // Best non-overlapping candidate in camera-plane distance.
     for (let index = 0; index < searchCount; index++) {
       const angle = index * 2.399963229728653 + (scatter ? 0.55 : 0);
       const radius = scatter
-        ? Math.max(0.18, worldHeight * 1.8) * Math.sqrt(1 + index / 7) // Start off-center and distribute the burst in different directions.
-        : Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
+        ? Math.max(0.18, worldHeight * 1.8) * radiusScale * Math.sqrt(1 + index / 7) // Start off-center and distribute the burst in different directions.
+        : Math.max(0.18, worldHeight * 3.2) * radiusScale * Math.sqrt(index / 239);
+      if (preferNear && radius * radius * 0.85 * 0.85 >= nearestDistanceSq) break; // All subsequent ellipse samples have a greater minimum distance.
       const point = { x: Math.cos(angle) * radius * (scatter ? 1.35 : 1), y: Math.sin(angle) * radius * (scatter ? 0.85 : 0.62) };
-      if (isFree(point)) return point;
+      if (!preferNear) {
+        if (isFree(point)) return point;
+        continue;
+      }
+      const distanceSq = point.x * point.x + point.y * point.y; // Actual radius, not the elliptical spiral parameter.
+      if (distanceSq >= nearestDistanceSq || !isFree(point)) continue; // Avoid checking envelopes for candidates that cannot improve the result.
+      nearest = point;
+      nearestDistanceSq = distanceSq;
     }
-    if (reserved) return { x: 0, y: reserved.reduce((top, item) => Math.max(top, item.top), 0) + bounds.height * peak * 0.5 + worldHeight * 0.1 }; // Safe fallback for an unusually crowded burst.
+    if (nearest) return nearest;
+    if (reserved) return { x: 0, y: reserved.reduce((top, item) => Math.max(top, item.top), 0) + bounds.height * peak * 0.5 + worldHeight * radiusScale * 0.1 }; // Safe fallback for an unusually crowded burst.
     const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0);
     return { x: 0, y: topEdge + bounds.height * 0.5 + pathYClearance };
   }
@@ -562,7 +576,8 @@
     const cfg = state.settings[mode];
     const scene = entry.scene || state.deps.getActiveScene?.(); // Resolved scene owner is retained so zone cleanup sees default-scene rewards.
     if (!scene?.add) return null;
-    const sizeMultiplier = entry.emphasis ? 1.65 : 1; // Impact callout uses the same Float+ renderer at a larger authored scale.
+    const compactCombat = mode === 'floatPlus' && (entry.kind === 'damage' || entry.kind === 'healing' || entry.scatter === true); // Only combat-style floating text uses compact sizing.
+    const sizeMultiplier = (entry.emphasis ? 1.65 : 1) * (compactCombat ? COMBAT_FLOAT_TEXT_SCALE : 1); // Retains impact emphasis and the same scale throughout the animation.
     const planeCfg = mode === 'centeredFiveRow'
       ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
       : sizeMultiplier !== 1 ? { ...cfg, worldHeight: cfg.worldHeight * sizeMultiplier } : cfg;
@@ -579,7 +594,7 @@
       listFor(entry.root).forEach((item, index) => { item.listSlot = index; });
       event.listSlot = listFor(entry.root).length;
     } else {
-      const offset = claimFloatOffset(entry.root, parts, entry.scatter, entry.emphasis);
+      const offset = claimFloatOffset(entry.root, parts, entry.scatter, entry.emphasis, compactCombat);
       event.offsetX = offset.x;
       event.offsetY = offset.y;
     }
@@ -1317,7 +1332,9 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Combat numbers scatter in Float+ with one oversized IMPACT!!! per collision; simultaneous popups share actor anchors, not animation offsets.',
+      latestChange: 'Combat Float+ text is 65% of its previous size; candidate scatter radius is 80%; subsequent burst entries prefer the nearest clear position. Impact emphasis and overlap avoidance are retained.',
+      combatFloatTextScale: COMBAT_FLOAT_TEXT_SCALE,
+      combatFloatRadiusScale: COMBAT_FLOAT_RADIUS_SCALE,
       lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],

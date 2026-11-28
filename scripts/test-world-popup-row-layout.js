@@ -150,13 +150,53 @@ console.log('World popup row layout and family visibility parity: PASS');
   }
 }
 
-// Exercise real scatter placement with the authored small Float+ text size.
+// Read production multipliers instead of duplicating them in the placement harness.
+const combatScales = vm.runInNewContext(
+  source.match(/^  const COMBAT_FLOAT_(?:TEXT|RADIUS)_SCALE = .*$/gm).join('\n') +
+  '\n({COMBAT_FLOAT_TEXT_SCALE, COMBAT_FLOAT_RADIUS_SCALE});');
+assert.equal(combatScales.COMBAT_FLOAT_TEXT_SCALE,.65);
+assert.equal(combatScales.COMBAT_FLOAT_RADIUS_SCALE,.8);
+
+// Check the real spawn path: dimensions and per-frame size multiplier agree,
+// combat radius is opt-in, and family/reward sizing is unaffected.
+{
+  const root={}, active=[], scene={add(){}}, state={active,deps:{getActiveScene:()=>scene},sequence:0,
+    settings:{assignments:{damage:'floatPlus',healing:'floatPlus',usefulnessXp:'floatPlus',loot:'centeredFiveRow'},
+      floatPlus:{worldHeight:.13,lifetimeMs:1150},centeredFiveRow:{worldHeight:.32,maxRows:5,lifetimeMs:3200}}};
+  const offsets=[]; // Records whether spawn selects combat-specific placement.
+  const spawn=vm.runInNewContext(block('  function spawn(', '  function iconAnchorScene(')+'\nspawn;', {
+    state,...combatScales,CENTERED_LIST_SCALE:.25,performance:{now:()=>0},
+    makePlane:(text,kind,cfg)=>({width:cfg.worldHeight*3,height:cfg.worldHeight,plane:{}}),
+    claimFloatOffset:(root,bounds,scatter,emphasis,compact)=>{offsets.push(compact);return {x:0,y:0};},
+    listFor:()=>[]
+  });
+  for(const entry of [{kind:'damage',scatter:true},{kind:'damage',scatter:true,emphasis:true},
+    {kind:'damage'},{kind:'healing'},{kind:'usefulnessXp'},{kind:'loot'}]) spawn({root,text:'test',...entry});
+  const [damage,impact,miss,heal,family,loot]=active;
+  for(const event of [damage,miss,heal]){
+    assert.equal(event.sizeMultiplier,.65);
+    assert.equal(event.height,.13*.65);
+  }
+  assert.equal(impact.height, .13*(1.65*.65));
+  assert.equal(impact.sizeMultiplier,1.65*.65);
+  assert.equal(family.height,.13);
+  assert.equal(family.sizeMultiplier,1);
+  assert.equal(loot.height,.32*.25);
+  assert.deepEqual(offsets,[true,true,true,true,false]);
+  const frame=run(actual,[[1,0,'damage',false,1150,'floatPlus',true,.65],[2,1,'damage',false,1150,'floatPlus',true,1]],500);
+  assert(Math.abs(frame.rows[0][5]/frame.rows[1][5]-.65)<1e-12,'frame updater preserves compact size');
+}
+
+// Exercise real scatter placement with the compact authored Float+ text size.
 {
   const root={}, active=[], state={active,settings:{floatPlus:{worldHeight:.13}}};
-  const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state});
+  const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state,...combatScales});
+  const compact=claim(root,{width:.38*.65,height:.13*.65},true,false,true);
+  const previous=claim(root,{width:.38,height:.13},true,false,false);
+  assert(Math.abs(Math.hypot(compact.x,compact.y)/Math.hypot(previous.x,previous.y)-.8)<1e-12,'initial radius is independently reduced');
   for(let i=0;i<6;i++) {
     const emphasis=i===5; // Last popup is the bigger collision callout.
-    const bounds=emphasis?{width:.85,height:.13*1.65}:{width:.38,height:.13};
+    const bounds=emphasis?{width:.85*.65,height:.13*1.65*.65}:{width:.38*.65,height:.13*.65};
     const point=claim(root,bounds,true,emphasis);
     active.push({root,mode:'floatPlus',kind:'damage',scatter:true,emphasis,offsetX:point.x,offsetY:point.y,...bounds});
   }
@@ -174,3 +214,37 @@ console.log('World popup row layout and family visibility parity: PASS');
   assert(active.some(e=>e.offsetY<0)&&active.some(e=>e.offsetY>0),'burst spreads vertically as well');
   assert(new Set(active.map(e=>e.offsetX)).size===active.length,'no vertical list alignment');
 }
+
+// Compare complete editor-style bursts against the original placement policy.
+// The candidate radius alone is not sufficient: an elliptical spiral can
+// encounter a farther valid point first even when its nominal radius shrinks.
+for (const height of [.07,.13,.36,.4]) {
+  const labels=['-18','-6 Bleeding','-4 Wounded','-20 Footing','IMPACT!!!','-5 Scent Marked','-4 Shattered','-3 Shambling'];
+  for (const count of [5,8,16,32]) {
+    function buildBurst(compact) {
+      const root={}, active=[], state={active,settings:{floatPlus:{worldHeight:height}}};
+      const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state,...combatScales});
+      for (let i=0;i<count;i++) {
+        const label=labels[i%labels.length], emphasis=label==='IMPACT!!!';
+        const size=height*(compact?.65:1)*(emphasis?1.65:1);
+        const bounds={height:size,width:Math.max(64,label.length*38+28)/92*size}; // Approximate real canvas widths with varied labels.
+        const point=claim(root,bounds,true,emphasis,compact);
+        active.push({root,mode:'floatPlus',kind:'damage',scatter:true,emphasis,offsetX:point.x,offsetY:point.y,...bounds});
+      }
+      return active;
+    }
+    const original=buildBurst(false), compact=buildBurst(true);
+    const radii=events=>events.map(e=>Math.hypot(e.offsetX,e.offsetY));
+    const oldR=radii(original), newR=radii(compact);
+    assert(Math.max(...newR)<Math.max(...oldR),'outermost popup is nearer for representative bursts');
+    assert(newR.reduce((a,b)=>a+b,0)<oldR.reduce((a,b)=>a+b,0),'average radius shrinks');
+    function box(e,p) {
+      const drift=1+.22*(1-(1-p)**2),pop=e.emphasis?1.4-.4*Math.min(1,p/.24):1.1-.1*Math.min(1,p/.24);
+      return {x:e.offsetX*drift+Math.sin(p*Math.PI)*e.height*.12,y:e.offsetY*drift+.075*(1-(1-p)**2),w:e.width*pop,h:e.height*pop};
+    }
+    const samples=compact.map(e=>Array.from({length:11},(_,i)=>box(e,i/10)));
+    for(let i=0;i<samples.length;i++) for(let j=i+1;j<samples.length;j++) for(const a of samples[i]) for(const b of samples[j])
+      assert(Math.abs(a.x-b.x)>=(a.w+b.w)/2 || Math.abs(a.y-b.y)>=(a.h+b.h)/2,'compact dense burst has no sampled animation overlap');
+  }
+}
+console.log('Compact combat radius and dense-burst separation: PASS');
