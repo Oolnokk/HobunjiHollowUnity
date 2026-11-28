@@ -64,7 +64,8 @@
   }
   function targetCandidates(includeSources){
     const result=[];
-    for(const receiver of receivers){
+    const registered=window.FurniturePuzzleRuntime?.liquidReceivers?.(area)||[];
+    for(const receiver of [...receivers,...registered]){
       if(receiver.area!==area||!visibleInScene(receiver.root)||receiver.available?.()===false)continue;
       result.push({root:receiver.root,receiver});
     }
@@ -197,7 +198,7 @@
     rules.update();
   }
   function escapeTarget(actor){
-    if(!rules||!isUndead(actor))return null;
+    if(!rules?.hasArea(area)||!isUndead(actor)||deps.actorArea?.(actor)!==area)return null; // Idle undead do no surface sampling.
     const t=deps.actorTile(actor,area);
     if(!t||!rules.isConsecrated(t))return null;
     const tile=deps.tileSize;
@@ -212,6 +213,7 @@
   }
   window.AdventuringJug=Object.freeze({
     init,held,buttons,use,registerReceptacle,beginDodge,dodgeStep,update,escapeTarget,isUndead,
+    onBelt:()=>!held()&&!!rules?.hasLiquid(local()),
     restore:(actor,state)=>rules?.restore(actor,state),
     isConsecrated:t=>rules?.isConsecrated(t)||false,
     dodgeProtected:(actor,a)=>rules?.dodgeProtected(actor,a)||false,

@@ -21422,7 +21422,7 @@
           return;
         }
         if (activeAction === 'rootledoot_pick') { const aimed = getReticleTile(); window.Rootledoots?.pick?.(aimed.col, aimed.row); refreshActionBar(); return; }
-        if(activeAction.startsWith('jug_')){if(window.AdventuringJug?.held?.()&&!menuOpen&&!paused&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'tools'))window.AdventuringJug.use(activeAction);return;}
+        if(activeAction?.startsWith('jug_')){if(window.AdventuringJug?.held?.()&&!menuOpen&&!paused&&!window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID,'tools'))window.AdventuringJug.use(activeAction);return;}
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           // Compatibility fallback only — ordinary press/hold/release input
@@ -32710,6 +32710,7 @@
         saveState:state=>window.CharacterMetaSave?.update?.(ch=>{ch.adventuringJug=state;}),
         refresh:refreshActionBar,toast:showToast,
         actorsInArea:area=>[...(window.ActorRegistry?.getPlayers?.()||[player]),...hostileObjects,...companionObjects,...npcWalkers].filter(a=>(window.ActorRegistry?.areaOf?.(a)||a.area||(a===player?currentArea:null))===area),
+        actorArea:actor=>window.ActorRegistry?.areaOf?.(actor)||actor?.area||(actor===player?currentArea:null),
         actorTile:(actor,area)=>{
           const x=Number.isFinite(actor.x)?actor.x/TILE:actor.root?.position?.x,z=Number.isFinite(actor.y)?actor.y/TILE:actor.root?.position?.z;
           if(!Number.isFinite(x)||!Number.isFinite(z))return null;
@@ -32721,7 +32722,7 @@
           const support=window.DynamicSurfaces?.sampleSupport?.(x,z,{area:currentArea,minY:feet-.35,maxY:feet+.35,pad:.02});
           return support?.y??feet;
         },
-        canEscape:(actor,x,y,floor)=>canOccupyAt(x,y,TILE*.27,floor),
+        canEscape:(actor,x,y,floor)=>canOccupyAt(x,y,TILE*.27,floor+.35), // Check at body height; the shared occupancy probe subtracts its radius.
       });
       window.ActionArcUI.init({
         toolBtn,

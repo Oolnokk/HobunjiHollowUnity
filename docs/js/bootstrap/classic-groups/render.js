@@ -23,8 +23,8 @@
     "js/shoulder-pet-deformation-envelope.js?v=20261127verticalSkip2", // Analytic angular intervals follow the live skin controls.
     "js/shoulder-pet-rotation-limits.js?v=20261126boneEnvelope3", // Shared alpha-mask and topology preparation.
     "js/shoulder-pet-attachment-runtime.js?v=20261128h9325c44", // Shared pin solver, before game.js starts.
-    "js/stowed-torch-fire.js?v=20261122stowSplit1", // Shared layer-effects adapter owns stowed PNG, tint, wick and particles.
-    "js/adventuring-torch-belt.js?v=20261122stowSplit1", // Stowed belt sprite and 30-second live torch timeout before game.js starts.
+    "js/stowed-torch-fire.js?v=20261128jugAudit2", // Shared layer-effects adapter owns stowed PNG, tint, wick and particles.
+    "js/adventuring-torch-belt.js?v=20261128jugAudit2", // Stowed belt sprite and 30-second live torch timeout before game.js starts.
     "js/render-optimization-settings.js?v=20261126h0181729" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.
 ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');

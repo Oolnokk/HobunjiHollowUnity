@@ -85,7 +85,7 @@
         texture.needsUpdate = true;
         rawTexture = texture;
         rawLoading = false;
-        if (art?.parent?.visible) prepareFire(); // Late texture load immediately enables both the recolor and the correct fire.
+        if (art?.parent?.visible && art.visible!==false) prepareFire(); // Late texture load immediately enables both the recolor and the correct fire.
       }, undefined, error => {
         rawLoading = false;
         nextTextureRetryAt = now + 5000;

@@ -133,7 +133,7 @@ function createJugRuntime(deps) {
     for(const columns of areas.values())for(const list of columns.values())for(const r of list)if(r.until>time)activeTiles++;
     return {...s,capacity:LIQUIDS[s.liquid]?.capacity||0,rollProtected:rolls.has(a),activeConsecratedTiles:activeTiles,lastEvent};
   }
-  return Object.freeze({LIQUIDS,DURATION,TOLERANCE,getState,restore,fill,beginAction,resolveImpact,cancelImpact,beginDodge,dodgeProtected,dodgeTiles,endDodge,isConsecrated,update,clearArea,debug});
+  return Object.freeze({LIQUIDS,DURATION,TOLERANCE,getState,restore,fill,beginAction,resolveImpact,cancelImpact,beginDodge,dodgeProtected,dodgeTiles,endDodge,isConsecrated,hasArea:area=>areas.has(area),hasLiquid:actor=>(inventory.get(actor)?.units||0)>0,update,clearArea,debug});
 }
 if(typeof module==='object'&&module.exports)module.exports=createJugRuntime;else root.HobunjiCreateJugRuntime=createJugRuntime;
 })(typeof window!=='undefined'?window:globalThis);

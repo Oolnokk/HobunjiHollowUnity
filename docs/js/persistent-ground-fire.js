@@ -95,7 +95,7 @@
   function ordinaryGroundFire(source){return !/skeleton|magic|lich|enchant/i.test(String(source));}
   function supportY(area,x,z,y){
     const support=window.DynamicSurfaces?.sampleSupport?.(x+.5,z+.5,{area,minY:y-FLOOR_TOLERANCE,maxY:y+FLOOR_TOLERANCE,pad:.02});
-    if(Number.isFinite(support?.y))return support.y;
+    if(Number.isFinite(support?.y)&&Math.abs(support.y-y)<=FLOOR_TOLERANCE)return support.y;
     // The injected terrain owner is authoritative for ground and does not invent platforms above it.
     if(typeof deps?.getGroundYAtWorld!=='function')return y;
     const ground=deps.getGroundYAtWorld(x+.5,z+.5);
