@@ -1198,41 +1198,52 @@
     window.DevRandomRuinTileOccupancy?.refresh?.(); // Removed Azgarlu pillars must stop blocking dodges and projectiles immediately.
   }
 
-  function clearPlasmRadius(x,z,radius=2.4) {
-    if(world?.theme!=='kanthic'||!Number.isFinite(Number(x))||!Number.isFinite(Number(z)))return 0;
-    const kit=world.kit,range=Math.max(.1,Number(radius)||2.4),rangeSq=range*range;
-    let removed=0;
-    for(const room of world.rooms){
-      if(!room.plasm?.size)continue;
+  function clearPlasmSources(sources) {
+    if(world?.theme!=='kanthic'||!sources?.length)return 0;
+    const kit=world.kit;let removed=0;
+    function erase(patch){
+      if(!patch.plasm?.size)return false;
       let changed=false;
-      for(const key of [...room.plasm]){
-        const [tx,tz]=tileFromKey(key),dx=tx+.5-x,dz=tz+.5-z;
-        if(dx*dx+dz*dz>rangeSq)continue;
-        room.plasm.delete(key);room.plasmFloorY.delete(key);removed++;changed=true;
+      for(const source of sources){
+        const {x,z,y}=source,range=Math.max(.1,Number(source.radius)||1.5),rangeSq=range*range;
+        if(!Number.isFinite(x+z))continue;
+        // Look up only the handful of tiles near each flame; never scan a giant shaft patch.
+        for(let tz=Math.floor(z-range);tz<=Math.floor(z+range);tz++)for(let tx=Math.floor(x-range);tx<=Math.floor(x+range);tx++){
+          const key=tileKey(tx,tz);
+          if(!patch.plasm.has(key)||(tx+.5-x)**2+(tz+.5-z)**2>rangeSq)continue;
+          if(Number.isFinite(y)&&Math.abs(patch.plasmFloorY.get(key)-y)>1.2)continue;
+          patch.plasm.delete(key);patch.plasmFloorY.delete(key);removed++;changed=true;
+        }
       }
-      if(changed){
-        updatePlasmMesh(kit,room); // Replace only this room's connected surface; other room patches retain their exact buffers.
-        room.plasmCleansed=(room.plasmCleansed||0)+1;
-      }
+      return changed;
     }
-    for(const patch of [...world.spellPlasm]){
-      if(!patch.plasm?.size)continue;
-      let changed=false;
-      for(const key of [...patch.plasm]){
-        const [tx,tz]=tileFromKey(key),dx=tx+.5-x,dz=tz+.5-z;
-        if(dx*dx+dz*dz>rangeSq)continue;
-        patch.plasm.delete(key);patch.plasmFloorY.delete(key);removed++;changed=true;
+    for(const room of world.rooms)if(erase(room)){
+      updatePlasmMesh(kit,room);room.plasmCleansed=(room.plasmCleansed||0)+1;
+    }
+    for(const patch of world.spellPlasm){
+      if(!erase(patch))continue;
+      if(!patch.plasm.size){
+        if(patch.dispose)patch.dispose();
+        else{patch.mesh?.parent?.remove(patch.mesh);patch.mesh?.geometry?.dispose?.();world.spellPlasm.delete(patch);}
+        continue;
       }
-      if(!changed)continue;
-      patch.mesh?.parent?.remove(patch.mesh);
-      patch.mesh?.geometry?.dispose?.();
-      if(patch.plasm.size){
-        patch.mesh=makePlasmSurface(kit,patch);
-        if(patch.mesh)world.group.add(patch.mesh);
-      }else world.spellPlasm.delete(patch);
+      const old=patch.mesh;
+      const next=makePlasmSurface(kit,patch,patch.timed);
+      if(next){
+        if(patch.timed){
+          next.material=patch.material;
+          const glow=new THREE.Mesh(next.geometry,patch.glowMaterial);
+          glow.position.y=.004;glow.frustumCulled=false;glow.name='kanthic_plasm_seam_glow';next.add(glow);
+        }
+        world.group.add(next);
+      }
+      old?.parent?.remove(old);old?.geometry?.dispose?.();patch.mesh=next;
     }
     if(removed)lastEvent='kanthic:cleansed-'+removed;
     return removed;
+  }
+  function clearPlasmRadius(x,z,radius=2.4) {
+    return clearPlasmSources([{x:Number(x),z:Number(z),radius}]); // Legacy puzzle cleanse retains its authored all-height behavior.
   }
 
   function plasmPatchAt(x,z,supportY) {
@@ -1350,7 +1361,14 @@
       for (const spike of world.icicles) if (spike.temporary && spike.phase === 'done') spike.mesh.parent?.remove?.(spike.mesh); // Shared geometry/material remain owned by the ruin.
       world.icicles = world.icicles.filter(spike => !spike.temporary || spike.phase !== 'done');
     }
-    if (world.theme === 'kanthic') { updatePlasm(kit,dt); tickTimedPlasm(dt); }
+    if (world.theme === 'kanthic') {
+      if(world.spellPlasm.size||world.rooms.some(room=>room.plasm?.size)){
+        const player=kit.deps.player;
+        const feet=Number(player?.physicalFeetY??window.DevRandomRuin?.getPlayerGroundSupportY?.()??kit.deps.playerMesh?.position?.y);
+        clearPlasmSources(window.PersistentGroundFire?.plasmFireSources?.('map_i_dev_random_ruin',world.group.parent,player,kit.deps.TILE,feet)||[]);
+      }
+      updatePlasm(kit,dt);tickTimedPlasm(dt);
+    }
     updateBursts(dt);
     badgeClock += dt;
     if (badgeClock >= .25) { // The composer snapshot already feeds mobile Pixel Probe; echo a compact live state in the in-game badge.
