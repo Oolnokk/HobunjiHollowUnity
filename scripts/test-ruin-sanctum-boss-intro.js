@@ -33,6 +33,17 @@ function actor(options){
     _banditToolHolder:{rotation:{y:999}}, // Authored warhammer is a world-space sibling; it cannot inherit its owner's yaw by parenting.
     avatarRef:{modelHeight:1.7,group:{rotation:{y:0}},dispose(){disposed++;}}};
 }
+class OrbitVec { // Minimal vector operations used by the actual shared camera orbit helper.
+  constructor(x=0,y=0,z=0){this.set(x,y,z);}
+  set(x,y,z){Object.assign(this,{x,y,z});return this;}
+  copy(v){return this.set(v.x,v.y,v.z);}
+  clone(){return new OrbitVec(this.x,this.y,this.z);}
+  add(v){return this.set(this.x+v.x,this.y+v.y,this.z+v.z);}
+  multiplyScalar(n){return this.set(this.x*n,this.y*n,this.z*n);}
+  lerp(v,n){return this.set(this.x+(v.x-this.x)*n,this.y+(v.y-this.y)*n,this.z+(v.z-this.z)*n);}
+}
+const orbitWindow={THREE:{Vector3:OrbitVec}}; // Run the real orbit math under the same deterministic clock as the intro.
+vm.runInNewContext(fs.readFileSync('docs/js/cinematic-camera-runtime.js','utf8'),{window:orbitWindow,performance:{now:()=>clock}});
 const win={
   THREE:{},DynamicSurfaces:{},DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
   AudioSystem:{playObjectSfxKeyAt(key,x,z,area,y,opts){introSounds.push({key,x,z,area,y,opts,at:clock});}},
@@ -52,7 +63,7 @@ const win={
     clearBossEffects(){effects++;}},
   SpecialHarlyaoLiches:{defFor:()=>({name:'Imlao the Sightless'}),applyPlasmSkin(){},releaseWarhammer(){warhammers++;},clear(){}}, 
   DevRandomRuinLichThemes:{resetBossHazards(){hazards++;}},
-  CinematicCameraRuntime:{activate:(area,shot,options)=>active={area,shot,reason:options.reason},
+  CinematicCameraRuntime:{createActorOrbitShot:orbitWindow.CinematicCameraRuntime.createActorOrbitShot,activate:(area,shot,options)=>active={area,shot,reason:options.reason},
     activeRecord:()=>active,deactivate(){active=null;}},
   CharacterActionLocks:{acquire(){locks++;return {};},release(){releases++;}},
 };
@@ -118,12 +129,23 @@ async function run(){
   assert.equal(skeletons,0,'intro may not summon coffin skeletons');
   assert.equal(active.reason,'ruin-sanctum-boss-intro');
   assert.equal(active.shot.blendSeconds,.95);
+  assert.equal(active.shot.fovDeg,40,'slightly wider view than the original 34-degree reveal');
+  assert.equal(active.shot.orbitDebug.speedDegPerSec,6,'reuse ordinary cutscene orbit speed');
+  assert.equal(active.shot.orbitDebug.actors.length,1,'only the lich is the focus');
+  assert.equal(active.shot.horizontalCameraCollision,true,'arena camera uses the shared collision squeeze');
+  const orbitStart=active.shot.positionProvider().clone(), orbitAim=active.shot.targetProvider().clone();
+  assert(Math.abs(orbitAim.x-state.boss.x/64)<1e-8&&Math.abs(orbitAim.z-state.boss.y/64)<1e-8,'orbit looks at the boss instead of the player/boss midpoint');
+  assert(Math.abs(orbitStart.x-(state.boss.x/64-4.8))<1e-8&&Math.abs(orbitStart.z-(state.boss.y/64+.55))<1e-8,'shot begins at the original camera position');
   const initialFacing=state.boss.facing; // The boss starts mostly turned away before the reveal's face-to-face beat.
   const initialYaw=state.boss.avatarRef.group.rotation.y;
   const initialWeaponPoseUpdates=weaponPoseUpdates;
   const bearingToPlayer=Math.atan2(deps.player.y-state.boss.y,deps.player.x-state.boss.x); // Facing angles are world-relative; starting angle itself need not be large.
   assert(Math.abs(initialFacing-bearingToPlayer)>2,'lich should enter the shot turned away from the player');
   await advance(850);
+  const orbitNext=active.shot.positionProvider().clone(), orbitNextAim=active.shot.targetProvider().clone();
+  const orbitRadius=active.shot.orbitDebug.radius; // Exact arc chord verifies movement and a stable boom during the existing title delay.
+  assert(Math.abs(Math.hypot(orbitNext.x-orbitStart.x,orbitNext.z-orbitStart.z)-2*orbitRadius*Math.sin(.85*6*Math.PI/360))<1e-8,'camera continuously orbits as the title enters');
+  assert(Math.hypot(orbitNextAim.x-orbitAim.x,orbitNextAim.y-orbitAim.y,orbitNextAim.z-orbitAim.z)<1e-8,'focus does not drift off the lich');
   const title=nodes.find(node=>node.id==='ruin-sanctum-boss-title');
   assert(title,'name banner appears after camera begins zooming');
   assert.equal(title.textContent,'IMLAO THE SIGHTLESS');
