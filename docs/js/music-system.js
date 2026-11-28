@@ -1833,6 +1833,7 @@
       audio.playbackRate = Math.pow(2, semitones / 12);
     }
     const source = { area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, semitones, audio };
+    if(typeof sfx.volumeAt==='function')source.volumeAt=sfx.volumeAt; // Optional source-specific distance policy, ordinary furniture remains unchanged.
     _furnitureSfxSources.push(source);
     audioDebug('registered furniture sfx area=' + area + ' url=' + audio.src + ' pos=' + x.toFixed(2) + ',' + z.toFixed(2) + ' range=' + source.range, 'furn-register-' + area + '-' + x + '-' + z, 0);
     return source;
@@ -1871,7 +1872,7 @@
       const dx = deps.player.x / deps.TILE - src.x;
       const dz = deps.player.y / deps.TILE - src.z;
       const dist = Math.hypot(dx, dz);
-      const v = active ? src.maxVolume * Math.max(0, 1 - dist / src.range) : 0;
+      const v = active ? src.maxVolume * (src.volumeAt ? Math.max(0, Math.min(1, Number(src.volumeAt(dist))||0)) : Math.max(0, 1 - dist / src.range)) : 0;
       src.audio.volume = Math.max(0, Math.min(1, v));
       if (v > 0.01 && src.audio.paused && !src.audio._gameAutoplayBlocked) {
         audioDebug('starting furniture sfx area=' + src.area + ' url=' + src.audio.src + ' volume=' + src.audio.volume.toFixed(2), 'furn-start-' + src.area + '-' + src.x + '-' + src.z, 3000);
