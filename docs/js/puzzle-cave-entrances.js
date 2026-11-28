@@ -442,6 +442,7 @@
       const support=surfaces?.pressurePlateSurface?.(plate,{
         id:portalTag+':plate:'+portal.area+':'+portal.denId,
         scope:portalTag+':'+portal.area,plateArea:portal.area,
+        shelfId:portal.shelf.id, // The live slab and its structural cap share the cliff landing owner.
       });
       if(support){surfaces.registerSurface(support);portal.plateSurfaceId=support.id;}
       portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{

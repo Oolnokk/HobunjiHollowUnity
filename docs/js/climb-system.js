@@ -974,6 +974,24 @@
     )?.y ?? shelf.y;
   }
 
+  // Airborne landings on a registered cliff cap or its plate must restore the
+  // same shelf owner used by climbing; the plate does not replace the shelf.
+  function acceptBalconyLanding(shelfId, topY) {
+    const player = deps?.player, net = currentCliffNetwork(); // Resolve only the live area's shelf.
+    const shelf = window.CliffRouteNetwork?.shelfAt?.(net, shelfId);
+    if (!player || !shelf || !Number.isFinite(topY) || Math.abs(topY - shelf.y) > (window.PlayerJump?.config?.maxStepUp ?? .25) + .01) return false;
+    const x = player.x / deps.TILE, z = player.y / deps.TILE; // Validate the real landing footprint before transferring movement ownership.
+    const supported = window.CliffElevatedSurfaces?.canStandOn
+      ? window.CliffElevatedSurfaces.canStandOn(net, shelf.id, x, z, -0.12)
+      : window.CliffRouteNetwork?.shelfContains?.(shelf, x, z, -0.12);
+    if (!supported) return false;
+    player.onCliffBalcony = shelf.id;
+    player._cliffBalconyY = shelf.y; // Store the structural elevation, never the live pressure plate height.
+    player.climbSurfaceY = topY;
+    player.vx = 0; player.vy = 0;
+    return true;
+  }
+
   // Balcony movement keeps the support elevation independent from whichever
   // ground, plateau, or second balcony occupies the exact same X/Z cells.
   function jumpFromBalcony(direction = null) {
@@ -1177,7 +1195,7 @@
 
   window.ClimbSystem = {
     cliffDodge, jumpAction, tryAirGrab, knockProneOffClimb,
-    updateBalcony, jumpFromBalcony, fallFromClimb,
+    updateBalcony, jumpFromBalcony, fallFromClimb, acceptBalconyLanding,
     init,
     getClimbTarget,
     getAimedNest,

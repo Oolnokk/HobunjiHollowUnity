@@ -198,6 +198,37 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
 }
 
 {
+  // A cliff plate is a local slab over a raised structural support, not the ordinary ground.
+  const h = harness({start:{x:3.5,z:3.5}});
+  vm.runInNewContext(read('docs/js/dynamic-surfaces.js'), h.context);
+  const ds = h.window.DynamicSurfaces;
+  const shelf = {id:'mini-cliff',x:3.5,z:3.5,y:3}; // Both records belong to the same shelf.
+  let slabY = 3.08; // Live plate height changes without changing the structural cap.
+  ds.registerSurface({id:'cap',shelfId:shelf.id,topY:shelf.y,bounds:{minX:3,maxX:4,minZ:3,maxZ:4}});
+  ds.registerSurface({id:'plate',shelfId:shelf.id,plateArea:'zone-test',topY:()=>slabY,bounds:{minX:3.25,maxX:3.75,minZ:3.25,maxZ:3.75}});
+  const accepted = []; // Capture the ownership boundary using the real jump solver.
+  h.window.ClimbSystem = {acceptBalconyLanding(id,y){accepted.push([id,y]);return false;}};
+  h.window.PlayerJump.beginFlight({x:3.5,y:4,z:3.5,vy:-1},{source:'test cliff'});
+  h.advance(.6);
+  assert.equal(h.player._freeJump?.phase,'supported','landing on an elevated plate never resets to ordinary ground');
+  assert.equal(h.player.physicalFeetY,3.08);
+  assert.equal(h.window.DevRandomRuin.groundLandings,0);
+  slabY = 3.03;
+  h.advance(.1);
+  assert.equal(h.player.physicalFeetY,3.03,'depression follows the live plate');
+  h.input.x=1;
+  h.advance(.12);
+  assert.equal(h.player.physicalFeetY,3,'stepping off the plate retains the mini-cliff cap');
+  assert.equal(h.player._freeJump?.phase,'supported');
+  assert(accepted.every(([id])=>id===shelf.id),'both plate and bare cap retain the shelf identity');
+  h.input.x=0;
+  h.window.ClimbSystem.acceptBalconyLanding = (id,y)=>{h.player.onCliffBalcony=id;h.player._cliffBalconyY=shelf.y;return true;};
+  h.advance(1/60);
+  assert.equal(h.player._freeJump,null,'successful cliff handoff releases jump ownership');
+  assert.equal(h.player.onCliffBalcony,shelf.id);
+  assert.equal(h.player.physicalFeetY,3,'handoff preserves physical feet');
+}
+{
   // Execute supported walking, not just the isolated collision helper: grounded ruin platforms must permit ordinary input.
   const Jump = require('../docs/js/ruin-jump-shaft.js'); // Real slab-volume collision is shared by the runtime and this regression.
   const h = harness({start:{x:3.5,z:3.5},deepSupportY:2}); // A raised dynamic support remains available for the entire test walk.
