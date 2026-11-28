@@ -624,7 +624,8 @@
   }
 
   function projectInteriorLightMask(x, y, z, tiles, context, rangeTiles = tiles) {
-    let projectedX = x, projectedY = y, projectedZ = z, projectedRadius = tiles;
+    let projectedX = x, projectedY = y, projectedZ = z;
+    let rangeStrength = 1; // Smoothly retires the farmhouse's player-relative light pools at their existing range.
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
     if (activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true) {
       const camera = lightingDeps.camera;
@@ -638,38 +639,60 @@
       lightCamRight.setFromMatrixColumn(camera.matrixWorld, 0);
       lightCamUp.setFromMatrixColumn(camera.matrixWorld, 1);
       const distanceSquared = lightToSource.x * lightToSource.x + lightToSource.y * lightToSource.y + lightToSource.z * lightToSource.z;
-      if (distanceSquared > rangeTiles * rangeTiles) return null; // The visual mask radius and the fixture's actual influence range are separate.
+      if (!(rangeTiles > 0) || distanceSquared >= rangeTiles * rangeTiles) return null; // Keep the authored world-space range; the pane's visual radius can be smaller.
+      const fadeStart = rangeTiles * 0.75; // Preserve the inner three quarters of the authored reach.
+      if (distanceSquared > fadeStart * fadeStart) rangeStrength = 1 - smoothstep01((Math.sqrt(distanceSquared) - fadeStart) / (rangeTiles - fadeStart));
       const lateralX = lightToSource.dot(lightCamRight);
       const lateralY = lightToSource.dot(lightCamUp);
       projectedX = playerX + lightCamRight.x * lateralX + lightCamUp.x * lateralY;
       projectedY = playerY + lightCamRight.y * lateralX + lightCamUp.y * lateralY;
       projectedZ = playerZ + lightCamRight.z * lateralX + lightCamUp.z * lateralY;
     }
-    const center = lightingDeps.worldToOverlay(projectedX, projectedY, projectedZ);
-    const radius = lightScreenRadius(projectedX, projectedZ, projectedY, projectedRadius);
-    if (!lightMaskIntersectsViewport(center, radius, context, projectedX, projectedY, projectedZ, projectedRadius)) return null;
-    return { center, radius, x: projectedX, y: projectedY, z: projectedZ };
+    const mask = projectLightMask(projectedX, projectedY, projectedZ, tiles, context, activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true);
+    if (!mask) return null;
+    mask.coverage *= rangeStrength;
+    return mask;
   }
 
-  function lightMaskIntersectsViewport(center, radius, context, x, y, z, worldRadius) {
-    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(radius > 0) || !Number.isFinite(radius)) return false;
-    if (!(worldRadius > 0) || !Number.isFinite(worldRadius)) return false;
+  // The light pool, not its emitter, determines viewport visibility. Perspective
+  // projection becomes singular at the camera plane, so project the cross-section
+  // of a near-camera light sphere approximately onto a stable forward plane instead of suddenly
+  // dropping it when its center passes behind the camera. Normal-depth pools keep
+  // their exact authored size and intensity. Only overlapping masks create gradients.
+  function projectLightMask(x, y, z, worldRadius, context, playerPlane = false) {
+    if (!(worldRadius > 0) || !Number.isFinite(worldRadius) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
     const camera = lightingDeps.camera;
     camera.getWorldPosition(lightCameraPosition);
     camera.getWorldDirection(lightViewDirection);
     lightToSource.set(x, y, z).sub(lightCameraPosition);
     const depth = lightToSource.dot(lightViewDirection);
-    const near = Number.isFinite(camera.near) ? camera.near : 0;
+    const near = Number.isFinite(camera.near) ? Math.max(0, camera.near) : 0;
     const far = Number.isFinite(camera.far) ? camera.far : Infinity;
-    // Keep a light while its world-space influence sphere overlaps the camera depth range.
-    // The projected center can leave the near/far clip range before the soft edge leaves view.
-    if (depth <= 0 || depth + worldRadius < near || depth - worldRadius > far) return false;
+    if (depth + worldRadius <= near || depth - worldRadius >= far) return null;
+    let coverage = 1; // Shared strength for the reveal, colored glow and weather tint.
+    let radiusTiles = worldRadius;
+    const safeDepth = Math.min(far, Math.max(near + (playerPlane ? 0 : worldRadius * 0.5), 0.001)); // Stable projection depth for sources crossing the camera plane.
+    if (depth < safeDepth) {
+      const shift = safeDepth - depth; // Move along the view axis, preserving the light's lateral position.
+      const overlap = (depth + worldRadius - near) / (safeDepth + worldRadius - near); // Normalize against the actual near-plane overlap, not the shifted projection plane.
+      coverage = smoothstep01(overlap);
+      if (coverage <= 0) return null;
+      radiusTiles *= Math.sqrt(coverage);
+      x += lightViewDirection.x * shift;
+      y += lightViewDirection.y * shift;
+      z += lightViewDirection.z * shift;
+    } else if (depth > far) {
+      coverage = 1 - smoothstep01((depth - far) / worldRadius); // Fade the far-plane overlap instead of dropping a bright disk.
+    }
+    const center = lightingDeps.worldToOverlay(x, y, z);
+    const radius = lightScreenRadius(x, z, y, radiusTiles);
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(radius > 0) || !Number.isFinite(radius)) return null;
     const rect = lightingDeps.getThreeRect?.();
     const width = Number(rect?.width || context?.canvas?.clientWidth || context?.canvas?.width);
     const height = Number(rect?.height || context?.canvas?.clientHeight || context?.canvas?.height);
-    return width > 0 && height > 0
-      && center.x + radius >= 0 && center.x - radius <= width
-      && center.y + radius >= 0 && center.y - radius <= height;
+    if (!(width > 0 && height > 0 && center.x + radius >= 0 && center.x - radius <= width
+      && center.y + radius >= 0 && center.y - radius <= height)) return null;
+    return { center, radius, coverage };
   }
 
   function currentOutdoorLanternActivation() {
@@ -731,14 +754,14 @@
       if(!ruinRoomLightAllowed(carrier))continue;
       const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Ignore far-away watch lanterns; carried player light stays nearby.
       if (visibility <= 0) continue;
-      const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
-      if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1))) continue;
+      const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
+      if (!projected) continue;
+      const { center, radius: shineR, coverage } = projected; // One shared pool projection, independent of emitter visibility.
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       const transmission = interiorLightTransmission(carrier.x, carrier.z);
       if (transmission <= 0.005) continue;
-      const effectiveStrength = lanternStrength * transmission * visibility; // Fade the actual darkness reveal, not just the decorative warm halo.
+      const effectiveStrength = lanternStrength * transmission * visibility * coverage; // Fade the actual darkness reveal, not just the decorative warm halo.
       grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * effectiveStrength})`);
       if (softInterior) {
         addInteriorFalloffStops(grad, lanternTuning.centerMaskAlpha * effectiveStrength);
@@ -788,17 +811,17 @@
         if(!ruinRoomLightAllowed(carrier))continue;
         const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Weather tint follows the same faded visibility as the matching darkness cutout.
         if (visibility <= 0) continue;
-        const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-        const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale);
-        if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale)) continue;
+        const projected = projectLightMask(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
+        if (!projected) continue;
+        const { center, radius: shineR, coverage } = projected; // Match the darkness reveal's radius and near-camera fade.
         const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
         addWeatherTintStops(
           grad,
           weatherTint,
-          lanternTuning.centerMaskAlpha * lanternStrength * visibility,
-          lanternTuning.clarityMaskAlpha * lanternStrength * visibility,
-          lanternTuning.softMaskAlpha * lanternStrength * visibility,
+          lanternTuning.centerMaskAlpha * lanternStrength * visibility * coverage,
+          lanternTuning.clarityMaskAlpha * lanternStrength * visibility * coverage,
+          lanternTuning.softMaskAlpha * lanternStrength * visibility * coverage,
           clarityFrac,
           lanternTuning.softTransitionFraction,
         );
@@ -844,7 +867,7 @@
       if (transmission <= 0.005) continue;
       const projected = projectInteriorLightMask(light.x, light.y, light.z, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
       if (!projected) continue;
-      visible.push({ light, center: projected.center, shineR: projected.radius, transmission, visibility,
+      visible.push({ light, center: projected.center, shineR: projected.radius, transmission, visibility: visibility * projected.coverage,
         shadows:ruinShadowPolygons(light,light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)) }); // Reuse one fade factor across light reveal, weather tint and colored glow.
       if (outdoors) outdoorLightStats.drawn++;
     }
@@ -943,12 +966,11 @@
       if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > floorTolerance) continue;
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
-      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
       const radiusTiles = light.roomBound===true
         ? (window.RuinRoomSystem?.roomGlowRadius?.(light,light.radius) ?? light.radius) : light.radius; // Solved-room glows fade naturally before stone instead of making a bright rectangle.
-      const radius = lightScreenRadius(light.x, light.z, light.y, radiusTiles);
-      if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, radiusTiles)) continue;
-      visible.push({light,center,radius,transmission,shadows:ruinShadowPolygons(light,radiusTiles)});
+      const projected = projectLightMask(light.x, light.y, light.z, radiusTiles, ctx);
+      if (!projected) continue;
+      visible.push({light,center:projected.center,radius:projected.radius,transmission:transmission*projected.coverage,shadows:ruinShadowPolygons(light,radiusTiles)});
     }
     ruinFireMaskStats.projected+=visible.length; // Count sources actually in view across all fixture owners.
     ctx.globalCompositeOperation = 'destination-out';
@@ -1238,11 +1260,12 @@
       ruinGlowSource.x=x;ruinGlowSource.y=y;ruinGlowSource.z=z;
       if(!ruinRoomLightAllowed(ruinGlowSource))continue;
       const radiusTiles=Math.min(5,Math.max(.8,(mesh.geometry?.boundingSphere?.radius||1)*(mesh.matrixWorld?.getMaxScaleOnAxis?.()||1)));
-      const center=lightingDeps.worldToOverlay(x,y,z),radius=lightScreenRadius(x,z,y,radiusTiles);
-      if(!(radius>0)||!lightMaskIntersectsViewport(center,radius,ctx,x,y,z,radiusTiles))continue;
+      const projected=projectLightMask(x,y,z,radiusTiles,ctx);
+      if(!projected)continue;
+      const {center,radius,coverage}=projected; // Near-camera glyph glow fades with the same light-sphere overlap.
       const gradient=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
-      gradient.addColorStop(0,'rgba(0,0,0,.98)');gradient.addColorStop(.58,'rgba(0,0,0,.96)');
-      gradient.addColorStop(.83,'rgba(0,0,0,.70)');gradient.addColorStop(1,'rgba(0,0,0,0)');
+      gradient.addColorStop(0,'rgba(0,0,0,'+(.98*coverage)+')');gradient.addColorStop(.58,'rgba(0,0,0,'+(.96*coverage)+')');
+      gradient.addColorStop(.83,'rgba(0,0,0,'+(.70*coverage)+')');gradient.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle=gradient;
       withRuinRoomLightClip(ctx,ruinGlowSource,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
       ruinGlowStats.drawn++;
@@ -1385,7 +1408,7 @@
       const paneRange = Math.max(WINDOW_PANE_GLOW_RADIUS, finiteOr(source.radiusTiles, 2.8) * INTERIOR_LIGHT_RADIUS_MULTIPLIER); // Keep the small pane glow visible throughout the window's actual room-light range, including at night.
       const pane = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, WINDOW_PANE_GLOW_RADIUS, ctx, paneRange);
       if (pane) {
-        drawWindowRevealCircle(ctx, pane.center, pane.radius, WINDOW_PANE_GLOW_STRENGTH * transmission, 0.55); // Pane glow: day and night, no spread.
+        drawWindowRevealCircle(ctx, pane.center, pane.radius, WINDOW_PANE_GLOW_STRENGTH * transmission * pane.coverage, 0.55); // Pane glow: day and night, no spread.
         windowMaskStats.glows += 1;
       }
       if (daylight <= 0.02) continue;
@@ -1393,7 +1416,7 @@
       const projected = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER, ctx);
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85) * transmission;
       if (!(strength > 0) || !projected) continue;
-      drawWindowRevealCircle(ctx, projected.center, projected.radius, strength, 0.35, true); // Daylight pool spreading into the room.
+      drawWindowRevealCircle(ctx, projected.center, projected.radius, strength * projected.coverage, 0.35, true); // Daylight pool spreading into the room.
       windowMaskStats.drawn += 1;
     }
     ctx.globalCompositeOperation = 'screen'; // Add only soft color to the shared fake-daylight mask; never draw an exact textured floor projection.
@@ -1406,7 +1429,7 @@
       const projected = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER, ctx);
       if (!projected) continue;
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85) * transmission;
-      if (drawStainedGlassAura(ctx, source, projected.center, projected.radius, strength)) windowMaskStats.colorAuras++;
+      if (drawStainedGlassAura(ctx, source, projected.center, projected.radius, strength * projected.coverage)) windowMaskStats.colorAuras++;
     }
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1548,6 +1571,7 @@
     setLayerOpacity,
     getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*0.32, // Reports the same effective tiny radius used by the shared compositor.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
+    projectLightMask: (x, y, z, radiusTiles, context) => lightingDeps ? projectLightMask(x, y, z, radiusTiles, context) : null, // Secondary gameplay overlays share this projection and coverage.
     outdoorLightVisibilityAt: (x, y, z, radiusTiles = 0) => {
       const area = lightingDeps?.getCurrentArea?.(); // Reuses the compositor's actual current area instead of asking separate glow owners to guess indoor status.
       const scene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // Farmhouse transitions may temporarily report the old outdoor area.
@@ -1582,7 +1606,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'All ruin traditions keep room-local light sources and steady viewport ambience without projected tunnel frames.',
+        latestChange: 'Light pools use radius overlap and stable near-camera projection; farmhouse light range fades instead of snapping.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.

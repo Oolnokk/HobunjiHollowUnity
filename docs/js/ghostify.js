@@ -245,10 +245,16 @@
       const visibility = light.keepVisibleAtDistance === true ? 1
         : (window.CloudForestFog?.outdoorLightVisibilityAt?.(light.x, light.y, light.z, Number(light.radiusTiles)) ?? 1); // Ordinary ghost halos fade like other outdoor lights; explicitly authored directional beacons are exempt.
       if (visibility <= 0) continue;
-      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      const radius = lightScreenRadius(light, Number(light.radiusTiles));
-      if (!lightMaskIntersectsViewport(center, radius, light)) continue;
-      projected.push({ light, center, radius, visibility }); // Retain one distance factor for the darkness and glow passes.
+      let mask; // Reuse the main compositor's stable near-camera projection in gameplay.
+      if (window.CloudForestFog?.projectLightMask) {
+        mask = window.CloudForestFog.projectLightMask(light.x, light.y, light.z, Number(light.radiusTiles), ctx);
+      } else {
+        const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+        const radius = lightScreenRadius(light, Number(light.radiusTiles));
+        if (lightMaskIntersectsViewport(center, radius, light)) mask = { center, radius, coverage: 1 };
+      }
+      if (!mask) continue;
+      projected.push({ light, center: mask.center, radius: mask.radius, visibility: visibility * mask.coverage }); // Retain one distance factor for the darkness and glow passes.
     }
 
     ctx.save();

@@ -160,6 +160,20 @@ cameraAngle = Math.PI / 2;
 draw();
 assert.equal(gradients.filter(entry => Math.abs(entry.radius - 7.5) < 0.001).length, 3, 'both farmhouse lights remain active after a 90-degree camera turn');
 assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow also survives the 90-degree camera turn');
+// At the farmhouse range edge the existing player-relative mask must fade,
+// not pop to full brightness as the player crosses the range boundary.
+cameraAngle = 0;
+sources = [];
+localLights = [{ x: 3, y: 0, z: 0, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+draw();
+const nearAlpha = Number(gradients[0].stops[0][1].match(/,([0-9.eE+-]+)\)$/)[1]);
+localLights[0].x = 6.5625; // Halfway through the final quarter of the 7.5-tile radius.
+draw();
+const fadeAlpha = Number(gradients[0].stops[0][1].match(/,([0-9.eE+-]+)\)$/)[1]);
+assert(Math.abs(fadeAlpha - nearAlpha * 0.5) < 0.00001, 'farmhouse light smoothly fades near the existing range limit');
+localLights[0].x = 7.5;
+draw();
+assert.equal(gradients.length, 0, 'farmhouse light reaches zero at the authored range');
 localLights = [{ x: 0, y: 1, z: -20, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 sources = [];
 draw();
