@@ -773,19 +773,25 @@
     return chain;
   }
 
-  function ropeChainPitAt(x,z,feetY=null) {
-    // A vertical ruin can contain the same X/Z location at multiple story
-    // heights. A pit on one floor must never kill somebody walking below it.
-    const y=Number(feetY); // Player feet elevation for vertically stacked shaft wings.
-    return state?.ropeChains?.find(chain=>x>chain.bounds.minX+.015&&x<chain.bounds.maxX-.015
-      &&z>chain.bounds.minZ+.015&&z<chain.bounds.maxZ-.015
-      &&(!chain.external||!Number.isFinite(y)||(y>=chain.floorY-3.4&&y<=chain.floorY+1.35)))||null;
+  function insideRopeChain(chain,x,z) {
+    return x>=chain.bounds.minX&&x<=chain.bounds.maxX&&z>=chain.bounds.minZ&&z<=chain.bounds.maxZ;
   }
 
-  function crossedRopeChainDeathPlane(x,z,previousY,feetY) {
-    if(!inRuin()||!state||!Number.isFinite(previousY)||!Number.isFinite(feetY))return false;
-    const chain=ropeChainPitAt(x,z,previousY)||ropeChainPitAt(x,z,feetY);
-    return !!chain&&feetY<chain.floorY-.5&&previousY>=chain.floorY-3.4;
+  function ropeChainPitAt(x,z,feetY=null) {
+    // Ground ownership is story-specific even for native hallways.
+    if(!Number.isFinite(feetY))return null;
+    return state?.ropeChains?.find(chain=>Math.abs(feetY-chain.floorY)<=.5&&insideRopeChain(chain,x,z))||null;
+  }
+
+  function crossedRopeChainDeathPlane(x,z,previousY,feetY,previousX=x,previousZ=z) {
+    if(!inRuin()||!state||!Number.isFinite(previousY)||!Number.isFinite(feetY)||feetY>=previousY)return false;
+    for(const chain of state.ropeChains){
+      const plane=chain.floorY-.5; // Test each actual story rather than a first matching X/Z band.
+      if(previousY<plane||feetY>=plane)continue;
+      const t=(previousY-plane)/(previousY-feetY);
+      if(insideRopeChain(chain,previousX+(x-previousX)*t,previousZ+(z-previousZ)*t))return true;
+    }
+    return false;
   }
 
   function instantRopeChainDeath() {
@@ -1950,6 +1956,15 @@
     };
     const landing=safePoint(checkpoint.point)||safePoint(state.checkpoints.active.point)||safePoint(state.entryCheckpointPoint);
     if(landing)checkpoint={...checkpoint,point:landing};
+    if(!landing){
+      state.flight=null;
+      if(state.activeRope){state.activeRope.attached=false;state.activeRope.braking=false;}
+      state.activeRope=null;
+      for(const rope of state.ropes)restoreRopeGeometry(rope);
+      restoreRopeEquipment();
+      state.checkpoints.lastReason='no-supported-checkpoint';
+      return false; // Let canonical recovery run rather than report an unsupported spawn as successful.
+    }
     setPlayerWorld(checkpoint.point,true,true);
     state.flight=null;
     if(state.activeRope){state.activeRope.attached=false;state.activeRope.braking=false;}
@@ -2528,12 +2543,14 @@
   const fixedBrakeIntent=Object.freeze({forward:0,side:0}); // The shaft brake stops the swing without moving it out of the generated route.
   const ropeSweepBlocked=(from,to)=>sweptRopePoint(from,to).blocked;
   function adjustmentIntent(rope) {
-    const camera=deps?.getActiveCamera?.();
+    const camera=deps?.getActiveCamera?.()||window.Combat?.deps?.getActiveCamera?.();
     if(!camera?.getWorldDirection)return ropeIntent(rope);
     const dir=camera.getWorldDirection(ropeDirection); // Reuse visual scratch vector only during adjustment.
     if(!dir||Math.hypot(dir.x,dir.z)<1e-5)return ropeIntent(rope);
     const yaw=Math.atan2(dir.z,dir.x); // Camera forward in player.angle's world X/Z convention.
     deps.player.angle=yaw;
+    const facing=deps.setFacingAngle?deps:window.Combat?.deps; // Drive the renderer's actual facing owner as well as the entity angle.
+    facing?.setFacingAngle?.(yaw);
     if(rope.shaftRopeId)return fixedBrakeIntent;
     const move=RopeCore.intent({yaw},{strength:deps.player.inputStrength,x:deps.player.inputX,z:deps.player.inputY});
     move.cameraYaw=yaw;
@@ -2569,7 +2586,7 @@
       f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
     if(!deps?.player?.prone&&catchAirborneRope(f,previous))return; // Prone victims cannot re-grab another rope while descending.
-    const fatalCrossing=crossedRopeChainDeathPlane(f.x,f.z,previous.y,f.y);
+    const fatalCrossing=crossedRopeChainDeathPlane(f.x,f.z,previous.y,f.y,previous.x,previous.z);
     // The player must die BEFORE sampling floors lower down the same X/Z:
     // a missed upper-story catch could otherwise land on a lower deck and
     // evade the instant-death abyss. Likewise never mistake an overhead
@@ -2626,7 +2643,7 @@
 
   function restoreRopeGeometry(rope) {
     if(rope.attached||rope.burden||!Number.isFinite(rope.restLength))return;
-    rope.length=rope.restLength;rope.yaw=rope.restYaw;rope.angle=0;rope.omega=0;rope.braking=false;
+    rope.length=rope.restLength;rope.yaw=rope.restYaw;rope.angle=rope.launchAngle||0;rope.omega=0;rope.braking=false;
     rope.lastSafeBob=clonePoint(updateRopeVisual(rope)); // Synchronize the grip and collision origin.
   }
   function resetDepartedRopes() {
@@ -2639,13 +2656,16 @@
         (rope.length===rope.restLength&&rope.yaw===rope.restYaw))continue;
       if(!rope.resetBounds){
         const chain=state.ropeChains.find(c=>c.id===rope.ropeChainHallId);
-        const room=(meta?.rooms||[]).find(r=>String(r.id)===String(rope.roomId))||
-          (meta?.rooms||[]).find(r=>{const b=roomBounds(meta,r);return rope.anchor.x>=b.minX&&rope.anchor.x<=b.maxX&&rope.anchor.z>=b.minZ&&rope.anchor.z<=b.maxZ;});
-        rope.resetBounds=chain?.bounds||(room?roomBounds(meta,room):null); // Only adjusted ropes need a room lookup.
+        const room=(meta?.rooms||[]).find(r=>String(r.id)===String(rope.roomId));
+        const rooms=window.RuinRoomSystem; // Resolve upper-story furniture through its actual room owner.
+        const region=rooms?.glyphRegionAt?.(rope.anchor.x,rope.anchor.y-rope.restLength,rope.anchor.z);
+        const regionBounds=region&&region!=='shaft'?rooms.glyphRegionBounds?.(region):null;
+        rope.resetBounds=chain?.bounds||regionBounds||(room?roomBounds(meta,room):null);
       }
       const b=rope.resetBounds;
       const y=window.DevRandomRuin?.getPlayerGroundSupportY?.()??p.y;
-      if((b&&(p.x<b.minX-.15||p.x>b.maxX+.15||p.z<b.minZ-.15||p.z>b.maxZ+.15))||
+      if((b&&(p.x<b.minX-.15||p.x>b.maxX+.15||p.z<b.minZ-.15||p.z>b.maxZ+.15||
+        (Number.isFinite(b.minY)&&y<b.minY)||(Number.isFinite(b.maxY)&&y>b.maxY)))||
         y>rope.anchor.y+.4||y<rope.anchor.y-rope.maxLength-2)restoreRopeGeometry(rope);
     }
   }
