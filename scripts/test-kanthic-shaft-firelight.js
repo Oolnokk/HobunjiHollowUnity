@@ -100,7 +100,7 @@ vm.runInNewContext(instrumented,{window:fakeWindow,performance:{now:()=>1000},co
 const maskDraws=[]; // Tracks actual canvas composite operations at the brazier source, without needing real WebGL on a phone.
 const ctx={canvas:{width:1000,height:600},globalCompositeOperation:'source-over',
   createRadialGradient:(...args)=>({args,stops:[],addColorStop(fraction,color){this.stops.push([fraction,color]);}}),
-  beginPath(){},arc(){},fill(){maskDraws.push({mode:this.globalCompositeOperation,stops:this.fillStyle.stops});}};
+  beginPath(){},arc(){},fill(){maskDraws.push({mode:this.globalCompositeOperation,stops:this.fillStyle.stops,args:this.fillStyle.args});}};
 const camera={matrixWorld:{},near:.01,far:200,
   getWorldDirection(v){return v.set(1,0,0);},
   getWorldPosition(v){return v.set(-20,2,0);}};
@@ -127,6 +127,23 @@ const above={...source,floorY:16,y:17.4};
 maskDraws.length=0;
 const beforeUpperStory=visibleResult.drawn+1; // The diagnostics count all masks in this instrumented redraw, even when the next source is culled.
 assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,beforeUpperStory,'a lit upper-story goal does not shine through lower floors');
+
+// Real tagged brazier sources emit only near the player in Kanthic, regardless of their original room-wide radius.
+let theme='kanthic';fakeWindow.DevRandomRuinLichThemes={activeTheme:()=>theme};
+const tagged={...source,flameAnchor:{},roomBound:true};
+function sampleBrazier(px,py=0){
+  drawingDeps.player.x=px;drawingDeps.player.y=10;drawingDeps.getPlayerWorldY=()=>py;
+  maskDraws.length=0;fakeWindow.__probeRuinMasks([tagged],drawingDeps);
+  const reveal=maskDraws.find(d=>d.mode==='destination-out');
+  return reveal?{alpha:Number(reveal.stops[0][1].match(/,([0-9.eE+-]+)\)$/)[1]),radius:reveal.args[5]}:null;
+}
+const near=sampleBrazier(10),middle=sampleBrazier(12),far=sampleBrazier(14);
+assert(near&&middle&&near.alpha>middle.alpha&&middle.alpha>0,'strength fades smoothly across the approach');
+assert.equal(far,null,'distant brazier casts no local light');
+assert.equal(sampleBrazier(10,16),null,'different floors cannot light the player');
+assert.equal(near.radius,middle.radius,'near fade changes intensity without jumping radius');
+assert(near.alpha<=.72,'near light retains a modest maximum strength');
+theme='hronal';assert(sampleBrazier(14).radius>near.radius,'other traditions retain original broad light');
 
 
 const Plan=require('../docs/js/ruin-layer-plan.js'); // Real seed layouts cover four entrances, varying wing portals, and 3–5 shaft stories.

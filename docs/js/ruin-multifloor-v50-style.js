@@ -113,7 +113,7 @@
       const playerY=Number(getPlayerY?.());
       if(Number.isFinite(playerY))for(const [story,group] of floorRoots)group.visible=grid.levelToY(story*o.spacing)<=playerY+.8;
       for(const source of lights)if(source.anchor?.getWorldPosition){
-        source.anchor.getWorldPosition(worldPoint);
+        (source.flameAnchor||source.anchor).getWorldPosition(worldPoint);
         source.x=worldPoint.x;source.y=worldPoint.y;source.z=worldPoint.z;
       }
     };

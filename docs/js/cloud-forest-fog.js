@@ -951,31 +951,46 @@
       ctx.fillRect(0,0,rect.width,rect.height);
     }finally{ctx.restore();}
   }
-  const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0}; // Mobile Pixel Probe verifies an ignited brazier actually contributes to the visible darkness overlay.
+  const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0,nearbyBraziers:0}; // Distinguishes local illumination from darkness-piercing flame pixels.
+  const KANTHIC_BRAZIER_RADIUS=0.95; // Maximum local pool, in world tiles.
+  const KANTHIC_BRAZIER_FULL_DISTANCE=1.1, KANTHIC_BRAZIER_FADE_DISTANCE=3.2; // Smooth player-relative fade, including elevation.
+  function kanthicBrazierProximity(light){
+    const p=lightingDeps.player, tile=Number(lightingDeps.TILE);
+    const dx=light.x-Number(p?.x)/tile, dz=light.z-Number(p?.y)/tile;
+    const dy=light.y-(Number(lightingDeps.getPlayerWorldY?.())+.8);
+    const d=Math.hypot(dx,dy,dz);
+    if(!Number.isFinite(d))return 0;
+    return 1-smoothstep01((d-KANTHIC_BRAZIER_FULL_DISTANCE)/(KANTHIC_BRAZIER_FADE_DISTANCE-KANTHIC_BRAZIER_FULL_DISTANCE));
+  }
   function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
     ruinFireMaskStats.sources+=lights.length;
     ruinFireMaskStats.lit+=lights.filter(light=>light.active!==false).length; // Multiple fixture owners contribute to the same overlay draw.
     if (!lights.length) return;
     const ctx = lightingDeps.lctx;
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
+    const kanthic=isKanthicGlyphArea();
     for (const light of lights) {
       if (light.active === false) continue; // Optional Kanthic shaft braziers cannot reveal anything until the player ignites them.
       if(!ruinRoomLightAllowed(light))continue;
       const playerY = Number(lightingDeps.getPlayerWorldY?.()); // Prevent a tall shaft's upper-story fire from illuminating unrelated floors below.
       const floorTolerance = Number.isFinite(light.floorTolerance) ? light.floorTolerance : 10; // Per-room lights stay on their own story.
       if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > floorTolerance) continue;
+      const brazier=kanthic&&!!light.flameAnchor; // Other room rewards, portable lanterns, rope torches and boss reveals retain their own light policy.
+      const proximity=brazier?kanthicBrazierProximity(light):1;
+      if(proximity<=0)continue; // No projection, shadow query or gradient for distant braziers.
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
-      const radiusTiles = light.roomBound===true
+      const radiusTiles = brazier?Math.min(KANTHIC_BRAZIER_RADIUS,light.radius):light.roomBound===true
         ? (window.RuinRoomSystem?.roomGlowRadius?.(light,light.radius) ?? light.radius) : light.radius; // Solved-room glows fade naturally before stone instead of making a bright rectangle.
       const projected = projectLightMask(light.x, light.y, light.z, radiusTiles, ctx);
       if (!projected) continue;
-      visible.push({light,center:projected.center,radius:projected.radius,transmission:transmission*projected.coverage,shadows:ruinShadowPolygons(light,radiusTiles)});
+      if(brazier)ruinFireMaskStats.nearbyBraziers++;
+      visible.push({light,brazier,center:projected.center,radius:projected.radius,transmission:transmission*projected.coverage*proximity,shadows:ruinShadowPolygons(light,radiusTiles)});
     }
     ruinFireMaskStats.projected+=visible.length; // Count sources actually in view across all fixture owners.
     ctx.globalCompositeOperation = 'destination-out';
-    for (const {light,center,radius,transmission,shadows} of visible) {
-      const strength = light.strength * transmission;
+    for (const {light,brazier,center,radius,transmission,shadows} of visible) {
+      const strength = (brazier?Math.min(.72,light.strength):light.strength) * transmission;
       const grad = ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
       grad.addColorStop(0,'rgba(0,0,0,'+strength+')');
       if (enclosedLightingArea(lightingDeps.getCurrentArea())) addInteriorFalloffStops(grad,strength);
@@ -1015,12 +1030,56 @@
   const kanthicPendingAtlases=new WeakSet(); // Async engraving atlas promises invalidate discovery once, without a per-frame scene traversal.
   let kanthicFrustum=null,kanthicFrustumMatrix=null,kanthicLightingPrepared=false; // Scratch camera cull and pre-world lighting readiness.
   const ruinGlowSource={x:0,y:0,z:0}; // Legacy Hronal/Tothal radial light source.
-  const ruinGlowStats={found:0,drawn:0,triangles:0,examined:0,scans:0,region:null,roomCandidates:0,depthPasses:0,textureUploads:0,uploadPixels:0,lastError:null};
+  const ruinGlowStats={found:0,drawn:0,flamesDrawn:0,triangles:0,examined:0,scans:0,region:null,roomCandidates:0,depthPasses:0,textureUploads:0,uploadPixels:0,lastError:null};
   let ruinGlowScene=null,ruinGlowNextScan=0,ruinGlowMeshes=[],kanthicIndexedScene=null; // Discovery follows scene/room lifecycle and delayed atlases.
   let kanthicRecords=[],kanthicActiveRecords=[],kanthicRegion=null,kanthicRegionBounds=null,kanthicFrame=false; // Room-local GPU candidates, rebuilt only on region change or discovery.
   let kanthicProxyScene=null,kanthicQuadScene=null,kanthicQuadCamera=null,kanthicTexture=null; // Borrowed geometry/materials and one reusable darkness quad.
   let kanthicCanvas=null,kanthicCanvasVisibility='',kanthicUploadAt=-Infinity,kanthicWidth=0,kanthicHeight=0,kanthicUploadCanvas=null; // Restore the DOM darkness canvas on exit and upload only new paints.
   const kanthicProxyCache=new WeakMap(); // Reuse proxy meshes across room transitions without retaining removed sources.
+  const kanthicFlameProxies=new Map(); // Canonical particle draw objects, cached until region/index rebuild.
+  const kanthicFlameHidden=[]; // Original particle/halo visibility restored at the end of the render frame.
+  const kanthicFlameSeen=new Set(); // A shared fixture may be exposed by more than one owner.
+  const kanthicBrazierProviders=['RuinMultifloorV50Style','RuinCheckpointTravel','DevRandomRuinSanctum']; // Existing live source registries; no scene traversal for flames.
+  function hideKanthicFlamePart(part){
+    if(part?.visible!==false&&part){kanthicFlameHidden.push(part);part.visible=false;}
+  }
+  function prepareKanthicFlames(scene,bounds){
+    ruinGlowStats.flamesDrawn=0;
+    kanthicFlameSeen.clear();
+    for(const proxy of kanthicFlameProxies.values())proxy.visible=false;
+    if(!bounds||!kanthicProxyScene||Number(lightingDeps.getSceneTransAlpha?.())>0)return;
+    const THREE=window.THREE;
+    for(const owner of kanthicBrazierProviders)for(const light of window[owner]?.lightSources?.()||EMPTY_LIGHT_LIST){
+      const anchor=light.flameAnchor;
+      if(!anchor||kanthicFlameSeen.has(anchor)||light.active===false||!glyphAttachedAndVisible(anchor,scene))continue;
+      kanthicFlameSeen.add(anchor);
+      hideKanthicFlamePart(light.flameHalo); // No broad translucent halo in Kanthic darkness.
+      if(anchor.getWorldPosition)anchor.getWorldPosition(ruinGlowProjection);
+      else ruinGlowProjection.set(light.x,light.y,light.z);
+      const {x,y,z}=ruinGlowProjection;
+      if(x<bounds.minX-.5||x>bounds.maxX+.5||y<bounds.minY-.5||y>bounds.maxY+.5||z<bounds.minZ-.5||z>bounds.maxZ+.5)continue;
+      // The authored emitter attaches its live Points directly to this anchor.
+      // The geometry is borrowed, not copied; inactive particle sentinel coordinates
+      // deliberately make ordinary geometry-bound culling unsuitable for Points.
+      for(const part of anchor.children||EMPTY_LIGHT_LIST){
+        if(part.visible===false||part.material?.visible===false||!part.geometry||!part.material||(!part.isPoints&&!part.isMesh))continue;
+        let proxy=kanthicFlameProxies.get(part);
+        if(!proxy){
+          const Type=part.isPoints?THREE.Points:THREE.Mesh;
+          if(!Type)continue;
+          proxy=new Type(part.geometry,part.material);
+          proxy.matrixAutoUpdate=false;proxy.frustumCulled=false;proxy.layers.set(KANTHIC_GLYPH_LAYER);
+          kanthicFlameProxies.set(part,proxy);kanthicProxyScene.add(proxy);
+        }
+        part.updateWorldMatrix?.(true,false);
+        proxy.geometry=part.geometry;proxy.material=part.material;proxy.renderOrder=part.renderOrder;
+        proxy.matrix.copy(part.matrixWorld);proxy.matrixWorldNeedsUpdate=true;proxy.visible=true;
+        hideKanthicFlamePart(part);
+        ruinGlowStats.flamesDrawn++;
+      }
+    }
+  }
+  function hasKanthicEmission(){return ruinGlowStats.drawn>0||ruinGlowStats.flamesDrawn>0;}
 
   function isKanthicGlyphArea(){
     return lightingDeps?.getCurrentArea?.()==='map_i_dev_random_ruin'&&activeRuinTradition()==='kanthic';
@@ -1084,6 +1143,7 @@
   function resetKanthicGlyphCache(){
     restoreKanthicCanvas();
     kanthicRecords=[];kanthicActiveRecords=[];kanthicRegion=null;kanthicRegionBounds=null;
+    kanthicFlameProxies.clear();kanthicFlameSeen.clear();ruinGlowStats.flamesDrawn=0;
     setKanthicClipBounds(null);
     kanthicTexture?.dispose?.();kanthicTexture=null;kanthicUploadCanvas=null;kanthicUploadAt=-Infinity;kanthicWidth=kanthicHeight=0;
     if(kanthicQuadScene)kanthicQuadScene.children[0].material.uniforms.tLighting.value=null;
@@ -1112,6 +1172,7 @@
       kanthicActiveRecords=bounds?kanthicRecords.filter(record=>glyphIntersectsRegion(record.bounds,bounds)):[];
       if(!kanthicProxyScene){kanthicProxyScene=new window.THREE.Scene();kanthicProxyScene.name='kanthic_room_glyph_depth';}
       for(let i=kanthicProxyScene.children.length-1;i>=0;i--)kanthicProxyScene.remove(kanthicProxyScene.children[i]);
+      kanthicFlameProxies.clear();
       for(const record of kanthicActiveRecords){
         const mesh=record.mesh;
         let proxy=kanthicProxyCache.get(mesh);
@@ -1150,8 +1211,9 @@
       record.hidden=record.mesh.visible!==false;
       if(record.hidden)record.mesh.visible=false; // No base-pass emissive draw, including every off-room glyph.
     }
+    prepareKanthicFlames(scene,bounds);
     if(kanthicProxyScene)kanthicProxyScene.fog=scene.fog;
-    if(!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0){restoreKanthicCanvas();return true;}
+    if(!hasKanthicEmission()||Number(lightingDeps.getSceneTransAlpha?.())>0){restoreKanthicCanvas();return true;}
     const canvas=lightingDeps.lctx?.canvas;
     if(!canvas?.style||!canvas.width||!canvas.height){restoreKanthicCanvas();return true;}
     try{
@@ -1169,6 +1231,8 @@
   function endKanthicGlyphFrame(){
     if(!kanthicFrame)return;
     for(const record of kanthicRecords)if(record.hidden){record.mesh.visible=true;record.hidden=false;}
+    for(const part of kanthicFlameHidden)part.visible=true;
+    kanthicFlameHidden.length=0;
     kanthicFrame=false;kanthicLightingPrepared=false;
   }
   function boundedKanthicTextureSource(canvas){
@@ -1183,7 +1247,7 @@
   }
   // Shared readiness gate: ink must precede the GPU darkness even with mist off.
   function hasKanthicLightingPass(){
-    if(!kanthicFrame||!kanthicLightingPrepared||!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0)return false;
+    if(!kanthicFrame||!kanthicLightingPrepared||!hasKanthicEmission()||Number(lightingDeps.getSceneTransAlpha?.())>0)return false;
     const canvas=lightingDeps.lctx?.canvas;
     return !!(canvas?.style&&canvas.width&&canvas.height);
   }
@@ -1226,9 +1290,9 @@
       painted=true;
       camera.layers.set(KANTHIC_GLYPH_LAYER); // No base-world replay on auxiliary glyphs.
       renderer.localClippingEnabled=true;
-      for(const record of kanthicActiveRecords){
-        const material=record.proxy?.material;
-        if(!record.proxy?.visible||!material||kanthicMaterialStates.has(material))continue;
+      for(const proxy of kanthicProxyScene.children){
+        const material=proxy.material;
+        if(!proxy.visible||!material||kanthicMaterialStates.has(material))continue;
         kanthicMaterialStates.set(material,{planes:material.clippingPlanes,intersection:material.clipIntersection});
         material.clippingPlanes=kanthicClipPlanes;material.clipIntersection=false;
       }
@@ -1465,7 +1529,7 @@
     const rect = surface?.rect || lightingDeps.getThreeRect();
     ctx.clearRect(0, 0, rect.width, rect.height);unifiedLightingPaintRevision++;
     outdoorLightStats.considered = outdoorLightStats.drawn = outdoorLightStats.fading = outdoorLightStats.culled = 0; // Count only lights in the latest frame for mobile debugging.
-    ruinFireMaskStats.sources=ruinFireMaskStats.lit=ruinFireMaskStats.projected=ruinFireMaskStats.drawn=0; // Reset once per frame so mobile diagnostics include every light owner.
+    ruinFireMaskStats.sources=ruinFireMaskStats.lit=ruinFireMaskStats.projected=ruinFireMaskStats.drawn=ruinFireMaskStats.nearbyBraziers=0; // Reset once per frame so mobile diagnostics include every light owner.
     const enclosed = farmhouseSceneActive || currentArea === 'interior'
       || lightingDeps._isBuildingArea(currentArea)
       || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
@@ -1493,11 +1557,11 @@
         drawLanternMasksCompat(1);
         if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
         if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
-        if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
+        if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Dedicated Kanthic braziers reveal only a tiny player-near pool.
         if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinRopeTorch?.lightSources?.() || EMPTY_LIGHT_LIST); // Rope-end flames light less than one tile.
         if (ruinTradition) drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // A solved puzzle room fills with light.
         if (ruinTradition) drawRuinTraditionLightMasks(window.DevRandomRuinSanctum?.lightSources?.() || []); // Lit arena braziers and the temporary boss reveal brighten their sealed chamber.
-        if (ruinTradition) drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoints brighten all three lich themes.
+        if (ruinTradition) drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoints keep their traditional pools outside Kanthic.
         if (ruinTradition) drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST); // Planebent Skeeri eyes pierce the dark.
         if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
       }); // Clip ONLY local light contributions; the tradition tint below always covers the whole viewport.
@@ -1527,7 +1591,7 @@
       if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinRopeTorch?.lightSources?.() || EMPTY_LIGHT_LIST);
       if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
       if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.DevRandomRuinSanctum?.lightSources?.() || []); // Fog-backed Kanthic light masks include the sanctum.
-      if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // Restored mist must not extinguish activated shaft-travel or checkpoint lights.
+      if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // Checkpoint light uses the same Kanthic proximity policy in actual fog.
       if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
       if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
     });
@@ -1611,7 +1675,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Light pools use radius overlap and stable near-camera projection; farmhouse light range fades instead of snapping.',
+        latestChange: 'Kanthic brazier flames pierce darkness at world depth; their sub-tile light pools fade smoothly with player distance.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
