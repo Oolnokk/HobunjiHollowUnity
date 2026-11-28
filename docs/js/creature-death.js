@@ -151,12 +151,12 @@
   // The tumble must not hop a wall: every point along the flight line has
   // to be open ground too, or a body could land in the next room/vault
   // (or inside rock) where it can never be reached or looted.
-  function _pathClear(fromX, fromY, toX, toY) {
+  function _pathClear(c, fromX, fromY, toX, toY) {
     const TILE = deps.TILE;
     const steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / (TILE * 0.2)));
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
-      if (!deps.canOccupyAt(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t, TILE * 0.2)) return false;
+      if (!canRestAt(c, fromX + (toX - fromX) * t, fromY + (toY - fromY) * t, TILE * 0.2)) return false;
     }
     return true;
   }
@@ -170,16 +170,55 @@
       const col = deps.clamp(Math.round(startCol + Math.cos(ang) * distTiles), 0, (c.areaCols || deps.COLS) - 1);
       const row = deps.clamp(Math.round(startRow + Math.sin(ang) * distTiles), 0, (c.areaRows || deps.ROWS) - 1);
       const cx = (col + 0.5) * TILE, cy = (row + 0.5) * TILE;
-      if (!isUnsupportedPit(c,cx,cy) && deps.canOccupyAt(cx, cy, TILE * 0.3) && _pathClear(c.x, c.y, cx, cy)) return { x: cx, y: cy, col, row };
+      if (!isUnsupportedPit(c,cx,cy) && canRestAt(c, cx, cy, TILE * 0.3) && _pathClear(c,c.x, c.y, cx, cy)) return { x: cx, y: cy, col, row };
     }
+    if (Number.isFinite(c.deathSurfaceY)) return {x:c.x,y:c.y,col:startCol,row:startRow}; // Never center-snap off a narrow upper platform.
     return { x: (startCol + 0.5) * TILE, y: (startRow + 0.5) * TILE, col: startCol, row: startRow };
   }
 
   // Recover the ordinary loot entitlement, not a second independent loot roll.
   function actorFloor(c) {
-    const y=c?.shaftSupportY ?? c?.surfaceYOverride?.() ?? c?.physicalFeetY; // Actor-specific physical support.
+    if (Number.isFinite(c?.shaftSupportY)) return c.shaftSupportY;
+    const y=c?.surfaceYOverride?.(); // Ignore a non-finite override rather than discarding valid physical feet.
     if (Number.isFinite(y)) return y;
+    if (Number.isFinite(c?.physicalFeetY)) return c.physicalFeetY;
     return (c?.avatarRef?.group?.position?.y || 0)-(Number(c?.halfHeight)||0.3);
+  }
+  const CORPSE_FLOOR_TOLERANCE = 0.35; // Bounds same-story support checks during the short death slide.
+  function captureRuinFloor(c) {
+    if(c.areaId!=='map_i_dev_random_ruin')return undefined; // Preserve ordinary terrain and authored catacomb placement.
+    const floor=actorFloor(c); // Capture before the death pose changes the visual root.
+    return Number.isFinite(floor)?floor:undefined;
+  }
+  function tileFloor(c,col,row) {
+    const g=c.areaGrid||deps.getGrid();
+    return g?.[row]?.[col]?deps.tileSurfaceYInArea(g[row][col],c.areaId):0;
+  }
+  function sameStorySupport(c,x,y) {
+    const floor=c.deathSurfaceY,tile=deps.TILE,ds=window.DynamicSurfaces; // Never sample a lower or overhead story.
+    const support=ds?.sampleSupport?.(x/tile,y/tile,{minY:floor-CORPSE_FLOOR_TOLERANCE,maxY:floor+CORPSE_FLOOR_TOLERANCE,pad:0});
+    if(Number.isFinite(support?.y))return support.y;
+    if(ds?.pointInPit?.(x/tile,y/tile))return null;
+    const g=c.areaGrid||deps.getGrid(),col=Math.floor(x/tile),row=Math.floor(y/tile);
+    if(!g?.[row]?.[col])return null;
+    const flat=tileFloor(c,col,row); // Ordinary ground may be grid-owned.
+    return Math.abs(flat-floor)<=CORPSE_FLOOR_TOLERANCE?flat:null;
+  }
+  function canRestAt(c,x,y,radius) {
+    if(!Number.isFinite(c.deathSurfaceY))return deps.canOccupyAt(x,y,radius);
+    const support=sameStorySupport(c,x,y); // No slide into a void with only lower-story support.
+    if(!Number.isFinite(support))return false;
+    if(window.DevRandomRuin?.shaftCreatureCanEnter?.(c,x,y,true)===false)return false;
+    if(window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(x/deps.TILE,y/deps.TILE,radius/deps.TILE,support))return false;
+    return deps.canOccupyAt(x,y,radius,support+0.25);
+  }
+  function corpseFloor(c,col,row) {
+    return Number.isFinite(c.deathSurfaceY)?c.deathSurfaceY:tileFloor(c,col,row);
+  }
+  function commitCorpseFloor(c) {
+    if(!Number.isFinite(c.deathSurfaceY))return;
+    c.shaftSupportY=c.deathSurfaceY;
+    c.physicalFeetY=c.deathSurfaceY; // Interaction and hazard consumers see the same floor as the corpse rig.
   }
   function localFloor() {
     const y=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Avoid sinking/airborne presentation height.
@@ -261,7 +300,7 @@
     const p=c._pitLootRest;
     c.x=p.x;c.y=p.y;c.corpseCol=p.col;c.corpseRow=p.row;
     c.state='corpse';c.health=0;c.deathRecorded=false;c.keepCorpseAfterLoot=false;c.deathHadImpulse=false;
-    c.shaftSupportY=p.surfaceY;c.physicalFeetY=p.surfaceY; // Height-aware interactions use the bag's true floor.
+    c.deathSurfaceY=p.surfaceY;commitCorpseFloor(c); // The loot bag retains its actual recovery floor.
     activeDyingCorpses.delete(c);deps.corpseObjects.add(c);
     try{
       if(!showPitLootBag(c)&&c.avatarRef?.group)c.avatarRef.group.position.set(p.x/deps.TILE,p.surfaceY+(Number(c.halfHeight)||0.3)*0.12,p.y/deps.TILE);
@@ -298,6 +337,7 @@
     if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     c.deathCause = _deathCause(c); // The genuinely lethal Health transaction wins over earlier afflictions or weapon hits.
+    c.deathSurfaceY=captureRuinFloor(c); // Persistent floor for the death, restore and retirement paths.
     if (preparePitLoot(c)) return settlePitLoot(c);
     const sourceIsDistant = Number.isFinite(fromX) && Number.isFinite(fromY)
       && Math.hypot(c.x - fromX, c.y - fromY) > 1e-4; // A lethal DoT normally passes the victim's own coordinates; it has no impulse.
@@ -309,6 +349,7 @@
       col: deps.clamp(Math.floor(c.x / deps.TILE), 0, (c.areaCols || deps.COLS) - 1),
       row: deps.clamp(Math.floor(c.y / deps.TILE), 0, (c.areaRows || deps.ROWS) - 1),
     }; // Bleeding, poison, burning and unforced deaths collapse where they stood.
+    c.deathTargetSurfaceY=Number.isFinite(c.deathSurfaceY)&&hasImpactImpulse?(sameStorySupport(c,rest.x,rest.y)??c.deathSurfaceY):c.deathSurfaceY; // Sample once, not every animation frame.
     c.deathDirection = _impactDirection(c, fromX, fromY);
     c.deathAwayAngle = awayAngle;
     c.deathHadImpulse = hasImpactImpulse; // Mobile-readable proof of whether the corpse actually received a horizontal hit.
@@ -370,7 +411,9 @@
     window.BurningEntityHazards?.beginCorpse?.(c); // Recovery does not silently extinguish a fire death.
     window.BurningAfflictionVfx?.syncEntity?.(c, c.avatarRef?.group);
     c.corpseCol = col; c.corpseRow = row;
-    c.x = (col + 0.5) * TILE; c.y = (row + 0.5) * TILE;
+    if(!Number.isFinite(c.deathSurfaceY))c.deathSurfaceY=captureRuinFloor(c);
+    if(!Number.isFinite(c.deathSurfaceY)){c.x=(col+0.5)*TILE;c.y=(row+0.5)*TILE;}
+    commitCorpseFloor(c);
     c.vx = 0; c.vy = 0;
     c.knockbackT = 0;
     c.hitFlashT = 0;
@@ -380,8 +423,7 @@
     let visualError = null; // Used to retain a secondary fallback-pose failure without preventing corpse registration.
     try {
       if (grp) {
-        const g = c.areaGrid || deps.getGrid();
-        const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+        const surfY = corpseFloor(c,col,row);
         const restHeight = (Number(c.halfHeight) || 0) * 0.12;
         grp.position.set(c.x / TILE, surfY + restHeight, c.y / TILE);
         grp.rotation.set(0, Number(c.groupRot) || 0, Math.PI / 2);
@@ -399,10 +441,14 @@
 
   function begin(c, fromX, fromY) {
     deathDebug.lastBegin = { at: Date.now(), creature: c?.id || c?.def?.label || 'creature', areaId: c?.areaId || '', cause: _deathCause(c), recording: false };
+    c.deathSurfaceY=undefined; // A resurrected actor captures a fresh floor on its next death.
+    c.deathTargetSurfaceY=undefined;
     try {
       beginInternal(c, fromX, fromY);
       deathDebug.lastBegin.recording = !!c.deathRecorded;
       deathDebug.lastBegin.hadImpulse = !!c.deathHadImpulse;
+      deathDebug.lastBegin.surfaceY=c.deathSurfaceY;
+      deathDebug.lastBegin.targetSurfaceY=c.deathTargetSurfaceY;
       return true;
     } catch (error) {
       return recover(c, fromX, fromY, error);
@@ -439,10 +485,10 @@
       c.y = c.deathStartY + (c.deathTargetY - c.deathStartY) * eased;
 
       const grp = c.avatarRef.group;
-      const g = c.areaGrid || deps.getGrid();
       const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
       const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
-      const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+      const surfY = Number.isFinite(c.deathTargetSurfaceY)&&Number.isFinite(c.deathSurfaceY)
+        ? c.deathSurfaceY+(c.deathTargetSurfaceY-c.deathSurfaceY)*eased : corpseFloor(c,col,row);
       const halfHeight = Number(c.halfHeight) || 0.3;
       const bodyHeightFraction = c.deathRecorded ? 1 - 0.18 * eased : 1 - 0.88 * eased; // Keeps recorded root offsets aligned, but lets fallback corpses descend continuously instead of snapping downward at the last frame.
       grp.position.set(c.x / TILE, surfY + halfHeight * bodyHeightFraction, c.y / TILE);
@@ -460,6 +506,8 @@
       if (t >= 1) {
         c.state = 'corpse';
         c.x = c.deathTargetX; c.y = c.deathTargetY;
+        if(Number.isFinite(c.deathTargetSurfaceY))c.deathSurfaceY=c.deathTargetSurfaceY;
+        commitCorpseFloor(c);
         grp.position.set(c.x / TILE, surfY + halfHeight * (c.deathRecorded ? 0.82 : 0.12), c.y / TILE);
         if (!c.deathRecorded) grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
         activeDyingCorpses.delete(c); // Settled corpses no longer require any simulation tick.
@@ -482,6 +530,8 @@
     if (c._banditTrailMesh) c._banditTrailMesh.visible = false;
     const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
     const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
+    c.deathSurfaceY=captureRuinFloor(c);
+    commitCorpseFloor(c);
     c.health = 0;
     c.state = 'corpse';
     c.corpseCol = col; c.corpseRow = row;
@@ -496,8 +546,7 @@
     if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = -Math.PI / 2;
     if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = 0; c.avatarRef.syncHandFrame?.(); }
     if (c.avatarRef.legs) c.avatarRef.legs.update(0, 0, true);
-    const g = c.areaGrid || deps.getGrid();
-    const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+    const surfY = corpseFloor(c,col,row);
     grp.position.set(c.x / TILE, surfY + c.halfHeight * 0.12, c.y / TILE);
     grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
     if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
@@ -517,8 +566,7 @@
     const TILE = deps.TILE, grp = c.avatarRef.group;
     const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
     const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
-    const g = c.areaGrid || deps.getGrid();
-    const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+    const surfY = corpseFloor(c,col,row);
     const halfHeight = Number(c.halfHeight) || 0.3;
     c.scaleY = 1;
     grp.scale.y = c.isBandit && Number(c.visualScaleY) > 0 ? c.visualScaleY : 1;
@@ -554,6 +602,6 @@
     getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery }, lastPitLoot: deathDebug.lastPitLoot, activeDying: activeDyingCorpses.size, activeSprays: activeSprays.size }),
     formatDebug: () => deathDebug.lastPitLoot?.rest ? 'Pit loot: '+deathDebug.lastPitLoot.creature+' → '+deathDebug.lastPitLoot.rest.col+','+deathDebug.lastPitLoot.rest.row+' floor '+deathDebug.lastPitLoot.rest.surfaceY : deathDebug.lastRecovery
       ? `Creature death recovery: ${deathDebug.lastRecovery.creature} at ${deathDebug.lastRecovery.areaId}:${deathDebug.lastRecovery.col},${deathDebug.lastRecovery.row} | ${deathDebug.lastRecovery.reason}`
-      : `Creature death: last begin ${deathDebug.lastBegin?.creature || 'none'} (${deathDebug.lastBegin?.cause || 'unknown'}, recorded=${!!deathDebug.lastBegin?.recording}); no recovery needed`,
+      : `Creature death: last begin ${deathDebug.lastBegin?.creature || 'none'} (${deathDebug.lastBegin?.cause || 'unknown'}, recorded=${!!deathDebug.lastBegin?.recording}, floor=${deathDebug.lastBegin?.surfaceY ?? 'grid'}, target=${deathDebug.lastBegin?.targetSurfaceY ?? 'grid'}); no recovery needed`,
   };
 })();

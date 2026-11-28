@@ -461,12 +461,12 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261127pitlootAudit2"></script>
+  <script src="js/creature-death.js?v=20261127corpsefloor1"></script>
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
   <!-- Corpse-only, single-pass baking of final skinned pants; live pants are unchanged. -->
   <script src="js/corpse-posed-pants-snapshot.js?v=20261117posedPantsCorpse1"></script>
-  <script src="js/bandit-corpse-retirement.js?v=20261117hcorpse1"></script>
+  <script src="js/bandit-corpse-retirement.js?v=20261127corpsefloor1"></script>
   <!-- An old zone's bandits are released so the zone cache can evict it, and its camps
        re-seed on the next visit (window.ZoneBanditRelease); game.js calls init(...) and
        releaseZone(...) from trimZoneCache. -->

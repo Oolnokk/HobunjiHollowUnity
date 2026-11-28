@@ -389,3 +389,12 @@ for (const portraitFlip of [false, true]) {
 }
 
 console.log('bandit corpse retirement: ok');
+
+// Retirement keeps a corpse's actual story instead of the flat tile elevation.
+{
+  const w=makeWorld({game:{banditCorpseRetire:{keepFull:0}}});
+  w.area='map_i_dev_random_ruin';
+  const c=w.corpse('upper-story',{areaId:w.area,deathSurfaceY:12});
+  assert.equal(w.mod.tick(NOW),1);
+  assert.equal(c.avatarRef.group.position.y,12.03);
+}
