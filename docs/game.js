@@ -8386,10 +8386,10 @@
         getPlayerMesh: () => playerMesh, // Read the current owner root after any avatar rebuild.
         getPlayerNeckJoint: () => playerNeckJoint, // Resolve the live neck each frame rather than capturing the old rig.
         getOwnerPortraitMeshes: () => [_playerAvatarFrontMesh, _playerAvatarBackMesh], // Current deformed portrait faces for shoulder-pet geometry limits.
-        getCameraDeadzone: () => { // Shoulder pets keep body and head out of the animal camera-edge zone; the attachment, not the generic plane rotation, owns their yaw.
-          const az = activeCameraAzimuthRad(); // Same [az, az+PI] centres as cameraRelativeCreaturePerps(), written into one reused object.
-          _shoulderCameraDeadzone.perps[0] = az; _shoulderCameraDeadzone.perps[1] = Math.PI + az;
-          _shoulderCameraDeadzone.deadRad = window.PerpRotation.CREATURE_PERP_DEAD_RAD;
+        getCameraDeadzone: (perchPosition, renderCamera = camera) => {
+          const perp = window.PerpRotation; // Same live perspective bearing and width as grounded creature sprites.
+          if (!perp.cameraRelativeCreaturePerpsAtWorldPosition(perchPosition, renderCamera.position, _shoulderCameraDeadzone.perps)) return null;
+          _shoulderCameraDeadzone.deadRad = perp.CREATURE_PERP_DEAD_RAD;
           return _shoulderCameraDeadzone;
         },
         getRotationSource: () => s_shoulderPetRotationSource, // Preserve the existing authored head/body/world choice.

@@ -182,15 +182,18 @@
     return [viewYawWorld + Math.PI / 2, viewYawWorld - Math.PI / 2];
   }
 
-  function cameraRelativeCreaturePerpsAtWorldPosition(worldPosition, cameraPosition) {
+  function cameraRelativeCreaturePerpsAtWorldPosition(worldPosition, cameraPosition, out = []) {
     const worldX = Number(worldPosition?.x), worldZ = Number(worldPosition?.z);
     const cameraX = Number(cameraPosition?.x), cameraZ = Number(cameraPosition?.z);
-    if (![worldX, worldZ, cameraX, cameraZ].every(Number.isFinite)) return null;
+    if (!Number.isFinite(worldX) || !Number.isFinite(worldZ) ||
+        !Number.isFinite(cameraX) || !Number.isFinite(cameraZ)) return null;
     const dx = cameraX - worldX;
     const dz = cameraZ - worldZ;
     if (Math.hypot(dx, dz) < 1e-8) return null;
     const viewYawWorld = Math.atan2(dx, dz);
-    return [viewYawWorld, viewYawWorld + Math.PI];
+    out[0] = viewYawWorld;
+    out[1] = viewYawWorld + Math.PI;
+    return out;
   }
 
   function liveCameraPosition() {

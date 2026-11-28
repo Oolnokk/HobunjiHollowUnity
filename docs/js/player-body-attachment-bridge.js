@@ -670,10 +670,10 @@
   // The ordinary simulation pin precedes render-only stance/deadzone/head
   // composition. Reuse the existing frame transaction, after the final neck
   // pose, and the existing memoized active roots; no new scheduler or pass.
-  composer.addPostHeadAimHook?.((undo,renderDebug) => {
+  composer.addPostHeadAimHook?.((undo,renderDebug,camera) => {
     const repin=window.ShoulderPetAttachmentRuntime?.repinForRender;
     if(!repin)return;
-    for(const root of shoulderPetsForFrame())repin(root,undo,renderDebug);
+    for(const root of shoulderPetsForFrame())repin(root,undo,renderDebug,camera);
   });
 
   window.PlayerBodyAttachmentBridge = {

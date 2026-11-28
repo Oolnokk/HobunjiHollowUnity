@@ -423,8 +423,8 @@ group.visible=false;
 assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group,undo,renderDebug),false,'hidden pet does not incur a render pin');
 assert.equal(undo.length,0);
 const bridge=fs.readFileSync('docs/js/player-body-attachment-bridge.js','utf8');
-assert.match(bridge,/composer\.addPostHeadAimHook\?\.\(\(undo,renderDebug\)/,'late correction is attached to the existing final pose transaction');
-assert.match(bridge,/for\(const root of shoulderPetsForFrame\(\)\)repin\(root,undo,renderDebug\)/,'reuses active shoulder roots instead of traversing the scene');
+assert.match(bridge,/composer\.addPostHeadAimHook\?\.\(\(undo,renderDebug,camera\)/,'late correction is attached to the existing final pose transaction');
+assert.match(bridge,/for\(const root of shoulderPetsForFrame\(\)\)repin\(root,undo,renderDebug,camera\)/,'reuses active shoulder roots and the final draw camera');
 console.log('cached source pixel, live skinning and render-only shoulder translation passed');
 
 
@@ -510,3 +510,50 @@ for(const mirror of [false,true])for(const inward of [false,true])for(const side
 }
 flipped=false;delete pet.shoulderCuriosity;
 console.log('passive yaw: mirrored perch, both observation poses, both head sides and late clamp passed');
+
+// The final drawn head must stay clear even when the camera moved after simulation.
+new Function('window', fs.readFileSync('docs/js/shoulder-pet-deformation-envelope.js', 'utf8'))(win);
+const lateCamera = {};
+const cameraZone = { perps: [0, Math.PI], deadRad: degrees(27.5) };
+let renderBearing;
+const cameraGuard = win.ShoulderPetAttachmentRuntime.create({
+  THREE, getOwnerMesh: () => owner, getOwnerNeckJoint: () => head,
+  getRotationSource: () => 'head', getInvertRotationSource: () => false, getCancelRotationalOffset: () => false,
+  getCameraDeadzone: (position, camera) => {
+    if (!camera) return null;
+    assert.equal(camera, lateCamera);
+    assert.ok(Number.isFinite(position.x));
+    cameraZone.perps[0] = renderBearing;
+    cameraZone.perps[1] = renderBearing + Math.PI;
+    return cameraZone;
+  },
+});
+for (const sign of [-1, 1]) {
+  group.scale.set(2, 1, 1);
+  const solved = cameraGuard.solveSurfaceTransform(perch, grip, pet);
+  cameraGuard.applyFinalTransform(pet, solved);
+  const bodyYaw = 2 * Math.atan2(solved.worldQuaternion.y, solved.worldQuaternion.w);
+  const simulatedQuaternion = group.quaternion.clone();
+  passiveRig.currentYawDeg = sign * 20;
+  passiveRig.targetYawDeg = sign * 24;
+  renderBearing = bodyYaw + sign * degrees(40);
+  const cameraUndo = [];
+  assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group, cameraUndo, renderDebug, lateCamera), true);
+  const expected = Math.atan(Math.tan(degrees(12.5)) / 2) / degrees(1);
+  assert.ok(Math.abs(passiveRig.currentYawDeg - sign * expected) < 1e-6, 'head stops at the projected deadzone edge');
+  assert.ok(renderDebug.shoulderPerchPin.headCameraMarginDeg > -1e-6, 'the displayed head clears the zone');
+  assert.deepEqual(group.quaternion, simulatedQuaternion, 'a safe body does not turn with the head');
+  closeness(group.localToWorld(grip.localPosition.clone()), solved.perchWorldPosition, 'camera clamp preserves grip');
+  while (cameraUndo.length) cameraUndo.pop()();
+  assert.equal(passiveRig.currentYawDeg, sign * 20, 'simulation yaw restored');
+  assert.equal(passiveRig.targetYawDeg, sign * 24, 'simulation target restored');
+
+  renderBearing = bodyYaw + sign * degrees(5);
+  win.ShoulderPetAttachmentRuntime.repinForRender(group, cameraUndo, renderDebug, lateCamera);
+  assert.ok(renderDebug.shoulderPerchPin.headCameraMarginDeg > -1e-6, 'late camera motion can also put the neutral body in the zone');
+  assert.ok(Math.abs(passiveRig.currentYawDeg) < 1e-6, 'an unsafe turn falls back to the readable neutral heading');
+  closeness(group.localToWorld(grip.localPosition.clone()), solved.perchWorldPosition, 'body correction also preserves grip');
+  while (cameraUndo.length) cameraUndo.pop()();
+  assert.deepEqual(group.quaternion, simulatedQuaternion, 'late body correction rolls back');
+}
+console.log('late camera deadzone uses projected head yaw, preserves the grip and rolls back');
