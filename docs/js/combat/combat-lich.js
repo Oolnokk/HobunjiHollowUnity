@@ -1872,7 +1872,7 @@
 
     if (lich._lichSummonCooldownS <= 0 && (!lich.lichRaiseDead || lich.lichRaiseDead.canRaise?.(lich))) { // Raise-dead liches only cast when someone lies dead.
       if (beginLichCast(lich, target, 'summon')) {
-        lich._lichSummonCooldownS = lich.lichType==='kanthic' ? 4 + random() * 2 : 12 + random() * 5; // Fragile Kanthic minions return much more often.
+        lich._lichSummonCooldownS = lich.lichType==='kanthic' ? 10 + random() * 5 : 12 + random() * 5; // Fragile Kanthic minions return at a 10–15 second recast cadence.
         return { aimAngle, moving: false, handled: true };
       }
     }
