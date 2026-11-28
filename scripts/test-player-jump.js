@@ -229,6 +229,54 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert.equal(h.player.physicalFeetY,3,'handoff preserves physical feet');
 }
 {
+  // Mount real voxel-backed cliff support and a live cylinder slab, then use the real cliff handoff.
+  const h=harness({start:{x:3.5,z:3.5}});
+  vm.runInNewContext(read('docs/js/dynamic-surfaces.js'),h.context);
+  const DS=h.window.DynamicSurfaces;
+  const route=require('../docs/js/cliff-route-network.js');
+  const CG=require('../docs/js/cell-grid-3d.js');
+  const elevated=require('../docs/js/cliff-elevated-surfaces.js');
+  const shelf={id:'real-cap',x:3.5,z:3.5,y:3,width:2,depth:1.4,
+    tangent:{x:1,z:0},normal:{x:0,z:1},footprint:[2,3,4].map(c=>({c,r:3}))};
+  const net={area:'zone-test',balconies:[shelf],routes:[]};
+  assert(elevated.mount(net,{DynamicSurfaces:DS,CellGrid3D:CG,isActive:()=>true}).ok);
+  h.window.CliffRouteNetwork={...route,forGrid:()=>net};
+  h.window.CliffElevatedSurfaces=elevated;
+  vm.runInNewContext(integration,h.context);
+  h.window.ClimbSystem.init({player:h.player,TILE,getCurrentArea:()=>net.area,getActiveGrid:()=>h.grid,
+    _isZoneArea:()=>true,isSolid:()=>false,tileSurfaceYInArea:()=>0,worldSurfaceY:()=>0,
+    getMovementInput:()=>h.input,getMountRideState:()=>'none',canPlayerOccupyAtHeight:()=>true});
+  const elements=[1,0,0,0,0,1,0,0,0,0,1,0,3.5,3.035,3.5,1]; // Live slab transform in world units.
+  const mesh={userData:{},matrixWorld:{elements},updateWorldMatrix(){},geometry:{
+    parameters:{radiusTop:.46},boundingBox:{min:{x:-.46,y:-.045,z:-.46},max:{x:.46,y:.045,z:.46}}}};
+  DS.registerSurface(DS.pressurePlateSurface(mesh,{id:'real-plate',scope:'puzzle-cave-cliff-door:zone-test',plateArea:net.area,shelfId:shelf.id}));
+  assert(Math.abs(DS.samplePressurePlate(net.area,3.5,3.5,3,3.25).y-3.08)<1e-8);
+  assert.equal(DS.samplePressurePlate('other-zone',3.5,3.5,3,3.25),null);
+  h.window.PlayerJump.beginFlight({x:3.5,y:4,z:3.5,vy:-1},{source:'real cliff plate'});
+  h.advance(.6);
+  assert.equal(h.player.onCliffBalcony,shelf.id,'real jump restores the existing cliff movement owner');
+  assert.equal(h.player._freeJump,null);
+  assert.equal(h.player._cliffBalconyY,3,'stored shelf height does not inherit the plate');
+  assert(Math.abs(h.player.physicalFeetY-3.08)<1e-8);
+  elements[13]-=.05;
+  assert(Math.abs(DS.samplePressurePlate(net.area,3.5,3.5,3,3.25).y-3.03)<1e-8,'physical cylinder tracks depression');
+  h.input.x=1;
+  assert(h.window.ClimbSystem.updateBalcony(.25));
+  assert.equal(h.player.onCliffBalcony,shelf.id,'normal cliff walking leaves the slab without losing its owner');
+  assert.equal(DS.samplePressurePlate(net.area,h.player.x/TILE,h.player.y/TILE,3,3.25),null);
+  assert.equal(elevated.supportAt(net,h.player.x/TILE,h.player.y/TILE,3).y,3);
+  h.input.x=0;
+  h.player.onCliffBalcony=null;
+  h.player.x=3.5*TILE;h.player.y=3.5*TILE;
+  h.window.PlayerJump.beginFlight({x:3.5,y:1,z:3.5,vy:-1},{source:'under cliff'});
+  h.advance(.6);
+  assert.equal(h.player.onCliffBalcony,null,'a lower actor is not teleported onto an overhead plate');
+  assert.equal(h.player.physicalFeetY,0);
+  elevated.clear(net.area);
+  DS.remove('real-plate');
+  assert.equal(DS.sampleSupport(3.5,3.5,{area:net.area}),null,'unloading leaves neither an invisible cliff nor a plate');
+}
+{
   // Execute supported walking, not just the isolated collision helper: grounded ruin platforms must permit ordinary input.
   const Jump = require('../docs/js/ruin-jump-shaft.js'); // Real slab-volume collision is shared by the runtime and this regression.
   const h = harness({start:{x:3.5,z:3.5},deepSupportY:2}); // A raised dynamic support remains available for the entire test walk.

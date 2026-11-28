@@ -18,6 +18,7 @@
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
+  const MAX_PLATE_RADIUS=.46; // One-tile maximum; narrower caps may need a smaller but fully supported slab.
   const DOOR_WALL_CLEARANCE=.22; // The normal-size authored door sits slightly in front of mini-cliff rock, never buried in its surface.
   const hash=value=>{let h=2166136261>>>0;for(const c of String(value)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}return h>>>0;};
   const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
@@ -55,16 +56,22 @@
         const door={x:nearBack.x+normal.x*DOOR_WALL_CLEARANCE,z:nearBack.z+normal.z*DOOR_WALL_CLEARANCE,y:shelf.y}; // Offset toward the open balcony, preserving the same support and collider coordinates.
         const preferred={x:shelf.x+normal.x*Math.min(.68,shelf.depth*.36),
           z:shelf.z+normal.z*Math.min(.68,shelf.depth*.36)};
-        const samples=[]; // Valid footfall points: intersection of supported footprint cells and the irregular mini-cliff cap.
-        for(const tile of shelf.footprint)for(const dx of [0,-.28,.28])for(const dz of [0,-.28,.28]){
-          const x=tile.c+.5+dx,z=tile.r+.5+dz;
-          if(!supports(x,z)||Math.hypot(x-(entry.c+.5),z-(entry.r+.5))<=.65
-            ||Math.hypot(x-door.x,z-door.z)<=.58)continue; // Music plate and entry are physically separate interactions.
-          samples.push({x,z});
-        }
-        if(!samples.length)continue; // Try the next reachable balcony, not an unsupported plate that traps the cave.
-        samples.sort((a,b)=>distance(a,preferred)-distance(b,preferred));
-        const plate={...samples[0],y:shelf.y};
+        const samples=[]; // Valid footfall points and exact rim clearance on the irregular mini-cliff cap.
+        const addSamples=offsets=>{
+          for(const tile of shelf.footprint)for(const dx of offsets)for(const dz of offsets){
+            const x=tile.c+.5+dx,z=tile.r+.5+dz;
+            if(!supports(x,z)||Math.hypot(x-(entry.c+.5),z-(entry.r+.5))<=.65
+              ||Math.hypot(x-door.x,z-door.z)<=.58)continue; // Keep the plate separate from the transition.
+            const clearance=root.CliffRouteNetwork?.shelfClearanceAt?.(shelf,x,z) ?? MAX_PLATE_RADIUS+.02;
+            const radius=Math.min(MAX_PLATE_RADIUS,clearance-.02); // Small physical margin prevents stone from hanging over the cap.
+            if(radius>0)samples.push({x,z,radius});
+          }
+        };
+        addSamples([0,-.28,.28]); // Preserve the existing center preference where the full-size slab fits.
+        if(!samples.some(p=>p.radius===MAX_PLATE_RADIUS))addSamples([0,-.14,.14,-.28,.28,-.42,.42]);
+        if(!samples.length)continue; // Never mount a slab without a supported center.
+        samples.sort((a,b)=>b.radius-a.radius||distance(a,preferred)-distance(b,preferred));
+        const plate={...samples[0],y:shelf.y}; // Retain the entrance, shrinking only if no full-radius location fits.
         taken.add(shelf.id);
         const kind=root.CaveSiteSystem?.exteriorPuzzleKind?.(site)
           || (hash(site.signature+':outdoor-song')%2===0?'timedMelody':'cavePressurePlate'); // Share exterior choice with the cavern generator.
@@ -431,7 +438,8 @@
     scene.add(group);portal.visualRoot=group;
     // The plate belongs on the registered cap, not at terrain height underneath.
     {
-      const plate=new THREE.Mesh(new THREE.CylinderGeometry(.46,.46,.09,24),
+      const radius=portal.plate.radius; // The exact same radius drives the mesh, support, artwork and trigger.
+      const plate=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,.09,24),
         root.ProceduralFurniture?.makePartMaterial?.({
           materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b',
         })||new THREE.MeshBasicMaterial({color:0x7a746b})); // PNG stone even if the Tankan artwork loader is unavailable.
@@ -446,13 +454,13 @@
       });
       if(support){surfaces.registerSurface(support);portal.plateSurfaceId=support.id;}
       portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
-        radius:.46,thickness:.09,
+        radius,thickness:.09,
         toward:{x:portal.door.x-portal.plate.x,z:portal.door.z-portal.plate.z}
       })||null; // Furniture Author carved_smooth stone plus hao'uun in the shared Tankan font.
       portal.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
-        width:.11,height:.11,idleColor:'#a3dcc2',activeColor:'#ffe18a',
+        width:.11*radius/MAX_PLATE_RADIUS,height:.11*radius/MAX_PLATE_RADIUS,idleColor:'#a3dcc2',activeColor:'#ffe18a',
       }); // Small edge rune reports completion without covering the Tankan inscription or recoloring stone.
-      if(portal.plateSignal)portal.plateSignal.glyph.position.x=.31; // Center of the glyph sits safely within the circular plate's outer rim.
+      if(portal.plateSignal)portal.plateSignal.glyph.position.x=.31*radius/MAX_PLATE_RADIUS; // Center of the glyph sits safely within the circular plate's outer rim.
       if(portal.solved)portal.plateSignal?.setActive(true); // Persisted music and simple-plate completions light their rune upon re-entry.
     }
     const furniture=root.AuthoredFurniture;
@@ -621,7 +629,7 @@
   }
   function playerOnPlate(portal,player,px,pz){
     return !!player&&player.onCliffBalcony===portal.shelf.id&&!player.climbing
-      &&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46; // Shared live plate boundary for the rhythm and attacker-readiness signals.
+      &&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=portal.plate.radius; // Shared live plate boundary for the rhythm and attacker-readiness signals.
   }
   function update(dt,activeArea=null){
     const area=safeArea(activeArea||deps?.getCurrentArea?.());
