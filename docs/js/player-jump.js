@@ -603,6 +603,9 @@
         state.safeX = player.x / deps.TILE; state.safeZ = player.y / deps.TILE; // Track the nearest walkable tile passed above during this jump.
       }
       const px = player.x / deps.TILE, pz = player.y / deps.TILE;
+      const ropePuzzles=window.DevRandomRuinSimplePuzzles; // Fatal abyss wins over lower-story supports.
+      if(state.vy<=0&&ropePuzzles?.crossedRopeChainDeathPlane?.(px,pz,previous,state.feetY)&&
+          ropePuzzles.instantRopeChainDeath?.()===true)return true;
       const support = state.vy <= 0
         ? highestSupport(px, pz, previous + CONFIG.landingTolerance)
         : null;
