@@ -1342,7 +1342,10 @@
     }
     kanthicDeferredLighting=!!window.RenderHooks?.isWorldFrameOpen?.(); // The real pipeline paints once, after the composed avatar is captured; standalone render hosts retain prepainting.
     const cameraMoved=syncKanthicCameraAtmosphere(scene,camera,kanthicDeferredLighting);
-    if(kanthicDeferredLighting)prepareKanthicSurface();
+    if(kanthicDeferredLighting){
+      try{prepareKanthicSurface();}
+      catch(error){kanthicPreparedRect=lightingDeps.getThreeRect?.()||null;ruinGlowStats.lastError=String(error?.message||error);} // A failed surface check must not abort the world render or retry a resize while depth is bound.
+    }
     const system=window.RuinRoomSystem,sanctum=window.DevRandomRuinSanctum;
     const cinematic=kanthicCameraValid&&kanthicLanternUsesCamera; // Glyph region and lantern use the same scripted-camera ownership.
     const viewRegion=cinematic?(kanthicRegionAt(kanthicCameraLantern.x,kanthicCameraLantern.y,kanthicCameraLantern.z)
@@ -1717,7 +1720,7 @@
     if(!isKanthicGlyphArea())restoreKanthicCanvas(); // Exiting a ruin restores the ordinary DOM lighting owner even before the next world frame.
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
-    if(isKanthicGlyphArea())syncKanthicCameraAtmosphere(activeScene, kanthicFrame ? kanthicRenderCamera || lightingDeps.camera : lightingDeps.camera, kanthicPresentedPortrait); // Keep the exact rendered pose after the body compositor restores gameplay transforms.
+    if(isKanthicGlyphArea()&&!kanthicLateCanvasPaint)syncKanthicCameraAtmosphere(activeScene, kanthicFrame ? kanthicRenderCamera || lightingDeps.camera : lightingDeps.camera, kanthicPresentedPortrait); // Keep the exact rendered pose after the body compositor restores gameplay transforms.
     if (now - lastUnifiedLightingDraw < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0
         && currentArea === lastUnifiedLightingArea && activeScene === lastUnifiedLightingScene) return;
     lastUnifiedLightingDraw = now;
