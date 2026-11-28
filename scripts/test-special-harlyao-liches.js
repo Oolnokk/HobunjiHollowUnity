@@ -65,7 +65,7 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.equal(liches.specialRoster('tothal').cosmeticSlots.facewrap,'hood');
   assert.ok(liches.specialRoster('hronal').equippedCosmetics.includes('rounded_pauldron'));
   assert.ok(!liches.specialRoster('kanthic').equippedCosmetics.includes('ragged_hood'));
-  for (const [type, sprite] of [['hronal','hskel_eyeglow_m.png'],['tothal','hskel_eyeglow_f.png']]) {
+  for (const [type, sprite] of [['hronal','hskel_eyeglow_m.png'],['tothal','hskel_eyeglow_f.png'],['kanthic','hskel_eyeglow_m.png']]) {
     const roster = liches.specialRoster(type);
     assert.equal(roster.appearance.bodyColors.C.hex,liches.bodyColor3For(type),'Named body color C owns the wall/eye emission color');
     const portrait = liches.decoratePortraitProfile({bodyColors:{A:{hex:'#D4D6C9'},C:{hex:'#D4D6C9'}}},roster);
@@ -79,10 +79,13 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
     bodyColors:{C:{hex:'#D4D6C9'}},hat:{id:'randomhat'},hood:{id:'randomhood'},mask:{id:'randommask'},
     eyes:{id:'randomEyes'},upperFace:{id:'randomFace'},facialHair:{id:'randomFacialHair'}
   },liches.specialRoster('kanthic'));
-  for(const slot of ['hat','hood','mask','eyes','upperFace','facialHair'])
+  for(const slot of ['hat','hood','mask','upperFace','facialHair'])
     assert.equal(imlaoBare[slot].id,'none','Imlao must not wear any '+slot+' other than his circlet');
   assert.equal(liches.decoratePortraitProfile({bodyColors:{C:{hex:'#D4D6C9'}},hat:{id:'clothes::hat::tangedcirclet'}},liches.specialRoster('kanthic')).hat.id,'clothes::hat::tangedcirclet','Imlao keeps the tanged circlet every guardian wears');
   assert.equal(imlaoBare.bodyColors.C.hex,liches.bodyColor3For('kanthic'));
+  const minionEyes=liches.decoratePortraitProfile({bodyColors:{}},{ruinSkeletonTheme:'kanthic',appearance:{gender:'female'}});
+  assert.ok(minionEyes.eyes.layers[0].url.endsWith('hskel_eyeglow_f.png'));
+  assert.ok(minionEyes.eyes.layers[1].pixelDyeOnly);
   const incorrectlyDressed=liches.specialRoster('kanthic');
   incorrectlyDressed.equippedCosmetics.push('ragged_hood','tangedcirclet','facewrap');
   incorrectlyDressed.cosmeticSlots.ragged_hood='hood';
