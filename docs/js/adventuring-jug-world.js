@@ -5,6 +5,7 @@
   const MAX_FLIGHTS=4, GRAVITY=9.8, STEP=.05, MAX_STEPS=48; // Bounded trace work per release.
   let deps=null,rules=null,area=null,scene=null,lastTrace=null; // Injected game authority and active-scene lifetime.
   const flights=[], receivers=new Set(), surfaces=new Map(); // Temporary flight visuals, authored puzzle receivers, and consecrated decals.
+  let simulationMs=0; // Advances only with gameplay dt; menus do not consume consecration duration.
   let surfaceGeometry=null,surfaceMaterial=null; // Shared by every consecrated tile, never cloned per tick.
   const key=t=>t.x+','+t.z+','+t.y;
   const local=()=>window.ActorRegistry?.getLocalPlayer?.()||deps?.getPlayer?.();
@@ -34,9 +35,9 @@
     surfaces.clear();rules?.endDodge(local());
   }
   function init(injected){
-    clear();deps=injected;area=getArea();scene=getScene();
+    clear();deps=injected;area=getArea();scene=getScene();simulationMs=0;
     rules=window.HobunjiCreateJugRuntime({
-      nowMs:()=>window.SimClock.now(),
+      nowMs:()=>simulationMs,
       onStateChanged:(actor,state)=>{if(actor===local()){deps.saveState?.(state);deps.refresh?.();}},
       extinguishTile:(t,owner)=>window.PersistentGroundFire?.extinguishTile?.(t),
       clearPlasmTile:t=>t.area==='map_i_dev_random_ruin'?window.DevRandomRuinLichThemes?.clearPlasmTile?.(t):window.HarlyaoLichCombat?.clearPlasmTile?.(t),
@@ -196,14 +197,17 @@
   function update(dt){
     if(!rules)return;
     ensureArea();
+    const elapsed=Number.isFinite(dt)?Math.max(0,dt):0;
+    simulationMs+=elapsed*1000;
     const actor=local();
     if(!actor?.dodging||actor.health<=0||actor._downed||actor.prone)rules.endDodge(actor);
     for(let i=flights.length-1;i>=0;i--){
-      const f=flights[i];f.age+=Math.max(0,dt);
-      if(f.age>=f.duration+.12){finish(f);disposeFlight(f);flights.splice(i,1);}
+      const f=flights[i];f.age+=elapsed;
+      if(!f.resolved&&f.age>=f.duration){finish(f);f.resolved=true;} // Apply liquid as soon as the first-impact trajectory arrives, not after its visual tail.
+      if(f.age>=f.duration+.12){disposeFlight(f);flights.splice(i,1);}
       else animate(f);
     }
-    rules.update();
+    if(elapsed>0)rules.update();
   }
   function escapeTarget(actor){
     if(!rules?.hasArea(area)||!isUndead(actor)||deps.actorArea?.(actor)!==area)return null; // Idle undead do no surface sampling.
