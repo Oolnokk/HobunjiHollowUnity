@@ -10,7 +10,7 @@ const {chromium}=require('playwright');
     await page.setContent('<html><body></body></html>');
     await page.addScriptTag({path:require.resolve('three/build/three.min.js')});
     const source=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8').replace('  function ordinaryBuildingInterior(area) {',
-      '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();unifiedLightingPaintRevision++;};window.WeatherFX.drawLightingOverlay=drawUnifiedLightingOverlay;};\n  function ordinaryBuildingInterior(area) {');
+      '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();unifiedLightingPaintRevision++;};window.WeatherFX.drawLightingOverlay=drawUnifiedLightingOverlay;};window.__drawLanternTest=()=>drawLanternMasksCompat(1);\n  function ordinaryBuildingInterior(area) {');
     await page.evaluate(()=>{window.WeatherFX={init(){}};window.DevRandomRuinLichThemes={activeTheme:()=>'kanthic'};});
     await page.addScriptTag({content:source});
     await page.addScriptTag({path:require('node:path').resolve('docs/js/png-plane-outline-occluder.js')});
@@ -67,7 +67,7 @@ const {chromium}=require('playwright');
       const farWall=new T.Mesh(new T.PlaneGeometry(4,4),new T.MeshBasicMaterial({color:0xffffff}));
       farWall.position.set(0,1,-6);voidScene.add(farWall);
       const nearWall=new T.Mesh(new T.PlaneGeometry(.6,2),new T.MeshBasicMaterial({color:0xffffff}));
-      nearWall.position.set(-1,1,0);voidScene.add(nearWall);
+      nearWall.position.set(-1,1,2.4);voidScene.add(nearWall);
       const farRune=new T.Mesh(new T.PlaneGeometry(.6,2),glyph.material.clone());
       farRune.name='engraving-glyph-glow';farRune.position.set(1,1,-5.99);voidScene.add(farRune);
       region='room:void';bounds[region]={minX:-2,maxX:2,minZ:-7,maxZ:2,minY:-2,maxY:4};
@@ -83,8 +83,43 @@ const {chromium}=require('playwright');
         }finally{api.endKanthicGlyphFrame();}
       }
       const voidTarget=voidFrame(false),voidDirect=voidFrame(true);
+      // Keep the player still while the actual view camera pans, cuts and returns.
+      const mistGroup=voidScene.getObjectByName('cloud_forest_mist_cylinders');
+      const projected=new T.Vector3();
+      const fixedPlayer={x:-100,y:-100};
+      window.RuinRoomSystem.lightAllowed=()=>false; // Camera lantern cannot be rejected by a remote player's room ownership.
+      window.RuinRoomSystem.withLightClip=()=>false;
+      window.__glyphTest({lctx:ctx,camera,player:fixedPlayer,TILE:1,npcWalkers:[],getPlayerWorldY:()=>0,
+        getCurrentArea:()=> 'map_i_dev_random_ruin',getActiveScene:()=>voidScene,getSceneTransAlpha:()=>0,
+        getThreeRect:()=>({width:1024,height:1024}),worldToOverlay:(x,y,z)=>{
+          projected.set(x,y,z).project(camera);
+          return {x:(projected.x+1)*512,y:(1-projected.y)*512};
+        }},()=>{});
+      let cinematic=false;
+      window.CinematicCameraRuntime={isActive:()=>cinematic};
+      window.RuinRoomSystem.glyphRegionAt=x=>x>10?'room:shot':region;
+      bounds['room:shot']={minX:10,maxX:20,minZ:0,maxZ:10,minY:0,maxY:10};
+      function cameraSample(x,y,z,tx,ty,tz,shot){
+        cinematic=shot;camera.position.set(x,y,z);camera.lookAt(tx,ty,tz);camera.updateMatrixWorld(true);
+        api.update(.016); // Simulate ordinary gameplay mist placement before final render-camera sync.
+        api.prepareKanthicGlyphFrame(voidScene,clock+=20,camera);
+        try{
+          const diag=api.getDebugState(),anchor=diag.kanthicCameraAtmosphere;
+          const dir=camera.getWorldDirection(new T.Vector3());
+          const expected=camera.position.clone().addScaledVector(dir,.75);
+          const expectedLight=camera.position.clone().addScaledVector(dir,2.25);
+          const exact=mistGroup.children.every(m=>m.position.distanceTo(expected)<1e-8);
+          const lightExact=new T.Vector3(anchor.lantern.x,anchor.lantern.y,anchor.lantern.z).distanceTo(expectedLight)<1e-8;
+          ctx.globalCompositeOperation='source-over';ctx.clearRect(0,0,1024,1024);ctx.fillStyle='black';ctx.fillRect(0,0,1024,1024);
+          window.__drawLanternTest();
+          return {exact,lightExact,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(512,512,1,1).data[3]};
+        }finally{api.endKanthicGlyphFrame();}
+      }
+      const cameraSamples=[cameraSample(0,1,3,0,1,0,false),
+        cameraSample(4,3,4,7,2,4,true),cameraSample(14,6,5,17,5,5,true),
+        cameraSample(0,1,3,0,1,0,false)];
       rt.dispose();renderer.dispose();
-      return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect};
+      return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect,cameraSamples};
     });
     for(const x of [results.a,results.b]){
       assert(x.left[1]>150,'unoccluded active-room glyph is bright: '+JSON.stringify(x));
@@ -104,6 +139,12 @@ const {chromium}=require('playwright');
       assert(x.far.slice(0,3).every(c=>c===0),'ordinary geometry beyond the outer cylinder is black: '+JSON.stringify(x));
       assert(x.rune[1]>150,'the distant rune pierces the same outer cylinder: '+JSON.stringify(x));
     }
+    for(const sample of results.cameraSamples){
+      assert(sample.exact&&sample.lightExact,'mist and lantern follow the final camera pose: '+JSON.stringify(sample));
+      assert(sample.alpha<100,'real lantern mask opens at the camera center despite the remote player: '+JSON.stringify(sample));
+    }
+    assert.equal(results.cameraSamples[2].region,'room:shot','cinematic glyph ownership follows the rendered view');
+    assert.equal(results.cameraSamples[3].region,'room:void','returning to gameplay restores player-room ownership');
     assert(results.restored,'DOM canvas, source visibility, material clipping and renderer state restore');
     assert.deepEqual(errors,[],'no WebGL or page errors');
     console.log('Kanthic real WebGL: target/direct partial occlusion, room clipping, bounded upload and cleanup OK');
