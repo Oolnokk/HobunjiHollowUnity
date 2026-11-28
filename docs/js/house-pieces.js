@@ -41,9 +41,9 @@
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
     ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261118hb4f3905'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
-    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
+    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261127lightContinuity'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
-    ['Ghostify', 'ghostify.js?v=20261104hf464126'],
+    ['Ghostify', 'ghostify.js?v=20261127lightContinuity'],
     // Commander-led Harlyao simulation: persistent offscreen positions, regrouping followers, and individual distance-based promotion to native humanoid travel.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261125enemyClassMerge1'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
