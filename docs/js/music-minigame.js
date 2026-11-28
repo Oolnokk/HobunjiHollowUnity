@@ -541,6 +541,10 @@
 
   function beginPlayerSession(options = {}) {
     if (playerSession || !overlayEl || !frameEl || !deps) return false;
+    if (window.Shattercasks?.heldBurdenInfo?.()) {
+      deps.showToast?.('Free your hands before playing an instrument.', false);
+      return false;
+    }
     const proposedEcho = options?.echoChallenge; // Optional, ephemeral encounter melody; no songbook writes or global music-mode changes.
     if (proposedEcho && (!proposedEcho.id || !Array.isArray(proposedEcho.notes) || proposedEcho.notes.length < 3 ||
         proposedEcho.notes.length > 12 || !proposedEcho.notes.every(note => Number.isInteger(note) && note >= 0 && note < (window.KurrayaPuzzle?.NOTE_CODES.length ?? 8)))) return false;

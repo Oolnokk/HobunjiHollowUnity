@@ -1296,10 +1296,14 @@
       item:d?.getActiveInventoryItem?.()?.key ?? null,
     };
   }
+  function stowEquipmentForCarry() {
+    if (window.MusicMinigame?.state?.active) window.MusicMinigame.close?.(); // Release instrument grips and the music action lock before claiming both hands.
+    window.ActionArcUI?.stowForCarry?.();
+  }
   function pickUp(cask) {
     if(!cask||cask.exploded||cask.flying||held||cask.mapId!==area())return false;
     // The contextual Tool Select press stows whatever is held automatically.
-    window.ActionArcUI?.stowForCarry?.();
+    stowEquipmentForCarry();
     held=cask;cask.carried=true;
     alignHeldVase(cask);
     setHeldRearXray(cask);
@@ -1340,7 +1344,7 @@
   }
   function takeFromBack(){
     if(held||!backCarried||backCarried.exploded||backCarried.mapId!==area())return false;
-    window.ActionArcUI?.stowForCarry?.();
+    stowEquipmentForCarry();
     const burden=backCarried;
     backCarried=null;held=burden;
     alignHeldVase(burden);
@@ -1475,7 +1479,7 @@
   }
   function retrievePlacedBurden(burden, anchor) {
     if (!burden || burden.exploded || !burden.plinthAttached || burden.group?.parent !== anchor || held || burden.mapId !== area()) return false;
-    window.ActionArcUI?.stowForCarry?.();
+    stowEquipmentForCarry();
     held = burden;
     burden.carried = true;
     burden.plinthAttached = false;

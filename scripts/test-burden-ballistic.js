@@ -177,7 +177,20 @@ assert.equal(fruitHits,0,'hanging Soursap is still protected until it falls');
 let hangCalls = 0, hangResult = true;
 game.HangingRopes = { tryHang: held => { hangCalls++; return hangResult && !!held; }, tick() { game.__ropeTicks = (game.__ropeTicks || 0) + 1; } };
 const carried = burden('carry1', { x: 3.5, y: .5, z: 4.5 });
+const pickupOrder = []; // Record the equipment handoff before the burden claims the hands.
+game.MusicMinigame = {
+  state: { active: true },
+  close() {
+    assert.equal(Sh.heldBurdenInfo(), null);
+    pickupOrder.push('close music');
+    this.state = null;
+  },
+};
+game.ActionArcUI = { stowForCarry: () => pickupOrder.push('holster gear') };
 assert.equal(Sh.pickUp(carried), true, 'can pick it up'); assert.equal(Sh.heldBurdenInfo()?.id, 'carry1');
+assert.deepEqual(pickupOrder, ['close music', 'holster gear'], 'pickup releases the live instrument before taking over the hands');
+delete game.MusicMinigame;
+delete game.ActionArcUI;
 assert.equal(Sh.interact(), true); assert.equal(hangCalls, 1, 'the carry-release action asks the rope first');
 assert.equal(Sh.heldBurdenInfo()?.id, 'carry1', 'and when the rope took it (the stub does not release it), drop() did not run');
 hangResult = false;
