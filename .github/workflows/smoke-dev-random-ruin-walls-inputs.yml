@@ -138,6 +138,25 @@ jobs:
               null, { timeout:90000, polling:100 }); // The first real ruin draw may compile many native materials in software WebGL.
               await page.waitForTimeout(250);
 
+              // Spawn proximity alone no longer guarantees a prompt. Explicitly
+              // select the point-only exit to exercise the popup wiring; the
+              // separate real-ray regression covers camera selection.
+              const aimedExit = await page.evaluate(() => {
+                const ranged = window.RangedWeapons;
+                const original = ranged.focusCandidates;
+                try {
+                  ranged.focusCandidates = candidates => {
+                    const candidate = candidates.find(entry => typeof entry.data === 'string' && entry.data.includes('|exit|'));
+                    return candidate ? {candidate, point:candidate.box.getCenter(new THREE.Vector3()), distanceWorld:1} : null;
+                  };
+                  window.DevRandomRuinInteractions.refresh();
+                  return {interactions:window.DevRandomRuinInteractions.snapshot(),popup:window.WorldPopupText.debugSnapshot()};
+                } finally {
+                  ranged.focusCandidates = original;
+                  window.DevRandomRuinInteractions.refresh();
+                }
+              });
+
               const state = await page.evaluate(() => ({
                 area: window.GridTileAccessors.getCurrentArea(),
                 gameStarted: !!window.__hobunjiGameStarted,
@@ -236,11 +255,11 @@ jobs:
               assert.equal(state.interactions.normalActionBarProvider, true, 'ruin interactions must feed the ordinary building-interior action bar');
               assert.equal(state.interactions.customPromptBridgeInstalled, false, 'ruin interactions must not wrap the custom ActionPromptUI');
               assert.ok(state.interactions.providerCount >= 2, 'base and prototype ruin controls should both feed the shared input list');
-              assert.ok(state.interactions.rows.length > 0, 'spawn should expose at least the normal Leave Test Ruin interaction');
-              assert.ok(state.popup.interactionRows.length > 0, 'WorldPopupText should own the visible interaction list');
-              assert.ok(state.popup.interactionRows.every(row => row.inputActionId), 'interaction rows should carry semantic input action ids');
-              assert.ok(state.popup.interactionRows.every(row => row.inputHint), 'interaction rows should carry real binding labels');
-              assert.ok(state.popup.interactionRows.every(row => row.inputColor), 'interaction rows should carry action-arch input colors');
+              assert.ok(aimedExit.interactions.rows.some(row => row.kind === 'exit'), 'an aimed entrance exit should expose Leave Test Ruin');
+              assert.ok(aimedExit.popup.interactionRows.length > 0, 'WorldPopupText should own the visible interaction list');
+              assert.ok(aimedExit.popup.interactionRows.every(row => row.inputActionId), 'interaction rows should carry semantic input action ids');
+              assert.ok(aimedExit.popup.interactionRows.every(row => row.inputHint), 'interaction rows should carry real binding labels');
+              assert.ok(aimedExit.popup.interactionRows.every(row => row.inputColor), 'interaction rows should carry action-arch input colors');
 
               assert.equal(state.interactions.ladderCount, state.ladderNodes.length, 'late-added V50 ladder groups must be discovered by the throttled semantic rescan');
               for (const ladder of state.ladderNodes) {
