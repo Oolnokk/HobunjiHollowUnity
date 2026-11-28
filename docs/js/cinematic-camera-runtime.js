@@ -12,6 +12,7 @@
   let deps = null;
   const camerasByArea = new Map(); // areaId -> normalized authored cameras used by dialogue/cutscene camera lookup.
   let active = null; // { areaId, camera, reason } consumed by game.js's camera override.
+  const appliedShots = new WeakMap(); // Last successfully applied authored record per real camera, for render effects that need actual ownership.
   let dialogueContext = null; // Current NPC conversation, used by node-level camera swaps.
   let petFade = 0; // 0 = ordinary pet visibility, 1 = fully faded for the current cinematic shot.
   const fadedMaterials = new Map(); // mesh -> { originalMaterial, states }; temporary fade clones are restored/disposed when the shot ends.
@@ -280,10 +281,11 @@
     let blend = null; // One transition record per actual activated shot.
     let transitions = 0; // Exposed to mobile/editor diagnostics for detecting unintended restarts.
     return {
-      reset() { blend = null; },
+      reset() { blend = null; appliedShots.delete(camera); },
       snapshot: () => ({ transitions, cameraId: blend?.record?.camera?.id || null, startedAt: blend?.startedAt ?? null }),
       apply(record = activeRecord()) {
         const shot = record?.camera; // Current authored/live shot resolved by the shared selection owner.
+        appliedShots.delete(camera); // Failed/aborted applications must not leave a camera marked cinematic.
         if (!shot) { blend = null; return false; }
         if (!blend || blend.record !== record) {
           blend = { record, startedAt: performance.now(), position: camera.position.clone(), target: lookPoint.clone(), fov: camera.fov };
@@ -307,6 +309,7 @@
         if (aspect) camera.aspect = aspect();
         camera.updateProjectionMatrix();
         framing?.(camera, shot);
+        appliedShots.set(camera, record);
         return true;
       },
     };
@@ -449,6 +452,11 @@
     return shouldStagePlayer() ? (active?.camera?.playerStage || null) : null;
   }
 
+  function appliedRecordFor(camera, areaId) {
+    const applied = camera && appliedShots.get(camera); // A registered/selected record is not proof this camera rendered it.
+    return applied && applied === active && (areaId == null || applied.areaId === String(areaId)) ? applied : null;
+  }
+
   function isActive() {
     return !!active?.camera;
   }
@@ -585,6 +593,7 @@
     endDialogue,
     activeCamera,
     activeRecord,
+    appliedRecordFor,
     resolvedTarget,
     resolvedPosition: () => active?.camera?.positionProvider?.() || active?.camera?.position,
     shouldStagePlayer,
