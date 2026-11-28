@@ -58,7 +58,7 @@
   ]); // Used by the existing three player-centered meshes only.
   const KANTHIC_CAMERA_MIST_LEAD = 0.75; // Keep the lens inside the inner shell while centering its view just ahead of it.
   const KANTHIC_CAMERA_LANTERN_DEPTH = 2.25; // Project the lantern from a stable point along the active camera's view ray.
-  const KANTHIC_LANTERN_RADIUS_SCALE = 0.66; // Restore the pre-PR midpoint radius; shared by the reveal, rope lighting and diagnostics.
+  const KANTHIC_LANTERN_RADIUS_SCALE = 2 / 2.4; // Default 2-tile radius; shared by the reveal, rope lighting and diagnostics.
   const KANTHIC_VOID_HEIGHT = 128; // Span the shaft above and below the player without adding cylinder segments.
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const RUIN_SCREEN_TINT_ALPHA = 0.07; // Used once per ruin lighting redraw for a gentle full-screen tradition tint.
@@ -850,7 +850,7 @@
     const currentArea = lightingDeps.getCurrentArea(); // Use the same carried-lantern gradient in every room; Tothal alone suppresses it.
     const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
     if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
-    const ruinLanternScale = ruinTradition === 'kanthic' ? KANTHIC_LANTERN_RADIUS_SCALE : 1; // Default 2.4 tiles contracts to 1.584 in Kanthic, with the same smooth falloff.
+    const ruinLanternScale = ruinTradition === 'kanthic' ? KANTHIC_LANTERN_RADIUS_SCALE : 1; // Default 2.4 tiles contracts to 2 in Kanthic, with the same smooth falloff.
     const ctx = lightingDeps.lctx;
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // The player farmhouse's special base-light rule uses its active scene identity.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Unlike mines, the farmhouse has no permanently lit player torch.
@@ -1887,7 +1887,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic lantern follows the rendered player portrait unless an applied cinematic owns the camera; room-independent carried light, restored 1.584-tile default radius.',
+        latestChange: 'Kanthic lantern follows the rendered player portrait unless an applied cinematic owns the camera; room-independent carried light, 2-tile radius.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
