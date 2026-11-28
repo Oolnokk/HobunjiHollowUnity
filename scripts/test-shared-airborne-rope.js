@@ -370,3 +370,36 @@ console.log('shared airborne rope ok');
   rope.length=2;rope.burden={};restoreRopeGeometry(rope);assert.equal(rope.length,2,'burden rope is preserved');
   rope.burden=null;restoreRopeGeometry(rope);assert.equal(rope.length,3,'death reset restores reach');
 }
+
+ // Production PlayerJump must stop before accepting the lower story and preserve the respawn's new position.
+{
+  const t=world(),player=t.player;
+  const from=ruinSource.indexOf('  function insideRopeChain(');
+  const to=ruinSource.indexOf('  function instantRopeChainDeath(',from);
+  const state={ropeChains:[{floorY:4,bounds:{minX:2,maxX:3,minZ:3,maxZ:4},external:true}]};
+  const cross=new Function('state','inRuin',ruinSource.slice(from,to)+'\nreturn crossedRopeChainDeathPlane;')(state,()=>true);
+  let deaths=0,landings=0;
+  t.window.FallSystem.land=()=>{landings++;};
+  t.window.DevRandomRuinSimplePuzzles={crossedRopeChainDeathPlane:cross,instantRopeChainDeath(){
+    deaths++;t.window.PlayerJump.reset();player.x=TILE;player.y=TILE;player.physicalFeetY=4;return true;
+  }};
+  t.window.PlayerJump.beginFlight({x:2.5,y:4.2,z:3.5,vx:0,vy:-5,vz:0},{source:'rope-chain test'});
+  for(let i=0;i<20&&!deaths;i++)t.step();
+  assert.equal(deaths,1,'ordinary jump runs fatal crossing before landing');
+  assert.equal(landings,0,'no lower-story landing impact runs');
+  assert.equal(player.x,TILE,'death returns the player to checkpoint');
+  assert.equal(player.physicalFeetY,4,'jump tick must not overwrite the new spawn height');
+  assert.equal(player._freeJump,null,'old flight ownership is cleared');
+}
+ // Checkpoint support must stay on the intended story and reject abyss coordinates.
+{
+  const from=ruinSource.indexOf('  function safeCheckpointPoint(');
+  const to=ruinSource.indexOf('  function activateCheckpoint(',from);
+  const samples=[];
+  const DS={sampleSupport(x,z,opts){samples.push(opts);return x>2.2?{y:6.12}:null;}};
+  const safe=new Function('DS','ropeChainPitAt','ropeBlockedAt','ROPE_COLLISION_RADIUS',
+    ruinSource.slice(from,to)+'\nreturn safeCheckpointPoint;')(DS,(x,z)=>x<2.3,()=>false,.24);
+  assert.deepEqual(safe({x:2,y:6,z:3}),{x:2.35,y:6.12,z:3},'unsupported checkpoint moves to nearby safe support');
+  assert(samples.every(o=>o.minY===5.55&&o.maxY===6.45),'never query another story during recovery');
+  assert.equal(safe({x:0,y:6,z:3}),null,'no floor means canonical fallback, not false success');
+}
