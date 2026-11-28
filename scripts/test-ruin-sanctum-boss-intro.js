@@ -255,12 +255,12 @@ async function run(){
   assert.ok(roomSource.includes('DevRandomRuinSanctum?.lightSources?.()'),'room ambient uses the sanctum light source');
   const rotateCode=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
   const rotation=vm.runInNewContext(rotateCode.slice(rotateCode.indexOf('  function igniteFire('),rotateCode.indexOf('  function updateFire('))+'\nrotateKanthicFires;', {window:{}});
-  const fires=Array.from({length:4},()=>({lit:false,ordinaryFire:true,holder:{userData:{}},anchor:{visible:false},lightSource:{active:false}}));
+  const fires=Array.from({length:4},()=>({lit:false,ordinaryFire:true,contact:{userData:{}},anchor:{visible:false},lightSource:{active:false}}));
   const fireOwner={inSanctum:true,context:{theme:'kanthic'},arenaFires:fires};
   for(const [step,wanted] of [[0,0],[29,0],[1,1],[30,2],[30,3],[30,0]]){
     rotation(fireOwner,step);
     assert.deepEqual(fires.map(f=>f.lit),fires.map((_,i)=>i===wanted));
-    assert.deepEqual(fires.map(f=>f.holder.userData.fireHazard),fires.map((_,i)=>i===wanted));
+    assert.deepEqual(fires.map(f=>f.contact.userData.fireHazard),fires.map((_,i)=>i===wanted));
   }
   console.log('PASS: readable reveal, authored lights, intro lighting, timed combat, canonical cleanup, death/exit, fade cancellation, stale spawns, persistent victory');
 }
