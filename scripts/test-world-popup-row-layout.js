@@ -214,3 +214,37 @@ assert.equal(combatScales.COMBAT_FLOAT_RADIUS_SCALE,.8);
   assert(active.some(e=>e.offsetY<0)&&active.some(e=>e.offsetY>0),'burst spreads vertically as well');
   assert(new Set(active.map(e=>e.offsetX)).size===active.length,'no vertical list alignment');
 }
+
+// Compare complete editor-style bursts against the original placement policy.
+// The candidate radius alone is not sufficient: an elliptical spiral can
+// encounter a farther valid point first even when its nominal radius shrinks.
+for (const height of [.07,.13,.36,.4]) {
+  const labels=['-18','-6 Bleeding','-4 Wounded','-20 Footing','IMPACT!!!','-5 Scent Marked','-4 Shattered','-3 Shambling'];
+  for (const count of [5,8,16,32]) {
+    function buildBurst(compact) {
+      const root={}, active=[], state={active,settings:{floatPlus:{worldHeight:height}}};
+      const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state,...combatScales});
+      for (let i=0;i<count;i++) {
+        const label=labels[i%labels.length], emphasis=label==='IMPACT!!!';
+        const size=height*(compact?.65:1)*(emphasis?1.65:1);
+        const bounds={height:size,width:Math.max(64,label.length*38+28)/92*size}; // Approximate real canvas widths with varied labels.
+        const point=claim(root,bounds,true,emphasis,compact);
+        active.push({root,mode:'floatPlus',kind:'damage',scatter:true,emphasis,offsetX:point.x,offsetY:point.y,...bounds});
+      }
+      return active;
+    }
+    const original=buildBurst(false), compact=buildBurst(true);
+    const radii=events=>events.map(e=>Math.hypot(e.offsetX,e.offsetY));
+    const oldR=radii(original), newR=radii(compact);
+    assert(Math.max(...newR)<Math.max(...oldR),'outermost popup is nearer for representative bursts');
+    assert(newR.reduce((a,b)=>a+b,0)<oldR.reduce((a,b)=>a+b,0),'average radius shrinks');
+    function box(e,p) {
+      const drift=1+.22*(1-(1-p)**2),pop=e.emphasis?1.4-.4*Math.min(1,p/.24):1.1-.1*Math.min(1,p/.24);
+      return {x:e.offsetX*drift+Math.sin(p*Math.PI)*e.height*.12,y:e.offsetY*drift+.075*(1-(1-p)**2),w:e.width*pop,h:e.height*pop};
+    }
+    const samples=compact.map(e=>Array.from({length:11},(_,i)=>box(e,i/10)));
+    for(let i=0;i<samples.length;i++) for(let j=i+1;j<samples.length;j++) for(const a of samples[i]) for(const b of samples[j])
+      assert(Math.abs(a.x-b.x)>=(a.w+b.w)/2 || Math.abs(a.y-b.y)>=(a.h+b.h)/2,'compact dense burst has no sampled animation overlap');
+  }
+}
+console.log('Compact combat radius and dense-burst separation: PASS');
