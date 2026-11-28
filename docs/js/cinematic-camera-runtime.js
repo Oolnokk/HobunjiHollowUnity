@@ -143,9 +143,10 @@
   //                       camera aims through the diameter at its antipodal point.
   function createActorOrbitShot(subjects, options = {}) {
     const T = window.THREE;
-    if (!T?.Vector3 || !Array.isArray(subjects) || subjects.length !== 2
-      || subjects[0]?.id === subjects[1]?.id || subjects.some(actor => !actor?.root?.position)) return null;
-    const [a, b] = subjects;
+    const solo = options.singleSubject === true && subjects?.length === 1; // Opt-in for solitary boss reveals; ordinary dialogue still requires two distinct actors.
+    if (!T?.Vector3 || !Array.isArray(subjects) || (!solo && subjects.length !== 2)
+      || (!solo && subjects[0]?.id === subjects[1]?.id) || subjects.some(actor => !actor?.root?.position)) return null;
+    const [a, b = a] = subjects;
     const pA = new T.Vector3(), pB = new T.Vector3(), mid = new T.Vector3();
     const position = new T.Vector3(), target = new T.Vector3();
     const started = performance.now();
@@ -154,7 +155,7 @@
     const speedRad = finite(options.speedDegPerSec, 6) * Math.PI / 180;
     const focusActorId = String(options.focusActorId || '');
     const focusActor = subjects.find(actor => String(actor.id) === focusActorId) || null;
-    const heightMode = ['focusFace', 'focusFaceOffset', 'oppositeFaceArc'].includes(options.heightMode)
+    const heightMode = (solo ? ['focusFace', 'focusFaceOffset'] : ['focusFace', 'focusFaceOffset', 'oppositeFaceArc']).includes(options.heightMode)
       ? options.heightMode : 'default';
     const faceHeightOffset = finite(options.faceHeightOffset, 0);
     const eyeRatio = Math.max(0.1, finite(options.targetHeight, 0.68));
@@ -173,7 +174,7 @@
       return out;
     }
     function updateMidpoint() {
-      anchor(a, pA); anchor(b, pB);
+      anchor(a, pA); if(solo)pB.copy(pA);else anchor(b, pB);
       mid.copy(pA).add(pB).multiplyScalar(0.5);
       return mid;
     }
