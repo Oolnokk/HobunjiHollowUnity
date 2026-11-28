@@ -630,6 +630,12 @@
     const door = s?.door;
     if (!door || door.state !== 'sealed') return;
     door.state = 'awake';
+    if(s.context?.theme==='kanthic'){
+      const patterns=[...door.decals.map(d=>d.mesh||d.disc),door.center].filter(Boolean);
+      for(const mesh of patterns)mesh.userData.ruinDoorRuneGlow=true;
+      window.CloudForestFog?.invalidateKanthicGlyphs?.();
+      if(door.group?.position){const p=door.group.position;door.runeLight={x:p.x+door.site.normal.x*.35,y:p.y+door.height*.55,z:p.z+door.site.normal.z*.35,radius:1.35,strength:.36,color:[153,113,235],active:true,doorRune:true};s.sanctumLights.push(door.runeLight);}
+    }
     (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     door.awakeAt = performance.now();
     if (door.group) window.GameFeel?.beginReveal?.(door.group); // Show the player the door they just woke (skipped in combat / when on screen / too far).
@@ -669,6 +675,7 @@
 
   function updateDoorVisual(door, now, dt, allLit) {
     if (!door) return;
+    if(door.runeLight)door.runeLight.active=door.state==='awake'||door.state==='opening'&&door.progress<.8;
     if (door.authored) {
       for (const [i, decal] of door.decals.entries()) {
         const lit = door.returnDoor ? true : !!s.braziers[i]?.lit;
@@ -1409,6 +1416,7 @@
     if (!site) { s.rejects.push(context.shaftHub?'no safe wall on the main shaft for the Great Door':'no clear wall for the Great Door'); return; }
     if(site.shaft)s.doorSiteStats={shaft:true,side:site.side,x:site.x,z:site.z}; // In-game/mobile debug confirms where the door is actually mounted.
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
+    if(context.theme==='kanthic')s.doorCheckpointRegistered=window.RuinCheckpointTravel?.registerDoorCheckpoint?.(site,DOOR_WIDTH)===true;
     buildSanctum(kit, context, s.braziers.length, s.rng);
     if(s.bossDefeated&&s.rearDoor){
       s.rearDoor.open=true;s.rearDoor.progress=1;
@@ -1475,7 +1483,7 @@
         built:s.built, rejects:s.rejects.slice(), doorSiteStats:s.doorSiteStats || null,
         braziers:s.braziers.map(b => ({ id:b.id, label:b.label, lit:b.lit, at:p(b.holder) })),
         door:s.door ? { state:s.door.state, progress:+s.door.progress.toFixed(3), at:p(s.door.group), front:s.door.front, attachedToShaft:!!s.door.attachedToShaft, shaftSide:s.door.site?.side||null, decals:s.door.decals.length } : null,
-        bgs:!!s.bgs, cornerFireIndex:s.cornerFireIndex??null, cornerFireClock:s.cornerFireClock||0, cornerFires:(s.arenaFires||[]).map(f=>({lit:f.lit,scale:f.holder?.scale?.x})), layout:s.layout, entry:s.entry || null, bossType:s.bossType || null,
+        bgs:!!s.bgs, doorCheckpointRegistered:!!s.doorCheckpointRegistered, cornerFireIndex:s.cornerFireIndex??null, cornerFireClock:s.cornerFireClock||0, cornerFires:(s.arenaFires||[]).map(f=>({lit:f.lit,scale:f.holder?.scale?.x})), layout:s.layout, entry:s.entry || null, bossType:s.bossType || null,
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
