@@ -130,7 +130,12 @@
     const contact = meleeFireContact(combat, player, hitOptions, scene);
     const ruinPuzzles = window.DevRandomRuinHitPuzzles;
     let source = null;
-    if (!lit || (area==='map_i_dev_random_ruin' && window.DevRandomRuinLichThemes?.activeTheme?.()==='kanthic')) {
+    if (lit && area==='map_i_dev_random_ruin' && window.DevRandomRuinLichThemes?.activeTheme?.()==='kanthic') {
+      // Renew only on actual ordinary corner flame contact; never rescan all dungeon furniture on every lit swing.
+      for(const fixture of window.DevRandomRuinSanctum?.litOrdinaryFireObjects?.()||[]){
+        if(contact(fixture)){if(light(true))window.RuinInteractionAudio?.igniteTorch?.();break;}
+      }
+    } else if (!lit) {
       if (ruinPuzzles?.touchesIgnitionSource?.(contact)) source = 'ruin brazier';
       else {
         const burning = window.BurningEntityHazards?.findTorchSource?.(contact, {
@@ -143,7 +148,7 @@
           if (furniture) source = furniture.userData.authoredFurnitureKey || furniture.name || 'furniture';
         }
       }
-      if (source && light(true)) window.RuinInteractionAudio?.igniteTorch?.();
+      if (source && light()) window.RuinInteractionAudio?.igniteTorch?.();
     }
     if (lit) {
       window.DungeonFire?.contactMelee?.(contact);
