@@ -49,6 +49,8 @@
   // distance while nearby things stay readable.
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
   const TZATZUL_NEST_LIGHTING = Object.freeze({ r: 18, g: 22, b: 31, a: 0.68 }); // Abduction arenas keep cave-colored mist but retain roughly a third of the unlit image for boss/hatchling readability.
+  const KANTHIC_MIST_OPACITY_SCALE = 2; // Amplifies only the three Kanthic cylinder textures, never the scene darkness.
+  const KANTHIC_MIST_COLOR = 0xa69abf; // Muted violet-gray cylinder tint; depth fog retains its original midnight color.
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const RUIN_SCREEN_TINT_ALPHA = 0.07; // Used once per ruin lighting redraw for a gentle full-screen tradition tint.
   const RUIN_SCREEN_TINT = Object.freeze({
@@ -368,6 +370,7 @@
     const underground = !cloudForest && !snowy && isUndergroundFogArea(currentArea);
     const active = cloudForest || underground || snowy;
     const mistActive = active; // Kanthic uses the actual Cloud Forest mist cylinders and underground depth fog.
+    const kanthicMist = underground && currentArea === 'map_i_dev_random_ruin'; // Underground ruin mist is already restricted to Kanthic by isUndergroundFogArea.
     if (snowy) {
       const snowStrength = window.WeatherFX?.getPrecipitationStrength?.();
       slopePrecipitationStrength = Math.max(shiftBlizzard * 6, Number.isFinite(snowStrength) ? snowStrength
@@ -411,6 +414,9 @@
       }
     } else {
       updateFogLighting(activeScene, undergroundLightingForArea(currentArea));
+      // The midnight palette and 95% darkness were masking the cylinder texture twice.
+      // Keep the distance fog dark; give only the existing textured shells more contrast.
+      if (kanthicMist) for (const layer of layers) layer.material.color.setHex(KANTHIC_MIST_COLOR);
     }
 
     if (!group.visible) return; // Clear calm weather submits no mist meshes or outline redraw.
@@ -418,13 +424,13 @@
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
-    const strengthScale = cloudForest ? 1 : snowy ? slopeOpacityScale : 1; // Existing Cloud Forest mist stays full opacity even during mild snow.
+    const strengthScale = cloudForest ? 1 : snowy ? slopeOpacityScale : kanthicMist ? KANTHIC_MIST_OPACITY_SCALE : 1; // Only Kanthic amplifies the user-tuned mist opacity.
     const driftScale = snowy ? 1.5 + (slopeWindStrength + shiftBlizzard) * 2.5 + (slopePrecipitationStrength >= 3 ? 2.5 : 0) : 1; // Extreme shift adds drift beyond normalized ambient wind.
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
-      // Layer tuning still controls both biomes; no Western Slope layer may exceed its Cloud Forest opacity.
-      const opacity = clamp01(live.opacity) * strengthScale;
+      // Preserve zero-opacity sliders, the Slope cap and the material's valid [0, 1] range.
+      const opacity = clamp01(clamp01(live.opacity) * strengthScale);
       material.opacity = opacity;
       mesh.visible = opacity > 0.002;
       if (!mesh.visible) continue;
@@ -1705,7 +1711,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic brazier flames pierce darkness at world depth; their sub-tile light pools fade smoothly with player distance.',
+        latestChange: 'Kanthic mist cylinders use stronger opacity and a separate muted violet-gray tint; darkness, depth fog and light pools are unchanged.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
@@ -1732,6 +1738,7 @@
           lantern: { ...tuning.lantern },
         },
         outlineMistRedrawLayers: group?.visible ? lastRedrawLayerCount : 0,
+        effectiveMistLayers: group?.visible ? layers.map(({ mesh, material }) => ({ visible: mesh.visible, opacity: material.opacity, color: `#${material.color.getHexString()}` })) : [], // Actual material values for phone-readable QA.
         treeFade: window.ZoneTreeFade?.snapshot(),
         layers: layerLive.map(l => ({ ...l })),
       };
