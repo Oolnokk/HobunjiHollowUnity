@@ -370,7 +370,7 @@
     entity._lichHoverOffsetWorld = 0; // Current presentation-only lift exposed through Pixel Probe/debug snapshots.
     entity.avatarRef?.legs?.setHoverMode?.(true); // Procedural legs immediately enter the dangling airborne solver instead of taking a first walking step.
     entity._lichPrimaryCooldownS = 0.7 + random() * 0.8; // Staggers first casts when several liches are spawned together.
-    entity._lichSummonCooldownS = 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
+    entity._lichSummonCooldownS = entity.lichType==='kanthic' ? 2.5 + random() * 2 : 5.5 + random() * 3; // First summon comes later than first projectile so the core attack is easy to observe.
     entity._lichCommand = 'approach'; // Referential command read live by every target currently Entranced by this lich.
     entity._lichCommandChangedAt = performance.now(); // Used by diagnostics and to avoid visually noisy rapid command flapping.
     entity._lichSummons = new Set(); // Tracks this lich's summoned Minion objects for the live-cap check.
@@ -1863,7 +1863,7 @@
 
     if (lich._lichSummonCooldownS <= 0 && (!lich.lichRaiseDead || lich.lichRaiseDead.canRaise?.(lich))) { // Raise-dead liches only cast when someone lies dead.
       if (beginLichCast(lich, target, 'summon')) {
-        lich._lichSummonCooldownS = 12 + random() * 5;
+        lich._lichSummonCooldownS = lich.lichType==='kanthic' ? 4 + random() * 2 : 12 + random() * 5; // Fragile Kanthic minions return much more often.
         return { aimAngle, moving: false, handled: true };
       }
     }
