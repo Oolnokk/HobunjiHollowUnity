@@ -1242,6 +1242,9 @@
     ruinGlowScene=null;ruinGlowMeshes=[];ruinGlowNextScan=0;kanthicIndexedScene=null;kanthicLightingPrepared=false;
     ruinGlowStats.found=ruinGlowStats.drawn=ruinGlowStats.roomCandidates=0;ruinGlowStats.region=null;
   }
+  function kanthicRegionAt(x,y,z){
+    return window.DevRandomRuinSanctum?.glyphRegionAt?.(x,y,z)||window.RuinRoomSystem?.glyphRegionAt?.(x,y,z)||null;
+  }
   function prepareKanthicGlyphFrame(scene,now,camera){
     kanthicLightingPrepared=false;
     if(!isKanthicGlyphArea()||!scene?.traverse){
@@ -1250,12 +1253,14 @@
       return false;
     }
     const cameraMoved=syncKanthicCameraAtmosphere(scene,camera);
-    const system=window.RuinRoomSystem;
+    const system=window.RuinRoomSystem,sanctum=window.DevRandomRuinSanctum;
     const cinematic=kanthicCameraValid&&window.CinematicCameraRuntime?.isActive?.();
-    const viewRegion=cinematic?(system?.glyphRegionAt?.(kanthicCameraLantern.x,kanthicCameraLantern.y,kanthicCameraLantern.z)
-      ||system?.glyphRegionAt?.(kanthicCameraPosition.x,kanthicCameraPosition.y,kanthicCameraPosition.z)):null; // Render-only region ownership; never wake encounters in the viewed room.
-    const region=viewRegion||system?.activeGlyphRegion?.()||null; // One occupied chamber or the shared vertical shaft, never all unassigned corridors.
-    const bounds=region?system?.glyphRegionBounds?.(region):null;
+    const viewRegion=cinematic?(kanthicRegionAt(kanthicCameraLantern.x,kanthicCameraLantern.y,kanthicCameraLantern.z)
+      ||kanthicRegionAt(kanthicCameraPosition.x,kanthicCameraPosition.y,kanthicCameraPosition.z)):null; // Render-only region ownership; never wake encounters in the viewed room.
+    const player=lightingDeps.player,tile=lightingDeps.TILE;
+    const playerSanctumRegion=player&&tile?sanctum?.glyphRegionAt?.(player.x/tile,Number(lightingDeps.getPlayerWorldY?.()),player.y/tile):null;
+    const region=viewRegion||playerSanctumRegion||system?.activeGlyphRegion?.()||null;
+    const bounds=region?(sanctum?.glyphRegionBounds?.(region)||system?.glyphRegionBounds?.(region)):null;
     const changed=region!==kanthicRegion||bounds!==kanthicRegionBounds;
     const scanned=scanRuinGlowMeshes(scene,now,kanthicIndexedScene!==scene);
     kanthicIndexedScene=scene;
