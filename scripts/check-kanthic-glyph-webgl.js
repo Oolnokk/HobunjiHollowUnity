@@ -100,11 +100,13 @@ const {chromium}=require('playwright');
           projected.set(x,y,z).project(camera);
           return {x:(projected.x+1)*512,y:(1-projected.y)*512};
         }},()=>{});
-      window.CinematicCameraRuntime={isActive:()=>cinematic};
+      const shotRecord={areaId:'map_i_dev_random_ruin',camera:{id:'test-shot'},reason:'ruin-reveal'};
+      let selectedOnly=false;
+      window.CinematicCameraRuntime={isActive:()=>cinematic||selectedOnly,activeRecord:()=>cinematic||selectedOnly?shotRecord:null,appliedRecordFor:(view,area)=>cinematic&&view===camera&&area===shotRecord.areaId?shotRecord:null};
       window.RuinRoomSystem.glyphRegionAt=x=>x>10?'room:shot':region;
       bounds['room:shot']={minX:10,maxX:20,minZ:0,maxZ:10,minY:0,maxY:10};
-      function cameraSample(x,y,z,tx,ty,tz,shot,playerX,playerZ,portraitOffset=.35,detached=false){
-        cinematic=shot;fixedPlayer.x=playerX;fixedPlayer.y=playerZ;
+      function cameraSample(x,y,z,tx,ty,tz,shot,playerX,playerZ,portraitOffset=.35,detached=false,selected=false){
+        cinematic=shot;selectedOnly=selected;fixedPlayer.x=playerX;fixedPlayer.y=playerZ;
         portraitRoot.position.set(playerX,0,playerZ);
         portrait.position.set(Math.sign(playerX)*.22,portraitOffset,.2); // Rendered pose differs from the logical floor anchor.
         if(detached)portraitRoot.remove(portrait);else if(portrait.parent!==portraitRoot)portraitRoot.add(portrait);
@@ -122,7 +124,7 @@ const {chromium}=require('playwright');
           window.__drawLanternTest();
           const lightPixel=expectedLight.clone().project(camera);
           const lx=Math.round((lightPixel.x+1)*512),ly=Math.round((1-lightPixel.y)*512);
-          return {exact,lightExact,mode:anchor.lantern.mode,source:anchor.lantern.anchor,detached,radius:anchor.lantern.radiusTiles,apiRadius:api.getKanthicLanternRadiusTiles(),shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
+          return {exact,lightExact,mode:anchor.lantern.mode,source:anchor.lantern.anchor,detached,selectedShot:anchor.selectedShot,appliedShot:anchor.appliedShot,radius:anchor.lantern.radiusTiles,apiRadius:api.getKanthicLanternRadiusTiles(),shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
         }finally{api.endKanthicGlyphFrame();}
       }
       const cameraSamples=[cameraSample(0,1,3,0,1,0,false,-1.5,0),
@@ -133,7 +135,8 @@ const {chromium}=require('playwright');
         cameraSample(0,1,3,0,1,0,false,-1.5,0), // Return to portrait ownership without camera movement.
         cameraSample(0,1,3,0,1,0,false,-1.5,0,1.25), // Portrait alone moves vertically while the player and camera stay still.
         cameraSample(0,1,3,0,1,0,false,-1.5,0,.35,true), // Detached rig safely falls back to logical player coordinates.
-        cameraSample(0,1,3,0,1,0,false,-1.5,0)]; // Reattached portrait takes ownership again.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0), // Reattached portrait takes ownership again.
+        cameraSample(0,1,3,0,1,0,false,-1.5,0,.35,false,true)]; // Selected but unapplied cinematic must never move the light to screen center.
       rt.dispose();renderer.dispose();
       return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect,cameraSamples};
     });
@@ -168,6 +171,10 @@ const {chromium}=require('playwright');
     }
     assert.equal(results.cameraSamples[4].region,'room:shot','cinematic glyph ownership follows the rendered view');
     assert.equal(results.cameraSamples[6].region,'room:void','returning to gameplay restores player-room ownership');
+    const selectedOnlySample=results.cameraSamples.at(-1);
+    assert.equal(selectedOnlySample.selectedShot,'test-shot');
+    assert.equal(selectedOnlySample.appliedShot,null);
+    assert.equal(selectedOnlySample.mode,'player','an unapplied record cannot own the lantern');
     assert(results.restored,'DOM canvas, source visibility, material clipping and renderer state restore');
     assert.deepEqual(errors,[],'no WebGL or page errors');
     console.log('Kanthic real WebGL: target/direct partial occlusion, room clipping, bounded upload and cleanup OK');
