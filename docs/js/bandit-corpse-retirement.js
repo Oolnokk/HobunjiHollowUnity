@@ -168,7 +168,8 @@
     const tile = deps.getTile();
     const grid = c.areaGrid;
     const col = Math.floor(c.x / tile), row = Math.floor(c.y / tile);
-    const surfaceY = grid?.[row]?.[col] ? deps.tileSurfaceYInArea(grid[row][col], c.areaId) : rig.group.position.y;
+    const surfaceY = Number.isFinite(c.deathSurfaceY) ? c.deathSurfaceY
+      : grid?.[row]?.[col] ? deps.tileSurfaceYInArea(grid[row][col], c.areaId) : rig.group.position.y; // Retirement must not change the corpse's story.
     const width = Math.max(0.55, Number(c.visualModelWidth) || Number(c.def?.modelWidth) || 0.8);
 
     const group = new window.THREE.Group();
