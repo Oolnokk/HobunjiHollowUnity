@@ -631,10 +631,10 @@
     if (!door || door.state !== 'sealed') return;
     door.state = 'awake';
     if(s.context?.theme==='kanthic'){
-      const patterns=[...door.decals.map(d=>d.mesh||d.disc),door.center].filter(Boolean);
+      const patterns=[...(door.decals||[]).map(d=>d.mesh||d.disc),door.center].filter(Boolean);
       for(const mesh of patterns)mesh.userData.ruinDoorRuneGlow=true;
       window.CloudForestFog?.invalidateKanthicGlyphs?.();
-      if(door.group?.position){const p=door.group.position;door.runeLight={x:p.x+(door.site?.normal?.x||0)*.35,y:p.y+(door.height||3.1)*.55,z:p.z+(door.site?.normal?.z||0)*.35,radius:1.35,strength:.36,color:[153,113,235],active:true,doorRune:true};s.sanctumLights.push(door.runeLight);}
+      if(door.group?.position){const p=door.group.position;door.runeLight={x:p.x+(door.site?.normal?.x||0)*.35,y:p.y+(door.height||3.1)*.55,z:p.z+(door.site?.normal?.z||0)*.35,radius:1.35,strength:.36,color:[153,113,235],active:true,doorRune:true};(s.sanctumLights||=[]).push(door.runeLight);}
     }
     (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     door.awakeAt = performance.now();
@@ -900,6 +900,7 @@
     }
     s.vaultFires = [standingBrazier(kit, root, vault.minX + 1, vault.minZ + .9, y0), standingBrazier(kit, root, vault.minX + 1, vault.maxZ - .9, y0)];
     s.sanctumLights = [...s.arenaFires,...s.vaultFires].map(fire=>fire.lightSource);
+    if(s.door?.runeLight)s.sanctumLights.push(s.door.runeLight);
     if (context.theme === 'kanthic') for (const brazier of s.braziers) {
       const fire = brazier.fire; // Legacy standalone goals share the same Kanthic flame/light policy.
       if (!fire.lightSource) {
@@ -1495,6 +1496,7 @@
     clear() {
       if (!s) return;
       resetSanctumEncounter('ruin-teardown'); // Cancel all delayed reveals/spawns before the larger ruin detaches.
+      for(const fire of [...(s.arenaFires||[]),...(s.vaultFires||[])])fire.emitter?.dispose?.(); // Dispose independent particle buffers, not shared furniture assets.
       if (s.bgs) window.Music?.unregisterFurnitureSfxSource?.(s.bgs);
       removeLichHeart(); // Old pickup and its glow material must not survive ruin teardown.
       for (const coffin of [...(s.coffins||[]),...(s.roomCoffins||[])]) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
