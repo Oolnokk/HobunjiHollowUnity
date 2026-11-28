@@ -296,7 +296,7 @@ const pingdortSource = fs.readFileSync('docs/js/pingdort-flocks.js', 'utf8'); //
 assert(pingdortSource.includes('state.boulder.pendingFeyHypedImpactRatio=echoScale')
   && pingdortSource.includes('delete burden.pendingFeyHypedImpactRatio')
   && pingdortSource.includes('150*feyScale'),
-  'Hyped Pingdort boulder carries exactly one reduced impact, then returns to an ordinary burden');
+  'Hyped Pingdort boulder carries exactly one reduced impact, then consumes its replay marker');
 // A full-strength echo is still a secondary attack. Its one-use tag must not
 // disappear merely because 50 Hyped points happen to produce a ratio of 1.
 {
@@ -306,20 +306,27 @@ assert(pingdortSource.includes('state.boulder.pendingFeyHypedImpactRatio=echoSca
   const hits = []; // Spy on real boulder damage options to catch full-strength replay flags.
   const deps = { TILE: 64, hostileObjects: [{ health: 100, areaId: 'arena', x: 0, y: 0 }],
     damageCreature(target, amount, x, y, knockback, opts) { hits.push({ amount, knockback, replay: opts.feyHypedReplay }); return true; } };
+  const debug = { boulderImpacts: 0 }; // Match the impact handler's real enclosing module diagnostics.
   const hit = vm.runInNewContext(pingdortSource.slice(begin, end) + '\n boulderImpact', {
-    window: { THREE: { Vector3: class Vector3 {} }, Combat: { deps } },
-    performance: { now: () => 1000 },
+    window: { THREE: { Vector3: class Vector3 {} }, Combat: { deps },
+      Shattercasks: { discardBurden(burden) { burden.exploded = true; return true; } } },
+    debug,
   });
   const dropped = ratio => {
-    const burden = { mapId: 'arena', group: { getWorldPosition: () => ({ x: 0, z: 0 }) } };
+    const burden = { mapId: 'arena', hanging: false, group: { getWorldPosition: () => ({ x: 0, y: 0, z: 0 }) } };
     if (ratio !== null) burden.pendingFeyHypedImpactRatio = ratio;
-    hit(burden, 'test');
+    assert.equal(hit(burden, 'test'), true);
     assert.equal('pendingFeyHypedImpactRatio' in burden, false, 'the impact consumes its replay marker exactly once');
+    assert.equal(burden.exploded, true, 'both ordinary and replay boulders break on contact');
+    assert.equal(hit(burden, 'duplicate'), false, 'duplicate impact cannot replay damage');
   };
   dropped(null);
   dropped(.16);
   dropped(1);
   assert.equal(hits.length, 3, 'all ordinary/partial/full boulders use the original impact owner');
+  assert.equal(debug.boulderImpacts, 3, 'diagnostics count only the three genuine impacts');
+  close(hits[1].knockback, hits[0].knockback * .16, 'partial replay also scales knockback');
+  close(hits[2].knockback, hits[0].knockback, 'full replay retains knockback');
   close(hits[0].amount, 18, 'ordinary boulders retain full damage');
   assert.equal(hits[0].replay, false, 'ordinary boulders remain ordinary hits');
   close(hits[1].amount, 2.88, '8 Hyped points produce a sixteen-percent boulder');
