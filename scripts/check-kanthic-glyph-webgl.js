@@ -194,8 +194,8 @@ const {chromium}=require('playwright');
     for(const sample of results.cameraSamples){
       assert(sample.exact&&sample.lightExact,'mist follows the camera and lantern follows the correct owner: '+JSON.stringify(sample));
       assert.equal(sample.mode,sample.shot?'camera':'player');
-      assert.equal(sample.radius,2.4*.66,'debug reports the restored midpoint default');
-      assert.equal(sample.apiRadius,2.4*.66,'rope and other light consumers receive the same restored radius');
+      assert.equal(sample.radius,2,'debug reports the 2-tile default');
+      assert.equal(sample.apiRadius,2,'rope and other light consumers receive the same radius');
       assert(sample.alpha<100,'real lantern mask opens at its selected source: '+JSON.stringify(sample));
       if(!sample.shot){
         assert.equal(sample.source,sample.detached?'ground-fallback':'portrait-plane');
