@@ -2055,7 +2055,7 @@
     // DynamicSurfaces support, so test its height-aware fatal pit FIRST.
     // Rope flight/attached motion returns above and is handled exclusively by
     // the native V50 rope engine until a landing or failed catch occurs.
-    if(grid&&window.DevRandomRuinSimplePuzzles?.isInstantDeathPit?.(x,z)){
+    if(window.DevRandomRuinSimplePuzzles?.isInstantDeathPit?.(x,z)){
       if(window.DevRandomRuinSimplePuzzles.instantRopeChainDeath?.()===true)return;
       return; // Never allow ordinary footing damage/downed state inside a floorless rope abyss.
     }
