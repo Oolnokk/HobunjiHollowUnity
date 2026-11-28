@@ -86,38 +86,44 @@ const {chromium}=require('playwright');
       // Keep the player still while the actual view camera pans, cuts and returns.
       const mistGroup=voidScene.getObjectByName('cloud_forest_mist_cylinders');
       const projected=new T.Vector3();
-      const fixedPlayer={x:-100,y:-100};
-      window.RuinRoomSystem.lightAllowed=()=>false; // Camera lantern cannot be rejected by a remote player's room ownership.
-      window.RuinRoomSystem.withLightClip=()=>false;
+      const fixedPlayer={x:-1.5,y:0};
+      let cinematic=false;
+      window.RuinRoomSystem.lightAllowed=()=>!cinematic; // Camera lantern cannot be rejected by a remote player's room ownership.
+      window.RuinRoomSystem.withLightClip=(_ctx,_source,_project,draw)=>cinematic?false:draw();
       window.__glyphTest({lctx:ctx,camera,player:fixedPlayer,TILE:1,npcWalkers:[],getPlayerWorldY:()=>0,
         getCurrentArea:()=> 'map_i_dev_random_ruin',getActiveScene:()=>voidScene,getSceneTransAlpha:()=>0,
         getThreeRect:()=>({width:1024,height:1024}),worldToOverlay:(x,y,z)=>{
           projected.set(x,y,z).project(camera);
           return {x:(projected.x+1)*512,y:(1-projected.y)*512};
         }},()=>{});
-      let cinematic=false;
       window.CinematicCameraRuntime={isActive:()=>cinematic};
       window.RuinRoomSystem.glyphRegionAt=x=>x>10?'room:shot':region;
       bounds['room:shot']={minX:10,maxX:20,minZ:0,maxZ:10,minY:0,maxY:10};
-      function cameraSample(x,y,z,tx,ty,tz,shot){
-        cinematic=shot;camera.position.set(x,y,z);camera.lookAt(tx,ty,tz);camera.updateMatrixWorld(true);
+      function cameraSample(x,y,z,tx,ty,tz,shot,playerX,playerZ){
+        cinematic=shot;fixedPlayer.x=playerX;fixedPlayer.y=playerZ;
+        camera.position.set(x,y,z);camera.lookAt(tx,ty,tz);camera.updateMatrixWorld(true);
         api.update(.016); // Simulate ordinary gameplay mist placement before final render-camera sync.
         api.prepareKanthicGlyphFrame(voidScene,clock+=20,camera);
         try{
           const diag=api.getDebugState(),anchor=diag.kanthicCameraAtmosphere;
           const dir=camera.getWorldDirection(new T.Vector3());
           const expected=camera.position.clone().addScaledVector(dir,.75);
-          const expectedLight=camera.position.clone().addScaledVector(dir,2.25);
+          const expectedLight=shot?camera.position.clone().addScaledVector(dir,2.25):new T.Vector3(fixedPlayer.x,.5,fixedPlayer.y);
           const exact=mistGroup.children.every(m=>m.position.distanceTo(expected)<1e-8);
           const lightExact=new T.Vector3(anchor.lantern.x,anchor.lantern.y,anchor.lantern.z).distanceTo(expectedLight)<1e-8;
           ctx.globalCompositeOperation='source-over';ctx.clearRect(0,0,1024,1024);ctx.fillStyle='black';ctx.fillRect(0,0,1024,1024);
           window.__drawLanternTest();
-          return {exact,lightExact,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(512,512,1,1).data[3]};
+          const lightPixel=expectedLight.clone().project(camera);
+          const lx=Math.round((lightPixel.x+1)*512),ly=Math.round((1-lightPixel.y)*512);
+          return {exact,lightExact,mode:anchor.lantern.mode,shot,region:diag.ruinEngravingGlowMasks.region,alpha:ctx.getImageData(lx,ly,1,1).data[3],centerAlpha:ctx.getImageData(512,512,1,1).data[3]};
         }finally{api.endKanthicGlyphFrame();}
       }
-      const cameraSamples=[cameraSample(0,1,3,0,1,0,false),
-        cameraSample(4,3,4,7,2,4,true),cameraSample(14,6,5,17,5,5,true),
-        cameraSample(0,1,3,0,1,0,false)];
+      const cameraSamples=[cameraSample(0,1,3,0,1,0,false,-1.5,0),
+        cameraSample(0,1,3,0,1,0,false,1.5,0), // Player moves while the camera is still.
+        cameraSample(0,1,3,0,1,0,true,-100,-100), // Mode changes with no camera movement.
+        cameraSample(4,3,4,7,2,4,true,-100,-100),cameraSample(14,6,5,17,5,5,true,-100,-100),
+        cameraSample(0,1,3,0,1,0,true,-100,-100),
+        cameraSample(0,1,3,0,1,0,false,-1.5,0)]; // Return to player ownership without camera movement.
       rt.dispose();renderer.dispose();
       return {a,b,c,d,spriteTarget,spriteDirect,restored,voidTarget,voidDirect,cameraSamples};
     });
@@ -140,11 +146,13 @@ const {chromium}=require('playwright');
       assert(x.rune[1]>150,'the distant rune pierces the same outer cylinder: '+JSON.stringify(x));
     }
     for(const sample of results.cameraSamples){
-      assert(sample.exact&&sample.lightExact,'mist and lantern follow the final camera pose: '+JSON.stringify(sample));
-      assert(sample.alpha<100,'real lantern mask opens at the camera center despite the remote player: '+JSON.stringify(sample));
+      assert(sample.exact&&sample.lightExact,'mist follows the camera and lantern follows the correct owner: '+JSON.stringify(sample));
+      assert.equal(sample.mode,sample.shot?'camera':'player');
+      assert(sample.alpha<100,'real lantern mask opens at its selected source: '+JSON.stringify(sample));
+      if(!sample.shot)assert(sample.centerAlpha>180,'normal gameplay does not illuminate the camera center instead of the player: '+JSON.stringify(sample));
     }
-    assert.equal(results.cameraSamples[2].region,'room:shot','cinematic glyph ownership follows the rendered view');
-    assert.equal(results.cameraSamples[3].region,'room:void','returning to gameplay restores player-room ownership');
+    assert.equal(results.cameraSamples[4].region,'room:shot','cinematic glyph ownership follows the rendered view');
+    assert.equal(results.cameraSamples[6].region,'room:void','returning to gameplay restores player-room ownership');
     assert(results.restored,'DOM canvas, source visibility, material clipping and renderer state restore');
     assert.deepEqual(errors,[],'no WebGL or page errors');
     console.log('Kanthic real WebGL: target/direct partial occlusion, room clipping, bounded upload and cleanup OK');
