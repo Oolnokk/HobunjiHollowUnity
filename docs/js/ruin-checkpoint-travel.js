@@ -286,10 +286,10 @@
         const record=fixture('sanctum-door','small',at,.65);
         if(!record)return false;
         record.doorGated=true;
-        record.holder.position.set(x+n.x*.45,y+.45,z+n.z*.45); // Wall-side dish, with safe gallery respawn point separate from the mount.
+        record.holder.position.set(x+n.x*.25,y+.45,z+n.z*.25); // Wall-side dish, with safe gallery respawn point separate from the mount.
         record.holder.children[0].visible=false; // No standing pedestal on the wall.
         record.light.x=record.holder.position.x;record.light.z=record.holder.position.z;
-        if(deferredDoorCheckpoint){deferredDoorCheckpoint=false;activeId=record.id;render(record,true);}
+        if(deferredDoorCheckpoint){deferredDoorCheckpoint=false;if(activeId&&records.get(activeId)?.kind==='small')render(records.get(activeId),false);activeId=record.id;render(record,true);}
         return true;
       }
       return false;
