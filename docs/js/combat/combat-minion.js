@@ -415,7 +415,7 @@
       enemyClass: options.enemyClass || CLASS_ID,
       avatarRigScale: options.avatarRigScale || null, // Caller-authored puppet proportions travel through BanditCombat before collision sizes are computed.
       defOverride: { ...(options.defOverride || {}), rangedWeaponKey: null },
-      extra: { ...(options.extra || {}), enemyClass: options.enemyClass || CLASS_ID, isMinion: true,...(theme?{ruinSkeletonTheme:theme,ruinWallCoffin:wallCoffin,ruinSkeletonHealthMultiplier:wallCoffin?RUIN_HEALTH.wallCoffin:RUIN_HEALTH.minion}:{}) },
+      extra: { ...(options.extra || {}), enemyClass: options.enemyClass || CLASS_ID, isMinion: true,...(theme?{ruinSkeletonTheme:theme,ruinWallCoffin:wallCoffin,ruinSkeletonHealthMultiplier:theme==='kanthic'?(wallCoffin?1:0.55):wallCoffin?RUIN_HEALTH.wallCoffin:RUIN_HEALTH.minion}:{}) },
     });
     if (!entity) return null;
     if(wallCoffin){
