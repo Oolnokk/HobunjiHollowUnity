@@ -157,10 +157,11 @@ const nativeRows = [
   { kind: 'interactive', action: 'dev_ruin_world_1', onPress: () => { throw Error('Unrelated mechanism fired'); } },
   { kind: 'v50nativetransitdoor', action: 'dev_ruin_world_2', onPress: () => { opens++; } },
 ]; // Native door and unrelated control rows from one cached discovery snapshot.
+let liveNativeRows = nativeRows;
 const nativeContext = vm.createContext({
   inRuin: () => true, performance: { now: () => 100 }, lastRowsAt: 100,
   lastRows: nativeRows,
-  refreshRows: () => nativeRows,
+  refreshRows: () => liveNativeRows,
   PROXIMITY_DOOR_KINDS: new Set(['transitdoor', 'v50nativetransitdoor']),
   actionButtonsFromRows: rows => rows.map(row => ({ action: row.action, label: row.label, inputAction: 'action1' })),
 }); // The real provider methods run against a controlled list of existing interaction rows.
@@ -168,6 +169,9 @@ const native = vm.runInContext('({' + methods + '})', nativeContext);
 assert.deepEqual(Array.from(native.getDoorActionButtons(), x => x.action), ['dev_ruin_world_0', 'dev_ruin_world_2']);
 assert(native.getDoorActionButtons().every(x => x.inputAction === 'interact' && x.style === 'secondary'));
 assert.equal(native.invokeDoorAction('dev_ruin_world_1'), false, 'torch interaction cannot fire an unrelated mechanism');
+liveNativeRows = [];
+assert.equal(native.invokeDoorAction('dev_ruin_world_2'), false, 'turning away after a door prompt appears rejects the stale torch action');
+liveNativeRows = nativeRows;
 assert.equal(native.invokeDoorAction('dev_ruin_world_2'), true);
 assert.equal(opens, 1);
 

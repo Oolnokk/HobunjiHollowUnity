@@ -168,20 +168,19 @@
     return best;
   }
 
-  function nearestLadder() {
+  function nearbyLadders() {
     prepareSemanticObjects();
     const player = playerWorldPosition();
-    if (!player) return null;
-    let best = null;
-    let bestDist = LADDER_RANGE * LADDER_RANGE;
+    const nearby = []; // All reachable ladders compete in the shared reticle selector.
+    if (!player) return nearby;
     for (const ladder of ladders) {
       const pos = worldPosition(ladder);
       if (!pos) continue;
       const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladder);
-      const dist=Number.isFinite(reach)?reach**2:(pos.x-player.x)**2+(pos.z-player.z)**2;
-      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; } // Never select a ladder on a different story because its X/Z matches.
+      const dist=Number.isFinite(reach)?reach:Math.hypot(pos.x-player.x,pos.y-player.y,pos.z-player.z);
+      if (dist <= LADDER_RANGE) nearby.push({ ladder, distance:dist }); // Never select a ladder on a different story because its X/Z matches.
     }
-    return best;
+    return nearby;
   }
 
   function supportCandidatesForLadder(ladder) {
@@ -332,16 +331,17 @@
         // Glyphs and ignition props are intentionally hit-driven. Never leak
         // the generator's DEV toggle into the ordinary interaction list.
         if (kind.includes('glyph') || kind === 'brazier' || kind === 'torch') continue;
-        const owner = control.promptRoot || control.object || (control.point ? ruinRoot() : nearestOwnerForKind(kind)); // Towers can explicitly anchor prompts to the cube/top segment players are looking at.
+        const owner = control.promptRoot || control.object || (control.point ? null : nearestOwnerForKind(kind)); // Towers can explicitly anchor prompts to the cube/top segment players are looking at.
         const point = controlWorldPoint(control, owner);
         const distance = control.point
           ? (point ? Math.hypot(point.x - player.x, point.z - player.z) : Infinity)
           : horizontalDistanceToOwner(owner, player, point);
         const range = Math.max(.1, Number(control.range) || LADDER_RANGE);
         if (distance > range) continue;
+        if (!owner && point && Math.abs(player.y-point.y)>.9) continue; // Point-only exits must not activate from a stacked floor.
         const labelValue = typeof control.label === 'function' ? control.label() : control.label;
         const label = String(labelValue || 'Interact');
-        const identity = `${kind}|${owner?.id || owner?.name || ''}|${label}`;
+        const identity = `${kind}|${owner?.id || owner?.name || (point ? `${point.x},${point.y},${point.z}` : '')}|${label}`;
         if (seen.has(identity)) continue;
         seen.add(identity);
         rows.push({
@@ -350,6 +350,7 @@
           label,
           touchIcon:control.touchIcon || '✋',
           owner,
+          point, // Local aim volume for controls that specify a position rather than a mesh.
           distance,
           priority:Number(control.priority)||0,
           inputAction:control.claimAction1===true?'action1':(control.inputAction || null), // claimAction1 is an opt-in contextual override: the shared registry suppresses weapon Action 1 while this visible interaction owns it.
@@ -365,10 +366,9 @@
     return rows;
   }
 
-  // Rows that are not aim targets: rope riding controls follow the player after
-  // an airborne catch, and the exit is a spot rather than an object.
-  const AMBIENT_KINDS = new Set(['roperelease', 'ropebrake', 'exit','ruinshafttravel','ruincheckpointtravel']); // Waystone actions work by proximity without fighting the combat aim reticle.
-  const PROXIMITY_DOOR_KINDS = new Set(['transitdoor', 'v50nativetransitdoor']); // Both ordinary and upper-story hallway doors must offer an action from either side, even without reticle focus.
+  // Only controls of an already attached rope are not world-object selections.
+  const AMBIENT_KINDS = new Set(['roperelease', 'ropebrake']);
+  const PROXIMITY_DOOR_KINDS = new Set(['transitdoor', 'v50nativetransitdoor']); // Legacy name: now only identifies aimed doors for torch-specific input routing.
   const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
   promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
   let focusDebug = null;
@@ -469,31 +469,35 @@
   // interaction ray picks one aimed object; only its actions are listed.
   function focusRows(rows) {
     const ambient = rows.filter(row => AMBIENT_KINDS.has(row.kind));
-    const nearbyDoor = rows.filter(row => PROXIMITY_DOOR_KINDS.has(row.kind))
-      .sort((a, b) => a.distance - b.distance)[0] || null; // Only one nearby door may claim Action 1; never choose a door on another story (providerRows already filters floorY).
-    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind) && !PROXIMITY_DOOR_KINDS.has(row.kind));
-    const owners = [...new Set(aimed.map(row => row.owner).filter(Boolean))];
-    const candidates = owners.map(owner => ({ type:'devRuinInteraction', id:owner.uuid || owner.id, data:owner, box:ownerBox(owner) })).filter(candidate => candidate.box);
+    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind));
+    const targets = new Map(); // One reticle candidate per object, or per explicit point-only control.
+    for (const row of aimed) {
+      const target = row.owner || row.key;
+      if (targets.has(target)) continue;
+      // Position-only exits must not use the entire ruin's bounding box.
+      const box = row.owner ? ownerBox(row.owner) : row.point
+        ? new THREE.Box3(
+          new THREE.Vector3(row.point.x-.55,row.point.y-.15,row.point.z-.55),
+          new THREE.Vector3(row.point.x+.55,row.point.y+2,row.point.z+.55))
+        : null;
+      if (box) targets.set(target,{type:'devRuinInteraction',id:row.owner?.uuid || row.owner?.id || row.key,data:target,box});
+    }
+    const candidates = [...targets.values()];
     let focus = candidates.length ? window.RangedWeapons?.focusCandidates?.(candidates, 6) || null : null;
-    // A control whose object sits inside another's box (a brazier on a dais
-    // pedestal) always lost to the bigger box the ray enters first; when the
-    // ray also reaches a nested candidate, that smaller one is the target.
+    // Prefer an aimed nested control (such as a brazier on its pedestal).
     if (focus?.candidate?.box) {
       const outer = focus.candidate.box;
       const nested = candidates.filter(candidate => candidate !== focus.candidate && outer.containsBox(candidate.box));
       const inner = nested.length ? window.RangedWeapons.focusCandidates(nested, 6) : null;
       if (inner) focus = inner;
     }
-    let focusedOwner = focus?.candidate?.data || null;
-    const hasRay = !!window.RangedWeapons?.focusCandidates && candidates.length && focus !== null;
-    if (!focusedOwner && !window.RangedWeapons?.focusCandidates) { // No reticle system available: nearest object only.
-      focusedOwner = aimed.slice().sort((a, b) => a.distance - b.distance)[0]?.owner || null;
-    }
-    focusDebug = { candidates:candidates.length, focused:focusedOwner?.name || null, point:focus?.point ? { x:+focus.point.x.toFixed(2), y:+focus.point.y.toFixed(2), z:+focus.point.z.toFixed(2) } : null, hasRay:!!hasRay };
-    if (focusedOwner) window.DebugHitboxes?.noteInteractionFocus?.(focus);
-    const chosen = focusedOwner ? aimed.filter(row => row.owner === focusedOwner) : [];
-    const available = nearbyDoor ? [nearbyDoor, ...chosen, ...ambient] : [...chosen, ...ambient]; // Closed hallway doors do not depend on camera alignment; puzzle-gated stone doors are still handled by their puzzle state.
-    placePromptAnchor(focusedOwner || nearbyDoor?.owner, focus?.point || null, available);
+    const target = focus?.candidate?.data || null; // No ray hit means no manual world interaction.
+    const chosen = target ? aimed.filter(row => (row.owner || row.key) === target) : [];
+    const focusedOwner = chosen[0]?.owner || null;
+    focusDebug = { candidates:candidates.length, focused:focusedOwner?.name || chosen[0]?.kind || null, point:focus?.point ? { x:+focus.point.x.toFixed(2), y:+focus.point.y.toFixed(2), z:+focus.point.z.toFixed(2) } : null, hasRay:!!focus };
+    if (target) window.DebugHitboxes?.noteInteractionFocus?.(focus);
+    const available = [...chosen, ...ambient];
+    placePromptAnchor(focusedOwner, focus?.point || null, available);
     return available;
   }
 
@@ -520,8 +524,8 @@
     const rows = providerRows(now); // Contextual actions only: glyphs are shot with the ordinary ranged input, so no "Fire <weapon>" row is added near them.
     // Ledges are climbed with a forward dodge (see the ClimbSystem world-climb
     // provider below), like cliffs; no listed prompt.
-    const ladderHit = nearestLadder();
-    if (ladderHit && !rows.some(row => row.owner === ladderHit.ladder || row.kind === 'ladder')) {
+    for (const ladderHit of nearbyLadders()) {
+      if (rows.some(row => row.owner === ladderHit.ladder)) continue;
       rows.push({
         key:`ladder|${ladderHit.ladder.id}`,
         kind:'ladder',
@@ -570,6 +574,26 @@
     return 'desktop';
   }
 
+  function liveClaimHandlers(row) {
+    let heldRelease = null; // Only a hold that actually began owns a subsequent release.
+    return {
+      onPress:()=>{
+        if(!inRuin())return;
+        const current=currentRows().find(entry=>entry.key===row.key && entry.inputAction===row.inputAction);
+        if(!current)return; // Camera/position may have changed since the last 80 ms HUD refresh.
+        if(typeof current.onHoldStart==='function'){
+          heldRelease=current.onHoldEnd;
+          current.onHoldStart();
+        }else current.onPress?.();
+      },
+      onRelease:detail=>{
+        const release=heldRelease;
+        heldRelease=null;
+        release?.(detail); // Release remains paired even if aiming elsewhere during an intentional hold.
+      },
+    };
+  }
+
   function syncInputClaims(rows) {
     const registry=window.WorldActionInputClaims;
     if(!registry)return;
@@ -580,11 +604,7 @@
       priority:1000+(Number(row.priority)||0), // World interactions intentionally outrank ordinary gameplay for an explicitly claimed input while remaining below menus/selectors in game.js.
       showInArch:typeof row.onHoldStart==='function' && typeof row.onPress!=='function', // Hold-only rope adjustment needs the shared pointerdown/up arch, never the tap-only invokeAction fallback.
       hudIcon:row.touchIcon||'✋', // The routed touch arch retains the same pictogram as the floating world prompt.
-      onPress:()=>{
-        if(typeof row.onHoldStart==='function')row.onHoldStart();
-        else row.onPress?.();
-      },
-      onRelease:detail=>row.onHoldEnd?.(detail), // Preserve canceled input releases so a held travel menu never commits after interruption.
+      ...liveClaimHandlers(row),
     }));
     registry.setClaims(INPUT_CLAIM_OWNER,claims);
   }
@@ -665,7 +685,7 @@
     lastRows=rows;
     lastRowsAt=performance.now();
     lastRowsSignature=signature;
-    lastAnchor=rows[0]?.owner||nearestOwnerForKind(rows[0]?.kind)||ruinRoot()||null;
+    lastAnchor=rows[0]?.owner||(rows.length ? promptAnchor : null); // No whole-ruin traversal when the camera is not aimed at an interaction.
     syncInputClaims(rows);
     // Keep the floating list live while the ruin has rows, and clear it once
     // when they go away. Syncing an empty list every frame wiped prompts the
@@ -713,11 +733,20 @@
         ...button, inputAction: 'interact', style: 'secondary',
       })); // Door is an extra explicit Interact action; never displace Torch Swing/Throw.
     },
+    invokeFocusedControl(kind, owner) {
+      if (!inRuin() || !owner) return false;
+      const row = currentRows().find(entry => entry.kind === kind && entry.owner === owner);
+      if (typeof row?.onPress !== 'function') return false;
+      row.onPress();
+      return true; // Aimed contextual Interact consumes the key even if the block cannot move.
+    },
     invokeDoorAction(action) {
       if (!inRuin()) return false;
-      const row = lastRows.find(entry => entry.action === action && PROXIMITY_DOOR_KINDS.has(entry.kind)); // Only validated door rows are callable by the torch-specific action.
-      if (!row || typeof row.onPress !== 'function') return false;
-      row.onPress();
+      const offered = lastRows.find(entry => entry.action === action && PROXIMITY_DOOR_KINDS.has(entry.kind));
+      if (!offered || typeof offered.onPress !== 'function') return false;
+      const current = refreshRows(false).find(entry => entry.action === action && entry.key === offered.key && PROXIMITY_DOOR_KINDS.has(entry.kind));
+      if (!current || typeof current.onPress !== 'function') return false;
+      current.onPress();
       return true;
     },
     invokeAction(action) {
@@ -731,8 +760,10 @@
     },
     invoke(index = 0) {
       const row = lastRows[index];
-      if (!row) return false;
-      row.onPress?.();
+      if (!row || !inRuin()) return false;
+      const current = refreshRows(false).find(entry => entry.key === row.key && entry.action === row.action);
+      if (!current || typeof current.onPress !== 'function') return false;
+      current.onPress();
       return true;
     },
     snapshot() {

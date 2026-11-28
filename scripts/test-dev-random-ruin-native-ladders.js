@@ -41,19 +41,24 @@ const frame={
 vm.createContext(frame);
 vm.runInContext([
   shippedFunction('prepareSemanticObjects','kindMatches'),
-  shippedFunction('nearestLadder','supportCandidatesForLadder'),
+  shippedFunction('nearbyLadders','supportCandidatesForLadder'),
   shippedFunction('climbLadder','controlWorldPoint'),
 ].join('\n'),frame);
 frame.prepareSemanticObjects(0);
 assert.equal(frame.ladders.length,2,'the entrance-floor and native-story ladder roots both register');
 assert.equal(tagged,2);
-assert.equal(frame.nearestLadder()?.ladder,low,'the low-story ladder wins with overlapping coordinates');
+assert.equal(frame.nearbyLadders()[0]?.ladder,low,'the low-story ladder wins with overlapping coordinates');
 assert.equal(frame.climbLadder(low),true);
 assert.equal(climbed.startWorldY,0,'climb starts at physical support, not the highest DynamicSurfaces floor or player mesh Y');
+const adjacent={...low,x:11,z:10}; // Both nearby targets should be sent to the reticle selector.
+base.traverse=visit=>{visit(base);visit(low);visit(adjacent);};
+now=250;frame.prepareSemanticObjects(now);
+assert.equal(frame.nearbyLadders().length,2,'both same-story ladders remain selectable by aim');
+base.traverse=visit=>{visit(base);visit(low);};
 physicalY=4;
-assert.equal(frame.nearestLadder()?.ladder,high,'the upper-story ladder wins when the player climbs up');
-nativeAvailable=false;native.parent=null;now=300;
+assert.equal(frame.nearbyLadders()[0]?.ladder,high,'the upper-story ladder wins when the player climbs up');
+nativeAvailable=false;native.parent=null;now=500;
 frame.prepareSemanticObjects(now);
 assert.equal(frame.ladders.length,1,'native ladder registrations disappear after upper-floor teardown');
-assert.equal(frame.nearestLadder(),null,'upper-story player cannot select a lower-story ladder after teardown');
+assert.equal(frame.nearbyLadders().length,0,'upper-story player cannot select a lower-story ladder after teardown');
 console.log('ok V50 native ladders: both story roots scanned, nearest by physical Y, correct climb height, native cleanup');
