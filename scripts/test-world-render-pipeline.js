@@ -365,6 +365,85 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
 }
 
 
+// Screen ink must receive the same atmosphere as authored PNG ink.
+{
+  const h = createWorldRenderPipelineHarness({outlineMode:'default'}).init();
+  const p = h.pipeline, u = p.materials.composite.uniforms;
+  p.resize(640,360);
+  let kanthic = true, paintFirst = false;
+  h.window.PainterlyPostprocess = {getOutlineFirst:()=>!paintFirst};
+  h.window.CloudForestFog.hasKanthicLightingPass = ()=>kanthic;
+  h.window.CloudForestFog.renderKanthicGlyphFrame = ()=>h.log.push({id:'kanthicDraw',target:h.renderer.getRenderTarget()});
+  u.uHobunjiPaintMode = {value:2}; // Shader already patched on a prior frame.
+  const paintTexture={};u.tHobunjiPaint={value:paintTexture};
+  h.settings.cloudForestFog=false;
+  const seen = [];
+  const native = h.renderer.__hobunjiR128NativeRender;
+  h.renderer.__hobunjiR128NativeRender = function(scene,camera) {
+    if (scene.name === 'world_screen_ink_pre_atmosphere') {
+      assert.equal(u.uHobunjiPaintMode.value,0);
+      assert.equal(u.tHobunjiPaint.value,p.targets.main.texture,'disabled painterly sampler must remain safe');
+      assert.equal(u.uSeamOutlinesOn.value,0);
+      assert.equal(u.uDepthOutlinesOn.value,1);
+      assert.equal(u.tColor.value,p.targets.main.texture);
+      assert.equal(u.tSceneDepth.value,p.targets.main.depthTexture);
+      assert.notEqual(h.renderer.getRenderTarget(),p.targets.main);
+      assert.equal(h.renderer.autoClear,false);
+      seen.push(h.renderer.getRenderTarget());
+    }
+    if (scene.name === 'world_screen_ink_copy') {
+      assert.equal(h.renderer.getRenderTarget(),p.targets.main);
+      assert.equal(scene.children[0].material.uniforms.tSource.value,seen.at(-1).texture);
+      assert.equal(scene.children[0].material.depthWrite,false);
+      assert.equal(scene.children[0].material.depthTest,false);
+      assert.equal(h.renderer.autoClearDepth,false);
+      assert.equal(h.renderer.autoClearStencil,false);
+    }
+    if (scene.name === 'world_render_composite') {
+      assert.equal(u.uHobunjiPaintMode.value,2);
+      const early = !paintFirst && (kanthic || (h.settings.cloudForestFog && h.fogActive));
+      assert.equal(u.uDepthOutlinesOn.value,p.getGeneratedOutlineMode()==='screen'&&!early?1:0);
+      assert.equal(p.materials.composite.userData.hobunjiScreenInkBeforeAtmosphere,p.getGeneratedOutlineMode()==='screen'&&early);
+      assert.equal(u.tHobunjiPaint.value,paintTexture);
+    }
+    return native.call(this,scene,camera);
+  };
+  const events=h.frame();
+  const at=id=>events.findIndex(e=>e.scene===id||e.id===id);
+  assert(at('world_screen_ink_pre_atmosphere')>0);
+  assert(at('world_screen_ink_pre_atmosphere')<at('world_screen_ink_copy'));
+  assert(at('world_screen_ink_copy')<at('kanthicDraw'));
+  assert(at('kanthicDraw')<at('world_render_composite'));
+  assert.equal(events.find(e=>e.id==='kanthicDraw').target,p.targets.main);
+  assert.equal(p.snapshot().lastFrame.screenInkBeforeAtmosphere,true);
+  assert.equal(p.materials.composite.userData.hobunjiScreenInkBeforeAtmosphere,false,'presentation marker never persists into another frame');
+  const scratch=seen[0];
+  h.frame(); assert.equal(seen.at(-1),scratch,'scratch reused across frames');
+  p.resize(320,180);h.frame();assert.deepEqual([scratch.width,scratch.height],[320,180]);
+  kanthic=false;h.settings.cloudForestFog=true;h.fogActive=true;
+  const mist=h.frame();assert(mist.findIndex(e=>e.scene==='world_screen_ink_copy')<mist.findIndex(e=>e.id==='mist'));
+  paintFirst=true;assert(!h.frame().some(e=>e.scene==='world_screen_ink_copy'),'paint-first A/B override');
+  paintFirst=false;h.fogActive=false;
+  assert(!h.frame().some(e=>e.scene==='world_screen_ink_copy'),'clear area has no extra fullscreen draws');
+  kanthic=true;
+  h.throwOn=scene=>scene.name==='world_screen_ink_copy';
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.equal(h.renderer.getRenderTarget(),p.targets.main);
+  assert.equal(u.uHobunjiPaintMode.value,2);
+  assert.equal(u.tHobunjiPaint.value,paintTexture);
+  h.throwOn=scene=>scene.name==='world_render_composite';
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.equal(p.materials.composite.userData.hobunjiScreenInkBeforeAtmosphere,false,'failed final draw restores presentation marker');
+  h.throwOn=null;h.frame();
+  p.setGeneratedOutlineMode('shell');
+  assert.equal(scratch.disposed,true);
+  assert(!h.frame().some(e=>e.scene==='world_screen_ink_copy'),'shell ink already in world color');
+  p.setGeneratedOutlineMode('none');
+  assert(!h.frame().some(e=>e.scene==='world_screen_ink_copy'));
+  h.settings.outlines=false;
+  assert(!h.frame().some(e=>e.scene==='world_screen_ink_copy'));
+}
+
 // The census includes hidden descendants, not just nodes the color pass draws.
 // It is strictly diagnostic and never changes transforms or visibility.
 {

@@ -225,6 +225,13 @@ assert.equal(kanthicSession.lightAllowed({x:14,y:1,z:14}),false,'Kanthic still r
 assert.equal(kanthicSession.lightAllowed({x:34,y:1,z:14}),true,'Kanthic retains local brazier lighting');
 assert.deepEqual(kanthicSession.snapshot().localLightBoundary,
   {mode:'unclipped-kanthic-screen-overlay',active:false,roomIsolated:true,canvasPasses:0,illumination:0});
+const previousSanctumLights=global.DevRandomRuinSanctum;
+const brazierSource={x:34,y:1,z:14,strength:.98,active:true,flameAnchor:{}};
+global.DevRandomRuinSanctum={lightSources:()=>[brazierSource]};
+assert.equal(kanthicSession.ambient().illumination,0,'lit Kanthic brazier never lifts room-wide ambient darkness');
+global.DevRandomRuinSanctum={lightSources:()=>[brazierSource,{x:34,y:1,z:14,strength:.8,active:true}]};
+assert.equal(kanthicSession.ambient().illumination,.8,'non-brazier encounter reveal still lifts room ambience');
+global.DevRandomRuinSanctum=previousSanctumLights;
 kanthicSession.dispose();
 assert.match(fogSource,/const mistActive = active;/,
   'Kanthic restores the Cloud Forest mist cylinders instead of suppressing them');

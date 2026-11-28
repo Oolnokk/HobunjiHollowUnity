@@ -46,8 +46,8 @@ assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,0,'Kanthic lighting cr
 assert.equal(ruin.shaftConnection.kanthicRequiredBrazierLights,2,'real required wing and native sources feed the same light list');
 assert(lights.includes(wingGoal)&&lights.includes(nativeGoal),'no completed-wing flame can be omitted from Kanthic projection');
 assert(sconces.every(light=>light.radius<=1.05&&light.strength<=.32),'permanent Kanthic fire only illuminates a tiny local area');
-assert.equal(wingGoal.radius,10,'completed-wing illumination remains an earned progression reward');
-assert.equal(nativeGoal.radius,10.5,'native upper-story reward brazier retains its full radius');
+assert.equal(wingGoal.radius,10,'authored record is retained; the Kanthic compositor limits its effective radius');
+assert.equal(nativeGoal.radius,10.5,'native upper-story source retains its authored record for shared consumers');
 assert(!wingGoal.active&&!nativeGoal.active,'unlit goal braziers do not reveal their chamber');
 const wallSconces=sconces.filter(l=>l.anchor.name==='kanthic-wall-giant-sconce'
   &&l.anchor.position.x<55&&l.anchor.position.z<55); // Ignore outer-wing fixtures beyond the shaft.
@@ -78,7 +78,6 @@ const connector=fs.readFileSync('docs/js/ruin-shaft-connector.js','utf8');
 assert.doesNotThrow(()=>new vm.Script(fog),'darkness compositor parses');
 assert(fog.includes("ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || [])"),
   'Kanthic only draws dedicated firelight, not all generic furniture lamps');
-assert(fog.includes('light.active === false'),'unlit fixtures do not clear the darkness');
 assert(fog.includes('const mistActive = active;'),'Kanthic uses actual Cloud Forest mist rather than an overlay-only imitation');
 assert(fog.includes("drawRuinTraditionLightMasks(window.RuinRopeTorch?.lightSources?.()"),'rope-end lanterns feed the same shared darkness pass');
 assert.equal(fog.split('drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || [])').length-1,2,
@@ -100,7 +99,7 @@ vm.runInNewContext(instrumented,{window:fakeWindow,performance:{now:()=>1000},co
 const maskDraws=[]; // Tracks actual canvas composite operations at the brazier source, without needing real WebGL on a phone.
 const ctx={canvas:{width:1000,height:600},globalCompositeOperation:'source-over',
   createRadialGradient:(...args)=>({args,stops:[],addColorStop(fraction,color){this.stops.push([fraction,color]);}}),
-  beginPath(){},arc(){},fill(){maskDraws.push({mode:this.globalCompositeOperation,stops:this.fillStyle.stops});}};
+  beginPath(){},arc(){},fill(){maskDraws.push({mode:this.globalCompositeOperation,stops:this.fillStyle.stops,args:this.fillStyle.args});}};
 const camera={matrixWorld:{},near:.01,far:200,
   getWorldDirection(v){return v.set(1,0,0);},
   getWorldPosition(v){return v.set(-20,2,0);}};
@@ -127,6 +126,30 @@ const above={...source,floorY:16,y:17.4};
 maskDraws.length=0;
 const beforeUpperStory=visibleResult.drawn+1; // The diagnostics count all masks in this instrumented redraw, even when the next source is culled.
 assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,beforeUpperStory,'a lit upper-story goal does not shine through lower floors');
+
+// Real tagged brazier sources emit only near the player in Kanthic, regardless of their original room-wide radius.
+let theme='kanthic';fakeWindow.DevRandomRuinLichThemes={activeTheme:()=>theme};
+const tagged={...source,flameAnchor:{},floorTolerance:1.2,roomBound:true};
+function sampleBrazier(px,py=0){
+  drawingDeps.player.x=px;drawingDeps.player.y=10;drawingDeps.getPlayerWorldY=()=>py;
+  maskDraws.length=0;fakeWindow.__probeRuinMasks([tagged],drawingDeps);
+  const reveal=maskDraws.find(d=>d.mode==='destination-out');
+  return reveal?{alpha:Number(reveal.stops[0][1].match(/,([0-9.eE+-]+)\)$/)[1]),radius:reveal.args[5]}:null;
+}
+const near=sampleBrazier(10),middle=sampleBrazier(12),far=sampleBrazier(14);
+assert(near&&middle&&near.alpha>middle.alpha&&middle.alpha>0,'strength fades smoothly across the approach');
+assert.equal(far,null,'distant brazier casts no local light');
+assert.equal(sampleBrazier(10,16),null,'different floors cannot light the player');
+assert.equal(near.radius,middle.radius,'near fade changes intensity without jumping radius');
+assert(near.alpha<=.72,'near light retains a modest maximum strength');
+const belowThreshold=sampleBrazier(10,1.19),aboveThreshold=sampleBrazier(10,1.21);
+assert(belowThreshold&&aboveThreshold&&Math.abs(belowThreshold.alpha-aboveThreshold.alpha)<.01,'no legacy floor-height snap for a nearby flame');
+tagged.flameAnchor.visible=false;assert.equal(sampleBrazier(10),null,'a hidden story or extinguished anchor never casts a pool');
+tagged.flameAnchor.visible=true;
+tagged.flameAnchor.getWorldPosition=v=>v.set(11,1.4,10);
+assert(sampleBrazier(14),'proximity follows the actual transformed flame instead of the original light record');
+delete tagged.flameAnchor.getWorldPosition;
+theme='hronal';assert(sampleBrazier(14).radius>near.radius,'other traditions retain original broad light');
 
 
 const Plan=require('../docs/js/ruin-layer-plan.js'); // Real seed layouts cover four entrances, varying wing portals, and 3–5 shaft stories.

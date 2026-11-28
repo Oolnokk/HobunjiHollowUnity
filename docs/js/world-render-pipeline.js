@@ -25,7 +25,8 @@
 //   6. shell    — layer SHELL_OUTLINE with the inverted-hull material
 //                 (held-object-render-order.js adds x-ray shells here).
 //   7. target   — layer TARGET_HIGHLIGHT, farm scene, only with a reticle target.
-//   8. mist     — Cloud Forest mist redraw over the outlines (when active).
+//   8. screenInkBeforeAtmosphere + screenInkCopy (screen mode, active atmosphere),
+//                 then mist and Kanthic darkness/glyphs over the existing ink.
 //   9. seamId   — layer MATERIAL_SEAM_ID into edgeIdRT; off by default.
 //  10. composite — mainRT -> canvas (OutlineCompositeMaterial + painterly).
 //  11. Perception Mode overlay.
@@ -96,6 +97,10 @@
   let _postScene = null;
   let _postCamera = null;
   let _postMat = null;
+  let atmosphereInkRT = null; // Lazy color-only scratch, never aliases sampled scene depth.
+  let atmosphereInkScene = null; // Isolated fullscreen precomposite.
+  let atmosphereCopyScene = null; // Copies ink back preserving mainRT depth/stencil.
+  let atmosphereCopyMat = null; // Reused fullscreen copy sampler.
 
   function applyOutlineRenderingConfig(raw) {
     const finiteOr = (v, fb) => Number.isFinite(Number(v)) ? Number(v) : fb;
@@ -583,6 +588,7 @@
     let worldFrame = null;
     const captureTimings = captureHookOff ? [] : null; // No extra timing arrays or walks in ordinary gameplay.
     let completed = false; // Mark a failed native submission as an incomplete capture.
+    let screenInkBeforeAtmosphere = false; // Last-frame diagnostic for the pre-lighting ink path.
     let finishWorldText = null; // Owned by this frame; released even if a native draw throws.
     suspendScopes(scopeCtx, scopeRestores, captureTimings);
     try {
@@ -599,7 +605,7 @@
         const activeScores = window.PuzzleCaveEntrances?.activeScoreMeshes?.(area, activeScene); // Authoritative plate state, both render modes.
         finishWorldText = overlayOwner.prepareWorldTextOverlay(renderer, activeScene, camera, activeScores);
       }
-      if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
+      if (outlines) screenInkBeforeAtmosphere = renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
       else renderDirectPasses(renderer, camera, activeScene, area, !!finishWorldText);
       pass('worldText');
       finishWorldText?.(true); // The final color writer, after painterly and Perception Mode.
@@ -624,7 +630,7 @@
       }
       pass('idle');
       stats.frames++;
-      stats.lastFrame = { area, outlines, generatedOutlineMode: outlines ? generatedOutlineMode : 'master-off', seamOutlines: seamOn, targetHighlights: targetMeshes.length, nativeRenders, scopes: scopes.filter(s => s.enabled).length };
+      stats.lastFrame = { area, outlines, generatedOutlineMode: outlines ? generatedOutlineMode : 'master-off', screenInkBeforeAtmosphere, seamOutlines: seamOn, targetHighlights: targetMeshes.length, nativeRenders, scopes: scopes.filter(s => s.enabled).length };
     }
     PerfProfiler?.end(renderPassPerf);
     window.MobileRenderBudget?.sample(now, !deps.isPaused() && !window.PixelProbe?.armed);
@@ -645,6 +651,7 @@
     if (!['shell', 'screen', 'none'].includes(mode)) return generatedOutlineMode;
     generatedOutlineMode = mode;
     if (mode !== 'screen' && shellMaskRT) { shellMaskRT.dispose(); shellMaskRT = null; }
+    if (mode !== 'screen' && atmosphereInkRT) { atmosphereInkRT.dispose(); atmosphereInkRT = null; atmosphereCopyMat.uniforms.tSource.value = null; }
     return generatedOutlineMode;
   }
 
@@ -674,6 +681,86 @@
       renderer.autoClear = oldAutoClear;
       renderer.autoClearColor = oldColorClear;
       renderer.autoClearDepth = oldDepthClear;
+    }
+  }
+
+  function prepareCompositeInputs(camera, activeScene, seamOn) {
+    _postMat.uniforms.tColor.value = _mainRT.texture;
+    _postMat.uniforms.tEdgeId.value = _edgeIdRT.texture;
+    _postMat.uniforms.tEdgeIdDepth.value = _edgeIdRT.depthTexture;
+    _postMat.uniforms.tSceneDepth.value = _mainRT.depthTexture;
+    _postMat.uniforms.uCameraNear.value = camera.near;
+    _postMat.uniforms.uCameraFar.value = camera.far;
+    _postMat.uniforms.uSeamOutlinesOn.value = seamOn ? 1 : 0;
+    _postMat.uniforms.uDepthOutlinesOn.value = generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0;
+    _postMat.uniforms.tShellMaskDepth.value = shellMaskRT?.depthTexture || _mainRT.depthTexture;
+    _postMat.uniforms.uOrthographic.value = camera.isOrthographicCamera ? 1 : 0;
+    if (generatedOutlineMode === 'screen') {
+      const fog = activeScene.fog; // Fade ink towards the same scene fog as the shell shader.
+      _postMat.uniforms.uDepthFogMode.value = fog?.isFogExp2 ? 2 : fog?.isFog ? 1 : 0;
+      if (fog?.color) _postMat.uniforms.uDepthFogColor.value.copy(fog.color);
+      _postMat.uniforms.uDepthFogNear.value = fog?.near ?? 0;
+      _postMat.uniforms.uDepthFogFar.value = fog?.far ?? 1;
+      _postMat.uniforms.uDepthFogDensity.value = fog?.density ?? 0;
+    }
+  }
+
+  // Resolve ink offscreen to avoid sampling the main framebuffer while writing
+  // to it. Copy color only back to mainRT, retaining its real world depth for
+  // mist and Kanthic glyph occlusion. No extra world geometry draws.
+  function compositeScreenInkBeforeAtmosphere(renderer) {
+    if (!atmosphereInkRT) atmosphereInkRT = new THREE.WebGLRenderTarget(_mainRT.width, _mainRT.height, {
+      minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat, depthBuffer: false, stencilBuffer: false,
+    });
+    if (atmosphereInkRT.width !== _mainRT.width || atmosphereInkRT.height !== _mainRT.height) {
+      atmosphereInkRT.setSize(_mainRT.width, _mainRT.height);
+    }
+    if (!atmosphereInkScene) {
+      const geometry = _postScene.children[0].geometry; // Share the existing fullscreen quad.
+      atmosphereInkScene = new THREE.Scene();
+      atmosphereInkScene.name = 'world_screen_ink_pre_atmosphere';
+      atmosphereInkScene.userData.hobunjiOutlineSequenceNeutral = true;
+      atmosphereInkScene.add(new THREE.Mesh(geometry, _postMat));
+      atmosphereCopyMat = new THREE.ShaderMaterial({
+        uniforms: { tSource: { value: null } },
+        vertexShader: 'varying vec2 vUv; void main(){vUv=uv; gl_Position=vec4(position.xy,0.0,1.0);}',
+        fragmentShader: 'uniform sampler2D tSource; varying vec2 vUv; void main(){gl_FragColor=texture2D(tSource,vUv);}',
+        depthTest: false, depthWrite: false, toneMapped: false,
+      });
+      atmosphereCopyScene = new THREE.Scene();
+      atmosphereCopyScene.name = 'world_screen_ink_copy';
+      atmosphereCopyScene.userData.hobunjiOutlineSequenceNeutral = true;
+      atmosphereCopyScene.add(new THREE.Mesh(geometry, atmosphereCopyMat));
+    }
+    const target = renderer.getRenderTarget();
+    const autoClear = renderer.autoClear, color = renderer.autoClearColor;
+    const depth = renderer.autoClearDepth, stencil = renderer.autoClearStencil;
+    const u = _postMat.uniforms;
+    const seam = u.uSeamOutlinesOn.value;
+    const paint = u.uHobunjiPaintMode; // Patched by painterly after its first canvas presentation.
+    const paintValue = paint?.value;
+    const paintSampler=u.tHobunjiPaint; // Avoid stale or aliased sampler bindings even in the disabled GLSL branch.
+    const oldPaintTexture=paintSampler?.value;
+    try {
+      renderer.autoClear = renderer.autoClearColor = renderer.autoClearDepth = renderer.autoClearStencil = false;
+      u.uSeamOutlinesOn.value = 0;
+      if (paint) paint.value = 0; // Never sample previous-frame paint.
+      if(paintSampler)paintSampler.value=_mainRT.texture;
+      pass('screenInkBeforeAtmosphere');
+      renderer.setRenderTarget(atmosphereInkRT);
+      renderer.render(atmosphereInkScene, _postCamera);
+      pass('screenInkCopy');
+      atmosphereCopyMat.uniforms.tSource.value = atmosphereInkRT.texture;
+      renderer.setRenderTarget(_mainRT);
+      renderer.render(atmosphereCopyScene, _postCamera);
+    } finally {
+      u.uSeamOutlinesOn.value = seam;
+      if (paint) paint.value = paintValue;
+      if(paintSampler)paintSampler.value=oldPaintTexture;
+      renderer.setRenderTarget(target);
+      renderer.autoClear = autoClear; renderer.autoClearColor = color;
+      renderer.autoClearDepth = depth; renderer.autoClearStencil = stencil;
     }
   }
 
@@ -723,8 +810,17 @@
       PerfProfiler?.end(rpTargetPerf);
     }
 
+    // Generated ink must be present before mist/darkness, like authored PNG
+    // ink. Preserve the explicit paint-first benchmark override for comparison.
+    const mistActive = deps.settings.cloudForestFog() && window.CloudForestFog?.isActive?.();
+    const kanthicLighting = window.CloudForestFog?.hasKanthicLightingPass?.() === true;
+    prepareCompositeInputs(camera, activeScene, seamOn);
+    const screenInkBeforeAtmosphere = generatedOutlineMode === 'screen' && !!shellMaskRT
+      && !!(mistActive || kanthicLighting) && window.PainterlyPostprocess?.getOutlineFirst?.() !== false;
+    if (screenInkBeforeAtmosphere) compositeScreenInkBeforeAtmosphere(renderer);
+
     // Blend mist back over the outlines using their existing depth buffer.
-    if (deps.settings.cloudForestFog() && window.CloudForestFog?.isActive?.()) {
+    if (mistActive) {
       pass('mist');
       const rpMistPerf = PerfProfiler?.begin('render: cloud mist');
       window.CloudForestFog.renderOutlineMist(renderer, camera, activeScene);
@@ -758,30 +854,17 @@
     pass('composite');
     const rpCompositePerf = PerfProfiler?.begin('render: composite');
     renderer.setRenderTarget(null);
-    _postMat.uniforms.tColor.value = _mainRT.texture;
-    _postMat.uniforms.tEdgeId.value = _edgeIdRT.texture;
-    _postMat.uniforms.tEdgeIdDepth.value = _edgeIdRT.depthTexture;
-    _postMat.uniforms.tSceneDepth.value = _mainRT.depthTexture;
-    _postMat.uniforms.uCameraNear.value = camera.near;
-    _postMat.uniforms.uCameraFar.value = camera.far;
     _postMat.uniforms.uSeamOutlinesOn.value = seamOn ? 1 : 0;
-    _postMat.uniforms.uDepthOutlinesOn.value = generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0;
-    _postMat.uniforms.tShellMaskDepth.value = shellMaskRT?.depthTexture || _mainRT.depthTexture;
-    _postMat.uniforms.uOrthographic.value = camera.isOrthographicCamera ? 1 : 0;
-    if (generatedOutlineMode === 'screen') {
-      const fog = activeScene.fog; // Fade ink towards the same scene fog as the shell shader.
-      _postMat.uniforms.uDepthFogMode.value = fog?.isFogExp2 ? 2 : fog?.isFog ? 1 : 0;
-      if (fog?.color) _postMat.uniforms.uDepthFogColor.value.copy(fog.color);
-      _postMat.uniforms.uDepthFogNear.value = fog?.near ?? 0;
-      _postMat.uniforms.uDepthFogFar.value = fog?.far ?? 1;
-      _postMat.uniforms.uDepthFogDensity.value = fog?.density ?? 0;
-    }
-    renderer.render(_postScene, _postCamera);
-    PerfProfiler?.end(rpCompositePerf);
+    _postMat.uniforms.uDepthOutlinesOn.value = screenInkBeforeAtmosphere ? 0 : (generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0);
+    _postMat.userData||={};
+    _postMat.userData.hobunjiScreenInkBeforeAtmosphere=screenInkBeforeAtmosphere; // Painterly diagnostics must recognize ink already baked into tColor.
+    try {renderer.render(_postScene, _postCamera);}
+    finally {_postMat.userData.hobunjiScreenInkBeforeAtmosphere=false;PerfProfiler?.end(rpCompositePerf);}
     // Perception Mode silhouettes go on top of the finished composite so the
     // painterly/outline post-process can't smear them.
     pass('perception');
     window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
+    return screenInkBeforeAtmosphere;
   }
 
   function renderDirectPasses(renderer, camera, activeScene, area, worldTextManaged) {

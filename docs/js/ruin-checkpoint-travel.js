@@ -55,7 +55,7 @@
         scale:scale*.7,rateScale:.46,...emberColors,
       });
       if(emitter)flames.push(emitter);
-      const light={x:at.x,y:at.y+1,z:at.z,floorY:at.y,floorTolerance:1.2,
+      const light={x:at.x,y:at.y+1,z:at.z,floorY:at.y,floorTolerance:1.2,flameAnchor:anchor,
         radius:kind==='shaft'?8:5,strength:kind==='shaft'?.98:.9,
         color:[240,248,255],active:false}; // Kanthic darkness compositing consumes cached scalar light records.
       lights.push(light);

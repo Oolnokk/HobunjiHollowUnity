@@ -744,7 +744,7 @@
     fire.anchor.position.y = 1.23;
     root.add(holder);
     fire.holder = holder;
-    fire.lightSource = {x,y:y0+1.4,z,floorY:y0,floorTolerance:3,radius:9.5,strength:.97,color:[175,220,255],active:false}; // Static 2D light mask follows this brazier's lit state.
+    fire.lightSource = {x,y:y0+1.4,z,floorY:y0,floorTolerance:3,radius:9.5,strength:.97,color:[175,220,255],active:false,flameAnchor:fire.anchor,flameHalo:fire.halo}; // Static 2D light mask follows this brazier's lit state.
     return fire;
   }
 
@@ -863,7 +863,15 @@
       s.vaultChests.push(chest);
     }
     s.vaultFires = [standingBrazier(kit, root, vault.minX + 1, vault.minZ + .9, y0), standingBrazier(kit, root, vault.minX + 1, vault.maxZ - .9, y0)];
-    s.sanctumLights = [...s.arenaFires,...s.vaultFires].map(fire=>fire.lightSource); // Reused by the shared darkness compositor without per-frame scene scans.
+    s.sanctumLights = [...s.arenaFires,...s.vaultFires].map(fire=>fire.lightSource);
+    if (context.theme === 'kanthic') for (const brazier of s.braziers) {
+      const fire = brazier.fire; // Legacy standalone goals share the same Kanthic flame/light policy.
+      if (!fire.lightSource) {
+        const at = worldPos(fire.anchor);
+        fire.lightSource = {x:at.x,y:at.y,z:at.z,radius:1,strength:.65,color:[175,220,255],active:fire.lit,flameAnchor:fire.anchor,flameHalo:fire.halo};
+      }
+      s.sanctumLights.push(fire.lightSource);
+    } // Reused by the shared darkness compositor without per-frame scene scans.
     const ladder = buildLadder(kit, root, vault.maxX - .18, zc + (VAULT_D / 2 - 1.1), y0);
     s.ladderControl = {
       kind:'sanctumLadder', object:ladder, promptRoot:ladder, range:1.6, priority:22, claimAction1:true, touchIcon:'🪜',

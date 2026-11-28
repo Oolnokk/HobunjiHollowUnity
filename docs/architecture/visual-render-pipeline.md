@@ -43,13 +43,17 @@ frame never see render-only state. Keep it that way.
 | 1a | ↳ held-object replays | ground depth, held items, hands, feet, water | `GROUND_REPLAY`, `HELD_OVERLAY`, … | `mainRT` | held-object-render-order.js (wraps the main render call) |
 | 2 | `pngDepth` | PNG avatars, depth only | `PNG_OCCLUDER` | `mainRT` | png-plane-outline-occluder.js |
 | 3 | `actorProbes` | nothing (GPU queries on existing depth) | — | — | actor-render-occlusion.js |
-| 4 | `shell` | black inverted-hull outlines | `SHELL_OUTLINE` (+ x-ray replays) | `mainRT` | world-render-pipeline.js; held-object-render-order.js adds x-ray shells |
+| 4 | `shell` / `screenOutlineMask` | inverted-hull ink or selective curved geometry depth mask | `SHELL_OUTLINE` | `mainRT` / `shellMaskRT` | world-render-pipeline.js |
 | 5 | `target` | reticle target highlight (only with a target) | `TARGET_HIGHLIGHT` | `mainRT` | world-render-pipeline.js |
-| 6 | `mist` | Cloud Forest / blizzard mist redraw (when active) | `MIST_REDRAW` | `mainRT` | cloud-forest-fog.js |
+| 6a | `screenInkBeforeAtmosphere`, `screenInkCopy` | screen ink before active mist or GPU Kanthic darkness | fullscreen | color-only scratch → `mainRT` (depth/stencil preserved) | world-render-pipeline.js |
+| 6b | `mist` | Cloud Forest / blizzard mist redraw (when active) | `MIST_REDRAW` | `mainRT` | cloud-forest-fog.js |
+| 6c | `kanthicEngraving` | GPU darkness, then depth-tested emissive room glyphs | glyph proxies | `mainRT` | cloud-forest-fog.js |
 | 7 | `seamId` | material-ID buffer (off by default) | `MATERIAL_SEAM_ID` | `seamIdRT` | world-render-pipeline.js |
 | 8 | `composite` | `mainRT` → canvas, with painterly if enabled | — | canvas | outline-composite-material.js, painterly-postprocess.js |
 | 9 | `perception` | Perception Mode silhouettes | `PERCEPTION_MODE` | canvas | perception-mode.js |
 | 10 | `worldText` | popup/dialogue + active Scratchbone ink and halos; only notes use actor depth | `WORLD_TEXT_OVERLAY`, `SCORE_ACTOR_DEPTH` | canvas | outline-render-performance.js |
+
+In screen mode with active atmosphere, the early ink resolve disables painterly and seams temporarily, copies only color back, and turns off duplicate screen ink in final presentation. Kanthic glyphs and brazier flame particles still use untouched scene depth. Braziers replay the original authored particle geometry in the existing room-local emission pass, without a broad halo; their local light pools cap at 0.95 tiles, with full proximity strength inside 1.1 tiles and a smooth fade to zero at 3.2 tiles (including vertical separation). The scratch target is lazy and reused; no extra draws in ordinary clear areas or shell/none modes. The explicit paint-first Render A/B override bypasses the early resolve for comparison. Frame captures expose both draws and `snapshot().lastFrame.screenInkBeforeAtmosphere` reports the path.
 
 Outlines off: `main` straight to the canvas, `actorProbes`, `target`,
 `perception`. A quiet Western Slope frame is **17 native renders, ~160 draws**
