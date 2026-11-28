@@ -843,6 +843,9 @@
 
   function decorateGearSlots() {
     document.querySelectorAll('#mpInventory .inv-equip-slot').forEach((slot) => {
+      // Trinket cards have their own native Equip/Unequip button. Do not turn the
+      // surrounding description into a second, inert controller/keyboard target.
+      if (slot.classList.contains('trinket-inventory-row')) return;
       const title = slot.title || ''; // Existing titles remain the source of item/slot identity.
       const empty = title.includes('(empty)');
       const inertEmptyClothing = slot.classList.contains('clothing-slot') && !slot.classList.contains('occupied');
