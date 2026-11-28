@@ -516,6 +516,7 @@
       ...ignitionTargets.filter(target => target.lit).map(target => target.object),
       ...(window.DevRandomRuinDungeonFire?.litSourceObjects?.() || []),
       ...(window.RuinCheckpointTravel?.litSourceObjects?.() || []),
+      ...(window.DevRandomRuinSanctum?.litOrdinaryFireObjects?.() || []),
     ];
     return litSources.some(object => worldDistanceTo(object) <= CONTROL_RANGE && matches(object));
   }
