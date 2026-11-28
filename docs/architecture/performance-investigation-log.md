@@ -1,5 +1,17 @@
 # Performance investigation log
 
+## 28 Nov 2026: architecture comparison and scene census (headless; no code changed)
+
+Full write-up, with the AAA side-by-side and a ranked plan: [`aaa-architecture-comparison.md`](aaa-architecture-comparison.md). Headless, software GL, 640x360, player alone unless noted; counts transfer to a device, times do not.
+
+- **Scene shape.** Town 3,249 nodes (58% hidden at the main pass), Cloud Forest 5,885 nodes (62% hidden at gameplay time, 71% at the main pass). **93-94% of nodes recompute their local matrix every frame**, including the 1,887-node static batch group in town. The Cloud Forest holds 49.9 M triangles across all meshes, 18.4 M in meshes flagged visible, and the main pass submits 0.67 M.
+- **Render scopes toggle ~1,400 nodes per frame in town** (470 hidden at gameplay time, 1,881 at the main pass; Cloud Forest +480).
+- **Armed humanoid cost at this commit** (dev arena, empty vs 12 grunts): ~21 draws, ~20k triangles and ~96 scene nodes per grunt per frame; native renders 10 -> 12. That is 20 Nov's +96 draws per bandit brought down to +21, and still about four submissions of a 5.3k-triangle rig.
+- **CPU shares (26 s windows).** Three.js internals 29-31% of JS time; matrix math 2.4-2.9 ms/frame; `held-object-render-order.js` 1.9-3.4 ms/frame; `zone-prop-render-batches.js` `collect` 1.0 ms/frame; **GC 0.1-0.7%** (ruled out as a steady-state cause).
+- **Low FPS also slows the simulation:** `gameLoop` clamps `dt` to 40 ms, so the simulation runs at ~63% speed at the 15.9 fps device reading and ~26% at 6.5 fps.
+- **Source-verified, not measured:** in r128 `info.render.frame` increments on every `render()` call while `info.autoReset` is true (never changed here), and `skeleton.update()` is gated on it, so skinned meshes rebuild bones once per native render they appear in. Count `Skeleton.prototype.update` calls per frame before acting.
+- **Measurement notes.** `performance.getEntriesByType('resource')` stops at 250 entries, so a script count taken from it is wrong (index.html has 469 `<script>` tags). `WorldRenderPipeline.sceneMatrixCensus()` plus `captureFrame()`/`lastCapture()` give nodes, renders, draws and triangles per pass without any harness code.
+
 ## 25 Nov 2026: CPU profile of a 12-bandit arena (headless); `normalizeKey` memoized
 
 Headless, dev arena, 12 grunt bandits, PerfProfiler buckets over ~1,590 frames plus a 120 s CDP CPU profile (500 us sampling). SwiftShader inflates GL time; the JS split carries over, the absolute frame time does not.
