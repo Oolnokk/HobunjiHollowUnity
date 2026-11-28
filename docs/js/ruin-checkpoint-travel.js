@@ -274,6 +274,26 @@
         label:'Return to shaft / entrance',onPress:()=>{if(origin.lit?.())toShaft(true);}};
       ruin.controls.push(control);controls.push(control);
     }
+    let deferredDoorCheckpoint=false; // Restored before the sanctum composer builds its door.
+    function registerDoorCheckpoint(site,width){
+      if(disposed||records.has('sanctum-door')||!site?.shaft)return false;
+      const n=site.normal,t=site.tangent,y=Number(site.floorY);
+      if(!n||!t||!Number.isFinite(y))return false;
+      for(const sign of [1,-1]){
+        const x=site.x+t.x*sign*(width/2+.8),z=site.z+t.z*sign*(width/2+.8);
+        const at=point(x+n.x*1.35,z+n.z*1.35,y);
+        if(!floorCanStand(at.x,at.z,y))continue;
+        const record=fixture('sanctum-door','small',at,.65);
+        if(!record)return false;
+        record.doorGated=true;
+        record.holder.position.set(x+n.x*.45,y+.45,z+n.z*.45); // Wall-side dish, with safe gallery respawn point separate from the mount.
+        record.holder.children[0].visible=false; // No standing pedestal on the wall.
+        record.light.x=record.holder.position.x;record.light.z=record.holder.position.z;
+        if(deferredDoorCheckpoint){deferredDoorCheckpoint=false;activeId=record.id;render(record,true);}
+        return true;
+      }
+      return false;
+    }
     function restore(saved){
       if(!snapshotValid(saved,ruin.seed))return false;
       unlockedShaftIds.clear(); // Reroll/save restore must never carry travel access to a different seed.
@@ -286,6 +306,7 @@
       shaftLit=unlockedShaftIds.has('shaft');
       activeId=null;
       const wanted=typeof saved.activeCheckpoint==='string'?saved.activeCheckpoint:null;
+      deferredDoorCheckpoint=wanted==='sanctum-door'&&!records.has(wanted);
       if(records.get(wanted)?.kind==='shaft'&&unlockedShaftIds.has(wanted))activeId=wanted;
       else if(records.get(wanted)?.kind==='small'){
         activeId=wanted;render(records.get(wanted),true);
@@ -306,6 +327,7 @@
         activeTravelWheel=null;travelPointerCleanup?.();travelPointerCleanup=null; // Backdrop cancel or Dodge must not strand the held input owner.
       }
       for(const record of records.values())if(record.kind==='small'
+        &&(!record.doorGated||root.DevRandomRuinSanctum?.isGreatDoorUnlocked?.())
         &&closeEnough(p,record.at,1.55)){becomeCheckpoint(record.id);break;}
       const t=now(); // One shared particle-update cadence; the caller need not supply a frame delta.
       if(t-lastBlink>80){const step=Math.min(.05,Math.max(0,Number(dt)||((t-lastBlink)/1000)));lastBlink=t;for(const f of flames)f.update?.(step);} 
@@ -332,7 +354,7 @@
       bowl.dispose();foot.dispose();stone.dispose?.();
       group.parent?.remove(group);
     }
-    const owner={tick,dispose,restore,serializeProgress,activeRespawnPoint,isActive:()=>!disposed&&root.DevRandomRuin?.getRuntimeContext?.()?.scene===rec.scene,lightSources:()=>lights,
+    const owner={tick,dispose,restore,serializeProgress,activeRespawnPoint,registerDoorCheckpoint,isActive:()=>!disposed&&root.DevRandomRuin?.getRuntimeContext?.()?.scene===rec.scene,lightSources:()=>lights,
       litSourceObjects:()=>disposed?[]:[...records.values()].filter(record=>record.lit).map(record=>record.holder), // Reuse the actual live furniture geometry instead of 2D tile lookups.
       getState:()=>({shaftLit,activeCheckpoint:activeId,
        shaftTravel:{wheelOpen:!!activeTravelWheel,unlocked:[...unlockedShaftIds],
@@ -344,6 +366,7 @@
   }
   return Object.freeze({mount,closeEnough,snapshotValid,HOLD_MS,
     isActive:()=>liveOwner?.isActive?.()===true,activeRespawnPoint:()=>liveOwner?.isActive?.()?liveOwner.activeRespawnPoint():null,
+    registerDoorCheckpoint:(site,width)=>liveOwner?.registerDoorCheckpoint(site,width)??false,
     lightSources:()=>liveOwner?.lightSources?.()||[],
     litSourceObjects:()=>liveOwner?.isActive?.()?liveOwner.litSourceObjects():[]});
 });
