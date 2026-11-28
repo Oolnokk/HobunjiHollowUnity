@@ -150,13 +150,53 @@ console.log('World popup row layout and family visibility parity: PASS');
   }
 }
 
-// Exercise real scatter placement with the authored small Float+ text size.
+// Read production multipliers instead of duplicating them in the placement harness.
+const combatScales = vm.runInNewContext(
+  source.match(/^  const COMBAT_FLOAT_(?:TEXT|RADIUS)_SCALE = .*$/gm).join('\n') +
+  '\n({COMBAT_FLOAT_TEXT_SCALE, COMBAT_FLOAT_RADIUS_SCALE});');
+assert.equal(combatScales.COMBAT_FLOAT_TEXT_SCALE,.65);
+assert.equal(combatScales.COMBAT_FLOAT_RADIUS_SCALE,.8);
+
+// Check the real spawn path: dimensions and per-frame size multiplier agree,
+// combat radius is opt-in, and family/reward sizing is unaffected.
+{
+  const root={}, active=[], scene={add(){}}, state={active,deps:{getActiveScene:()=>scene},sequence:0,
+    settings:{assignments:{damage:'floatPlus',healing:'floatPlus',usefulnessXp:'floatPlus',loot:'centeredFiveRow'},
+      floatPlus:{worldHeight:.13,lifetimeMs:1150},centeredFiveRow:{worldHeight:.32,maxRows:5,lifetimeMs:3200}}};
+  const offsets=[]; // Records whether spawn selects combat-specific placement.
+  const spawn=vm.runInNewContext(block('  function spawn(', '  function iconAnchorScene(')+'\nspawn;', {
+    state,...combatScales,CENTERED_LIST_SCALE:.25,performance:{now:()=>0},
+    makePlane:(text,kind,cfg)=>({width:cfg.worldHeight*3,height:cfg.worldHeight,plane:{}}),
+    claimFloatOffset:(root,bounds,scatter,emphasis,compact)=>{offsets.push(compact);return {x:0,y:0};},
+    listFor:()=>[]
+  });
+  for(const entry of [{kind:'damage',scatter:true},{kind:'damage',scatter:true,emphasis:true},
+    {kind:'damage'},{kind:'healing'},{kind:'usefulnessXp'},{kind:'loot'}]) spawn({root,text:'test',...entry});
+  const [damage,impact,miss,heal,family,loot]=active;
+  for(const event of [damage,miss,heal]){
+    assert.equal(event.sizeMultiplier,.65);
+    assert.equal(event.height,.13*.65);
+  }
+  assert.equal(impact.height, .13*(1.65*.65));
+  assert.equal(impact.sizeMultiplier,1.65*.65);
+  assert.equal(family.height,.13);
+  assert.equal(family.sizeMultiplier,1);
+  assert.equal(loot.height,.32*.25);
+  assert.deepEqual(offsets,[true,true,true,true,false]);
+  const frame=run(actual,[[1,0,'damage',false,1150,'floatPlus',true,.65],[2,1,'damage',false,1150,'floatPlus',true,1]],500);
+  assert(Math.abs(frame.rows[0][5]/frame.rows[1][5]-.65)<1e-12,'frame updater preserves compact size');
+}
+
+// Exercise real scatter placement with the compact authored Float+ text size.
 {
   const root={}, active=[], state={active,settings:{floatPlus:{worldHeight:.13}}};
-  const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state});
+  const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state,...combatScales});
+  const compact=claim(root,{width:.38*.65,height:.13*.65},true,false,true);
+  const previous=claim(root,{width:.38,height:.13},true,false,false);
+  assert(Math.abs(Math.hypot(compact.x,compact.y)/Math.hypot(previous.x,previous.y)-.8)<1e-12,'initial radius is independently reduced');
   for(let i=0;i<6;i++) {
     const emphasis=i===5; // Last popup is the bigger collision callout.
-    const bounds=emphasis?{width:.85,height:.13*1.65}:{width:.38,height:.13};
+    const bounds=emphasis?{width:.85*.65,height:.13*1.65*.65}:{width:.38*.65,height:.13*.65};
     const point=claim(root,bounds,true,emphasis);
     active.push({root,mode:'floatPlus',kind:'damage',scatter:true,emphasis,offsetX:point.x,offsetY:point.y,...bounds});
   }
