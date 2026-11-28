@@ -242,6 +242,17 @@ assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'take
 assert.equal(playerLegs.getStanceDropLimitFraction(), .55, 'interrupting the player also restores the ordinary knee limit');
 player.position.set(0, 0, 0); // Explicit new world position after releasing the old absolute owner.
 
+assert(kiss.start(walker, () => buffTriggers++), 'late player takeover fixture starts another paired kiss');
+update({ deltaMs: 70 });
+const latePlayerPosition = player.position.clone().add(new THREE.Vector3(.31, .14, -.21)); // New world position written between simulation and render.
+player.position.copy(latePlayerPosition);
+lastRenderHook([], {}, camera);
+assert.equal(kiss.diagnostics().active, false, 'a late player move cancels the old render pose');
+assert(player.position.distanceTo(latePlayerPosition) < 1e-8, 'the render hook preserves the newer player position');
+assert.equal(playerLegs.getStanceDropLimitFraction(), .55, 'late player takeover releases the deeper knee limit');
+assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'late player takeover releases the scoped claims');
+player.position.set(0, 0, 0);
+
 assert(kiss.start(walker, () => buffTriggers++), 'new scoped kiss may start after owner takeover');
 update({ deltaMs: 70 });
 npcNeck.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), .41); // A later authored gaze now owns this neck.

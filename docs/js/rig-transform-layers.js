@@ -483,6 +483,11 @@
       return true;
     }
 
+    function ownsProperty(node, property) {
+      const entry = absoluteClaims.get(node)?.get(property); // A late writer can validate one protected property before writing a pose.
+      return !released && valid && entry?.session === session && entryStillOwned(entry, false);
+    }
+
     function canStamp(allowedChangedNodes = null) {
       if (released || !valid) return false;
       // Rendering can legitimately rewrite only an explicit subset of a paired
@@ -571,7 +576,7 @@
       return released && restoredByNode.get(node)?.has(property) === true;
     }
 
-    const session = Object.freeze({ capture, owns, canStamp, stamp, acceptExpectedOverwrites, release, wasRestored, owner });
+    const session = Object.freeze({ capture, owns, ownsProperty, canStamp, stamp, acceptExpectedOverwrites, release, wasRestored, owner });
     return session;
   }
 

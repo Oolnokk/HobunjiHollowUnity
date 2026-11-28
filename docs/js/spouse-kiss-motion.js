@@ -808,8 +808,9 @@
       const session = active; // A scoped festival-style render owner; never writes into a replaced character's rig.
       session.releasePlayerRenderPose = composer.addPostHeadAimHook(() => {
         if (active !== session || !session.lastPlayerPose) return;
-        // Check external ownership before touching the necks, so cleanup can still recognize our last written pose.
-        if (session.poseSession && !session.poseSession.canStamp(session.renderReauthoredNodes)) {
+        // Late facing corrections are expected, but a changed world position means movement took over.
+        if (session.poseSession && (!session.poseSession.ownsProperty(session.player, 'position')
+            || !session.poseSession.canStamp(session.renderReauthoredNodes))) {
           clearMotion('pose-owner-replaced-during-render');
           return;
         }
