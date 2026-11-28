@@ -2,7 +2,7 @@
   'use strict';
   // dialogue: feature-owned classic scripts in the original parser execution order.
   const scriptUrls = [
-    "js/cinematic-camera-runtime.js?v=20261026hmaskalpha11",
+    "js/cinematic-camera-runtime.js?v=20261128appliedShot",
     "js/camera-tile-collision.js?v=20261023camtile1",
     "js/camera-occlusion-chunks.js?v=20261101h7a6e930",
     "js/dialogue-camera-framing.js?v=20261002hba1474a",
