@@ -46,8 +46,8 @@ assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,0,'Kanthic lighting cr
 assert.equal(ruin.shaftConnection.kanthicRequiredBrazierLights,2,'real required wing and native sources feed the same light list');
 assert(lights.includes(wingGoal)&&lights.includes(nativeGoal),'no completed-wing flame can be omitted from Kanthic projection');
 assert(sconces.every(light=>light.radius<=1.05&&light.strength<=.32),'permanent Kanthic fire only illuminates a tiny local area');
-assert.equal(wingGoal.radius,10,'completed-wing illumination remains an earned progression reward');
-assert.equal(nativeGoal.radius,10.5,'native upper-story reward brazier retains its full radius');
+assert.equal(wingGoal.radius,10,'authored record is retained; the Kanthic compositor limits its effective radius');
+assert.equal(nativeGoal.radius,10.5,'native upper-story source retains its authored record for shared consumers');
 assert(!wingGoal.active&&!nativeGoal.active,'unlit goal braziers do not reveal their chamber');
 const wallSconces=sconces.filter(l=>l.anchor.name==='kanthic-wall-giant-sconce'
   &&l.anchor.position.x<55&&l.anchor.position.z<55); // Ignore outer-wing fixtures beyond the shaft.

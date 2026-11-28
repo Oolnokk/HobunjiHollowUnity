@@ -337,12 +337,14 @@
       ambient(){
         if(!active?.ambient)return null;
         let illumination=0; // Stable per-room illumination lift used only by the full-viewport darkness pass.
+        const kanthic=(active.theme||root.DevRandomRuinLichThemes?.activeTheme?.()||root.DevRandomRuin?.getRuntimeContext?.()?.theme)==='kanthic';
         for(const sources of [
           root.DevRandomRuinLichThemes?.lightSources?.()||[],
           root.RuinLayerPlayable?.roomLights?.()||[],
           root.RuinMultifloorV50Style?.lightSources?.()||[],
           root.DevRandomRuinSanctum?.lightSources?.()||[], // Lit sanctum braziers and its temporary reveal source lift only their room's ambient darkness.
         ])for(const source of sources){
+          if(kanthic&&source?.flameAnchor)continue; // Braziers must never brighten the whole Kanthic chamber.
           if(source?.active===false||!Number.isFinite(source?.x)||!Number.isFinite(source?.z)
             ||!Number.isFinite(source?.y)||!inside(active,source.x,source.z))continue;
           if(source.y<active.y-.65||source.y>active.y+WALL_HEIGHT+1)continue;

@@ -1041,13 +1041,15 @@
   const kanthicFlameSeen=new Set(); // A shared fixture may be exposed by more than one owner.
   const kanthicBrazierProviders=['RuinMultifloorV50Style','RuinCheckpointTravel','DevRandomRuinSanctum']; // Existing live source registries; no scene traversal for flames.
   function hideKanthicFlamePart(part){
-    if(part?.visible!==false&&part){kanthicFlameHidden.push(part);part.visible=false;}
+    if(part&&part.visible!==false){kanthicFlameHidden.push(part);part.visible=false;}
   }
   function prepareKanthicFlames(scene,bounds){
     ruinGlowStats.flamesDrawn=0;
     kanthicFlameSeen.clear();
     for(const proxy of kanthicFlameProxies.values())proxy.visible=false;
     if(!bounds||!kanthicProxyScene||Number(lightingDeps.getSceneTransAlpha?.())>0)return;
+    const canvas=lightingDeps.lctx?.canvas;
+    if(!canvas?.style||!canvas.width||!canvas.height)return; // Without the GPU darkness target leave original flames visible.
     const THREE=window.THREE;
     for(const owner of kanthicBrazierProviders)for(const light of window[owner]?.lightSources?.()||EMPTY_LIGHT_LIST){
       const anchor=light.flameAnchor;
