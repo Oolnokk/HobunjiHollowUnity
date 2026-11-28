@@ -156,6 +156,7 @@ const sweep=(start,end,half,box)=>{
   return entry<=1&&exit>=0?entry:null;
 };
 let area='map_i_dev_random_ruin',scene=new Root(),serial=0,bombs=0,drops=0,rocks=0;
+let lastBoulder=null,stoneSurfaces=0;const rockSounds=[],hits=[]; // Actual registered impact, texture, and damage callbacks.
 const hostileObjects=new Set(),companionObjects=new Set(),attacks=new Map(),factories=new Map();
 const inventory={},player={x:0,y:0,health:100},storage=new Map();
 const db={'gar-wolf':{modelWidth:1.9,defaultSizeClass:'medium',diet:'carnivore'},
@@ -164,9 +165,9 @@ const zoneScenes=new Map();
 const Shattercasks={
   registerBurdenFactory(kind,fn){factories.set(kind,fn);return true;},
   async createHangingBurden(o){const built=await factories.get(o.kind)(o);o.scene.add(built.group);
-    built.group.position.set(o.x,o.y,o.z);rocks++;return {id:o.id,mapId:o.mapId,group:built.group,kind:o.kind};},
+    built.group.position.set(o.x,o.y,o.z);rocks++;return lastBoulder={id:o.id,mapId:o.mapId,group:built.group,kind:o.kind,impact:built.onImpact};},
   releaseBurdenDownward(b){if(!b?.group?.parent)return false;drops++;b.flying=true;return true;},
-  discardBurden(b){b.group?.parent?.remove?.(b.group);return true;},
+  discardBurden(b){b.group?.parent?.remove?.(b.group);b.exploded=true;return true;},
 };
 const sourcePixels=Uint8ClampedArray.from([159,191,159,255,255,255,255,255,0,0,0,255,110,139,110,255]); // Green coat, white eye, black outline and shadow from authored PNG art.
 class TestImage{set src(_url){this.width=4;this.height=1;this.onload?.();}} // Tiny pose artwork for an actual keyed coat-color regression.
@@ -183,13 +184,15 @@ const renderColors={SPECIES:{},
   recolorPixels(data,color,predicate){for(let i=0;i<data.length;i+=4)if(predicate(i))for(let n=0;n<3;n++)data[i+n]=color[n];},
 }; // Real registration and pixel mask selection use the existing shared recolor interface.
 const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:renderColors,
+  FacetedRocks:{surfaceStone(mesh){stoneSurfaces++;mesh.userData.wildernessStone=true;},styleMesh(){}},
+  AudioSystem:{playObjectSfxKeyAt(...args){rockSounds.push(args);}},
   DevRandomRuin:{flightClear:()=>true}, // This isolated fixture has no ruin wall voxels: explicitly declare unobstructed air rather than relying on an absent collision API.
   HobunjiSpritePngSurface:{makeCanvasTexture(_three,canvas){return {image:canvas,dispose(){this.disposed=true;}};}},
   SCRATCHBONES_CONFIG:{game:{livestock:{itemKinds:{},animalWidths:{},diet:{},resources:{}}}},
   CreatureGenetics:{makeDefaultGenotype:()=>({base:{color:'#aaaaaa'},sizeClass:'small'}),
     creatureSizeClass:(_kind,g)=>g?.sizeClass||'small'},
   TzatzulFlightRuntime:{sweptBodyHit:sweep},RangedWeapons:{actorHitbox:()=>null},
-  Combat:{deps:{TILE:64,hostileObjects,damagePlayer(){},damageCreature(){},getGroundYAtWorld(){return 0;}},
+  Combat:{deps:{TILE:64,hostileObjects,damagePlayer(){},damageCreature(...args){hits.push(args);},getGroundYAtWorld(){return 0;}},
     animalAttacks:{register(key,impl){attacks.set(key,impl);}}},
   GridTileAccessors:{getActiveScene:()=>scene},TzatzulLiveVisuals:{release(){}},
   CliffRouteNetwork:{
@@ -410,10 +413,10 @@ async function check(){
 
 
   area='farm';scene=new Root();zoneScenes.set(area,{scene});player.x=20*64;player.y=20*64;
-  const pet=deps.makeCreatureEntity('pingdort',21*64,20*64,{isCompanion:true,stableRole:'companion',master:player});
+  const pet=deps.makeCreatureEntity('pingdort',21*64,20*64,{isCompanion:true,stableRole:'companion',master:player,genotype:{sizeClass:'large'}});
   companionObjects.add(pet);
   const ability=attacks.get('pingdortBoulderBomb');assert(ability);
-  const state={},target={x:22*64,y:20*64,health:100};
+  const state={},target={x:22*64,y:20*64,health:100,areaId:area};
   ability.start(pet,state,{target});pet._animalAttack={id:'pingdortBoulderBomb',state,def:ability};
   let ended=false;const start=drops;
   for(let i=0;i<220;i++){ended=!ability.update(pet,state,.1,w.Combat.deps);
@@ -421,6 +424,33 @@ async function check(){
   assert(ended,'companion finishes its hit-and-run attack');
   assert(rocks>0&&drops>start,'companion fetched and dropped a physical Boulder burden');
   assert.equal(w.PingdortFlocks.debugSnapshot().bouldersDropped,1);
+  assert.equal(stoneSurfaces,1,'payload uses the wilderness stone surfacing pipeline');
+  assert(lastBoulder.group.children[0].userData.wildernessStone);
+  assert.equal(lastBoulder.group.position.x,target.x/64,'payload is released directly above the target, not one tile to the side');
+  hostileObjects.add(target);
+  lastBoulder.group.position.y=.36; // Shared fall resolver calls this handler at first contact.
+  const beforeImpact=hits.length;
+  assert.equal(lastBoulder.impact(lastBoulder,'pingdort-bomber-ground-impact'),true);
+  assert.equal(lastBoulder.group.parent,null,'contact destroys the boulder immediately');
+  assert.equal(rockSounds.length,1);assert.equal(rockSounds[0][0],'breakRock');
+  assert.equal(hits.length,beforeImpact+1);assert.equal(hits.at(-1)[5].attacker,pet);
+  assert.equal(lastBoulder.impact(lastBoulder,'duplicate'),false);assert.equal(rockSounds.length,1);
+  assert.equal(hits.length,beforeImpact+1,'duplicate contact does not deal damage twice');
+  hostileObjects.delete(target);
+  const medium=deps.makeCreatureEntity('pingdort',21*64,20*64,{isCompanion:true,stableRole:'companion',master:player,genotype:{sizeClass:'medium'}});
+  const dive=attacks.get('flyingCompanionDive');assert(dive);
+  for(const attack of [dive,ability]){ // Also exercise the legacy species attack ID used by old callers.
+    const diveState={},beforeRocks=rocks,beforeHits=hits.length;
+    medium.x=21*64;medium.y=20*64;
+    attack.start(medium,diveState,{target});medium._animalAttack={state:diveState,def:attack};
+    assert.equal(diveState.phase,'rise');
+    let done=false;
+    for(let i=0;i<100;i++){done=!attack.update(medium,diveState,.1,w.Combat.deps);if(done)break;}
+    assert(done,'medium flyer finishes a real dive and recovery');
+    assert.equal(rocks,beforeRocks,'medium flyer cannot fetch a boulder even using the legacy attack ID');
+    assert.equal(hits.length,beforeHits+1,'swept body hits only once');
+    assert.equal(hits.at(-1)[5].aerialSwoop,true);
+  }
   for (const kind of ['pingdort','skeeri']) {
     assert.equal(geneticsHost.CreatureGenetics.stableEntryRole({kind,genotype:{sizeClass:'large'}}),
       'companion',`${kind} Large variants must remain companions, never mounts`);

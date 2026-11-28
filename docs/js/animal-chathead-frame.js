@@ -332,7 +332,7 @@
   const EXTENSION_SCRIPTS = Object.freeze([ // Loaded in dependency order so gameplay genetics can delegate Voorg-Ass registration to its canonical owner.
     Object.freeze({ name: 'voorg-ass-registration', path: '../../js/voorg-ass-registration.js?v=20261027h7e25ded' }),
     Object.freeze({ name: 'moot-registration', path: '../../js/moot-registration.js?v=20261123h75e7502' }), // Register Moot's authored base/run/eye layers in the same picker as all other animals.
-    Object.freeze({ name: 'creature-genetics', path: '../../js/creature-genetics.js?v=20261122hCreatureVariants28' }),
+    Object.freeze({ name: 'creature-genetics', path: '../../js/creature-genetics.js?v=20261127flyerImpactAudit2' }),
   ]);
   const STATUS_KEY = 'animationAuthorCreatureRegistrySync'; // Used by the mobile-safe debug object exposed below.
   const statusRoot = global.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {}; // Stores picker diagnostics beside the existing Rig Coordinates diagnostics.

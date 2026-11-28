@@ -1,4 +1,4 @@
-// Wild Pingdort flocks and the trained companion's distinct bomber attack.
+// Wild Pingdort flocks and size-specific trained flying companion attacks.
 // Runs in the existing WildlifeSpawn and Combat.animalAttacks clocks, never a second RAF.
 (() => {
   'use strict';
@@ -8,6 +8,7 @@
   const MAX_FLOCKS=8, FLOCK_SIZE=3, NEST_EGGS=3; // A limited set of permanent minicliff nests, with three hunters per nearby flock.
   const NEST_NEAR_PLAYER_TILES=17, HUNT_DISTANCE=13, FLEE_DISTANCE=7; // Bounded territory and predator-sense scan.
   const BOULDER_KIND='pingdortBoulder'; // Physical burden registered with the existing Shattercasks factory.
+  const BOULDER_RADIUS=.36; // Shared visible size, collision radius and landing clearance.
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,Number(v)||0));
   const unit=()=>Number(deps?.TILE)||64;
   const tilePos=a=>({x:(Number(a?.x)||0)/unit(),z:(Number(a?.y)||0)/unit()}); // Game actor X/Y pixels to THREE X/Z tiles.
@@ -16,7 +17,7 @@
   const sessions=new Map(); // Per-active-zone flock/nest objects, invalidated by scene replacement or area transition.
   const pets=new WeakMap(); // Companion ongoing special is owned by Combat; WeakMap provides non-rendering debug state.
   const debug={flocks:0,spawned:0,unloaded:0,flockDeaths:0,missingShelves:0,dives:0,hits:0,flees:0,nestsHarvested:0,eggsCollected:0,
-    bombingRuns:0,bouldersDropped:0,lowCeilingDives:0,lastError:null}; // Console-free finite counters for mobile.
+    bombingRuns:0,bouldersDropped:0,boulderImpacts:0,companionDives:0,companionDiveHits:0,lowCeilingDives:0,lastCompanionAttack:null,lastError:null}; // Console-free finite counters for mobile.
   let deps=null; // WildlifeSpawn's factory, hostile/companion sets and current map.
   const FLOCK_UNLOAD_TILES=34; // Wild birds outside this radius retire without wasting off-screen AI and renderer time.
   let registeredBomb=false,registeredAttack=false,serial=0; // Idempotent combat/burden registration and unique burden ids.
@@ -61,7 +62,7 @@
     return result; // Medium/large predators frighten the flock; nonpredatory medium/large animals do not.
   }
   function flight(actor,state,to,phase,speed=6.5){
-    const from={...tilePos(actor),y:Number(actor.branchSurfaceY)||state.home.y};
+    const from={...tilePos(actor),y:Number.isFinite(actor.branchSurfaceY)&&actor.onBranch?actor.branchSurfaceY:state.home.y};
     const line=window.PerchSupport?.line?.(state.id+':flight:'+state.serial++,
       {x:from.x*unit(),y:from.z*unit(),worldY:from.y},
       {x:to.x*unit(),y:to.z*unit(),worldY:to.y});
@@ -422,34 +423,60 @@
       if(flight(a,state,{x:p.x,z:p.z,y:groundAt(p.x,p.z)+.4},'dive',6.5)){debug.dives++;}
     }
   }
+  // Keep saved Pingdort bomber IDs compatible while resolving the actual attack from live Size.
+  function canBomb(kind,genotype,def){
+    if(def?.isFlyingSpecies!==true)return false;
+    const size=window.CreatureGenetics?.creatureSizeClass?.(kind,genotype)||genotype?.sizeClass||def?.defaultSizeClass;
+    return size==='large';
+  }
+  let boulderArt=null; // A single closed, faceted wilderness-stone asset is shared by all temporary payloads.
   function boulderImpact(burden,cause){
-    const p=burden?.group?.getWorldPosition?.(new window.THREE.Vector3());
+    if(!burden||burden.exploded||burden.pingdortImpactResolved||burden.hanging)return false; // Carried payloads cannot be prematurely detonated by a stray strike.
+    const p=burden.group?.getWorldPosition?.(new window.THREE.Vector3());
     if(!p)return false;
-    const now=performance.now();if(now-(burden.lastPingdortImpactMs||0)<700)return false;
-    burden.lastPingdortImpactMs=now;
-    const pendingHypedRatio = burden.pendingFeyHypedImpactRatio; // The second attack retains an explicit one-use echo marker independent of its eventual impact strength.
-    const isHypedReplay = pendingHypedRatio != null && Number.isFinite(Number(pendingHypedRatio)); // A 50-point (100%-strength) echo is still a replay, never an ordinary attack.
-    const feyScale = isHypedReplay ? Math.max(0, Number(pendingHypedRatio)) : 1; // Preserve the exact authored ratio, including a valid 0, without affecting ordinary boulders.
-    delete burden.pendingFeyHypedImpactRatio; // A boulder picked up and thrown again later is an ordinary burden, not a permanently enchanted projectile.
+    burden.pingdortImpactResolved=true; // Exactly one impact, including simultaneous ground and obstacle contact.
+    const pendingHypedRatio=burden.pendingFeyHypedImpactRatio;
+    const isHypedReplay=pendingHypedRatio!=null&&Number.isFinite(Number(pendingHypedRatio));
+    const feyScale=isHypedReplay?Math.max(0,Number(pendingHypedRatio)):1;
+    const attacker=burden.pingdortBomber; // Attribute delayed blunt damage to the actual trained bird.
+    delete burden.pendingFeyHypedImpactRatio;
+    delete burden.pingdortBomber;
+    window.Shattercasks?.discardBurden?.(burden); // Destroy on contact, not a timed fuse or a reusable landed prop.
+    debug.boulderImpacts++;
+    if(window.AudioSystem?.playObjectSfxKeyAt)window.AudioSystem.playObjectSfxKeyAt('breakRock',p.x,p.z,burden.mapId,p.y,{earshotTiles:14});
+    else window.AudioSystem?.playObjectSfxKey?.('breakRock');
     const combat=window.Combat?.deps,t=Number(combat?.TILE)||64;
     for(const enemy of combat?.hostileObjects||[]){
-      if(enemy.health<=0||enemy.areaId!==burden.mapId)continue;
+      if(enemy.health<=0||enemy.areaId!==burden.mapId||enemy.isCompanion||enemy===attacker)continue;
       if(Math.hypot(enemy.x/t-p.x,enemy.y/t-p.z)>1.35)continue;
+      const box=window.TzatzulFlightRuntime?.flightTargetBox?.(enemy); // Prevent blast damage through a different floor.
+      if(box&&(p.y<box.min.y-1.35||p.y>box.max.y+1.35))continue;
       combat.damageCreature?.(enemy,18*feyScale,p.x*t,p.z*t,150*feyScale,{tag:'blunt',source:'pingdort-boulder',
-        feyHypedReplay:isHypedReplay}); // Genuine burden collision scales both Health and knockback once, not the whole world damage owner.
+        attacker,feyHypedReplay:isHypedReplay});
     }
-    return false; // The landed boulder remains a physical, pickable and throwable burden.
+    return true;
   }
   function ensureBoulderFactory(){
     if(registeredBomb||!window.Shattercasks?.registerBurdenFactory||!window.THREE)return false;
     const THREE=window.THREE;
     window.Shattercasks.registerBurdenFactory(BOULDER_KIND,()=>{
-      const root=new THREE.Group(); // Inexplicably retrieved stone is a separate burden, not part of the animal's sprite.
-      const stone=new THREE.Mesh(new THREE.IcosahedronGeometry(.36,1),
-        window.ProceduralFurniture?.makePartMaterial?.({materialTexture:'cliff_stone.png',materialLighting:'unlit',materialFillMode:'never',color:'#736b60'})
-          || new THREE.MeshBasicMaterial({color:0x736b60}));
-      stone.name='pingdort_boulder';root.add(stone);
-      return {group:root,displayName:'Boulder',onImpact:boulderImpact};
+      if(!boulderArt){
+        const geometry=new (THREE.DodecahedronGeometry||THREE.IcosahedronGeometry)(BOULDER_RADIUS,0); // Closed low-poly stone with no grass rim or terrain anchoring.
+        geometry.scale?.(1.06,.94,1.02);
+        const template=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:0x808080}));
+        template.name='pingdort_boulder';
+        const initial=template.material;
+        window.FacetedRocks?.surfaceStone?.(template,{label:template.name}); // Same inked PNG and UV pipeline as wilderness rocks.
+        if(template.material!==initial)initial.dispose?.();
+        if(template.geometry!==geometry)geometry.dispose?.(); // The stretch mapper may replace the source geometry.
+        boulderArt={geometry:template.geometry,material:template.material,userData:{...template.userData}};
+      }
+      const root=new THREE.Group();
+      const stone=new THREE.Mesh(boulderArt.geometry,boulderArt.material);
+      stone.name='pingdort_boulder';Object.assign(stone.userData,boulderArt.userData);
+      window.FacetedRocks?.styleMesh?.(stone);
+      root.add(stone);
+      return {group:root,displayName:'Boulder',onImpact:boulderImpact,noHang:true};
     });
     registeredBomb=true;return true;
   }
@@ -465,11 +492,42 @@
     }
     return window.DevRandomRuin?.getRuntimeContext?.()?.shaftHub!==true; // Interior fallback; an actual full-height shaft still allows bombing.
   }
-  function bodySweep(actor,target,from,to){
+  function companionPose(actor){
+    // The shared flight renderer reads the species-specific pose fields.
+    actor.tzatzulFlightPose=actor.skeeriFlightPose=actor.pingdortFlightPose;
+    actor.tzatzulDivePitchRad=actor.skeeriDivePitchRad=actor.pingdortDivePitchRad;
+  }
+  function companionFlight(actor,state,to,phase,speed){
+    const from=tilePos(actor);
+    const fromY=Number.isFinite(actor.branchSurfaceY)&&actor.onBranch?actor.branchSurfaceY:state.home.y; // Actual support, including zero elevation.
+    if(state.area==='map_i_dev_random_ruin'&&window.DevRandomRuin?.flightClear?.(from.x,fromY,from.z,to.x,to.y,to.z)===false){state.phase='failed';return false;}
+    if(!flight(actor,state,to,phase,speed)){state.phase='failed';return false;}
+    if(dist(from,to)>.001)actor.facing=Math.atan2(to.z-from.z,to.x-from.x);
+    companionPose(actor);
+    return true;
+  }
+  function companionAdvance(actor,state,step){
+    const ended=advance(actor,state,step);
+    companionPose(actor);
+    if(!ended&&!state.leg)state.phase='failed'; // A lost perch cannot strand a companion indefinitely.
+    return ended;
+  }
+  function diveBox(target){
+    const shared=window.TzatzulFlightRuntime?.flightTargetBox?.(target);
+    if(shared)return shared;
     const p=tilePos(target),ground=groundAt(p.x,p.z);
-    const box={min:{x:p.x-.42,y:ground,z:p.z-.42},max:{x:p.x+.42,y:ground+1.3,z:p.z+.42}};
-    const sweep=window.TzatzulFlightRuntime?.sweptBodyHit; // Shared torso contact function is optional in stripped test realms.
-    return typeof sweep==='function' && sweep(from,to,{x:.24,y:.3,z:.24},box)!==null;
+    return {min:{x:p.x-.42,y:ground,z:p.z-.42},max:{x:p.x+.42,y:ground+1.1,z:p.z+.42}};
+  }
+  function beginDive(actor,state){
+    if(!(state.target?.health>0)||state.target.areaId&&state.target.areaId!==state.area){state.phase='failed';return false;}
+    const p=tilePos(state.target),box=diveBox(state.target);
+    const half=state.bodyHalf; // Same body-only collider used by the Tzatzul arena attack.
+    const aim=Math.max(box.min.y,(box.min.y+box.max.y)/2-half.y);
+    return companionFlight(actor,state,{...p,y:aim},'dive',7.2);
+  }
+  function bodySweep(target,from,to,half){
+    const sweep=window.TzatzulFlightRuntime?.sweptBodyHit;
+    return typeof sweep==='function'&&sweep(from,to,half,diveBox(target))!==null;
   }
   function restoreCompanion(actor,state){
     if(state.boulder && state.phase!=='dropped'){
@@ -478,25 +536,33 @@
     window.PerchSupport?.forget?.(actor);
     if(actor.onBranch?.perchSupport){actor.onBranch=null;actor.branchT=0;actor.branchSurfaceY=0;}
     if(state.originalGroupVisible!=null && actor.avatarRef?.group)actor.avatarRef.group.visible=state.originalGroupVisible;
-    actor.pingdortFlightPose='perched';actor.pingdortDivePitchRad=0;
+    actor.pingdortFlightPose='perched';actor.pingdortDivePitchRad=0;companionPose(actor);
     pets.delete(actor);
   }
-  function companionStart(actor,state,ctx){
+  function companionStart(actor,state,ctx,allowBomb=true){
     const target=ctx?.target,area=actor?.areaId||activeArea();
     state.phase='depart';state.target=target;state.area=area;state.t=0;state.serial=0;
     state.id='pingdort:companion:'+String(actor.id||'pet');
-    state.home={...tilePos(actor),y:groundAt(actor.x/unit(),actor.y/unit())+.5}; // Ground recovery target after completing a bomber run.
+    const at=tilePos(actor); // Keep elevated supports and real terrain at the start of a dive.
+    const supportY=actor.onBranch&&Number.isFinite(actor.branchSurfaceY)?actor.branchSurfaceY:groundAt(at.x,at.z);
+    state.home={...at,y:supportY+.5};
     state.originalGroupVisible=actor.avatarRef?.group?.visible;
     state.boulder=null;state.leg=null;state.struck=false;state.cancelled=false;
     pets.set(actor,state);
-    if(lowCeiling(actor)){state.phase='dive';state.low=true;debug.lowCeilingDives++;
-      const p=tilePos(target||actor);
-      flight(actor,state,{...p,y:groundAt(p.x,p.z)+.5},'dive',7.2);
+    if(!actor.isCompanion||actor.stableRole!=='companion'||!actor.def?.isFlyingSpecies||!(target?.health>0)){state.phase='failed';return;}
+    const bomber=allowBomb&&canBomb(actor.creatureKey,actor.genotype,actor.def);
+    const low=lowCeiling(actor); // Only bomb-capable birds may fetch payloads; interiors keep the existing dive fallback.
+    state.bodyHalf=window.TzatzulFlightRuntime?.flightBodyHalf?.(actor)||{x:.24,y:.3,z:.24};
+    debug.lastCompanionAttack={id:actor.id||null,kind:actor.creatureKey||KIND,mode:bomber&&!low?'boulder':'dive'};
+    if(!bomber||low){
+      debug.companionDives++;
+      if(low){debug.lowCeilingDives++;beginDive(actor,state);}
+      else companionFlight(actor,state,{...tilePos(actor),y:state.home.y+2.3},'rise',7);
     }else{
       const p=tilePos(actor),player=tilePos(deps?.player);
       const dx=p.x-player.x,dz=p.z-player.z,length=Math.max(.01,Math.hypot(dx,dz));
       const off={x:p.x+dx/length*12,z:p.z+dz/length*12,y:state.home.y+6};
-      flight(actor,state,off,'depart',10); // Moves beyond the camera, rather than summoning a rock in front of the player.
+      companionFlight(actor,state,off,'depart',10); // Moves beyond the camera, rather than summoning a rock in front of the player.
     }
   }
   async function fetchBoulder(actor,state){
@@ -509,34 +575,44 @@
       const rock=await Shatter.createHangingBurden({
         kind:BOULDER_KIND,id:'pingdort_boulder_'+(++serial),mapId:state.area,scene,
         x:p.x,y:state.home.y+5,z:p.z,hanging:true,
-        fallGroundY:({x,z})=>groundAt(x,z)+.36,
+        mechanismId:'flying-companion-payload', // Exclude an attached payload from the shared projectile raycast until release.
+        fallGroundY:({x,y,z,mapId})=>{
+          const support=mapId==='map_i_dev_random_ruin'&&Number.isFinite(y)?window.DynamicSurfaces?.sampleSupport?.(x,z,{minY:y-40,maxY:y+.3,pad:.02}):null;
+          return (support?.y??groundAt(x,z))+BOULDER_RADIUS;
+        },
       });
       if(!rock)return;
       if(state.cancelled||actor._animalAttack?.state!==state||activeArea()!==state.area){
         Shatter.discardBurden?.(rock);return;
       }
+      rock.pingdortBomber=actor;rock.impactRadius=BOULDER_RADIUS;
       state.boulder=rock;
     }catch(error){debug.lastError=String(error);}
     finally{state.pendingRock=false;if(!state.cancelled&&state.phase==='fetch')state.phase='return';}
   }
   function companionUpdate(actor,state,dt,combat){
-    if(state.cancelled||!(actor.health>0)||activeArea()!==state.area){restoreCompanion(actor,state);return false;}
+    if(state.cancelled||!(actor.health>0)||activeArea()!==state.area||actor.areaId!==state.area){state.cancelled=true;restoreCompanion(actor,state);return false;}
     const step=clamp(dt,0,.15);
+    if(state.phase==='rise'){
+      if(companionAdvance(actor,state,step))beginDive(actor,state);
+      return true;
+    }
     if(state.phase==='dive'){
-      const old=tilePos(actor),oldY=Number(actor.branchSurfaceY)||state.home.y;
-      const ended=advance(actor,state,step);
-      const now=tilePos(actor),newY=Number(actor.branchSurfaceY)||state.home.y;
-      if(!state.struck&&state.target?.health>0&&bodySweep(actor,state.target,
-        {x:old.x,y:oldY+.3,z:old.z},{x:now.x,y:newY+.3,z:now.z})){
-        state.struck=true;
+      const old=tilePos(actor),oldY=Number.isFinite(actor.branchSurfaceY)?actor.branchSurfaceY:state.home.y;
+      const ended=companionAdvance(actor,state,step);
+      const now=tilePos(actor),newY=Number.isFinite(actor.branchSurfaceY)?actor.branchSurfaceY:state.home.y;
+      const half=state.bodyHalf;
+      if(state.phase==='dive'&&!state.struck&&state.target?.health>0&&(!state.target.areaId||state.target.areaId===state.area)&&bodySweep(state.target,
+        {x:old.x,y:oldY+half.y,z:old.z},{x:now.x,y:newY+half.y,z:now.z},half)){
+        state.struck=true;debug.companionDiveHits++;
         combat?.damageCreature?.(state.target,actor.def?.attackDamage||6,actor.x,actor.y,40,
           {tag:'sharp',attacker:actor,aerialSwoop:true,impactCollider:'body'});
       }
-      if(ended)flight(actor,state,state.home,'land',7);
+      if(ended)companionFlight(actor,state,state.home,'land',7);
       return true;
     }
     if(state.phase==='depart'){
-      if(advance(actor,state,step)){
+      if(companionAdvance(actor,state,step)){
         state.phase='fetch';state.t=0;
         if(actor.avatarRef?.group)actor.avatarRef.group.visible=false; // Invisible off-camera retrieval; no invented quarry prop.
         fetchBoulder(actor,state);
@@ -546,15 +622,17 @@
     if(state.phase==='fetch')return true;
     if(state.phase==='return'){
       if(!state.leg){
-        const p=tilePos(state.target?.health>0?state.target:deps?.player),ground=groundAt(p.x,p.z);
-        flight(actor,state,{x:p.x+1,z:p.z,y:ground+3.6},'return',10);
+        if(!(state.target?.health>0)||state.target.areaId&&state.target.areaId!==state.area){state.phase='failed';return true;}
+        const p=tilePos(state.target),ground=Math.max(groundAt(p.x,p.z),diveBox(state.target).min.y);
+        if(!companionFlight(actor,state,{x:p.x,z:p.z,y:ground+3.6},'return',10))return true;
         if(actor.avatarRef?.group)actor.avatarRef.group.visible=state.originalGroupVisible!==false;
       }
-      if(state.boulder?.group && !state.boulder.flying){
+      const arrived=companionAdvance(actor,state,step);
+      if(state.boulder?.group&&!state.boulder.flying){
         const p=tilePos(actor);
-        state.boulder.group.position.set(p.x,Number(actor.branchSurfaceY)-.32,p.z); // World-space carried payload tracks the real bird until release.
+        state.boulder.group.position.set(p.x,Number(actor.branchSurfaceY)-.32,p.z); // Move AFTER advancing, including the exact release frame.
       }
-      if(advance(actor,state,step)){
+      if(arrived){
         if(state.boulder){
           const echoScale = Number(state.feyHypedEchoRatio); // The second authored bombing run may land after the special itself finishes.
           if(Number.isFinite(echoScale) && echoScale>=0) state.boulder.pendingFeyHypedImpactRatio=echoScale;
@@ -564,24 +642,24 @@
         }
         debug.bombingRuns++;
         const p=tilePos(deps?.player),to={x:p.x+1.1,z:p.z+.8,y:groundAt(p.x,p.z)+.5};
-        flight(actor,state,to,'land',10);
+        companionFlight(actor,state,to,'land',10);
       }
       return true;
     }
     if(state.phase==='land'){
-      if(advance(actor,state,step)){restoreCompanion(actor,{...state,phase:'dropped'});return false;}
+      if(companionAdvance(actor,state,step)){restoreCompanion(actor,state);return false;}
       return true;
     }
     restoreCompanion(actor,state);return false;
   }
   function registerCompanionAttack(){
     const attacks=window.Combat?.animalAttacks;if(registeredAttack||!attacks?.register)return false;
-    attacks.register('pingdortBoulderBomb',{label:'Boulder Drop',ownsApproach:true,
-      start:companionStart,update:companionUpdate,
+    const shared={ownsApproach:true,update:companionUpdate,
       cancel:(actor,state)=>{state.cancelled=true;restoreCompanion(actor,state);},
-      isWindingUp:state=>['depart','fetch'].includes(state.phase),
-      isStriking:state=>['return','dive'].includes(state.phase),
-    });
+      isWindingUp:state=>['depart','fetch','rise'].includes(state.phase),
+      isStriking:state=>['return','dive'].includes(state.phase)};
+    attacks.register('pingdortBoulderBomb',{...shared,label:'Boulder Drop',start:(actor,state,ctx)=>companionStart(actor,state,ctx,true)});
+    attacks.register('flyingCompanionDive',{...shared,label:'Dive Attack',start:(actor,state,ctx)=>companionStart(actor,state,ctx,false)});
     registeredAttack=true;return true;
   }
   function init(injected={}){
@@ -601,6 +679,6 @@
       remaining:n.remaining,flockLoaded:n.flockLoaded,deadSlots:[...n.deadBirdSlots].sort()})),
     liveBirds:[...s.birds].filter(v=>v.actor.health>0).length,
   }))});
-  window.PingdortFlocks=Object.freeze({KIND,BOULDER_KIND,init,ensureZone,update,collectNest,nestRecords,siteForShelf:clearNestTile,lowCeiling,debugSnapshot,
+  window.PingdortFlocks=Object.freeze({KIND,BOULDER_KIND,init,ensureZone,update,collectNest,nestRecords,siteForShelf:clearNestTile,lowCeiling,canBomb,debugSnapshot,
     getNest: id=>[...sessions.values()].flatMap(s=>s.nests).find(n=>n.id===id)||null});
 })();
