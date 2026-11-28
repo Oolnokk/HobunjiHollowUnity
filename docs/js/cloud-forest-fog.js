@@ -656,7 +656,7 @@
 
   // The light pool, not its emitter, determines viewport visibility. Perspective
   // projection becomes singular at the camera plane, so project the cross-section
-  // of a near-camera light sphere onto a stable forward plane instead of suddenly
+  // of a near-camera light sphere approximately onto a stable forward plane instead of suddenly
   // dropping it when its center passes behind the camera. Normal-depth pools keep
   // their exact authored size and intensity. Only overlapping masks create gradients.
   function projectLightMask(x, y, z, worldRadius, context, playerPlane = false) {
@@ -674,7 +674,8 @@
     const safeDepth = Math.min(far, Math.max(near + (playerPlane ? 0 : worldRadius * 0.5), 0.001)); // Stable projection depth for sources crossing the camera plane.
     if (depth < safeDepth) {
       const shift = safeDepth - depth; // Move along the view axis, preserving the light's lateral position.
-      coverage = Math.max(0, 1 - (shift / worldRadius) ** 2);
+      const overlap = (depth + worldRadius - near) / (safeDepth + worldRadius - near); // Normalize against the actual near-plane overlap, not the shifted projection plane.
+      coverage = smoothstep01(overlap);
       if (coverage <= 0) return null;
       radiusTiles *= Math.sqrt(coverage);
       x += lightViewDirection.x * shift;
