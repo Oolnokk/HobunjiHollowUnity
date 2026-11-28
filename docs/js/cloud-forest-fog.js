@@ -50,6 +50,7 @@
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
   const TZATZUL_NEST_LIGHTING = Object.freeze({ r: 18, g: 22, b: 31, a: 0.68 }); // Abduction arenas keep cave-colored mist but retain roughly a third of the unlit image for boss/hatchling readability.
   const KANTHIC_MIST_OPACITY_SCALE = 2; // Amplifies only the three Kanthic cylinder textures, never the scene darkness.
+  const KANTHIC_MIST_RADIUS_SCALE = 0.5; // Bring the existing player-centered mist shells closer only in Kanthic ruins.
   const KANTHIC_MIST_COLOR = 0xa69abf; // Muted violet-gray cylinder tint; depth fog retains its original midnight color.
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const RUIN_SCREEN_TINT_ALPHA = 0.07; // Used once per ruin lighting redraw for a gentle full-screen tradition tint.
@@ -435,7 +436,7 @@
       mesh.visible = opacity > 0.002;
       if (!mesh.visible) continue;
 
-      const radius = Math.max(0.1, live.radiusTiles);
+      const radius = Math.max(0.1, live.radiusTiles * (kanthicMist ? KANTHIC_MIST_RADIUS_SCALE : 1));
       mesh.position.set(px, groundY + config.height * 0.5, pz);
       mesh.scale.set(radius, config.height, radius);
       mesh.rotation.y = t * config.spinSpeed;
@@ -1711,7 +1712,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic mist cylinders use stronger opacity and a separate muted violet-gray tint; darkness, depth fog and light pools are unchanged.',
+        latestChange: 'Kanthic mist cylinders use closer radii, stronger opacity and a separate muted violet-gray tint; darkness, depth fog and light pools are unchanged.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
@@ -1738,7 +1739,7 @@
           lantern: { ...tuning.lantern },
         },
         outlineMistRedrawLayers: group?.visible ? lastRedrawLayerCount : 0,
-        effectiveMistLayers: group?.visible ? layers.map(({ mesh, material }) => ({ visible: mesh.visible, opacity: material.opacity, color: `#${material.color.getHexString()}` })) : [], // Actual material values for phone-readable QA.
+        effectiveMistLayers: group?.visible ? layers.map(({ mesh, material }) => ({ visible: mesh.visible, radiusTiles: mesh.scale.x, opacity: material.opacity, color: `#${material.color.getHexString()}` })) : [], // Actual material values for phone-readable QA.
         treeFade: window.ZoneTreeFade?.snapshot(),
         layers: layerLive.map(l => ({ ...l })),
       };
