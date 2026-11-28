@@ -483,7 +483,7 @@
       return true;
     }
 
-    function stamp(allowedChangedNodes = null) {
+    function canStamp(allowedChangedNodes = null) {
       if (released || !valid) return false;
       // Rendering can legitimately rewrite only an explicit subset of a paired
       // pose. Refuse to adopt an unrelated NPC/root takeover during that pass.
@@ -499,6 +499,11 @@
           return false;
         }
       }
+      return true;
+    }
+
+    function stamp(allowedChangedNodes = null) {
+      if (!canStamp(allowedChangedNodes)) return false;
       // Check every claim before updating ANY checkpoint: otherwise a failed
       // late render could partially publish the very transforms it must reject.
       for (const entry of entries) entry.applied.copy(entry.node[entry.property]);
@@ -566,7 +571,7 @@
       return released && restoredByNode.get(node)?.has(property) === true;
     }
 
-    const session = Object.freeze({ capture, owns, stamp, acceptExpectedOverwrites, release, wasRestored, owner });
+    const session = Object.freeze({ capture, owns, canStamp, stamp, acceptExpectedOverwrites, release, wasRestored, owner });
     return session;
   }
 

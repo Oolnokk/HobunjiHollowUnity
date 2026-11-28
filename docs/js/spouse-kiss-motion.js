@@ -558,6 +558,11 @@
     return root.getWorldPosition(new THREE.Vector3());
   }
 
+  function releaseKneeLimit(legs, previousLimit) {
+    if (legs?.getStanceDropLimitFraction?.() === KNEEL_LEG_FRACTION)
+      legs.setStanceDropLimitFraction?.(previousLimit);
+  }
+
   function clearMotion(reason) {
     const old = active;
     if (!old) return false;
@@ -570,7 +575,7 @@
       old.releasePlayerRenderPose?.(); // Remove late-render pose ownership before releasing its saved transforms.
       old.playerHands?.setPoseProvider?.(SOURCE, null);
       const scoped = !!old.poseSession; // Scoped ownership is the live game path; retain the original restoration for isolated previews.
-      poseRelease = old.poseSession?.release() || null;
+      poseRelease = old.poseSession?.release({ restoreUnaffectedProperties: true }) || null; // A newer root position can coexist with still-owned local joint poses.
       const playerRestored = !scoped || (
         old.poseSession.wasRestored(old.player, 'position')
         && old.poseSession.wasRestored(old.player, 'quaternion'));
@@ -596,14 +601,15 @@
       if (playerRestored) {
         old.playerHands?.useIdlePose?.(); // A displaced player's newer grip must not be replaced with the spouse's old idle pose.
         old.playerLegs?.setStanceDrop?.(0, true);
-        old.playerLegs?.setStanceDropLimitFraction?.(old.originalPlayerKneeLimit);
       }
       if (npcRestored) {
         if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
-        old.npcLegs?.setStanceDropLimitFraction?.(old.originalNpcKneeLimit);
       } else {
         window.ActorRigCompositor?.clear?.(old.npcRigRoot, old.npcSink?.ownerId); // Release only this action's sink, without changing a successor's knee target.
       }
+      // Knee limits are per leg handle, independent of root transform ownership.
+      releaseKneeLimit(old.playerLegs, old.originalPlayerKneeLimit);
+      releaseKneeLimit(old.npcLegs, old.originalNpcKneeLimit);
       if (!scoped) {
         if (old.npcTiltPivot?.rotation && Number.isFinite(old.originalNpcTiltX)) old.npcTiltPivot.rotation.x = old.originalNpcTiltX;
         if (old.walker?.root?.parent === old.npcParent) {
@@ -802,6 +808,11 @@
       const session = active; // A scoped festival-style render owner; never writes into a replaced character's rig.
       session.releasePlayerRenderPose = composer.addPostHeadAimHook(() => {
         if (active !== session || !session.lastPlayerPose) return;
+        // Check external ownership before touching the necks, so cleanup can still recognize our last written pose.
+        if (session.poseSession && !session.poseSession.canStamp(session.renderReauthoredNodes)) {
+          clearMotion('pose-owner-replaced-during-render');
+          return;
+        }
         const pose = session.lastPlayerPose; // The shared clip was sampled after simulation, not advanced separately per render pass.
         if (!session.playerLegs?.hasExternalFootTargets?.()) {
           session.playerLegs?.update?.(0, 0, false, null); // Last writer wins over a weapon stance or idle walk update in the same frame.
