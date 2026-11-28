@@ -488,7 +488,7 @@
     compositeMaterial.uniforms.tHobunjiPaint.value = p.toneRT.texture;
     compositeMaterial.uniforms.uHobunjiPaintTexel.value.set(texelX, texelY);
     pipelineFrames += 1;
-    if (precompose) outlinedFrames += 1;
+    if (precompose || compositeMaterial.userData?.hobunjiScreenInkBeforeAtmosphere === true) outlinedFrames += 1;
     lastPipelineSize = `${size.width}x${size.height}`;
     lastPipelineMode = mode;
     return precompose;
@@ -661,7 +661,7 @@
     getOutlineFirst: () => outlineFirst,
     setOutlineFirst: enabled => { outlineFirst = enabled !== false; }, // Render A/B only; not a saved setting.
     snapshot: () => ({
-      latestChange: 'Original painterly finish now processes authored ink and generated depth outlines together; toneRT is reused for the outline precomposite.',
+      latestChange: 'Authored and generated ink share the painterly finish; atmospheric frames bake screen ink before darkness and mist, without drawing it twice.',
       outlineFirst,
       outlinedFrames,
       mode,

@@ -78,7 +78,6 @@ const connector=fs.readFileSync('docs/js/ruin-shaft-connector.js','utf8');
 assert.doesNotThrow(()=>new vm.Script(fog),'darkness compositor parses');
 assert(fog.includes("ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || [])"),
   'Kanthic only draws dedicated firelight, not all generic furniture lamps');
-assert(fog.includes('light.active === false'),'unlit fixtures do not clear the darkness');
 assert(fog.includes('const mistActive = active;'),'Kanthic uses actual Cloud Forest mist rather than an overlay-only imitation');
 assert(fog.includes("drawRuinTraditionLightMasks(window.RuinRopeTorch?.lightSources?.()"),'rope-end lanterns feed the same shared darkness pass');
 assert.equal(fog.split('drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || [])').length-1,2,

@@ -375,12 +375,14 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
   h.window.CloudForestFog.hasKanthicLightingPass = ()=>kanthic;
   h.window.CloudForestFog.renderKanthicGlyphFrame = ()=>h.log.push({id:'kanthicDraw',target:h.renderer.getRenderTarget()});
   u.uHobunjiPaintMode = {value:2}; // Shader already patched on a prior frame.
+  const paintTexture={};u.tHobunjiPaint={value:paintTexture};
   h.settings.cloudForestFog=false;
   const seen = [];
   const native = h.renderer.__hobunjiR128NativeRender;
   h.renderer.__hobunjiR128NativeRender = function(scene,camera) {
     if (scene.name === 'world_screen_ink_pre_atmosphere') {
       assert.equal(u.uHobunjiPaintMode.value,0);
+      assert.equal(u.tHobunjiPaint.value,p.targets.main.texture,'disabled painterly sampler must remain safe');
       assert.equal(u.uSeamOutlinesOn.value,0);
       assert.equal(u.uDepthOutlinesOn.value,1);
       assert.equal(u.tColor.value,p.targets.main.texture);
@@ -401,6 +403,8 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
       assert.equal(u.uHobunjiPaintMode.value,2);
       const early = !paintFirst && (kanthic || (h.settings.cloudForestFog && h.fogActive));
       assert.equal(u.uDepthOutlinesOn.value,p.getGeneratedOutlineMode()==='screen'&&!early?1:0);
+      assert.equal(p.materials.composite.userData.hobunjiScreenInkBeforeAtmosphere,p.getGeneratedOutlineMode()==='screen'&&early);
+      assert.equal(u.tHobunjiPaint.value,paintTexture);
     }
     return native.call(this,scene,camera);
   };
@@ -412,6 +416,7 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
   assert(at('kanthicDraw')<at('world_render_composite'));
   assert.equal(events.find(e=>e.id==='kanthicDraw').target,p.targets.main);
   assert.equal(p.snapshot().lastFrame.screenInkBeforeAtmosphere,true);
+  assert.equal(p.materials.composite.userData.hobunjiScreenInkBeforeAtmosphere,false,'presentation marker never persists into another frame');
   const scratch=seen[0];
   h.frame(); assert.equal(seen.at(-1),scratch,'scratch reused across frames');
   p.resize(320,180);h.frame();assert.deepEqual([scratch.width,scratch.height],[320,180]);
@@ -425,6 +430,10 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
   assert.throws(()=>h.frame(),/synthetic native render failure/);
   assert.equal(h.renderer.getRenderTarget(),p.targets.main);
   assert.equal(u.uHobunjiPaintMode.value,2);
+  assert.equal(u.tHobunjiPaint.value,paintTexture);
+  h.throwOn=scene=>scene.name==='world_render_composite';
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.equal(p.materials.composite.userData.hobunjiScreenInkBeforeAtmosphere,false,'failed final draw restores presentation marker');
   h.throwOn=null;h.frame();
   p.setGeneratedOutlineMode('shell');
   assert.equal(scratch.disposed,true);

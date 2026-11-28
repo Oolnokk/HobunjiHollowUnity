@@ -740,10 +740,13 @@
     const seam = u.uSeamOutlinesOn.value;
     const paint = u.uHobunjiPaintMode; // Patched by painterly after its first canvas presentation.
     const paintValue = paint?.value;
+    const paintSampler=u.tHobunjiPaint; // Avoid stale or aliased sampler bindings even in the disabled GLSL branch.
+    const oldPaintTexture=paintSampler?.value;
     try {
       renderer.autoClear = renderer.autoClearColor = renderer.autoClearDepth = renderer.autoClearStencil = false;
       u.uSeamOutlinesOn.value = 0;
       if (paint) paint.value = 0; // Never sample previous-frame paint.
+      if(paintSampler)paintSampler.value=_mainRT.texture;
       pass('screenInkBeforeAtmosphere');
       renderer.setRenderTarget(atmosphereInkRT);
       renderer.render(atmosphereInkScene, _postCamera);
@@ -754,6 +757,7 @@
     } finally {
       u.uSeamOutlinesOn.value = seam;
       if (paint) paint.value = paintValue;
+      if(paintSampler)paintSampler.value=oldPaintTexture;
       renderer.setRenderTarget(target);
       renderer.autoClear = autoClear; renderer.autoClearColor = color;
       renderer.autoClearDepth = depth; renderer.autoClearStencil = stencil;
@@ -852,8 +856,10 @@
     renderer.setRenderTarget(null);
     _postMat.uniforms.uSeamOutlinesOn.value = seamOn ? 1 : 0;
     _postMat.uniforms.uDepthOutlinesOn.value = screenInkBeforeAtmosphere ? 0 : (generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0);
-    renderer.render(_postScene, _postCamera);
-    PerfProfiler?.end(rpCompositePerf);
+    _postMat.userData||={};
+    _postMat.userData.hobunjiScreenInkBeforeAtmosphere=screenInkBeforeAtmosphere; // Painterly diagnostics must recognize ink already baked into tColor.
+    try {renderer.render(_postScene, _postCamera);}
+    finally {_postMat.userData.hobunjiScreenInkBeforeAtmosphere=false;PerfProfiler?.end(rpCompositePerf);}
     // Perception Mode silhouettes go on top of the finished composite so the
     // painterly/outline post-process can't smear them.
     pass('perception');

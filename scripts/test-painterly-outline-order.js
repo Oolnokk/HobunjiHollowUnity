@@ -64,6 +64,13 @@ function verify(load) {
   calls.length=0; failAt=5;
   try { renderer.render(scene,camera); throw new Error('expected injected error'); } catch(e){check(e.message==='injected draw failure','presentation error propagates');}
   check(target===null && renderer.autoClear===false && u.uDepthOutlinesOn.value===1,'presentation error restores outline flags');
+  failAt=-1;calls.length=0;benchmarkRunning=true;
+  const prior=api.snapshot().outlinedFrames;
+  mat.userData.hobunjiScreenInkBeforeAtmosphere=true;u.uDepthOutlinesOn.value=0;
+  renderer.render(scene,camera);
+  check(calls.length===4 && calls[0].source===originalColor && calls[3].depth===0,'atmospheric screen ink already lives in the paint source');
+  check(api.snapshot().outlinedFrames===prior+1,'count pre-atmosphere ink as an outline-first painted frame');
+  mat.userData.hobunjiScreenInkBeforeAtmosphere=false;
 }
 const source = fs.readFileSync('docs/js/painterly-postprocess.js','utf8');
 verify(context => vm.runInNewContext(source, context));
