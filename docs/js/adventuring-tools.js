@@ -45,9 +45,9 @@
     updateBurn();
     lastEvent = lit ? 'stowed on belt: still burning' : 'stowed: unlit torch hidden';
   }
-  function light() {
+  function light(renew = false) {
     updateBurn();
-    if (lit || !isHoldingTorch()) return false;
+    if ((lit && !renew) || !isHoldingTorch()) return false;
     lit = true; litUntilMs = nowMs() + TORCH_BURN_MS;
     lastEvent='lit from fire-hazard furniture'; deps?.refreshActionBar?.(); return true;
   }
@@ -130,7 +130,7 @@
     const contact = meleeFireContact(combat, player, hitOptions, scene);
     const ruinPuzzles = window.DevRandomRuinHitPuzzles;
     let source = null;
-    if (!lit) {
+    if (!lit || (area==='map_i_dev_random_ruin' && window.DevRandomRuinLichThemes?.activeTheme?.()==='kanthic')) {
       if (ruinPuzzles?.touchesIgnitionSource?.(contact)) source = 'ruin brazier';
       else {
         const burning = window.BurningEntityHazards?.findTorchSource?.(contact, {
@@ -143,7 +143,7 @@
           if (furniture) source = furniture.userData.authoredFurnitureKey || furniture.name || 'furniture';
         }
       }
-      if (source && light()) window.RuinInteractionAudio?.igniteTorch?.();
+      if (source && light(true)) window.RuinInteractionAudio?.igniteTorch?.();
     }
     if (lit) {
       window.DungeonFire?.contactMelee?.(contact);
