@@ -78,6 +78,7 @@ function createLegs(root, height) {
     getStanceDrop() { return stanceDrop; },
     setStanceYawDeg(yaw) { calls.stanceYaw.push(yaw); },
     setStanceDropLimitFraction(v) { const old = limit; limit = v; return old; },
+    getStanceDropLimitFraction: () => limit,
     setExternalFootTargets() {},
     hasExternalFootTargets() { return false; },
     pants: { update() { calls.pants++; } },
@@ -207,6 +208,9 @@ assert.equal(kiss.diagnostics().active, false);
 // A different NPC movement/pose owner can arrive between the paired simulation
 // stamp and the final player render hook. The hook must never silently adopt
 // the moved spouse root into the kiss's authoritative checkpoint.
+const torsoBeforeTakeover = npcModel.quaternion.clone(); // Local pre-kiss pose survives unrelated world movement.
+const neckBeforeTakeover = npcNeck.quaternion.clone();
+const neckPositionBeforeTakeover = npcNeck.position.clone();
 assert(kiss.start(walker, () => buffTriggers++), 'takeover fixture starts a new paired kiss');
 update({ deltaMs: 70 });
 const movedSpouse = walkerRoot.position.clone().add(new THREE.Vector3(.39, .14, -.16)); // Deliberate new NPC root writer not reauthored by the kiss render callback.
@@ -217,10 +221,11 @@ assert.equal(kiss.diagnostics().lastResult?.reason, 'pose-owner-replaced-during-
 assert(walkerRoot.position.distanceTo(movedSpouse) < 1e-8, 'render takeover cleanup preserves the newer spouse position');
 assert(kiss.diagnostics().lastResult?.poseRelease?.skipped > 0, 'late renderer takeover is reported as a skipped restore');
 assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'failed late render releases all captured pose claims');
+assert(npcModel.quaternion.angleTo(torsoBeforeTakeover) < 1e-7, 'root movement does not strand the spouse torso tilt');
+assert(npcNeck.quaternion.angleTo(neckBeforeTakeover) < 1e-7, 'root movement does not strand the spouse gaze');
+assert(npcNeck.position.distanceTo(neckPositionBeforeTakeover) < 1e-7, 'root movement does not strand the spouse neck offset');
+assert.equal(npcLegs.getStanceDropLimitFraction(), .55, 'interrupted spouse kneel releases its deeper knee limit');
 walkerRoot.position.set(.30, 0, .38); // Return the simulated externally moved spouse to the unchanged starting position for subsequent scenarios.
-npcModel.quaternion.identity(); // Clear the test-only tilted body after the deliberate takeover kept its newer root.
-npcNeck.quaternion.identity(); // Reset the test-only gaze that was deliberately not restored under the displaced root.
-npcNeck.position.set(0, .68, .02); // Neutral physical neck height for the next independent test.
 
 // External authors can take over a root or head before cancellation. The old
 // paired session must not overwrite those replacement transforms.
@@ -234,7 +239,19 @@ assert.equal(kiss.diagnostics().lastResult.reason, 'pose-owner-taken-over');
 assert(player.position.distanceTo(displaced) < 1e-8, 'obsolete pose teardown preserves a newer root position');
 assert(kiss.diagnostics().lastResult.poseRelease.skipped > 0, 'the user-visible diagnostic reports the skipped overwritten transforms');
 assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'takeover fully releases the paired pose registry');
+assert.equal(playerLegs.getStanceDropLimitFraction(), .55, 'interrupting the player also restores the ordinary knee limit');
 player.position.set(0, 0, 0); // Explicit new world position after releasing the old absolute owner.
+
+assert(kiss.start(walker, () => buffTriggers++), 'late player takeover fixture starts another paired kiss');
+update({ deltaMs: 70 });
+const latePlayerPosition = player.position.clone().add(new THREE.Vector3(.31, .14, -.21)); // New world position written between simulation and render.
+player.position.copy(latePlayerPosition);
+lastRenderHook([], {}, camera);
+assert.equal(kiss.diagnostics().active, false, 'a late player move cancels the old render pose');
+assert(player.position.distanceTo(latePlayerPosition) < 1e-8, 'the render hook preserves the newer player position');
+assert.equal(playerLegs.getStanceDropLimitFraction(), .55, 'late player takeover releases the deeper knee limit');
+assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims, 0, 'late player takeover releases the scoped claims');
+player.position.set(0, 0, 0);
 
 assert(kiss.start(walker, () => buffTriggers++), 'new scoped kiss may start after owner takeover');
 update({ deltaMs: 70 });
